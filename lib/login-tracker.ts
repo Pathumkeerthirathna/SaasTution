@@ -7,18 +7,20 @@ type LoginStore = {
   teachers: Map<string, TeacherLoginSnapshot>;
 };
 
-declare global {
-  var __saastutionLoginStore: LoginStore | undefined;
-}
+type GlobalWithLoginStore = typeof globalThis & {
+  __saastutionLoginStore?: LoginStore;
+};
 
 function getStore(): LoginStore {
-  if (!globalThis.__saastutionLoginStore) {
-    globalThis.__saastutionLoginStore = {
+  const globalStore = globalThis as GlobalWithLoginStore;
+
+  if (!globalStore.__saastutionLoginStore) {
+    globalStore.__saastutionLoginStore = {
       teachers: new Map<string, TeacherLoginSnapshot>(),
     };
   }
 
-  return globalThis.__saastutionLoginStore;
+  return globalStore.__saastutionLoginStore;
 }
 
 export function markTeacherLoggedIn(teacherId: string) {

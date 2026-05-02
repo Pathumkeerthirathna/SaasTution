@@ -5,8 +5,6 @@ import HowItWorks from "@/components/LandingPage/how-it-works";
 import Parents from "@/components/LandingPage/parents";
 import Hero from "@/components/Layout/hero";
 import Navbar from "@/components/Layout/navbar";
-import { SectionCard } from "@/components/section-card";
-import Link from "next/link";
 
 export default function Home() {
   return (
