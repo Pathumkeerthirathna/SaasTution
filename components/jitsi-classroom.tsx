@@ -405,7 +405,7 @@ export function JitsiClassroom() {
     if (!trimmedMessage || role !== "teacher" || !isLive) {
       return;
     }
-
+    // ss
     executeJitsiCommand("sendChatMessage", trimmedMessage);
     setBroadcastMessages((prev) => [
       {
