@@ -1,0 +1,801 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+
+type ClassItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  schedule: string;
+  schedules: {
+    id: string;
+    dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
+    startTime: string;
+    endTime: string;
+  }[];
+  createdAt: string;
+};
+
+type ApiError = {
+  message?: string;
+};
+
+type PaginatedResponse = {
+  success: boolean;
+  data?: ClassItem[];
+  error?: ApiError;
+  pagination?: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+};
+
+type FormState = {
+  name: string;
+  description: string;
+  schedules: {
+    dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
+    startTime: string;
+    endTime: string;
+  }[];
+};
+
+type FilterState = {
+  name: string;
+  schedule: string;
+};
+
+const PAGE_SIZE = 4;
+const WEEK_DAYS: Array<FormState["schedules"][number]["dayOfWeek"]> = [
+  "SUNDAY",
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+];
+
+function getDefaultScheduleRow(): FormState["schedules"][number] {
+  return {
+    dayOfWeek: "MONDAY",
+    startTime: "09:00",
+    endTime: "10:00",
+  };
+}
+
+function getDayShortLabel(day: FormState["schedules"][number]["dayOfWeek"]) {
+  switch (day) {
+    case "SUNDAY":
+      return "Sun";
+    case "MONDAY":
+      return "Mon";
+    case "TUESDAY":
+      return "Tue";
+    case "WEDNESDAY":
+      return "Wed";
+    case "THURSDAY":
+      return "Thu";
+    case "FRIDAY":
+      return "Fri";
+    case "SATURDAY":
+      return "Sat";
+  }
+}
+
+export function ClassManagementPanel() {
+  const [items, setItems] = useState<ClassItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [filters, setFilters] = useState<FilterState>({
+    name: "",
+    schedule: "",
+  });
+
+  const [createForm, setCreateForm] = useState<FormState>({
+    name: "",
+    description: "",
+    schedules: [getDefaultScheduleRow()],
+  });
+  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<FormState>({
+    name: "",
+    description: "",
+    schedules: [getDefaultScheduleRow()],
+  });
+  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule">>({});
+
+  const hasData = useMemo(() => items.length > 0, [items]);
+
+  const loadClasses = useCallback(async (nextPage = 1, appliedFilters: FilterState) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const query = new URLSearchParams({
+        page: String(nextPage),
+        pageSize: String(PAGE_SIZE),
+      });
+
+      if (appliedFilters.name.trim()) {
+        query.set("name", appliedFilters.name.trim());
+      }
+
+      if (appliedFilters.schedule.trim()) {
+        query.set("schedule", appliedFilters.schedule.trim());
+      }
+
+      const response = await fetch(`/api/classes?${query.toString()}`);
+      const payload = (await response.json()) as PaginatedResponse;
+
+      if (!response.ok || !payload.success) {
+        setErrorMessage(payload.error?.message ?? "Failed to load classes.");
+        return;
+      }
+
+      setItems(payload.data ?? []);
+      setPage(payload.pagination?.page ?? nextPage);
+      setTotalPages(payload.pagination?.totalPages ?? 1);
+    } catch {
+      setErrorMessage("Unable to load classes right now.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadClasses(1, { name: "", schedule: "" });
+  }, [loadClasses]);
+
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch("/api/classes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(createForm),
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: ApiError;
+      };
+
+      if (!response.ok || !payload.success) {
+        setErrorMessage(payload.error?.message ?? "Failed to create class.");
+        return;
+      }
+
+      setCreateForm({
+        name: "",
+        description: "",
+        schedules: [getDefaultScheduleRow()],
+      });
+      setIsCreatePanelOpen(false);
+      setSuccessMessage("Class created successfully.");
+      await loadClasses(1, filters);
+    } catch {
+      setErrorMessage("Unable to create class right now.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function beginEdit(item: ClassItem) {
+    setEditingId(item.id);
+    setEditForm({
+      name: item.name,
+      description: item.description ?? "",
+      schedules:
+        item.schedules.length > 0
+          ? item.schedules.map((schedule) => ({
+              dayOfWeek: schedule.dayOfWeek,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+            }))
+          : [getDefaultScheduleRow()],
+    });
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  }
+
+  async function saveEdit(classId: string) {
+    setIsSaving(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch(`/api/classes/${classId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: ApiError;
+      };
+
+      if (!response.ok || !payload.success) {
+        setErrorMessage(payload.error?.message ?? "Failed to update class.");
+        return;
+      }
+
+      setEditingId(null);
+      setSuccessMessage("Class updated successfully.");
+      await loadClasses(page, filters);
+    } catch {
+      setErrorMessage("Unable to update class right now.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteClass(classId: string) {
+    const confirmed = window.confirm("Are you sure you want to delete this class?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch(`/api/classes/${classId}`, {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: ApiError;
+      };
+
+      if (!response.ok || !payload.success) {
+        setErrorMessage(payload.error?.message ?? "Failed to delete class.");
+        return;
+      }
+
+      setSuccessMessage("Class deleted successfully.");
+      const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
+      await loadClasses(nextPage, filters);
+    } catch {
+      setErrorMessage("Unable to delete class right now.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="relative mt-6">
+      <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Your classes</h2>
+            <p className="text-sm text-muted">
+              Page {page} of {totalPages}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCreatePanelOpen(true)}
+            className="mt-3 inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background sm:mt-0"
+          >
+            Add class
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input
+            value={filters.name}
+            onChange={(event) => setFilters((prev) => ({ ...prev, name: event.target.value }))}
+            placeholder="Filter by class name"
+            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+          />
+          <input
+            value={filters.schedule}
+            onChange={(event) => setFilters((prev) => ({ ...prev, schedule: event.target.value }))}
+            placeholder="Filter by schedule"
+            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+          />
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => void loadClasses(1, filters)}
+            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Apply filters
+          </button>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => {
+              const cleared = { name: "", schedule: "" };
+              setFilters(cleared);
+              void loadClasses(1, cleared);
+            }}
+            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+          >
+            Clear filters
+          </button>
+        </div>
+
+        {errorMessage ? (
+          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        ) : null}
+
+        {successMessage ? (
+          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            {successMessage}
+          </p>
+        ) : null}
+
+        {isLoading ? <p className="mt-5 text-sm text-muted">Loading classes...</p> : null}
+
+        {!isLoading && !hasData ? (
+          <p className="mt-5 text-sm text-muted">No classes found. Try updating your filters or create a new class.</p>
+        ) : null}
+
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {items.map((item) => {
+            const isEditing = editingId === item.id;
+            const activeTab = activeTabs[item.id] ?? "details";
+
+            return (
+              <div
+                key={item.id}
+                className="rounded-3xl border-2 border-slate-500/80 bg-transparent p-4 shadow-none dark:border-slate-300/80"
+              >
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <input
+                      value={editForm.name}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                    />
+                    <input
+                      value={editForm.schedules
+                        .map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`)
+                        .join(" | ")}
+                      readOnly
+                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                    />
+                    <div className="space-y-3">
+                      {editForm.schedules.map((schedule, index) => (
+                        <div key={`${schedule.dayOfWeek}-${index}`} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                              Day of week
+                            </label>
+                            <select
+                              value={schedule.dayOfWeek}
+                              onChange={(event) => {
+                                const day = event.target.value as FormState["schedules"][number]["dayOfWeek"];
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  schedules: prev.schedules.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, dayOfWeek: day } : item
+                                  ),
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                            >
+                              {WEEK_DAYS.map((day) => (
+                                <option key={day} value={day}>
+                                  {day}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                                Start time
+                              </label>
+                              <input
+                                type="time"
+                                value={schedule.startTime}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setEditForm((prev) => ({
+                                    ...prev,
+                                    schedules: prev.schedules.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, startTime: value } : item
+                                    ),
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                                End time
+                              </label>
+                              <input
+                                type="time"
+                                value={schedule.endTime}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setEditForm((prev) => ({
+                                    ...prev,
+                                    schedules: prev.schedules.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, endTime: value } : item
+                                    ),
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={editForm.schedules.length <= 1}
+                              onClick={() => {
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  schedules: prev.schedules.filter((_, itemIndex) => itemIndex !== index),
+                                }));
+                              }}
+                              className="self-end rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditForm((prev) => ({
+                            ...prev,
+                            schedules: [...prev.schedules, getDefaultScheduleRow()],
+                          }));
+                        }}
+                        className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+                      >
+                        Add schedule row
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={editForm.description}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
+                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => void saveEdit(item.id)}
+                        className="flex-1 rounded-lg bg-foreground px-3 py-2 text-sm font-semibold text-background"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => setEditingId(null)}
+                        className="flex-1 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold dark:border-white/20"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-base font-semibold">{item.name}</h3>
+                      <p className="text-xs text-muted">
+                        Created {new Date(item.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 border-b border-black/15 dark:border-white/15">
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "details" }))}
+                          className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+                            activeTab === "details"
+                              ? "border-foreground text-foreground"
+                              : "border-transparent text-muted hover:text-foreground"
+                          }`}
+                        >
+                          Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "schedule" }))}
+                          className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+                            activeTab === "schedule"
+                              ? "border-foreground text-foreground"
+                              : "border-transparent text-muted hover:text-foreground"
+                          }`}
+                        >
+                          Schedule
+                        </button>
+                      </div>
+                    </div>
+
+                    {activeTab === "details" ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-muted dark:border-white/10 dark:bg-transparent">
+                          {item.description || "No description provided."}
+                        </p>
+                        <p className="text-xs font-medium text-muted">Summary: {item.schedule}</p>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        {item.schedules.length > 0 ? (
+                          <div className="space-y-2">
+                            {item.schedules.map((schedule) => (
+                              <div
+                                key={schedule.id}
+                                className="grid grid-cols-[90px_1fr] items-center rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-transparent"
+                              >
+                                <span className="font-semibold text-foreground">{getDayShortLabel(schedule.dayOfWeek)}</span>
+                                <span className="text-muted">
+                                  {schedule.startTime} - {schedule.endTime}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted">No schedules configured for this class.</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => beginEdit(item)}
+                        className="flex-1 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold dark:border-white/20"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => void deleteClass(item.id)}
+                        className="flex-1 rounded-lg border border-red-300 px-3 py-2 text-sm font-semibold text-red-700"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-5 flex items-center justify-between">
+          <button
+            type="button"
+            disabled={page <= 1 || isLoading}
+            onClick={() => void loadClasses(page - 1, filters)}
+            className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/20"
+          >
+            Previous
+          </button>
+
+          <button
+            type="button"
+            disabled={page >= totalPages || isLoading}
+            onClick={() => void loadClasses(page + 1, filters)}
+            className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/20"
+          >
+            Next
+          </button>
+        </div>
+      </article>
+
+      <button
+        type="button"
+        aria-label="Close add class panel"
+        onClick={() => setIsCreatePanelOpen(false)}
+        className={`fixed inset-0 z-40 bg-black/40 transition ${isCreatePanelOpen ? "visible opacity-100" : "invisible opacity-0"}`}
+      />
+
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto border-l border-black/10 bg-card p-5 shadow-2xl transition-transform duration-300 dark:border-white/10 sm:p-6 ${
+          isCreatePanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Add class</h3>
+            <p className="mt-1 text-sm text-muted">Add class details and schedules for your students.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCreatePanelOpen(false)}
+            className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+          >
+            Close
+          </button>
+        </div>
+
+        <form className="mt-4 space-y-4" onSubmit={handleCreate}>
+          <div>
+            <label htmlFor="className" className="mb-1 block text-sm font-medium">
+              Class name
+            </label>
+            <input
+              id="className"
+              required
+              value={createForm.name}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              placeholder="Math - Grade 7"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Class schedules</label>
+            <div className="space-y-3">
+              {createForm.schedules.map((schedule, index) => (
+                <div key={`${schedule.dayOfWeek}-${index}`} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                      Day of week
+                    </label>
+                    <select
+                      value={schedule.dayOfWeek}
+                      onChange={(event) => {
+                        const day = event.target.value as FormState["schedules"][number]["dayOfWeek"];
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          schedules: prev.schedules.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, dayOfWeek: day } : item
+                          ),
+                        }));
+                      }}
+                      className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                    >
+                      {WEEK_DAYS.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                        Start time
+                      </label>
+                      <input
+                        type="time"
+                        value={schedule.startTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setCreateForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, startTime: value } : item
+                            ),
+                          }));
+                        }}
+                        className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                        End time
+                      </label>
+                      <input
+                        type="time"
+                        value={schedule.endTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setCreateForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, endTime: value } : item
+                            ),
+                          }));
+                        }}
+                        className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={createForm.schedules.length <= 1}
+                      onClick={() => {
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          schedules: prev.schedules.filter((_, itemIndex) => itemIndex !== index),
+                        }));
+                      }}
+                      className="self-end rounded-xl border border-red-300 px-3 py-2.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCreateForm((prev) => ({
+                  ...prev,
+                  schedules: [...prev.schedules, getDefaultScheduleRow()],
+                }));
+              }}
+              className="mt-2 rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+            >
+              Add schedule row
+            </button>
+          </div>
+
+          <div>
+            <label htmlFor="classScheduleSummary" className="mb-1 block text-sm font-medium">
+              Schedule summary (optional)
+            </label>
+            <input
+              id="classScheduleSummary"
+              value={createForm.schedules
+                .map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`)
+                .join(" | ")}
+              readOnly
+              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              placeholder="Auto-generated from schedule rows"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="classDescription" className="mb-1 block text-sm font-medium">
+              Description
+            </label>
+            <textarea
+              id="classDescription"
+              rows={4}
+              value={createForm.description}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
+              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              placeholder="Weekly class focus and outcomes"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "Saving..." : "Create class"}
+          </button>
+        </form>
+      </aside>
+    </section>
+  );
+}

@@ -1,0 +1,3 @@
+ALTER TABLE "Note"
+ADD COLUMN "downloadCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "lastDownloadedAt" TIMESTAMP(3);

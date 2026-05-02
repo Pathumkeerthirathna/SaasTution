@@ -1,26 +1,89 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f4f8ff;
+  --background-soft: #eaf1ff;
+  --foreground: #16213a;
+  --muted: #4a5a78;
+  --card: #ffffff;
+  --brand-50: #e8f0ff;
+  --brand-100: #d6e5ff;
+  --brand-200: #c2d8ff;
+  --brand-300: #8fb4ff;
+  --brand-700: #1f4ea3;
+  --accent: #0f8f6f;
 }
 
 body {
-  background: var(--background);
+  background: radial-gradient(circle at top right, #dce9ff 0%, #f4f8ff 45%, #eef5ff 100%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), var(--font-sans), sans-serif;
+}
+
+.bg-background-soft {
+  background: var(--background-soft);
+}
+
+.text-brand-700 {
+  color: var(--brand-700);
+}
+
+.text-slate-900 {
+  color: #1a2843;
+}
+
+.text-slate-800 {
+  color: #263655;
+}
+
+.text-slate-700 {
+  color: #33496b;
+}
+
+.text-slate-600 {
+  color: #4e6182;
+}
+
+.border-brand-200 {
+  border-color: var(--brand-200);
+}
+
+.border-brand-300 {
+  border-color: var(--brand-300);
+}
+
+.bg-brand-50 {
+  background: var(--brand-50);
+}
+
+.bg-brand-100 {
+  background: var(--brand-100);
+}
+
+.bg-brand-700 {
+  background: var(--brand-700);
+}
+
+.text-accent {
+  color: var(--accent);
+}
+
+.bg-accent {
+  background: var(--accent);
+}
+
+a {
+  transition: opacity 0.2s ease;
+}
+
+a:hover {
+  opacity: 0.85;
 }

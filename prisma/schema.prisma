@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  GUARDIAN
+}
+
+enum MessageDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum NoteKind {
+  NOTE
+  SUPPORTING_MATERIAL
+}
+
+enum Weekday {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+enum GradeLevel {
+  GRADE_01
+  GRADE_02
+  GRADE_03
+  GRADE_04
+  GRADE_05
+  GRADE_06
+  GRADE_07
+  GRADE_08
+  GRADE_09
+  GRADE_10
+  GRADE_11
+  GRADE_12
+  GRADE_13
+}
+
+model Teacher {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  classes   Class[]
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Student {
+  id                 String       @id @default(uuid())
+  name               String
+  grade              GradeLevel?
+  contact            String
+  contact01          String?
+  contact02          String?
+  email              String?
+  registrationNumber String?      @unique
+  guardians          Guardian[]
+  classes            ClassStudent[]
+  deliveries         MessageDelivery[]
+  attendance         Attendance[]
+  createdAt          DateTime     @default(now())
+}
+
+model Guardian {
+  id        String   @id @default(uuid())
+  name      String
+  relation  String
+  phone     String
+  email     String?  @unique
+  password  String?
+  student   Student  @relation(fields: [studentId], references: [id])
+  studentId String
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model Class {
+  id          String         @id @default(uuid())
+  name        String
+  description String?
+  schedule    String         @default("TBD")
+  teacher     Teacher        @relation(fields: [teacherId], references: [id])
+  teacherId   String
+  students    ClassStudent[]
+  lectures    Lecture[]
+  messages    Message[]
+  sessions    ClassSession[]
+  schedules   ClassSchedule[]
+
+  createdAt   DateTime       @default(now())
+
+  @@index([teacherId, createdAt])
+}
+
+model ClassSchedule {
+  id        String   @id @default(uuid())
+
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id])
+
+  dayOfWeek Weekday
+  startTime String   // "09:00"
+  endTime   String   // "11:00"
+
+  createdAt DateTime @default(now())
+
+  @@index([classId, dayOfWeek])
+}
+
+model ClassSession {
+  id          String       @id @default(uuid())
+  class       Class        @relation(fields: [classId], references: [id])
+  classId     String
+  roomName    String       @unique
+  jitsiDomain String       @default("meet.jit.si")
+  startedAt   DateTime     @default(now())
+  endedAt     DateTime?
+  isActive    Boolean      @default(true)
+  attendance  Attendance[]
+  createdAt   DateTime     @default(now())
+
+  @@index([classId, isActive])
+  @@index([classId, isActive, startedAt])
+}
+
+model ClassStudent {
+  id           String   @id @default(uuid())
+  class        Class    @relation(fields: [classId], references: [id])
+  classId      String
+  student      Student  @relation(fields: [studentId], references: [id])
+  studentId    String
+  isActive     Boolean  @default(true)
+  assignedAt   DateTime @default(now())
+  removedAt    DateTime?
+  removeReason String?
+
+  @@unique([classId, studentId, isActive])
+  @@index([studentId])
+  @@index([classId, isActive])
+}
+
+model Lecture {
+  id        String      @id @default(uuid())
+  title     String
+  date      DateTime
+  class     Class       @relation(fields: [classId], references: [id])
+  classId   String
+  notes     Note[]
+  assignments Assignment[]
+  quizzes   Quiz[]
+  createdAt DateTime    @default(now())
+
+  @@index([classId, date])
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  title      String
+  fileUrl    String
+  kind       NoteKind @default(NOTE)
+  mimeType   String
+  sizeBytes  Int
+  downloadCount Int   @default(0)
+  lastDownloadedAt DateTime?
+  lecture    Lecture  @relation(fields: [lectureId], references: [id])
+  lectureId  String
+
+  @@index([lectureId])
+}
+
+model Assignment {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  dueDate     DateTime
+  lecture     Lecture  @relation(fields: [lectureId], references: [id])
+  lectureId   String
+
+  @@index([lectureId, dueDate])
+}
+
+model Quiz {
+  id        String   @id @default(uuid())
+  title     String
+  lecture   Lecture  @relation(fields: [lectureId], references: [id])
+  lectureId String
+
+  @@index([lectureId])
+}
+
+model Attendance {
+  id             String       @id @default(uuid())
+  student        Student      @relation(fields: [studentId], references: [id])
+  studentId      String
+  classSession   ClassSession @relation(fields: [classSessionId], references: [id])
+  classSessionId String
+  classId        String
+  joinedAt       DateTime     @default(now())
+  leftAt         DateTime?
+
+  @@index([classId])
+  @@index([classId, joinedAt])
+  @@index([classSessionId])
+  @@index([classSessionId, joinedAt])
+  @@unique([classSessionId, studentId])
+}
+
+model Message {
+  id         String            @id @default(uuid())
+  content    String
+  class      Class             @relation(fields: [classId], references: [id])
+  classId    String
+  deliveries MessageDelivery[]
+  createdAt  DateTime          @default(now())
+
+  @@index([classId, createdAt])
+}
+
+model MessageDelivery {
+  id                String                @id @default(uuid())
+  message           Message               @relation(fields: [messageId], references: [id])
+  messageId         String
+  student           Student               @relation(fields: [studentId], references: [id])
+  studentId         String
+  status            MessageDeliveryStatus @default(QUEUED)
+  provider          String?
+  providerMessageId String?
+  error             String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([messageId, studentId])
+  @@index([messageId, createdAt])
+  @@index([messageId, status])
+  @@index([providerMessageId])
+}
