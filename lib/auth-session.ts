@@ -17,6 +17,13 @@ export type AdminSession = {
   role: "ADMIN";
 };
 
+export type StudentSession = {
+  studentId: string;
+  email: string;
+  name: string;
+  role: "STUDENT";
+};
+
 export type AppSession =
   | {
       userId: string;
@@ -29,6 +36,12 @@ export type AppSession =
       email: string;
       name: string;
       role: "ADMIN";
+    }
+  | {
+      userId: string;
+      email: string;
+      name: string;
+      role: "STUDENT";
     };
 
 export async function requireAppSession(): Promise<AppSession> {
@@ -79,5 +92,20 @@ export async function requireAdminSession(): Promise<AdminSession> {
     email: session.email,
     name: session.name,
     role: "ADMIN",
+  };
+}
+
+export async function requireStudentSession(): Promise<StudentSession> {
+  const session = await requireAppSession();
+
+  if (session.role !== "STUDENT") {
+    throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
+  }
+
+  return {
+    studentId: session.userId,
+    email: session.email,
+    name: session.name,
+    role: "STUDENT",
   };
 }

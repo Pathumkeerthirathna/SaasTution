@@ -1,9 +1,12 @@
 import { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
+
+const HASH_ROUNDS = 12;
 
 async function assertTeacherOwnsClass(classId: string, teacherId: string) {
   const classroom = await prisma.class.findFirst({
@@ -79,12 +82,14 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
+    const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
 
     try {
       return await prisma.student.create({
         data: {
           name: input.name,
           grade: input.grade,
+          password: passwordHash,
           contact: input.contact01,
           contact01: input.contact01,
           contact02: input.contact02,

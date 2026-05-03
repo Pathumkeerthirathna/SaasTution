@@ -3,7 +3,8 @@ import { buildSessionCookieConfig, signAuthToken, AUTH_COOKIE_NAME } from "@/lib
 import { loginSchema } from "@/lib/auth-validation";
 import { handleRouteError } from "@/lib/error-handler";
 import { markTeacherLoggedIn } from "@/lib/login-tracker";
-import { loginTeacher } from "@/services/auth-service";
+import { verifySessionInviteToken } from "@/lib/session-invite";
+import { loginByLoginId } from "@/services/auth-service";
 
 const ADMIN_LOGIN_ID = "pathum";
 const ADMIN_PASSWORD = "abcD@1234";
@@ -17,20 +18,28 @@ const ADMIN_USER = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
+      loginId?: string;
       email?: string;
       password?: string;
+      inviteToken?: string;
     };
 
-    const parsed = loginSchema.safeParse(body);
+    const normalizedBody = {
+      loginId: body.loginId ?? body.email,
+      password: body.password,
+    };
+
+    const parsed = loginSchema.safeParse(normalizedBody);
 
     if (!parsed.success) {
       const firstIssue = parsed.error.issues[0]?.message ?? "Invalid request payload.";
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    const loginId = parsed.data.email.trim().toLowerCase();
+    const loginId = parsed.data.loginId.trim();
+    const normalizedLoginId = loginId.toLowerCase();
 
-    if (loginId === ADMIN_LOGIN_ID && parsed.data.password === ADMIN_PASSWORD) {
+    if (normalizedLoginId === ADMIN_LOGIN_ID && parsed.data.password === ADMIN_PASSWORD) {
       const token = await signAuthToken({
         sub: ADMIN_USER.id,
         email: ADMIN_USER.email,
@@ -52,23 +61,37 @@ export async function POST(request: Request) {
       return response;
     }
 
-    const teacher = await loginTeacher(loginId, parsed.data.password);
-    markTeacherLoggedIn(teacher.id);
+    const loginResult = await loginByLoginId(loginId, parsed.data.password);
+    let redirectTo = loginResult.redirectTo;
+
+    const inviteToken = body.inviteToken?.trim();
+
+    if (inviteToken && loginResult.role === "STUDENT") {
+      const invitePayload = await verifySessionInviteToken(inviteToken);
+
+      if (invitePayload && invitePayload.studentId === loginResult.user.id) {
+        redirectTo = `/student/dashboard?invite=${encodeURIComponent(inviteToken)}`;
+      }
+    }
+
+    if (loginResult.role === "TEACHER") {
+      markTeacherLoggedIn(loginResult.user.id);
+    }
 
     const token = await signAuthToken({
-      sub: teacher.id,
-      email: teacher.email,
-      role: "TEACHER",
-      name: teacher.name,
+      sub: loginResult.user.id,
+      email: loginResult.user.email,
+      role: loginResult.role,
+      name: loginResult.user.name,
     });
 
     const response = apiSuccess(
       {
         user: {
-          ...teacher,
-          role: "TEACHER" as const,
+          ...loginResult.user,
+          role: loginResult.role,
         },
-        redirectTo: "/dashboard",
+        redirectTo,
       },
       {
         message: "Login successful.",

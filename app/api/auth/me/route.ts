@@ -35,6 +35,30 @@ export async function GET() {
     }
 
     if (session.role !== "TEACHER") {
+      if (session.role === "STUDENT") {
+        const student = await prisma.student.findUnique({
+          where: { id: session.sub },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            registrationNumber: true,
+            createdAt: true,
+          },
+        });
+
+        if (!student) {
+          return apiError("Student account not found.", 404, "STUDENT_NOT_FOUND");
+        }
+
+        return apiSuccess({
+          user: {
+            ...student,
+            role: session.role,
+          },
+        });
+      }
+
       return apiError("Session is invalid or expired.", 401, "UNAUTHORIZED");
     }
 

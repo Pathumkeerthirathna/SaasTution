@@ -1,6 +1,7 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
+import { requireStudentSession, requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
-import { getSessionJoinInfo, getSessionJoinInfoForTeacher } from "@/services/session-service";
+import { ensureSessionAccessForTeacher, getSessionJoinInfo, getSessionJoinInfoForTeacher } from "@/services/session-service";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +22,19 @@ export async function GET(
     }
 
     if (role === "teacher") {
+      const teacherSession = await requireTeacherSession();
+      await ensureSessionAccessForTeacher(teacherSession.teacherId, sessionId);
       const joinInfo = await getSessionJoinInfoForTeacher(sessionId);
       return apiSuccess(joinInfo);
     }
 
-    if (!studentId) {
-      return apiError("studentId query parameter is required.", 400, "VALIDATION_ERROR");
+    const studentSession = await requireStudentSession();
+
+    if (studentId && studentId !== studentSession.studentId) {
+      return apiError("studentId does not match the logged in student.", 403, "FORBIDDEN");
     }
 
-    const joinInfo = await getSessionJoinInfo(sessionId, studentId);
+    const joinInfo = await getSessionJoinInfo(sessionId, studentSession.studentId);
 
     return apiSuccess(joinInfo);
   } catch (error) {

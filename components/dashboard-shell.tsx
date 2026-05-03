@@ -145,6 +145,13 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                     <p className="text-sm text-slate-600">{email}</p>
                     <p className="mt-1 text-sm text-slate-600">Role: {role}</p>
 
+                    <Link
+                      href="/account/security"
+                      className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-brand-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-brand-50"
+                    >
+                      Change password
+                    </Link>
+
                     <button
                       type="button"
                       onClick={handleSignOut}

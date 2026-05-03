@@ -4,7 +4,7 @@ export const AUTH_COOKIE_NAME = "teacher_session";
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 const SEVEN_DAYS_SECONDS = ONE_DAY_SECONDS * 7;
 
-export type AppRole = "TEACHER" | "ADMIN";
+export type AppRole = "TEACHER" | "ADMIN" | "STUDENT";
 
 export type AuthTokenPayload = {
   sub: string;
@@ -43,7 +43,7 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload |
     if (
       typeof payload.sub !== "string" ||
       typeof payload.email !== "string" ||
-      (payload.role !== "TEACHER" && payload.role !== "ADMIN") ||
+      (payload.role !== "TEACHER" && payload.role !== "ADMIN" && payload.role !== "STUDENT") ||
       typeof payload.name !== "string"
     ) {
       return null;

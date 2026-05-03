@@ -59,10 +59,15 @@ export function TeacherSessionPanel() {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isNotifying, setIsNotifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
   const [lastUpdateAt, setLastUpdateAt] = useState<string | null>(null);
+  const [notifyChannels, setNotifyChannels] = useState({
+    email: true,
+    whatsapp: false,
+  });
 
   const baseOrigin = useMemo(() => (typeof window !== "undefined" ? window.location.origin : ""), []);
 
@@ -248,6 +253,50 @@ export function TeacherSessionPanel() {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load class session details.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleNotifyStudents() {
+    if (!activeSession) {
+      return;
+    }
+
+    setIsNotifying(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${activeSession.id}/notify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(notifyChannels),
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: {
+          totalStudents: number;
+          attemptedDeliveries: number;
+          sentCount: number;
+          failedCount: number;
+        };
+        error?: ApiError;
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        setErrorMessage(payload.error?.message ?? "Failed to notify students.");
+        return;
+      }
+
+      setSuccessMessage(
+        `Notifications complete. Sent ${payload.data.sentCount} of ${payload.data.attemptedDeliveries} delivery attempts to ${payload.data.totalStudents} students.`
+      );
+    } catch {
+      setErrorMessage("Unable to notify students right now.");
+    } finally {
+      setIsNotifying(false);
     }
   }
 
@@ -444,6 +493,52 @@ export function TeacherSessionPanel() {
                 Join as teacher
               </button>
             </div>
+
+            <div className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
+              <p className="text-sm font-semibold">Notify all students in this class</p>
+              <p className="mt-1 text-xs text-muted">
+                Select channels and send secure login links. Email is active now; WhatsApp is placeholder for upcoming integration.
+              </p>
+
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={notifyChannels.email}
+                    onChange={(event) =>
+                      setNotifyChannels((prev) => ({
+                        ...prev,
+                        email: event.target.checked,
+                      }))
+                    }
+                  />
+                  Email
+                </label>
+
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={notifyChannels.whatsapp}
+                    onChange={(event) =>
+                      setNotifyChannels((prev) => ({
+                        ...prev,
+                        whatsapp: event.target.checked,
+                      }))
+                    }
+                  />
+                  WhatsApp
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleNotifyStudents()}
+                disabled={!notifyChannels.email && !notifyChannels.whatsapp || isNotifying}
+                className="mt-3 rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isNotifying ? "Notifying..." : "Notify students"}
+              </button>
+            </div>
           </div>
         ) : (
           <p className="mt-5 text-sm text-muted">No active session for this class.</p>
@@ -451,20 +546,20 @@ export function TeacherSessionPanel() {
       </article>
 
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
-        <h2 className="text-lg font-semibold">Student join links</h2>
-        <p className="mt-1 text-sm text-muted">Share each unique link so attendance can track join and leave times.</p>
+        <h2 className="text-lg font-semibold">Students in this class</h2>
+        <p className="mt-1 text-sm text-muted">
+          Use "Notify students" above to email secure invite links that auto-join after login.
+        </p>
 
-        {!activeSession ? <p className="mt-4 text-sm text-muted">Start a class session to generate links.</p> : null}
+        {!activeSession ? <p className="mt-4 text-sm text-muted">Start a class session to enable notifications.</p> : null}
 
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
           {students.map((student) => {
-            const joinUrl = `${baseOrigin}/session/join?sessionId=${activeSession?.id}&studentId=${student.id}&role=student`;
-
             return (
               <div key={student.id} className="rounded-xl border border-black/10 p-3 text-sm dark:border-white/10">
                 <p className="font-semibold">{student.name}</p>
                 <p className="text-xs text-muted">{formatGradeLabel(student.grade)}</p>
-                <p className="mt-2 break-all text-xs">{joinUrl}</p>
+                <p className="mt-2 break-all text-xs text-muted">Contact: {student.contact || "Not available"}</p>
               </div>
             );
           })}

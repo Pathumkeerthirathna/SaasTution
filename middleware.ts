@@ -4,8 +4,11 @@ import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 
 const PROTECTED_ROUTES = [
   "/dashboard",
+  "/student",
+  "/account",
   "/api/admin",
   "/api/auth/me",
+  "/api/auth/password/update",
   "/api/classes",
   "/api/students",
   "/api/guardians",
@@ -84,8 +87,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  if (path.startsWith("/dashboard") && payload.role === "STUDENT") {
+    return NextResponse.redirect(new URL("/student/dashboard", request.url));
+  }
+
   if (path === "/dashboard" && payload.role === "ADMIN") {
     return NextResponse.redirect(new URL("/dashboard/admin", request.url));
+  }
+
+  if (path === "/dashboard" && payload.role === "STUDENT") {
+    return NextResponse.redirect(new URL("/student/dashboard", request.url));
+  }
+
+  if (path.startsWith("/student") && payload.role !== "STUDENT") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();
@@ -94,8 +109,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/student/:path*",
+    "/account/:path*",
     "/api/admin/:path*",
     "/api/auth/me",
+    "/api/auth/password/update",
     "/api/classes/:path*",
     "/api/students/:path*",
     "/api/guardians/:path*",

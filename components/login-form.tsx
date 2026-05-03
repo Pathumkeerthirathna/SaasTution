@@ -15,6 +15,7 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => searchParams.get("next") || "/dashboard", [searchParams]);
+  const inviteToken = useMemo(() => searchParams.get("invite") || "", [searchParams]);
 
   const [formState, setFormState] = useState<LoginFormState>({
     loginId: "",
@@ -35,8 +36,9 @@ export function LoginForm() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email: formState.loginId,
+          loginId: formState.loginId,
           password: formState.password,
+          inviteToken,
         }),
       });
 
@@ -65,8 +67,8 @@ export function LoginForm() {
 
   return (
     <AuthShell
-      title="Teacher and Admin sign in"
-      subtitle="Access your workspace, lectures, communication tools, and admin monitoring panel."
+      title="Teacher, Admin, and Student sign in"
+      subtitle="Teachers and admins can use email, while students can use registration number."
       footerText="Need a teacher account?"
       footerLinkHref="/register"
       footerLinkLabel="Register"
@@ -74,7 +76,7 @@ export function LoginForm() {
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div>
           <label htmlFor="loginId" className="mb-1 block text-sm font-medium">
-            Email or username
+            Email or registration number
           </label>
           <input
             id="loginId"
@@ -84,7 +86,7 @@ export function LoginForm() {
             value={formState.loginId}
             onChange={(event) => setFormState((prev) => ({ ...prev, loginId: event.target.value }))}
             className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none ring-0 transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-            placeholder="teacher@school.com or Pathum"
+            placeholder="teacher@school.com or ABC-2026-001"
           />
         </div>
 
@@ -115,6 +117,12 @@ export function LoginForm() {
         >
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
+
+        <div className="text-center text-sm">
+          <Link href="/reset-password" className="font-medium text-brand-700 hover:underline">
+            Forgot password?
+          </Link>
+        </div>
       </form>
 
       <div className="mt-6 text-center text-sm">

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { LiveSessionControlBar } from "@/components/live-session-control-bar";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
+// Real security must be handled on backend (JWT/session). This is a basic client-side guard only.
 type UserRole = "teacher" | "student";
 
 type JoinInfo = {
@@ -24,13 +24,6 @@ type JoinInfo = {
   };
 };
 
-type BroadcastMessage = {
-  id: string;
-  text: string;
-  sender: string;
-  sentAt: string;
-};
-
 declare global {
   interface Window {
     JitsiMeetExternalAPI?: new (
@@ -45,19 +38,20 @@ declare global {
     ) => {
       executeCommand: (command: string, ...args: unknown[]) => void;
       addListener: (event: string, listener: (...args: unknown[]) => void) => void;
-      removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+      getParticipantsInfo: () => Array<{ participantId: string; displayName: string }>;
       dispose: () => void;
     };
   }
 }
 
 export function JitsiClassroom() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId") ?? "";
   const studentId = searchParams.get("studentId") ?? "";
-  const teacherId = searchParams.get("teacherId") ?? "";
+  const inviteToken = searchParams.get("invite") ?? "";
   const roleParam = searchParams.get("role");
+  // Real security must be handled on backend (JWT/session). This is a basic client-side guard only.
   const role: UserRole = roleParam === "teacher" ? "teacher" : "student";
   const teacherName = searchParams.get("teacherName") ?? "Teacher";
 
@@ -65,38 +59,22 @@ export function JitsiClassroom() {
   const apiRef = useRef<{
     executeCommand: (command: string, ...args: unknown[]) => void;
     addListener: (event: string, listener: (...args: unknown[]) => void) => void;
-    removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+    removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+    getParticipantsInfo: () => Array<{ participantId: string; displayName: string }>;
     dispose: () => void;
   } | null>(null);
-  const participantIdsRef = useRef<Set<string>>(new Set());
-
+  const teacherParticipantIdRef = useRef<string | null>(null);
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
   const [isJitsiReady, setIsJitsiReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
-  const [participantsCount, setParticipantsCount] = useState(0);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [isFilmStripOpen, setIsFilmStripOpen] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
-  const [broadcastInput, setBroadcastInput] = useState("");
-  const [broadcastMessages, setBroadcastMessages] = useState<BroadcastMessage[]>([]);
-  const [successHint, setSuccessHint] = useState<string | null>(null);
 
   const canJoin = useMemo(() => {
-    if (sessionId.length === 0) {
-      return false;
-    }
-
-    if (role === "teacher") {
-      return true;
-    }
-
+    if (inviteToken.length > 0) return true;
+    if (sessionId.length === 0) return false;
+    if (role === "teacher") return true;
     return studentId.length > 0;
-  }, [role, sessionId, studentId]);
+  }, [inviteToken, role, sessionId, studentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,16 +94,19 @@ export function JitsiClassroom() {
       setErrorMessage(null);
 
       try {
-        const query = new URLSearchParams();
-        query.set("role", role);
-        if (studentId) {
-          query.set("studentId", studentId);
-        }
-        if (teacherId) {
-          query.set("teacherId", teacherId);
+        let response: Response;
+
+        if (inviteToken) {
+          const inviteQuery = new URLSearchParams();
+          inviteQuery.set("invite", inviteToken);
+          response = await fetch(`/api/sessions/join-info?${inviteQuery.toString()}`);
+        } else {
+          const query = new URLSearchParams();
+          query.set("role", role);
+          if (studentId) query.set("studentId", studentId);
+          response = await fetch(`/api/sessions/${sessionId}/join-info?${query.toString()}`);
         }
 
-        const response = await fetch(`/api/sessions/${sessionId}/join-info?${query.toString()}`);
         const payload = (await response.json()) as {
           success: boolean;
           data?: JoinInfo;
@@ -155,7 +136,7 @@ export function JitsiClassroom() {
     return () => {
       cancelled = true;
     };
-  }, [canJoin, role, sessionId, studentId, teacherId]);
+  }, [canJoin, inviteToken, role, sessionId, studentId]);
 
   useEffect(() => {
     if (!joinInfo) {
@@ -181,243 +162,135 @@ export function JitsiClassroom() {
     };
   }, [joinInfo]);
 
-  const postLeaveEvent = useCallback(async () => {
-    if (!joinInfo) {
+  useEffect(() => {
+    if (!joinInfo || !containerRef.current || !isJitsiReady || !window.JitsiMeetExternalAPI) {
       return;
     }
 
-    try {
-      if (role === "student" && joinInfo.student?.id) {
-        await fetch(`/api/sessions/${joinInfo.session.id}/leave`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            studentId: joinInfo.student.id,
-          }),
-        });
-      }
-    } catch {
-      // Ignore best-effort leave tracking errors.
-    }
-  }, [joinInfo, role]);
+    const api = new window.JitsiMeetExternalAPI(joinInfo.session.jitsiDomain, {
+      roomName: joinInfo.session.roomName,
+      parentNode: containerRef.current,
+      userInfo: {
+        displayName: role === "teacher" ? teacherName : (joinInfo.student?.name ?? "Student"),
+      },
+      configOverwrite: {
+        prejoinPageEnabled: false,
+        disableTileView: true,
+      },
+      interfaceConfigOverwrite: {
+        DISABLE_TILE_VIEW: true,
+      },
+    });
 
-  const postJoinAttendance = useCallback(async () => {
-    if (!joinInfo || role !== "student" || !joinInfo.student?.id) {
-      return;
-    }
+    apiRef.current = api;
 
-    try {
+    const markJoined = async () => {
+      if (role !== "student" || !joinInfo.student?.id) return;
       await fetch(`/api/attendance`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: joinInfo.session.id,
           classId: joinInfo.class.id,
           studentId: joinInfo.student.id,
         }),
       });
-    } catch {
-      // Ignore best-effort attendance tracking errors.
-    }
-  }, [joinInfo, role]);
+    };
 
-  const postClassEnded = useCallback(async () => {
-    if (!joinInfo || role !== "teacher") {
-      return;
-    }
-
-    try {
-      await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
+    const markLeft = async () => {
+      if (role !== "student" || !joinInfo.student?.id) return;
+      await fetch(`/api/sessions/${joinInfo.session.id}/leave`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: joinInfo.student.id }),
       });
-    } catch {
-      // Keep UI responsive even if API endpoint is unavailable.
-    }
-  }, [joinInfo, role]);
-
-  useEffect(() => {
-    if (!joinInfo || !containerRef.current || !isJitsiReady || !window.JitsiMeetExternalAPI) {
-      return;
-    }
-
-    participantIdsRef.current = new Set();
-    setParticipantsCount(0);
-
-    const api = new window.JitsiMeetExternalAPI(joinInfo.session.jitsiDomain, {
-      roomName: joinInfo.session.roomName,
-      parentNode: containerRef.current,
-      userInfo: {
-        displayName: role === "teacher" ? teacherName : joinInfo.student?.name,
-      },
-      configOverwrite: {
-        prejoinPageEnabled: false,
-      },
-    });
-
-    apiRef.current = api;
+    };
 
     const handleJoined = () => {
-      setIsLive(true);
-      setParticipantsCount(1);
-      void postJoinAttendance();
+      void markJoined();
+
+      if (role === "teacher") {
+        // Auto-fullscreen for teacher only. Students must never auto-enter fullscreen.
+        try {
+          void containerRef.current?.requestFullscreen();
+        } catch {
+          // Browser may block fullscreen — ignore silently.
+        }
+      }
+
+      if (role === "student") {
+        // Auto-mute on join only. Students can unmute themselves afterwards.
+        api.executeCommand("toggleAudio");
+        api.executeCommand("toggleVideo");
+        // Enforce tile view off + filmstrip visible.
+        api.executeCommand("setTileView", false);
+        api.executeCommand("setFilmStripVisibility", true);
+
+        // Detect teacher already present in the room via getParticipantsInfo.
+        try {
+          const participants = api.getParticipantsInfo();
+          const teacherParticipant = participants.find((p) => p.displayName === teacherName);
+          if (teacherParticipant?.participantId) {
+            teacherParticipantIdRef.current = teacherParticipant.participantId;
+            api.executeCommand("setLargeVideoParticipant", teacherParticipant.participantId);
+          }
+        } catch {
+          // getParticipantsInfo may not be available in all Jitsi builds.
+        }
+      }
     };
 
     const handleLeftConference = () => {
-      setIsLive(false);
-      participantIdsRef.current.clear();
-      setParticipantsCount(0);
-      void postLeaveEvent();
+      void markLeft();
     };
 
     const handleParticipantJoined = (participant: unknown) => {
-      const candidate = participant as { id?: string };
-      if (candidate?.id) {
-        participantIdsRef.current.add(candidate.id);
-        setParticipantsCount(participantIdsRef.current.size + 1);
+      const candidate = participant as { id?: string; displayName?: string };
+      if (!candidate?.id) return;
+
+      // Track teacher participant by display name — never use local or database IDs.
+      if (candidate.displayName === teacherName) {
+        teacherParticipantIdRef.current = candidate.id;
+        if (role === "student") {
+          api.executeCommand("setLargeVideoParticipant", candidate.id);
+        }
       }
     };
 
-    const handleParticipantLeft = (participant: unknown) => {
-      const candidate = participant as { id?: string };
-      if (candidate?.id) {
-        participantIdsRef.current.delete(candidate.id);
+    const handleScreenSharingChanged = (event: unknown) => {
+      if (role !== "student") return;
+      const e = event as { on?: boolean; id?: string };
+      if (e.on && e.id) {
+        // Screen share started — focus on the sharer.
+        api.executeCommand("setLargeVideoParticipant", e.id);
+      } else if (!e.on && teacherParticipantIdRef.current) {
+        // Screen share ended — restore teacher as dominant view.
+        api.executeCommand("setLargeVideoParticipant", teacherParticipantIdRef.current);
       }
-      setParticipantsCount(participantIdsRef.current.size + 1);
     };
 
     api.addListener("videoConferenceJoined", handleJoined);
     api.addListener("videoConferenceLeft", handleLeftConference);
     api.addListener("participantJoined", handleParticipantJoined);
-    api.addListener("participantLeft", handleParticipantLeft);
+    api.addListener("screenSharingStatusChanged", handleScreenSharingChanged);
 
     const handleBeforeUnload = () => {
-      void postLeaveEvent();
+      void markLeft();
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      api.removeListener?.("videoConferenceJoined", handleJoined);
-      api.removeListener?.("videoConferenceLeft", handleLeftConference);
-      api.removeListener?.("participantJoined", handleParticipantJoined);
-      api.removeListener?.("participantLeft", handleParticipantLeft);
+      api.removeListener("videoConferenceJoined", handleJoined);
+      api.removeListener("videoConferenceLeft", handleLeftConference);
+      api.removeListener("participantJoined", handleParticipantJoined);
+      api.removeListener("screenSharingStatusChanged", handleScreenSharingChanged);
       api.dispose();
       apiRef.current = null;
-      void postLeaveEvent();
-      setIsLive(false);
-      setParticipantsCount(0);
+      void markLeft();
     };
-  }, [isJitsiReady, joinInfo, postJoinAttendance, postLeaveEvent, role, teacherName]);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
-    };
-  }, []);
-
-  function executeJitsiCommand(command: string, ...args: unknown[]) {
-    if (!apiRef.current) {
-      setErrorMessage("Meeting controls are not ready yet.");
-      return;
-    }
-
-    try {
-      apiRef.current.executeCommand(command, ...args);
-    } catch {
-      setErrorMessage(`Unable to execute command: ${command}`);
-    }
-  }
-
-  function handleStartClass() {
-    setIsLive(true);
-    setSuccessHint("Class started. Students can now actively join.");
-  }
-
-  async function handleEndClass() {
-    try {
-      setIsBusy(true);
-      executeJitsiCommand("hangup");
-      await postClassEnded();
-      setIsLive(false);
-      setParticipantsCount(0);
-      setSuccessHint("Class ended successfully.");
-
-      if (role === "teacher") {
-        router.replace("/dashboard/sessions");
-      } else {
-        router.replace("/");
-      }
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  function handleMuteAllStudents() {
-    executeJitsiCommand("muteEveryone");
-    setSuccessHint("Mute all command sent.");
-  }
-
-  function handleToggleAudio() {
-    executeJitsiCommand("toggleAudio");
-    setIsAudioMuted((prev) => !prev);
-  }
-
-  function handleToggleVideo() {
-    executeJitsiCommand("toggleVideo");
-    setIsVideoMuted((prev) => !prev);
-  }
-
-  function handleToggleChat() {
-    executeJitsiCommand("toggleChat");
-    setIsChatOpen((prev) => !prev);
-  }
-
-  function handleToggleFilmStrip() {
-    executeJitsiCommand("toggleFilmStrip");
-    setIsFilmStripOpen((prev) => !prev);
-  }
-
-  async function handleToggleFullscreen() {
-    if (!containerRef.current) {
-      return;
-    }
-
-    if (!document.fullscreenElement) {
-      await containerRef.current.requestFullscreen();
-      return;
-    }
-
-    await document.exitFullscreen();
-  }
-
-  function handleSendBroadcast() {
-    const trimmedMessage = broadcastInput.trim();
-    if (!trimmedMessage || role !== "teacher" || !isLive) {
-      return;
-    }
-    // ss
-    executeJitsiCommand("sendChatMessage", trimmedMessage);
-    setBroadcastMessages((prev) => [
-      {
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        text: trimmedMessage,
-        sender: teacherName,
-        sentAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-    setBroadcastInput("");
-  }
+  }, [joinInfo, isJitsiReady, role, teacherName]);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -430,10 +303,6 @@ export function JitsiClassroom() {
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
         ) : null}
 
-        {successHint ? (
-          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{successHint}</p>
-        ) : null}
-
         {joinInfo ? (
           <div className="mt-3 text-sm text-muted">
             <p>Class: {joinInfo.class.name}</p>
@@ -444,64 +313,7 @@ export function JitsiClassroom() {
         ) : null}
       </section>
 
-      <section className="mt-4 space-y-3">
-        <LiveSessionControlBar
-          role={role}
-          isLive={isLive}
-          participantsCount={participantsCount}
-          isAudioMuted={isAudioMuted}
-          isVideoMuted={isVideoMuted}
-          isChatOpen={isChatOpen}
-          isFilmStripOpen={isFilmStripOpen}
-          isFullscreen={isFullscreen}
-          isBusy={isBusy}
-          onStartClass={handleStartClass}
-          onEndClass={() => void handleEndClass()}
-          onMuteAllStudents={handleMuteAllStudents}
-          onToggleAudio={handleToggleAudio}
-          onToggleVideo={handleToggleVideo}
-          onToggleChat={handleToggleChat}
-          onToggleFilmStrip={handleToggleFilmStrip}
-          onToggleFullscreen={() => void handleToggleFullscreen()}
-        />
-
-        {role === "teacher" ? (
-          <div className="rounded-2xl border border-black/10 bg-card p-3 shadow-sm transition dark:border-white/10">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Broadcast message</p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-              <input
-                value={broadcastInput}
-                onChange={(event) => setBroadcastInput(event.target.value)}
-                placeholder="Send a quick class update to all students..."
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-black/10 dark:border-white/20 dark:bg-transparent dark:focus:ring-white/10"
-              />
-              <button
-                type="button"
-                onClick={handleSendBroadcast}
-                disabled={!isLive || broadcastInput.trim().length === 0}
-                className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Send
-              </button>
-            </div>
-
-            {broadcastMessages.length > 0 ? (
-              <div className="mt-3 max-h-36 space-y-2 overflow-auto pr-1">
-                {broadcastMessages.map((message) => (
-                  <div key={message.id} className="rounded-xl border border-black/10 px-3 py-2 text-sm dark:border-white/10">
-                    <p className="font-medium">{message.text}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {message.sender} • {new Date(message.sentAt).toLocaleTimeString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="mt-3 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm transition-all dark:border-white/10">
+      <section className="mt-4 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm dark:border-white/10">
         <div
           ref={containerRef}
           className="h-[65vh] w-full min-h-[420px] sm:h-[72vh]"

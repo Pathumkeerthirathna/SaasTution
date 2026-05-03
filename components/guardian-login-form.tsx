@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -90,6 +91,12 @@ export function GuardianLoginForm() {
       >
         {isSubmitting ? "Signing in..." : "Sign in"}
       </button>
+
+      <div className="text-center text-sm">
+        <Link href="/reset-password" className="font-medium text-brand-700 hover:underline">
+          Forgot password?
+        </Link>
+      </div>
     </form>
   );
 }

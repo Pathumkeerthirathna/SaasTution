@@ -18,9 +18,26 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().trim().min(1, "Email or username is required."),
+  loginId: z.string().trim().min(1, "Email or registration number is required."),
   password: z.string().min(1, "Password is required."),
+});
+
+export const passwordResetRequestSchema = z.object({
+  loginId: z.string().trim().min(1, "Email or registration number is required."),
+});
+
+export const passwordResetConfirmSchema = z.object({
+  token: z.string().trim().min(1, "Reset token is required."),
+  newPassword: passwordField,
+});
+
+export const passwordUpdateSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+  newPassword: passwordField,
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
+export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchema>;
+export type PasswordUpdateInput = z.infer<typeof passwordUpdateSchema>;

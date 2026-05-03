@@ -31,6 +31,10 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     );
   }
 
+  if (session.role === "STUDENT") {
+    redirect("/student/dashboard");
+  }
+
   const teacher = await prisma.teacher.findUnique({
     where: {
       id: session.sub,

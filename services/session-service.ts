@@ -1,5 +1,12 @@
 import { AppError } from "@/lib/error-handler";
+import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
+import { signSessionInviteToken } from "@/lib/session-invite";
+
+type NotifyChannels = {
+  email: boolean;
+  whatsapp: boolean;
+};
 
 function getJitsiDomain() {
   return process.env.JITSI_DOMAIN?.trim() || "meet.jit.si";
@@ -112,6 +119,140 @@ export async function ensureSessionAccessForTeacher(teacherId: string, sessionId
   }
 
   return session;
+}
+
+export async function notifyStudentsForSession(params: {
+  teacherId: string;
+  sessionId: string;
+  channels: NotifyChannels;
+}) {
+  if (!params.channels.email && !params.channels.whatsapp) {
+    throw new AppError("Select at least one notify channel.", 400, "VALIDATION_ERROR");
+  }
+
+  const session = await prisma.classSession.findFirst({
+    where: {
+      id: params.sessionId,
+      isActive: true,
+      class: {
+        teacherId: params.teacherId,
+      },
+    },
+    select: {
+      id: true,
+      classId: true,
+      class: {
+        select: {
+          id: true,
+          name: true,
+          teacher: {
+            select: {
+              name: true,
+            },
+          },
+          students: {
+            where: {
+              isActive: true,
+            },
+            select: {
+              student: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  contact: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!session) {
+    throw new AppError("Session not found or not active.", 404, "SESSION_NOT_FOUND");
+  }
+
+  const students = session.class.students.map((entry) => entry.student);
+
+  const emailResults = params.channels.email
+    ? await Promise.all(
+        students.map(async (student) => {
+          if (!student.email?.trim()) {
+            return {
+              studentId: student.id,
+              studentName: student.name,
+              channel: "email" as const,
+              status: "FAILED" as const,
+              error: "Student email is missing.",
+            };
+          }
+
+          try {
+            const inviteToken = await signSessionInviteToken({
+              sessionId: session.id,
+              classId: session.classId,
+              studentId: student.id,
+              role: "STUDENT",
+            });
+
+            const loginLink = buildLiveSessionInviteLoginLink(inviteToken);
+
+            await sendLiveSessionInviteEmail({
+              to: student.email,
+              studentName: student.name,
+              className: session.class.name,
+              teacherName: session.class.teacher.name,
+              loginLink,
+            });
+
+            return {
+              studentId: student.id,
+              studentName: student.name,
+              channel: "email" as const,
+              status: "SENT" as const,
+            };
+          } catch (error) {
+            return {
+              studentId: student.id,
+              studentName: student.name,
+              channel: "email" as const,
+              status: "FAILED" as const,
+              error: error instanceof Error ? error.message : "Email delivery failed.",
+            };
+          }
+        })
+      )
+    : [];
+
+  const whatsappResults = params.channels.whatsapp
+    ? students.map((student) => ({
+        studentId: student.id,
+        studentName: student.name,
+        channel: "whatsapp" as const,
+        status: "FAILED" as const,
+        error: "WhatsApp notifications are not implemented yet.",
+      }))
+    : [];
+
+  const results = [...emailResults, ...whatsappResults];
+  const sentCount = results.filter((item) => item.status === "SENT").length;
+  const failedCount = results.length - sentCount;
+
+  return {
+    session: {
+      id: session.id,
+      classId: session.classId,
+      className: session.class.name,
+    },
+    selectedChannels: params.channels,
+    totalStudents: students.length,
+    attemptedDeliveries: results.length,
+    sentCount,
+    failedCount,
+    results,
+  };
 }
 
 export async function getSessionJoinInfo(sessionId: string, studentId: string) {

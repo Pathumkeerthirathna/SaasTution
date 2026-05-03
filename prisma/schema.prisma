@@ -66,6 +66,7 @@ model Student {
   id                 String       @id @default(uuid())
   name               String
   grade              GradeLevel?
+  password           String?
   contact            String
   contact01          String?
   contact02          String?
@@ -76,6 +77,20 @@ model Student {
   deliveries         MessageDelivery[]
   attendance         Attendance[]
   createdAt          DateTime     @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  role      Role
+  userId    String
+  email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([role, userId])
+  @@index([expiresAt])
 }
 
 model Guardian {
