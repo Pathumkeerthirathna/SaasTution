@@ -1,33 +1,29 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { listSessionAttendanceForTeacher } from "@/services/session-service";
+import { restartClassSessionForTeacher } from "@/services/session-service";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: Request,
+export async function POST(
+  _request: Request,
   context: {
     params: { id: string };
   }
 ) {
   try {
-    const session = await requireTeacherSession();
+    const teacherSession = await requireTeacherSession();
     const sessionId = context.params.id;
 
     if (!sessionId?.trim()) {
       throw new AppError("Session id is required.", 400, "VALIDATION_ERROR");
     }
 
-    const result = await listSessionAttendanceForTeacher({
-      teacherId: session.teacherId,
-      sessionId,
-    });
+    const result = await restartClassSessionForTeacher(teacherSession.teacherId, sessionId);
 
-    return apiSuccess({
-      session: result.session,
-      joinedStudents: result.joinedStudents,
-      notJoinedStudents: result.notJoinedStudents,
+    return apiSuccess(result, {
+      status: 201,
+      message: "Session restarted successfully.",
     });
   } catch (error) {
     return handleRouteError(error);

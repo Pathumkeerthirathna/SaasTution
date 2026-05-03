@@ -32,18 +32,20 @@ export async function POST(
 
     const result = await markStudentLeftSession(sessionId, parsed.data.studentId);
 
-    emitSessionAttendanceEvent({
-      sessionId,
-      attendanceId: result.attendance.id,
-      studentId: result.attendance.studentId,
-      joinedAt: result.attendance.joinedAt.toISOString(),
-      leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
-      event: "left",
-      occurredAt: new Date().toISOString(),
-    });
+    if (result.attendance) {
+      emitSessionAttendanceEvent({
+        sessionId,
+        attendanceId: result.attendance.id,
+        studentId: result.attendance.studentId,
+        joinedAt: result.attendance.joinedAt.toISOString(),
+        leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
+        event: "left",
+        occurredAt: new Date().toISOString(),
+      });
+    }
 
     return apiSuccess(result, {
-      message: "Student leave event tracked successfully.",
+      message: result.updated ? "Student leave event tracked successfully." : "Student already left this session.",
     });
   } catch (error) {
     return handleRouteError(error);

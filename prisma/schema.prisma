@@ -144,6 +144,8 @@ model ClassSession {
   id          String       @id @default(uuid())
   class       Class        @relation(fields: [classId], references: [id])
   classId     String
+  lecture     Lecture?     @relation(fields: [lectureId], references: [id])
+  lectureId   String?
   roomName    String       @unique
   jitsiDomain String       @default("meet.jit.si")
   startedAt   DateTime     @default(now())
@@ -154,6 +156,7 @@ model ClassSession {
 
   @@index([classId, isActive])
   @@index([classId, isActive, startedAt])
+  @@index([lectureId, startedAt])
 }
 
 model ClassStudent {
@@ -181,6 +184,7 @@ model Lecture {
   notes     Note[]
   assignments Assignment[]
   quizzes   Quiz[]
+  sessions  ClassSession[]
   createdAt DateTime    @default(now())
 
   @@index([classId, date])
@@ -235,7 +239,7 @@ model Attendance {
   @@index([classId, joinedAt])
   @@index([classSessionId])
   @@index([classSessionId, joinedAt])
-  @@unique([classSessionId, studentId])
+  @@index([classSessionId, studentId, joinedAt])
 }
 
 model Message {

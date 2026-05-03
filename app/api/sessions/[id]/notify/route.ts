@@ -23,6 +23,7 @@ export async function POST(
     const body = (await request.json()) as {
       email?: boolean;
       whatsapp?: boolean;
+      notificationType?: "started" | "restarted";
     };
 
     const parsed = sessionNotifySchema.safeParse(body);
@@ -39,6 +40,7 @@ export async function POST(
         email: parsed.data.email,
         whatsapp: parsed.data.whatsapp,
       },
+      notificationType: parsed.data.notificationType,
       appBaseUrl: new URL(request.url).origin,
     });
 

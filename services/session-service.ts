@@ -37,8 +37,35 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
   return classroom;
 }
 
-export async function startClassSessionForTeacher(teacherId: string, classId: string) {
-  const classroom = await assertTeacherOwnsClass(teacherId, classId);
+async function assertTeacherOwnsLectureInClass(teacherId: string, classId: string, lectureId: string) {
+  const lecture = await prisma.lecture.findFirst({
+    where: {
+      id: lectureId,
+      classId,
+      class: {
+        teacherId,
+      },
+    },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+      classId: true,
+    },
+  });
+
+  if (!lecture) {
+    throw new AppError("Lecture not found for this class.", 404, "LECTURE_NOT_FOUND");
+  }
+
+  return lecture;
+}
+
+export async function startClassSessionForTeacher(teacherId: string, classId: string, lectureId: string) {
+  const [classroom, lecture] = await Promise.all([
+    assertTeacherOwnsClass(teacherId, classId),
+    assertTeacherOwnsLectureInClass(teacherId, classId, lectureId),
+  ]);
 
   await prisma.classSession.updateMany({
     where: {
@@ -57,6 +84,7 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
   const session = await prisma.classSession.create({
     data: {
       classId,
+      lectureId: lecture.id,
       roomName,
       jitsiDomain,
       isActive: true,
@@ -64,10 +92,18 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     select: {
       id: true,
       classId: true,
+      lectureId: true,
       roomName: true,
       jitsiDomain: true,
       isActive: true,
       startedAt: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
     },
   });
 
@@ -75,6 +111,37 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     session,
     class: classroom,
     joinBaseUrl: `/session/join?sessionId=${session.id}`,
+  };
+}
+
+export async function restartClassSessionForTeacher(teacherId: string, sessionId: string) {
+  const sourceSession = await prisma.classSession.findFirst({
+    where: {
+      id: sessionId,
+      class: {
+        teacherId,
+      },
+    },
+    select: {
+      id: true,
+      classId: true,
+      lectureId: true,
+    },
+  });
+
+  if (!sourceSession) {
+    throw new AppError("Session not found.", 404, "SESSION_NOT_FOUND");
+  }
+
+  if (!sourceSession.lectureId) {
+    throw new AppError("This session cannot be restarted because no lecture is linked.", 400, "LECTURE_REQUIRED");
+  }
+
+  const restarted = await startClassSessionForTeacher(teacherId, sourceSession.classId, sourceSession.lectureId);
+
+  return {
+    previousSessionId: sourceSession.id,
+    ...restarted,
   };
 }
 
@@ -92,12 +159,105 @@ export async function getActiveClassSessionForTeacher(teacherId: string, classId
     select: {
       id: true,
       classId: true,
+      lectureId: true,
       roomName: true,
       jitsiDomain: true,
       startedAt: true,
       isActive: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
     },
   });
+}
+
+export async function listClassSessionHistoryForTeacher(params: {
+  teacherId: string;
+  classId: string;
+  lectureId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  skip: number;
+  take: number;
+}) {
+  await assertTeacherOwnsClass(params.teacherId, params.classId);
+
+  const where = {
+    classId: params.classId,
+    ...(params.lectureId
+      ? {
+          lectureId: params.lectureId,
+        }
+      : {}),
+    ...(params.dateFrom || params.dateTo
+      ? {
+          startedAt: {
+            ...(params.dateFrom
+              ? {
+                  gte: params.dateFrom,
+                }
+              : {}),
+            ...(params.dateTo
+              ? {
+                  lte: params.dateTo,
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+
+  const [sessions, totalItems] = await Promise.all([
+    prisma.classSession.findMany({
+      where,
+      skip: params.skip,
+      take: params.take,
+      orderBy: {
+        startedAt: "desc",
+      },
+      select: {
+        id: true,
+        classId: true,
+        lectureId: true,
+        roomName: true,
+        jitsiDomain: true,
+        startedAt: true,
+        endedAt: true,
+        isActive: true,
+        lecture: {
+          select: {
+            id: true,
+            title: true,
+            date: true,
+          },
+        },
+        class: {
+          select: {
+            id: true,
+            name: true,
+            schedule: true,
+          },
+        },
+        _count: {
+          select: {
+            attendance: true,
+          },
+        },
+      },
+    }),
+    prisma.classSession.count({
+      where,
+    }),
+  ]);
+
+  return {
+    sessions,
+    totalItems,
+  };
 }
 
 export async function ensureSessionAccessForTeacher(teacherId: string, sessionId: string) {
@@ -125,6 +285,7 @@ export async function notifyStudentsForSession(params: {
   teacherId: string;
   sessionId: string;
   channels: NotifyChannels;
+  notificationType?: "started" | "restarted";
   appBaseUrl?: string;
 }) {
   if (!params.channels.email && !params.channels.whatsapp) {
@@ -206,6 +367,7 @@ export async function notifyStudentsForSession(params: {
               className: session.class.name,
               teacherName: session.class.teacher.name,
               loginLink,
+              notificationType: params.notificationType,
             });
 
             return {
@@ -264,9 +426,17 @@ export async function getSessionJoinInfo(sessionId: string, studentId: string) {
     select: {
       id: true,
       classId: true,
+      lectureId: true,
       roomName: true,
       jitsiDomain: true,
       isActive: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
       class: {
         select: {
           id: true,
@@ -307,9 +477,11 @@ export async function getSessionJoinInfo(sessionId: string, studentId: string) {
     session: {
       id: session.id,
       classId: session.classId,
+      lectureId: session.lectureId,
       roomName: session.roomName,
       jitsiDomain: session.jitsiDomain,
     },
+    lecture: session.lecture,
     class: session.class,
     student,
   };
@@ -323,9 +495,17 @@ export async function getSessionJoinInfoForTeacher(sessionId: string) {
     select: {
       id: true,
       classId: true,
+      lectureId: true,
       roomName: true,
       jitsiDomain: true,
       isActive: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
       class: {
         select: {
           id: true,
@@ -344,9 +524,11 @@ export async function getSessionJoinInfoForTeacher(sessionId: string) {
     session: {
       id: session.id,
       classId: session.classId,
+      lectureId: session.lectureId,
       roomName: session.roomName,
       jitsiDomain: session.jitsiDomain,
     },
+    lecture: session.lecture,
     class: session.class,
   };
 }
@@ -354,17 +536,8 @@ export async function getSessionJoinInfoForTeacher(sessionId: string) {
 export async function markStudentJoinedSession(sessionId: string, studentId: string) {
   const joinInfo = await getSessionJoinInfo(sessionId, studentId);
 
-  const attendance = await prisma.attendance.upsert({
-    where: {
-      classSessionId_studentId: {
-        classSessionId: sessionId,
-        studentId,
-      },
-    },
-    update: {
-      leftAt: null,
-    },
-    create: {
+  const attendance = await prisma.attendance.create({
+    data: {
       classSessionId: sessionId,
       classId: joinInfo.session.classId,
       studentId,
@@ -396,49 +569,6 @@ export async function markAttendanceOnJoin(params: {
     throw new AppError("classId does not match the session class.", 400, "CLASS_SESSION_MISMATCH");
   }
 
-  const existingAttendance = await prisma.attendance.findUnique({
-    where: {
-      classSessionId_studentId: {
-        classSessionId: params.sessionId,
-        studentId: params.studentId,
-      },
-    },
-    select: {
-      id: true,
-      classSessionId: true,
-      studentId: true,
-      classId: true,
-      joinedAt: true,
-      leftAt: true,
-    },
-  });
-
-  if (existingAttendance) {
-    const attendance = existingAttendance.leftAt
-      ? await prisma.attendance.update({
-          where: {
-            id: existingAttendance.id,
-          },
-          data: {
-            leftAt: null,
-          },
-          select: {
-            id: true,
-            classSessionId: true,
-            studentId: true,
-            classId: true,
-            joinedAt: true,
-            leftAt: true,
-          },
-        })
-      : existingAttendance;
-
-    return {
-      attendance,
-      duplicate: true,
-    };
-  }
-
   const attendance = await prisma.attendance.create({
     data: {
       classSessionId: params.sessionId,
@@ -465,42 +595,48 @@ export async function markAttendanceOnJoin(params: {
 export async function markStudentLeftSession(sessionId: string, studentId: string) {
   const joinInfo = await getSessionJoinInfo(sessionId, studentId);
 
-  const attendance = await prisma.attendance.upsert({
+  const openAttendance = await prisma.attendance.findFirst({
     where: {
-      classSessionId_studentId: {
-        classSessionId: sessionId,
-        studentId,
-      },
-    },
-    update: {
-      leftAt: new Date(),
-    },
-    create: {
       classSessionId: sessionId,
-      classId: joinInfo.session.classId,
       studentId,
-      joinedAt: new Date(),
-      leftAt: new Date(),
+      leftAt: null,
+    },
+    orderBy: {
+      joinedAt: "desc",
     },
     select: {
       id: true,
-      classSessionId: true,
-      studentId: true,
-      joinedAt: true,
-      leftAt: true,
     },
   });
 
+  const attendance = openAttendance
+    ? await prisma.attendance.update({
+        where: {
+          id: openAttendance.id,
+        },
+        data: {
+          leftAt: new Date(),
+        },
+        select: {
+          id: true,
+          classSessionId: true,
+          studentId: true,
+          joinedAt: true,
+          leftAt: true,
+        },
+      })
+    : null;
+
   return {
+    classId: joinInfo.session.classId,
     attendance,
+    updated: Boolean(attendance),
   };
 }
 
 export async function listSessionAttendanceForTeacher(params: {
   teacherId: string;
   sessionId: string;
-  skip: number;
-  take: number;
 }) {
   const session = await prisma.classSession.findFirst({
     where: {
@@ -512,9 +648,17 @@ export async function listSessionAttendanceForTeacher(params: {
     select: {
       id: true,
       classId: true,
+      lectureId: true,
       roomName: true,
       startedAt: true,
       endedAt: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
       class: {
         select: {
           id: true,
@@ -529,16 +673,33 @@ export async function listSessionAttendanceForTeacher(params: {
     throw new AppError("Session not found.", 404, "SESSION_NOT_FOUND");
   }
 
-  const [records, totalItems] = await Promise.all([
+  const [classStudents, records] = await Promise.all([
+    prisma.classStudent.findMany({
+      where: {
+        classId: session.classId,
+        isActive: true,
+      },
+      orderBy: {
+        student: {
+          name: "asc",
+        },
+      },
+      select: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            contact: true,
+          },
+        },
+      },
+    }),
     prisma.attendance.findMany({
       where: {
         classSessionId: params.sessionId,
       },
-      skip: params.skip,
-      take: params.take,
-      orderBy: {
-        joinedAt: "desc",
-      },
+      orderBy: [{ joinedAt: "desc" }],
       select: {
         id: true,
         joinedAt: true,
@@ -553,17 +714,64 @@ export async function listSessionAttendanceForTeacher(params: {
         },
       },
     }),
-    prisma.attendance.count({
-      where: {
-        classSessionId: params.sessionId,
-      },
-    }),
   ]);
+
+  const joinedStudentsMap = new Map<
+    string,
+    {
+      student: {
+        id: string;
+        name: string;
+        grade: string | null;
+        contact: string;
+      };
+      logs: Array<{
+        id: string;
+        joinedAt: Date;
+        leftAt: Date | null;
+      }>;
+    }
+  >();
+
+  for (const record of records) {
+    const existing = joinedStudentsMap.get(record.student.id);
+
+    if (existing) {
+      existing.logs.push({
+        id: record.id,
+        joinedAt: record.joinedAt,
+        leftAt: record.leftAt,
+      });
+      continue;
+    }
+
+    joinedStudentsMap.set(record.student.id, {
+      student: record.student,
+      logs: [
+        {
+          id: record.id,
+          joinedAt: record.joinedAt,
+          leftAt: record.leftAt,
+        },
+      ],
+    });
+  }
+
+  const joinedStudents = Array.from(joinedStudentsMap.values()).sort((left, right) => {
+    const leftDate = left.logs[0]?.joinedAt.getTime() ?? 0;
+    const rightDate = right.logs[0]?.joinedAt.getTime() ?? 0;
+    return rightDate - leftDate;
+  });
+
+  const joinedStudentIds = new Set(joinedStudents.map((entry) => entry.student.id));
+  const notJoinedStudents = classStudents
+    .map((entry) => entry.student)
+    .filter((student) => !joinedStudentIds.has(student.id));
 
   return {
     session,
-    records,
-    totalItems,
+    joinedStudents,
+    notJoinedStudents,
   };
 }
 

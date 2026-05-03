@@ -12,16 +12,10 @@ export default function SessionEndedPage() {
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Link
-            href="/"
+            href="/student/dashboard"
             className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background"
           >
-            Go to home
-          </Link>
-          <Link
-            href="/guardian/dashboard"
-            className="inline-flex items-center justify-center rounded-xl border border-black/10 px-4 py-2.5 text-sm font-semibold hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
-          >
-            Open guardian dashboard
+            Go to dashboard
           </Link>
         </div>
       </section>

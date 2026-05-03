@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // Real security must be handled on backend (JWT/session). This is a basic client-side guard only.
 type UserRole = "teacher" | "student";
@@ -9,9 +10,16 @@ type UserRole = "teacher" | "student";
 type JoinInfo = {
   session: {
     id: string;
+    classId: string;
+    lectureId?: string | null;
     roomName: string;
     jitsiDomain: string;
   };
+  lecture?: {
+    id: string;
+    title: string;
+    date: string;
+  } | null;
   class: {
     id: string;
     name: string;
@@ -46,6 +54,7 @@ declare global {
 }
 
 export function JitsiClassroom() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId") ?? "";
   const studentId = searchParams.get("studentId") ?? "";
@@ -68,6 +77,147 @@ export function JitsiClassroom() {
   const [isJitsiReady, setIsJitsiReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasSessionEnded, setHasSessionEnded] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
+  const [isLeavingSession, setIsLeavingSession] = useState(false);
+  const [restartNotifyOptions, setRestartNotifyOptions] = useState({
+    email: true,
+    whatsapp: false,
+  });
+
+  const dashboardHref = role === "teacher" ? "/dashboard/sessions" : "/student/dashboard";
+
+  async function handleStudentLeave() {
+    if (!joinInfo?.student?.id) {
+      return;
+    }
+
+    const confirmed = window.confirm("Leave this live session and return to dashboard?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsLeavingSession(true);
+
+    try {
+      await fetch(`/api/sessions/${joinInfo.session.id}/leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: joinInfo.student.id,
+        }),
+      });
+    } catch {
+      // Ignore leave tracking failures and continue navigation to avoid trapping students.
+    } finally {
+      apiRef.current?.dispose();
+      apiRef.current = null;
+      router.push("/student/dashboard");
+    }
+  }
+
+  async function handleTeacherEndSession() {
+    if (!joinInfo || role !== "teacher") {
+      return;
+    }
+
+    const confirmed = window.confirm("End this live session now?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsEndingSession(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
+        method: "POST",
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: {
+          message?: string;
+        };
+      };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error?.message ?? "Failed to end session.");
+      }
+
+      apiRef.current?.dispose();
+      apiRef.current = null;
+      setHasSessionEnded(true);
+      setIsJitsiReady(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
+    } finally {
+      setIsEndingSession(false);
+    }
+  }
+
+  async function handleTeacherRestartSession() {
+    if (!joinInfo || role !== "teacher") {
+      return;
+    }
+
+    const confirmed = window.confirm("Restart this session now?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsRestarting(true);
+    setErrorMessage(null);
+
+    try {
+      const restartResponse = await fetch(`/api/sessions/${joinInfo.session.id}/restart`, {
+        method: "POST",
+      });
+
+      const restartPayload = (await restartResponse.json()) as {
+        success: boolean;
+        data?: {
+          session: {
+            id: string;
+          };
+        };
+        error?: {
+          message?: string;
+        };
+      };
+
+      if (!restartResponse.ok || !restartPayload.success || !restartPayload.data) {
+        throw new Error(restartPayload.error?.message ?? "Failed to restart session.");
+      }
+
+      if (restartNotifyOptions.email || restartNotifyOptions.whatsapp) {
+        await fetch(`/api/sessions/${restartPayload.data.session.id}/notify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: restartNotifyOptions.email,
+            whatsapp: restartNotifyOptions.whatsapp,
+            notificationType: "restarted",
+          }),
+        });
+      }
+
+      apiRef.current?.dispose();
+      apiRef.current = null;
+      router.push(`/session/join?sessionId=${restartPayload.data.session.id}&role=teacher`);
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to restart session right now.");
+    } finally {
+      setIsRestarting(false);
+    }
+  }
 
   const canJoin = useMemo(() => {
     if (inviteToken.length > 0) return true;
@@ -118,6 +268,7 @@ export function JitsiClassroom() {
         }
 
         if (!cancelled) {
+          setHasSessionEnded(false);
           setJoinInfo(payload.data);
         }
       } catch (error) {
@@ -137,6 +288,64 @@ export function JitsiClassroom() {
       cancelled = true;
     };
   }, [canJoin, inviteToken, role, sessionId, studentId]);
+
+  useEffect(() => {
+    if (!joinInfo || hasSessionEnded) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const checkSessionStatus = async () => {
+      try {
+        let response: Response;
+
+        if (inviteToken) {
+          const inviteQuery = new URLSearchParams();
+          inviteQuery.set("invite", inviteToken);
+          response = await fetch(`/api/sessions/join-info?${inviteQuery.toString()}`, {
+            cache: "no-store",
+          });
+        } else {
+          const query = new URLSearchParams();
+          query.set("role", role);
+          if (studentId) {
+            query.set("studentId", studentId);
+          }
+
+          response = await fetch(`/api/sessions/${joinInfo.session.id}/join-info?${query.toString()}`, {
+            cache: "no-store",
+          });
+        }
+
+        const payload = (await response.json()) as {
+          success: boolean;
+          error?: {
+            code?: string;
+          };
+        };
+
+        if (!response.ok && payload.error?.code === "SESSION_NOT_ACTIVE" && !isCancelled) {
+          apiRef.current?.dispose();
+          apiRef.current = null;
+          setHasSessionEnded(true);
+          setIsJitsiReady(false);
+          setErrorMessage(null);
+        }
+      } catch {
+        // Ignore transient polling failures. The next poll will re-check session state.
+      }
+    };
+
+    const intervalId = setInterval(() => {
+      void checkSessionStatus();
+    }, 5_000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [hasSessionEnded, inviteToken, joinInfo, role, studentId]);
 
   useEffect(() => {
     if (!joinInfo) {
@@ -163,7 +372,7 @@ export function JitsiClassroom() {
   }, [joinInfo]);
 
   useEffect(() => {
-    if (!joinInfo || !containerRef.current || !isJitsiReady || !window.JitsiMeetExternalAPI) {
+    if (!joinInfo || hasSessionEnded || !containerRef.current || !isJitsiReady || !window.JitsiMeetExternalAPI) {
       return;
     }
 
@@ -211,11 +420,10 @@ export function JitsiClassroom() {
 
       if (role === "teacher") {
         // Auto-fullscreen for teacher only. Students must never auto-enter fullscreen.
-        try {
-          void containerRef.current?.requestFullscreen();
-        } catch {
-          // Browser may block fullscreen — ignore silently.
-        }
+        const fullscreenRequest = containerRef.current?.requestFullscreen();
+        void fullscreenRequest?.catch(() => {
+          // Browser may block fullscreen without a user gesture — ignore silently.
+        });
       }
 
       if (role === "student") {
@@ -290,7 +498,7 @@ export function JitsiClassroom() {
       apiRef.current = null;
       void markLeft();
     };
-  }, [joinInfo, isJitsiReady, role, teacherName]);
+  }, [hasSessionEnded, joinInfo, isJitsiReady, role, teacherName]);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -306,14 +514,97 @@ export function JitsiClassroom() {
         {joinInfo ? (
           <div className="mt-3 text-sm text-muted">
             <p>Class: {joinInfo.class.name}</p>
+            {joinInfo.lecture ? <p>Lecture: {joinInfo.lecture.title}</p> : null}
             <p>Schedule: {joinInfo.class.schedule}</p>
             {role === "student" && joinInfo.student ? <p>Student: {joinInfo.student.name}</p> : null}
             {role === "teacher" ? <p>Teacher: {teacherName}</p> : null}
           </div>
         ) : null}
+
+        {joinInfo && !hasSessionEnded ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {role === "teacher" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleTeacherEndSession()}
+                  disabled={isEndingSession || isRestarting}
+                  className="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isEndingSession ? "Ending..." : "End session"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleTeacherRestartSession()}
+                  disabled={isRestarting || isEndingSession}
+                  className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRestarting ? "Restarting..." : "Restart session"}
+                </button>
+
+                <div className="ml-2 inline-flex items-center gap-3 rounded-xl border border-black/10 px-3 py-2 text-xs dark:border-white/10">
+                  <span className="font-semibold text-muted">Notify:</span>
+                  <label className="inline-flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={restartNotifyOptions.email}
+                      onChange={(event) =>
+                        setRestartNotifyOptions((prev) => ({
+                          ...prev,
+                          email: event.target.checked,
+                        }))
+                      }
+                    />
+                    Email
+                  </label>
+                  <label className="inline-flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={restartNotifyOptions.whatsapp}
+                      onChange={(event) =>
+                        setRestartNotifyOptions((prev) => ({
+                          ...prev,
+                          whatsapp: event.target.checked,
+                        }))
+                      }
+                    />
+                    WhatsApp
+                  </label>
+                </div>
+              </>
+            ) : null}
+
+            {role === "student" ? (
+              <button
+                type="button"
+                onClick={() => void handleStudentLeave()}
+                disabled={isLeavingSession}
+                className="rounded-xl border border-black/15 px-3 py-2 text-sm font-semibold dark:border-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLeavingSession ? "Leaving..." : "Leave session"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {hasSessionEnded ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+            <p className="font-semibold">Session ended</p>
+            <p className="mt-1">This live session has ended. Return to your dashboard to continue.</p>
+            <div className="mt-4">
+              <Link
+                href={dashboardHref}
+                className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
+              >
+                Go to dashboard
+              </Link>
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      <section className="mt-4 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm dark:border-white/10">
+      <section className={`mt-4 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm dark:border-white/10 ${hasSessionEnded ? "hidden" : ""}`}>
         <div
           ref={containerRef}
           className="h-[65vh] w-full min-h-[420px] sm:h-[72vh]"

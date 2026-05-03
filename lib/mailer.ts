@@ -13,6 +13,7 @@ type LiveSessionInviteEmailInput = {
   className: string;
   teacherName: string;
   loginLink: string;
+  notificationType?: "started" | "restarted";
 };
 
 function getBaseUrl() {
@@ -135,12 +136,14 @@ export async function sendLiveSessionInviteEmail(input: LiveSessionInviteEmailIn
   const safeClassName = escapeHtml(input.className);
   const safeTeacherName = escapeHtml(input.teacherName);
   const safeLoginLink = escapeHtml(input.loginLink);
+  const notificationType = input.notificationType ?? "started";
+  const actionText = notificationType === "restarted" ? "restarted" : "started";
 
   await transporter.sendMail({
     from,
     to: input.to,
-    subject: `Live class started: ${input.className}`,
-    text: `Hi ${input.studentName},\n\n${input.teacherName} has started a live class for ${input.className}.\n\nOpen this secure link, sign in with your registration number and password, and you will be auto-joined to the classroom:\n${input.loginLink}\n\nIf this wasn't expected, please contact your teacher.`,
-    html: `<p>Hi ${safeStudentName},</p><p><strong>${safeTeacherName}</strong> has started a live class for <strong>${safeClassName}</strong>.</p><p>Open this secure link, sign in with your registration number and password, and you will be auto-joined to the classroom:</p><p><a href="${safeLoginLink}">${safeLoginLink}</a></p><p>If this was not expected, please contact your teacher.</p>`,
+    subject: `Live class ${actionText}: ${input.className}`,
+    text: `Hi ${input.studentName},\n\n${input.teacherName} has ${actionText} a live class for ${input.className}.\n\nOpen this secure link, sign in with your registration number and password, and you will be auto-joined to the classroom:\n${input.loginLink}\n\nIf this wasn't expected, please contact your teacher.`,
+    html: `<p>Hi ${safeStudentName},</p><p><strong>${safeTeacherName}</strong> has ${actionText} a live class for <strong>${safeClassName}</strong>.</p><p>Open this secure link, sign in with your registration number and password, and you will be auto-joined to the classroom:</p><p><a href="${safeLoginLink}">${safeLoginLink}</a></p><p>If this was not expected, please contact your teacher.</p>`,
   });
 }

@@ -3,11 +3,11 @@ import { redirect } from "next/navigation";
 
 import {
   getSummaryStats,
-  ongoingClassesSeed,
   upcomingClassesSeed,
 } from "@/components/student-portal/student-data";
 import { Panel, StatusBadge, SummaryCard } from "@/components/student-portal/student-ui";
 import { requireStudentSession } from "@/lib/auth-session";
+import { prisma } from "@/lib/prisma";
 import { verifySessionInviteToken } from "@/lib/session-invite";
 
 type StudentDashboardPageProps = {
@@ -18,15 +18,51 @@ type StudentDashboardPageProps = {
 
 export default async function StudentDashboardPage({ searchParams }: StudentDashboardPageProps) {
   const inviteToken = searchParams?.invite?.trim();
+  const studentSession = await requireStudentSession();
 
   if (inviteToken) {
-    const studentSession = await requireStudentSession();
     const invitePayload = await verifySessionInviteToken(inviteToken);
 
     if (invitePayload && invitePayload.studentId === studentSession.studentId) {
       redirect(`/session/join?invite=${encodeURIComponent(inviteToken)}`);
     }
   }
+
+  const liveSessions = await prisma.classSession.findMany({
+    where: {
+      isActive: true,
+      class: {
+        students: {
+          some: {
+            studentId: studentSession.studentId,
+            isActive: true,
+          },
+        },
+      },
+    },
+    orderBy: {
+      startedAt: "desc",
+    },
+    select: {
+      id: true,
+      startedAt: true,
+      class: {
+        select: {
+          name: true,
+          teacher: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      lecture: {
+        select: {
+          title: true,
+        },
+      },
+    },
+  });
 
   const summary = getSummaryStats();
 
@@ -35,7 +71,7 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard title="Total Classes" value={String(summary.totalClasses)} helper="All enrolled classes" />
         <SummaryCard title="Upcoming Classes" value={String(summary.upcomingClasses)} helper="Scheduled next sessions" />
-        <SummaryCard title="Live Classes" value={String(summary.liveClasses)} helper="Happening right now" />
+        <SummaryCard title="Live Classes" value={String(liveSessions.length)} helper="Happening right now" />
         <SummaryCard title="Pending Assignments" value={String(summary.pendingAssignments)} helper="Need attention" />
         <SummaryCard title="Upcoming Quizzes" value={String(summary.upcomingQuizzes)} helper="Prepare ahead" />
       </section>
@@ -46,26 +82,33 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
         actions={<StatusBadge label="High Priority" tone="live" />}
       >
         <div className="grid gap-4 lg:grid-cols-2">
-          {ongoingClassesSeed.map((item) => (
-            <article key={`${item.className}-${item.time}`} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">{item.className}</h3>
-                  <p className="mt-1 text-sm text-slate-600">Teacher: {item.teacherName}</p>
-                  <p className="text-sm text-slate-600">{item.time}</p>
-                </div>
-                <StatusBadge label={item.status} tone="live" />
-              </div>
-              <div className="mt-4">
-                <Link
-                  href={item.joinLink}
-                  className="inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Join Now
-                </Link>
-              </div>
+          {liveSessions.length === 0 ? (
+            <article className="rounded-2xl border border-dashed border-brand-200 bg-white/70 p-4 text-sm text-slate-600">
+              No live classes are running right now.
             </article>
-          ))}
+          ) : (
+            liveSessions.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">{item.class.name}</h3>
+                    <p className="mt-1 text-sm text-slate-600">Teacher: {item.class.teacher.name}</p>
+                    <p className="text-sm text-slate-600">Started: {new Date(item.startedAt).toLocaleString()}</p>
+                    {item.lecture ? <p className="text-sm text-slate-600">Lecture: {item.lecture.title}</p> : null}
+                  </div>
+                  <StatusBadge label="Live" tone="live" />
+                </div>
+                <div className="mt-4">
+                  <Link
+                    href={`/session/join?sessionId=${item.id}&role=student&studentId=${studentSession.studentId}`}
+                    className="inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Join Now
+                  </Link>
+                </div>
+              </article>
+            ))
+          )}
         </div>
       </Panel>
 
