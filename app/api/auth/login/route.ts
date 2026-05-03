@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     }
 
     const loginResult = await loginByLoginId(loginId, parsed.data.password);
-    let redirectTo = loginResult.redirectTo;
+    let redirectTo: string = loginResult.redirectTo;
 
     const inviteToken = body.inviteToken?.trim();
 
