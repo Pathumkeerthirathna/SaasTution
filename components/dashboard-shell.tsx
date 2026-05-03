@@ -15,7 +15,7 @@ type NavItem = {
   href: string;
   label: string;
 };
-
+//
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/);
 
