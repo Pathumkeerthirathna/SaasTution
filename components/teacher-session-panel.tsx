@@ -548,7 +548,7 @@ export function TeacherSessionPanel() {
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
         <h2 className="text-lg font-semibold">Students in this class</h2>
         <p className="mt-1 text-sm text-muted">
-          Use "Notify students" above to email secure invite links that auto-join after login.
+          Use &quot;Notify students&quot; above to email secure invite links that auto-join after login.
         </p>
 
         {!activeSession ? <p className="mt-4 text-sm text-muted">Start a class session to enable notifications.</p> : null}
