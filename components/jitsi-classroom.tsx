@@ -81,6 +81,9 @@ export function JitsiClassroom() {
   const [isRestarting, setIsRestarting] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [isLeavingSession, setIsLeavingSession] = useState(false);
+  const [isNotifyingRestart, setIsNotifyingRestart] = useState(false);
+  const [restartedSessionId, setRestartedSessionId] = useState<string | null>(null);
+  const [teacherFlowStage, setTeacherFlowStage] = useState<"active" | "ended-await-restart" | "restarted-await-notify">("active");
   const [restartNotifyOptions, setRestartNotifyOptions] = useState({
     email: true,
     whatsapp: false,
@@ -152,6 +155,7 @@ export function JitsiClassroom() {
       apiRef.current = null;
       setHasSessionEnded(true);
       setIsJitsiReady(false);
+      setTeacherFlowStage("ended-await-restart");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
     } finally {
@@ -194,28 +198,70 @@ export function JitsiClassroom() {
         throw new Error(restartPayload.error?.message ?? "Failed to restart session.");
       }
 
-      if (restartNotifyOptions.email || restartNotifyOptions.whatsapp) {
-        await fetch(`/api/sessions/${restartPayload.data.session.id}/notify`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: restartNotifyOptions.email,
-            whatsapp: restartNotifyOptions.whatsapp,
-            notificationType: "restarted",
-          }),
-        });
-      }
-
       apiRef.current?.dispose();
       apiRef.current = null;
+      setRestartedSessionId(restartPayload.data.session.id);
+      setTeacherFlowStage("restarted-await-notify");
+      setHasSessionEnded(false);
       router.push(`/session/join?sessionId=${restartPayload.data.session.id}&role=teacher`);
       router.refresh();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to restart session right now.");
     } finally {
       setIsRestarting(false);
+    }
+  }
+
+  async function handleNotifyAfterRestart() {
+    if (role !== "teacher") {
+      return;
+    }
+
+    const targetSessionId = restartedSessionId ?? joinInfo?.session.id;
+
+    if (!targetSessionId) {
+      setErrorMessage("No restarted session is available for notifications.");
+      return;
+    }
+
+    if (!restartNotifyOptions.email && !restartNotifyOptions.whatsapp) {
+      setErrorMessage("At least one notify channel must be selected.");
+      return;
+    }
+
+    setIsNotifyingRestart(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${targetSessionId}/notify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: restartNotifyOptions.email,
+          whatsapp: restartNotifyOptions.whatsapp,
+          notificationType: "restarted",
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: {
+          message?: string;
+        };
+      };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error?.message ?? "Failed to notify students.");
+      }
+
+      setTeacherFlowStage("active");
+      setRestartedSessionId(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to notify students right now.");
+    } finally {
+      setIsNotifyingRestart(false);
     }
   }
 
@@ -269,6 +315,9 @@ export function JitsiClassroom() {
 
         if (!cancelled) {
           setHasSessionEnded(false);
+          if (role === "teacher" && teacherFlowStage === "ended-await-restart") {
+            setTeacherFlowStage("active");
+          }
           setJoinInfo(payload.data);
         }
       } catch (error) {
@@ -287,7 +336,7 @@ export function JitsiClassroom() {
     return () => {
       cancelled = true;
     };
-  }, [canJoin, inviteToken, role, sessionId, studentId]);
+  }, [canJoin, inviteToken, role, sessionId, studentId, teacherFlowStage]);
 
   useEffect(() => {
     if (!joinInfo || hasSessionEnded) {
@@ -331,6 +380,9 @@ export function JitsiClassroom() {
           setHasSessionEnded(true);
           setIsJitsiReady(false);
           setErrorMessage(null);
+          if (role === "teacher") {
+            setTeacherFlowStage("ended-await-restart");
+          }
         }
       } catch {
         // Ignore transient polling failures. The next poll will re-check session state.
@@ -525,53 +577,70 @@ export function JitsiClassroom() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {role === "teacher" ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => void handleTeacherEndSession()}
-                  disabled={isEndingSession || isRestarting}
-                  className="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isEndingSession ? "Ending..." : "End session"}
-                </button>
+                {teacherFlowStage === "active" ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleTeacherEndSession()}
+                    disabled={isEndingSession || isRestarting || isNotifyingRestart}
+                    className="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isEndingSession ? "Ending..." : "End session"}
+                  </button>
+                ) : null}
 
-                <button
-                  type="button"
-                  onClick={() => void handleTeacherRestartSession()}
-                  disabled={isRestarting || isEndingSession}
-                  className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isRestarting ? "Restarting..." : "Restart session"}
-                </button>
+                {teacherFlowStage === "ended-await-restart" ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleTeacherRestartSession()}
+                    disabled={isRestarting || isEndingSession || isNotifyingRestart}
+                    className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isRestarting ? "Restarting..." : "Restart session"}
+                  </button>
+                ) : null}
 
-                <div className="ml-2 inline-flex items-center gap-3 rounded-xl border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                  <span className="font-semibold text-muted">Notify:</span>
-                  <label className="inline-flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={restartNotifyOptions.email}
-                      onChange={(event) =>
-                        setRestartNotifyOptions((prev) => ({
-                          ...prev,
-                          email: event.target.checked,
-                        }))
-                      }
-                    />
-                    Email
-                  </label>
-                  <label className="inline-flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={restartNotifyOptions.whatsapp}
-                      onChange={(event) =>
-                        setRestartNotifyOptions((prev) => ({
-                          ...prev,
-                          whatsapp: event.target.checked,
-                        }))
-                      }
-                    />
-                    WhatsApp
-                  </label>
-                </div>
+                {teacherFlowStage === "restarted-await-notify" ? (
+                  <>
+                    <div className="inline-flex items-center gap-3 rounded-xl border border-black/10 px-3 py-2 text-xs dark:border-white/10">
+                      <span className="font-semibold text-muted">Notify:</span>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={restartNotifyOptions.email}
+                          onChange={(event) =>
+                            setRestartNotifyOptions((prev) => ({
+                              ...prev,
+                              email: event.target.checked,
+                            }))
+                          }
+                        />
+                        Email
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={restartNotifyOptions.whatsapp}
+                          onChange={(event) =>
+                            setRestartNotifyOptions((prev) => ({
+                              ...prev,
+                              whatsapp: event.target.checked,
+                            }))
+                          }
+                        />
+                        WhatsApp
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleNotifyAfterRestart()}
+                      disabled={isNotifyingRestart || isRestarting || isEndingSession}
+                      className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isNotifyingRestart ? "Notifying..." : "Notify students"}
+                    </button>
+                  </>
+                ) : null}
               </>
             ) : null}
 
@@ -592,10 +661,21 @@ export function JitsiClassroom() {
           <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
             <p className="font-semibold">Session ended</p>
             <p className="mt-1">This live session has ended. Return to your dashboard to continue.</p>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {role === "teacher" ? (
+                <button
+                  type="button"
+                  onClick={() => void handleTeacherRestartSession()}
+                  disabled={teacherFlowStage !== "ended-await-restart" || isRestarting || isEndingSession}
+                  className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRestarting ? "Restarting..." : "Restart session"}
+                </button>
+              ) : null}
+
               <Link
                 href={dashboardHref}
-                className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
+                className="inline-flex items-center justify-center rounded-xl border border-black/20 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-black/5"
               >
                 Go to dashboard
               </Link>
