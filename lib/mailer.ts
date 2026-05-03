@@ -16,7 +16,30 @@ type LiveSessionInviteEmailInput = {
 };
 
 function getBaseUrl() {
-  return process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
+  const candidates = [
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.URL,
+    process.env.DEPLOY_PRIME_URL,
+    process.env.DEPLOY_URL,
+    process.env.NETLIFY_URL,
+  ];
+
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+
+    if (!value) {
+      continue;
+    }
+
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      return value;
+    }
+
+    return `https://${value}`;
+  }
+
+  return "http://localhost:3000";
 }
 
 function escapeHtml(value: string) {
@@ -51,15 +74,15 @@ function createTransport() {
   });
 }
 
-export function buildPasswordResetLink(token: string) {
-  const baseUrl = getBaseUrl();
+export function buildPasswordResetLink(token: string, appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
   const url = new URL("/reset-password/confirm", baseUrl);
   url.searchParams.set("token", token);
   return url.toString();
 }
 
-export function buildLiveSessionInviteLoginLink(inviteToken: string) {
-  const baseUrl = getBaseUrl();
+export function buildLiveSessionInviteLoginLink(inviteToken: string, appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
   const url = new URL("/login", baseUrl);
   url.searchParams.set("invite", inviteToken);
   return url.toString();

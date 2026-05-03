@@ -39,6 +39,7 @@ export async function POST(
         email: parsed.data.email,
         whatsapp: parsed.data.whatsapp,
       },
+      appBaseUrl: new URL(request.url).origin,
     });
 
     return apiSuccess(result, {

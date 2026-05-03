@@ -125,6 +125,7 @@ export async function notifyStudentsForSession(params: {
   teacherId: string;
   sessionId: string;
   channels: NotifyChannels;
+  appBaseUrl?: string;
 }) {
   if (!params.channels.email && !params.channels.whatsapp) {
     throw new AppError("Select at least one notify channel.", 400, "VALIDATION_ERROR");
@@ -197,7 +198,7 @@ export async function notifyStudentsForSession(params: {
               role: "STUDENT",
             });
 
-            const loginLink = buildLiveSessionInviteLoginLink(inviteToken);
+            const loginLink = buildLiveSessionInviteLoginLink(inviteToken, params.appBaseUrl);
 
             await sendLiveSessionInviteEmail({
               to: student.email,

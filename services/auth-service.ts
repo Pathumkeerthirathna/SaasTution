@@ -178,7 +178,7 @@ export async function loginByLoginId(loginId: string, password: string): Promise
   };
 }
 
-export async function requestPasswordReset(loginId: string) {
+export async function requestPasswordReset(loginId: string, appBaseUrl?: string) {
   const normalized = loginId.trim();
   const maybeEmail = normalized.toLowerCase();
 
@@ -201,7 +201,7 @@ export async function requestPasswordReset(loginId: string) {
 
     await sendPasswordResetEmail({
       to: teacher.email,
-      resetLink: buildPasswordResetLink(token),
+      resetLink: buildPasswordResetLink(token, appBaseUrl),
     });
     return;
   }
@@ -225,7 +225,7 @@ export async function requestPasswordReset(loginId: string) {
 
     await sendPasswordResetEmail({
       to: guardian.email,
-      resetLink: buildPasswordResetLink(token),
+      resetLink: buildPasswordResetLink(token, appBaseUrl),
     });
     return;
   }
@@ -256,7 +256,7 @@ export async function requestPasswordReset(loginId: string) {
 
     await sendPasswordResetEmail({
       to: student.email,
-      resetLink: buildPasswordResetLink(token),
+      resetLink: buildPasswordResetLink(token, appBaseUrl),
     });
   }
 }
