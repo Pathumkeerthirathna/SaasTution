@@ -1,34 +1,14 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
+import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
+import { LectureNotePanel } from "@/components/lecture-note-panel";
 
 type ClassItem = {
   id: string;
   name: string;
   schedule: string;
-};
-
-type LectureNote = {
-  id: string;
-  title: string;
-  fileUrl: string;
-  kind: "NOTE" | "SUPPORTING_MATERIAL";
-  mimeType: string;
-  sizeBytes: number;
-  downloadCount: number;
-  lastDownloadedAt: string | null;
-};
-
-type LectureAssignment = {
-  id: string;
-  title: string;
-  description: string;
-  dueDate: string;
-};
-
-type LectureQuiz = {
-  id: string;
-  title: string;
 };
 
 type LectureItem = {
@@ -48,31 +28,43 @@ type LectureItem = {
   };
 };
 
-type AssignmentFormState = {
-  title: string;
-  description: string;
-  dueDate: string;
-};
-
-type QuizFormState = {
-  title: string;
-};
-
-type NoteFormState = {
-  title: string;
-  kind: "NOTE" | "SUPPORTING_MATERIAL";
-  file: File | null;
-};
-
 type LectureTab = "notes" | "assignments" | "quizzes";
+
+type QuizPanelLecture = {
+  id: string;
+  title: string;
+  date: string;
+  class: {
+    id: string;
+    name: string;
+    schedule: string;
+  };
+};
+
+type AssignmentPanelLecture = {
+  id: string;
+  title: string;
+  date: string;
+  class: {
+    id: string;
+    name: string;
+    schedule: string;
+  };
+};
+
+type NotePanelLecture = {
+  id: string;
+  title: string;
+  date: string;
+  class: {
+    id: string;
+    name: string;
+    schedule: string;
+  };
+};
 
 const PAGE_SIZE = 6;
 const OPTION_PAGE_SIZE = 50;
-
-function formatBytes(bytes: number) {
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(2)} MB`;
-}
 
 function readApiError(payload: unknown, fallbackMessage: string) {
   if (!payload || typeof payload !== "object") {
@@ -112,10 +104,6 @@ export function LectureManagementPanel() {
     date: "",
   });
 
-  const [assignmentForms, setAssignmentForms] = useState<Record<string, AssignmentFormState>>({});
-  const [quizForms, setQuizForms] = useState<Record<string, QuizFormState>>({});
-  const [noteForms, setNoteForms] = useState<Record<string, NoteFormState>>({});
-
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -123,12 +111,13 @@ export function LectureManagementPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [openLectureTabs, setOpenLectureTabs] = useState<Record<string, LectureTab>>({});
-  const [loadedSections, setLoadedSections] = useState<Record<string, Partial<Record<LectureTab, boolean>>>>({});
-  const [notesByLecture, setNotesByLecture] = useState<Record<string, LectureNote[]>>({});
-  const [assignmentsByLecture, setAssignmentsByLecture] = useState<Record<string, LectureAssignment[]>>({});
-  const [quizzesByLecture, setQuizzesByLecture] = useState<Record<string, LectureQuiz[]>>({});
   const [isAddLecturePanelOpen, setIsAddLecturePanelOpen] = useState(false);
+  const [isQuizPanelOpen, setIsQuizPanelOpen] = useState(false);
+  const [quizPanelLecture, setQuizPanelLecture] = useState<QuizPanelLecture | null>(null);
+  const [isAssignmentPanelOpen, setIsAssignmentPanelOpen] = useState(false);
+  const [assignmentPanelLecture, setAssignmentPanelLecture] = useState<AssignmentPanelLecture | null>(null);
+  const [isNotePanelOpen, setIsNotePanelOpen] = useState(false);
+  const [notePanelLecture, setNotePanelLecture] = useState<NotePanelLecture | null>(null);
 
   const filteredLectures = useMemo(() => {
     const text = searchText.trim().toLowerCase();
@@ -210,28 +199,6 @@ export function LectureManagementPanel() {
     void bootstrap();
   }, [loadClasses, loadLectures]);
 
-  function getAssignmentForm(lectureId: string): AssignmentFormState {
-    return assignmentForms[lectureId] ?? {
-      title: "",
-      description: "",
-      dueDate: "",
-    };
-  }
-
-  function getQuizForm(lectureId: string): QuizFormState {
-    return quizForms[lectureId] ?? {
-      title: "",
-    };
-  }
-
-  function getNoteForm(lectureId: string): NoteFormState {
-    return noteForms[lectureId] ?? {
-      title: "",
-      kind: "NOTE",
-      file: null,
-    };
-  }
-
   async function withSubmitState(action: () => Promise<void>) {
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -246,53 +213,53 @@ export function LectureManagementPanel() {
     }
   }
 
-  async function ensureSectionLoaded(lectureId: string, tab: LectureTab, forceReload = false) {
-    const alreadyLoaded = loadedSections[lectureId]?.[tab];
-    if (alreadyLoaded && !forceReload) {
+  async function openLectureTab(lectureId: string, tab: LectureTab) {
+    if (tab === "notes") {
+      const lecture = lectures.find((item) => item.id === lectureId);
+
+      if (lecture) {
+        setNotePanelLecture({
+          id: lecture.id,
+          title: lecture.title,
+          date: lecture.date,
+          class: lecture.class,
+        });
+        setIsNotePanelOpen(true);
+      }
+
       return;
     }
 
-    const endpoint =
-      tab === "notes"
-        ? `/api/lectures/${lectureId}/notes`
-        : tab === "assignments"
-          ? `/api/lectures/${lectureId}/assignments`
-          : `/api/lectures/${lectureId}/quizzes`;
+    if (tab === "assignments") {
+      const lecture = lectures.find((item) => item.id === lectureId);
 
-    const response = await fetch(endpoint);
-    const payload = (await response.json()) as {
-      success: boolean;
-      data?: LectureNote[] | LectureAssignment[] | LectureQuiz[];
-    };
+      if (lecture) {
+        setAssignmentPanelLecture({
+          id: lecture.id,
+          title: lecture.title,
+          date: lecture.date,
+          class: lecture.class,
+        });
+        setIsAssignmentPanelOpen(true);
+      }
 
-    if (!response.ok || !payload.success) {
-      throw new Error(readApiError(payload, `Failed to load ${tab}.`));
+      return;
     }
 
-    if (tab === "notes") {
-      setNotesByLecture((prev) => ({ ...prev, [lectureId]: (payload.data as LectureNote[]) ?? [] }));
-    } else if (tab === "assignments") {
-      setAssignmentsByLecture((prev) => ({ ...prev, [lectureId]: (payload.data as LectureAssignment[]) ?? [] }));
-    } else {
-      setQuizzesByLecture((prev) => ({ ...prev, [lectureId]: (payload.data as LectureQuiz[]) ?? [] }));
-    }
+    if (tab === "quizzes") {
+      const lecture = lectures.find((item) => item.id === lectureId);
 
-    setLoadedSections((prev) => ({
-      ...prev,
-      [lectureId]: {
-        ...prev[lectureId],
-        [tab]: true,
-      },
-    }));
-  }
+      if (lecture) {
+        setQuizPanelLecture({
+          id: lecture.id,
+          title: lecture.title,
+          date: lecture.date,
+          class: lecture.class,
+        });
+        setIsQuizPanelOpen(true);
+      }
 
-  async function openLectureTab(lectureId: string, tab: LectureTab) {
-    setOpenLectureTabs((prev) => ({ ...prev, [lectureId]: tab }));
-
-    try {
-      await ensureSectionLoaded(lectureId, tab);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : `Failed to load ${tab}.`);
+      return;
     }
   }
 
@@ -371,249 +338,6 @@ export function LectureManagementPanel() {
     });
   }
 
-  async function handleUploadNote(lectureId: string) {
-    const form = getNoteForm(lectureId);
-    const selectedFile = form.file;
-
-    if (!selectedFile) {
-      setErrorMessage("Please choose a file before uploading.");
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const formData = new FormData();
-      formData.set("title", form.title);
-      formData.set("kind", form.kind);
-      formData.set("file", selectedFile);
-
-      const response = await fetch(`/api/lectures/${lectureId}/notes`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to upload file."));
-      }
-
-      setSuccessMessage(form.kind === "NOTE" ? "Lecture note uploaded." : "Supporting material uploaded.");
-      setNoteForms((prev) => ({
-        ...prev,
-        [lectureId]: {
-          title: "",
-          kind: "NOTE",
-          file: null,
-        },
-      }));
-      await ensureSectionLoaded(lectureId, "notes", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
-  async function handleUpdateNote(lectureId: string, note: LectureNote) {
-    const nextTitle = window.prompt("Update file title", note.title)?.trim();
-    if (!nextTitle) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/notes/${note.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: nextTitle }),
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to update note."));
-      }
-
-      setSuccessMessage("File details updated successfully.");
-      await ensureSectionLoaded(lectureId, "notes", true);
-    });
-  }
-
-  async function handleDeleteNote(lectureId: string, note: LectureNote) {
-    const confirmed = window.confirm(`Delete file "${note.title}"?`);
-    if (!confirmed) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/notes/${note.id}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to delete note."));
-      }
-
-      setSuccessMessage("File deleted successfully.");
-      await ensureSectionLoaded(lectureId, "notes", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
-  async function handleAddAssignment(lectureId: string) {
-    const form = getAssignmentForm(lectureId);
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/assignments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
-
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to add assignment."));
-      }
-
-      setSuccessMessage("Assignment added successfully.");
-      setAssignmentForms((prev) => ({
-        ...prev,
-        [lectureId]: {
-          title: "",
-          description: "",
-          dueDate: "",
-        },
-      }));
-      await ensureSectionLoaded(lectureId, "assignments", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
-  async function handleUpdateAssignment(lectureId: string, assignment: LectureAssignment) {
-    const nextTitle = window.prompt("Update assignment title", assignment.title)?.trim();
-    if (!nextTitle) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/assignments/${assignment.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: nextTitle }),
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to update assignment."));
-      }
-
-      setSuccessMessage("Assignment updated successfully.");
-      await ensureSectionLoaded(lectureId, "assignments", true);
-    });
-  }
-
-  async function handleDeleteAssignment(lectureId: string, assignment: LectureAssignment) {
-    const confirmed = window.confirm(`Delete assignment "${assignment.title}"?`);
-    if (!confirmed) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/assignments/${assignment.id}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to delete assignment."));
-      }
-
-      setSuccessMessage("Assignment deleted successfully.");
-      await ensureSectionLoaded(lectureId, "assignments", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
-  async function handleAddQuiz(lectureId: string) {
-    const form = getQuizForm(lectureId);
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/quizzes`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
-
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to add quiz."));
-      }
-
-      setSuccessMessage("Quiz added successfully.");
-      setQuizForms((prev) => ({
-        ...prev,
-        [lectureId]: {
-          title: "",
-        },
-      }));
-      await ensureSectionLoaded(lectureId, "quizzes", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
-  async function handleUpdateQuiz(lectureId: string, quiz: LectureQuiz) {
-    const nextTitle = window.prompt("Update quiz title", quiz.title)?.trim();
-    if (!nextTitle) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/quizzes/${quiz.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: nextTitle }),
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to update quiz."));
-      }
-
-      setSuccessMessage("Quiz updated successfully.");
-      await ensureSectionLoaded(lectureId, "quizzes", true);
-    });
-  }
-
-  async function handleDeleteQuiz(lectureId: string, quiz: LectureQuiz) {
-    const confirmed = window.confirm(`Delete quiz "${quiz.title}"?`);
-    if (!confirmed) {
-      return;
-    }
-
-    await withSubmitState(async () => {
-      const response = await fetch(`/api/lectures/${lectureId}/quizzes/${quiz.id}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to delete quiz."));
-      }
-
-      setSuccessMessage("Quiz deleted successfully.");
-      await ensureSectionLoaded(lectureId, "quizzes", true);
-      await loadLectures(page, filterClassId);
-    });
-  }
-
   return (
     <section className="mt-6 space-y-6">
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
@@ -680,10 +404,6 @@ export function LectureManagementPanel() {
 
         <div className="mt-4 space-y-4">
           {filteredLectures.map((lecture) => {
-            const assignmentForm = getAssignmentForm(lecture.id);
-            const quizForm = getQuizForm(lecture.id);
-            const noteForm = getNoteForm(lecture.id);
-            const activeTab = openLectureTabs[lecture.id] ?? null;
             const status = getLectureStatus(lecture.date);
 
             return (
@@ -703,7 +423,7 @@ export function LectureManagementPanel() {
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "notes")}
                           className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                            activeTab === "notes"
+                            isNotePanelOpen && notePanelLecture?.id === lecture.id
                               ? "border-foreground bg-foreground text-background"
                               : "border-black/15 dark:border-white/20"
                           }`}
@@ -714,7 +434,7 @@ export function LectureManagementPanel() {
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "assignments")}
                           className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                            activeTab === "assignments"
+                            isAssignmentPanelOpen && assignmentPanelLecture?.id === lecture.id
                               ? "border-foreground bg-foreground text-background"
                               : "border-black/15 dark:border-white/20"
                           }`}
@@ -725,7 +445,7 @@ export function LectureManagementPanel() {
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "quizzes")}
                           className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                            activeTab === "quizzes"
+                            isQuizPanelOpen && quizPanelLecture?.id === lecture.id
                               ? "border-foreground bg-foreground text-background"
                               : "border-black/15 dark:border-white/20"
                           }`}
@@ -759,238 +479,6 @@ export function LectureManagementPanel() {
                   </div>
                 </div>
 
-                {activeTab === "notes" ? (
-                  <div className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Notes & materials</p>
-
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
-                      <input
-                        value={noteForm.title}
-                        onChange={(event) =>
-                          setNoteForms((prev) => ({
-                            ...prev,
-                            [lecture.id]: {
-                              ...noteForm,
-                              title: event.target.value,
-                            },
-                          }))
-                        }
-                        placeholder="File title"
-                        className="rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                      />
-                      <select
-                        value={noteForm.kind}
-                        onChange={(event) =>
-                          setNoteForms((prev) => ({
-                            ...prev,
-                            [lecture.id]: {
-                              ...noteForm,
-                              kind: event.target.value as "NOTE" | "SUPPORTING_MATERIAL",
-                            },
-                          }))
-                        }
-                        className="rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                      >
-                        <option value="NOTE">Note</option>
-                        <option value="SUPPORTING_MATERIAL">Supporting material</option>
-                      </select>
-                    </div>
-                    <input
-                      type="file"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        setNoteForms((prev) => ({
-                          ...prev,
-                          [lecture.id]: {
-                            ...noteForm,
-                            file,
-                          },
-                        }));
-                      }}
-                      className="mt-2 block w-full text-xs"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSubmitting || !noteForm.title || !noteForm.file}
-                      onClick={() => void handleUploadNote(lecture.id)}
-                      className="mt-2 rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Upload
-                    </button>
-
-                    <div className="mt-3 space-y-2">
-                      {(notesByLecture[lecture.id] ?? []).map((note) => (
-                        <div key={note.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                          <div>
-                            <p className="font-semibold">{note.title}</p>
-                            <p className="text-muted">{note.kind} • {formatBytes(note.sizeBytes)} • Downloads: {note.downloadCount}</p>
-                          </div>
-                          <div className="flex gap-2">
-                            <a href={`/api/lectures/notes/${note.id}/download`} className="rounded-lg border border-black/15 px-3 py-1.5 font-semibold dark:border-white/20">
-                              Download
-                            </a>
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleUpdateNote(lecture.id, note)}
-                              className="rounded-lg border border-black/15 px-3 py-1.5 font-semibold dark:border-white/20"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleDeleteNote(lecture.id, note)}
-                              className="rounded-lg border border-red-300 px-3 py-1.5 font-semibold text-red-700"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeTab === "assignments" ? (
-                  <div className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Assignments</p>
-                    <input
-                      value={assignmentForm.title}
-                      onChange={(event) =>
-                        setAssignmentForms((prev) => ({
-                          ...prev,
-                          [lecture.id]: {
-                            ...assignmentForm,
-                            title: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="Assignment title"
-                      className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                    />
-                    <textarea
-                      value={assignmentForm.description}
-                      onChange={(event) =>
-                        setAssignmentForms((prev) => ({
-                          ...prev,
-                          [lecture.id]: {
-                            ...assignmentForm,
-                            description: event.target.value,
-                          },
-                        }))
-                      }
-                      rows={3}
-                      placeholder="Assignment description"
-                      className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                    />
-                    <input
-                      type="datetime-local"
-                      value={assignmentForm.dueDate}
-                      onChange={(event) =>
-                        setAssignmentForms((prev) => ({
-                          ...prev,
-                          [lecture.id]: {
-                            ...assignmentForm,
-                            dueDate: event.target.value,
-                          },
-                        }))
-                      }
-                      className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSubmitting || !assignmentForm.title || !assignmentForm.description || !assignmentForm.dueDate}
-                      onClick={() => void handleAddAssignment(lecture.id)}
-                      className="mt-2 rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Add assignment
-                    </button>
-
-                    <div className="mt-3 space-y-2">
-                      {(assignmentsByLecture[lecture.id] ?? []).map((assignment) => (
-                        <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                          <div>
-                            <p className="font-semibold">{assignment.title}</p>
-                            <p className="text-muted">Due: {new Date(assignment.dueDate).toLocaleString()}</p>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleUpdateAssignment(lecture.id, assignment)}
-                              className="rounded-lg border border-black/15 px-3 py-1.5 font-semibold dark:border-white/20"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleDeleteAssignment(lecture.id, assignment)}
-                              className="rounded-lg border border-red-300 px-3 py-1.5 font-semibold text-red-700"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeTab === "quizzes" ? (
-                  <div className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quizzes</p>
-                    <input
-                      value={quizForm.title}
-                      onChange={(event) =>
-                        setQuizForms((prev) => ({
-                          ...prev,
-                          [lecture.id]: {
-                            ...quizForm,
-                            title: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="Quiz title"
-                      className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSubmitting || !quizForm.title}
-                      onClick={() => void handleAddQuiz(lecture.id)}
-                      className="mt-2 rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Add quiz
-                    </button>
-
-                    <div className="mt-3 space-y-2">
-                      {(quizzesByLecture[lecture.id] ?? []).map((quiz) => (
-                        <div key={quiz.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                          <p className="font-semibold">{quiz.title}</p>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleUpdateQuiz(lecture.id, quiz)}
-                              className="rounded-lg border border-black/15 px-3 py-1.5 font-semibold dark:border-white/20"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => void handleDeleteQuiz(lecture.id, quiz)}
-                              className="rounded-lg border border-red-300 px-3 py-1.5 font-semibold text-red-700"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             );
           })}
@@ -1022,6 +510,30 @@ export function LectureManagementPanel() {
           isAddLecturePanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={() => setIsAddLecturePanelOpen(false)}
+        aria-hidden
+      />
+
+      <div
+        className={`fixed inset-0 z-40 bg-black/40 transition-opacity ${
+          isQuizPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setIsQuizPanelOpen(false)}
+        aria-hidden
+      />
+
+      <div
+        className={`fixed inset-0 z-40 bg-black/40 transition-opacity ${
+          isAssignmentPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setIsAssignmentPanelOpen(false)}
+        aria-hidden
+      />
+
+      <div
+        className={`fixed inset-0 z-40 bg-black/40 transition-opacity ${
+          isNotePanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setIsNotePanelOpen(false)}
         aria-hidden
       />
 
@@ -1082,6 +594,117 @@ export function LectureManagementPanel() {
             {isSubmitting ? "Saving..." : "Add lecture"}
           </button>
         </form>
+      </aside>
+
+      <aside
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1400px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+          isQuizPanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        aria-hidden={!isQuizPanelOpen}
+      >
+        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Lecture quizzes</h2>
+              {quizPanelLecture ? (
+                <p className="mt-1 text-sm text-muted">
+                  {quizPanelLecture.title} • {quizPanelLecture.class.name} • {new Date(quizPanelLecture.date).toLocaleString()}
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted">Select a lecture card and open Quizzes to manage quiz content.</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsQuizPanelOpen(false)}
+              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-6 pt-4 sm:px-6">
+          {quizPanelLecture ? (
+            <LectureQuizPanel lectureId={quizPanelLecture.id} onChanged={() => loadLectures(page, filterClassId)} />
+          ) : null}
+        </div>
+      </aside>
+
+      <aside
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+          isAssignmentPanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        aria-hidden={!isAssignmentPanelOpen}
+      >
+        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Lecture assignments</h2>
+              {assignmentPanelLecture ? (
+                <p className="mt-1 text-sm text-muted">
+                  {assignmentPanelLecture.title} • {assignmentPanelLecture.class.name} • {new Date(assignmentPanelLecture.date).toLocaleString()}
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted">Select a lecture card and open Assignments to manage assignment content.</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsAssignmentPanelOpen(false)}
+              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-6 pt-4 sm:px-6">
+          {assignmentPanelLecture ? (
+            <LectureAssignmentPanel
+              lectureId={assignmentPanelLecture.id}
+              onChanged={() => loadLectures(page, filterClassId)}
+            />
+          ) : null}
+        </div>
+      </aside>
+
+      <aside
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+          isNotePanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        aria-hidden={!isNotePanelOpen}
+      >
+        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Lecture notes</h2>
+              {notePanelLecture ? (
+                <p className="mt-1 text-sm text-muted">
+                  {notePanelLecture.title} • {notePanelLecture.class.name} • {new Date(notePanelLecture.date).toLocaleString()}
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted">Select a lecture card and open Notes to manage files.</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsNotePanelOpen(false)}
+              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-6 pt-4 sm:px-6">
+          {notePanelLecture ? (
+            <LectureNotePanel lectureId={notePanelLecture.id} onChanged={() => loadLectures(page, filterClassId)} />
+          ) : null}
+        </div>
       </aside>
     </section>
   );

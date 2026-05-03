@@ -73,20 +73,48 @@ export const createQuizSchema = z.object({
     .trim()
     .min(2, "Quiz title must be at least 2 characters long.")
     .max(150, "Quiz title must be at most 150 characters long."),
+  questions: z
+    .array(
+      z
+        .object({
+          id: uuid.optional(),
+          text: z
+            .string()
+            .trim()
+            .min(2, "Question must be at least 2 characters long.")
+            .max(500, "Question must be at most 500 characters long."),
+          answerType: z.enum(["SINGLE", "MULTIPLE"]),
+          options: z
+            .array(
+              z.object({
+                id: uuid.optional(),
+                text: z
+                  .string()
+                  .trim()
+                  .min(1, "Answer option cannot be empty.")
+                  .max(300, "Answer option must be at most 300 characters long."),
+                isCorrect: z.boolean(),
+              })
+            )
+            .min(2, "Each question requires at least 2 answers."),
+        })
+        .refine((question) => question.options.some((option) => option.isCorrect), {
+          message: "Mark at least one correct answer.",
+          path: ["options"],
+        })
+        .refine(
+          (question) =>
+            question.answerType !== "SINGLE" || question.options.filter((option) => option.isCorrect).length === 1,
+          {
+            message: "Single-answer questions must have exactly one correct answer.",
+            path: ["options"],
+          }
+        )
+    )
+    .min(1, "Quiz must contain at least one question."),
 });
 
-export const updateQuizSchema = z
-  .object({
-    title: z
-      .string()
-      .trim()
-      .min(2, "Quiz title must be at least 2 characters long.")
-      .max(150, "Quiz title must be at most 150 characters long.")
-      .optional(),
-  })
-  .refine((value) => value.title !== undefined, {
-    message: "At least one field is required.",
-  });
+export const updateQuizSchema = createQuizSchema;
 
 export const noteKindSchema = z.enum(["NOTE", "SUPPORTING_MATERIAL"]);
 

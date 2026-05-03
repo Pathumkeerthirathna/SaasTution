@@ -111,6 +111,34 @@ async function assertTeacherOwnsQuiz(teacherId: string, lectureId: string, quizI
   return quiz;
 }
 
+const quizWithQuestionsSelect = {
+  id: true,
+  lectureId: true,
+  title: true,
+  questions: {
+    orderBy: {
+      orderIndex: "asc" as const,
+    },
+    select: {
+      id: true,
+      text: true,
+      orderIndex: true,
+      answerType: true,
+      options: {
+        orderBy: {
+          orderIndex: "asc" as const,
+        },
+        select: {
+          id: true,
+          text: true,
+          isCorrect: true,
+          orderIndex: true,
+        },
+      },
+    },
+  },
+};
+
 async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteId: string) {
   const note = await prisma.note.findFirst({
     where: {
@@ -314,13 +342,8 @@ export async function listQuizzesForLectureForTeacher(teacherId: string, lecture
     where: {
       lectureId,
     },
-    orderBy: {
-      id: "desc",
-    },
-    select: {
-      id: true,
-      title: true,
-    },
+    orderBy: [{ id: "desc" }],
+    select: quizWithQuestionsSelect,
   });
 }
 
@@ -396,12 +419,22 @@ export async function addQuizToLectureForTeacher(
     data: {
       lectureId,
       title: input.title,
+      questions: {
+        create: input.questions.map((question, questionIndex) => ({
+          text: question.text,
+          orderIndex: questionIndex,
+          answerType: question.answerType,
+          options: {
+            create: question.options.map((option, optionIndex) => ({
+              text: option.text,
+              isCorrect: option.isCorrect,
+              orderIndex: optionIndex,
+            })),
+          },
+        })),
+      },
     },
-    select: {
-      id: true,
-      lectureId: true,
-      title: true,
-    },
+    select: quizWithQuestionsSelect,
   });
 }
 
@@ -419,12 +452,23 @@ export async function updateQuizForTeacher(
     },
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
+      questions: {
+        deleteMany: {},
+        create: input.questions.map((question, questionIndex) => ({
+          text: question.text,
+          orderIndex: questionIndex,
+          answerType: question.answerType,
+          options: {
+            create: question.options.map((option, optionIndex) => ({
+              text: option.text,
+              isCorrect: option.isCorrect,
+              orderIndex: optionIndex,
+            })),
+          },
+        })),
+      },
     },
-    select: {
-      id: true,
-      lectureId: true,
-      title: true,
-    },
+    select: quizWithQuestionsSelect,
   });
 }
 

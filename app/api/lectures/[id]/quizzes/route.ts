@@ -43,6 +43,16 @@ export async function POST(
 
     const body = (await request.json()) as {
       title?: string;
+      questions?: Array<{
+        id?: string;
+        text?: string;
+        answerType?: "SINGLE" | "MULTIPLE";
+        options?: Array<{
+          id?: string;
+          text?: string;
+          isCorrect?: boolean;
+        }>;
+      }>;
     };
 
     const parsed = createQuizSchema.safeParse(body);
