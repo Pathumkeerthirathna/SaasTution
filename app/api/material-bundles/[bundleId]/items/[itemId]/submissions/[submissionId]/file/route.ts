@@ -40,18 +40,7 @@ export async function GET(
       throw new AppError("Bundle id, item id and submission id are required.", 400, "VALIDATION_ERROR");
     }
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findFirst: (...args: unknown[]) => unknown } })
-      .materialBundleItemSubmission;
-
-    if (!submissionDelegate) {
-      throw new AppError(
-        "Submission feature is not available because Prisma client is outdated. Run `npx prisma generate` and restart the dev server.",
-        503,
-        "PRISMA_CLIENT_OUTDATED"
-      );
-    }
-
-    const submission = await submissionDelegate.findFirst({
+    const submission = await prisma.materialBundleItemSubmission.findFirst({
       where: {
         id: submissionId,
         itemId,
