@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
 
     // All classes the student is enrolled in (for filter dropdown)
     const classStudents = await prisma.classStudent.findMany({
-      where: { studentId: session.studentId, isActive: true },
+      where: { studentId: session.studentId },
+      distinct: ["classId"],
       include: { class: { select: { id: true, name: true } } },
     });
     const classes = classStudents.map((cs) => ({ id: cs.class.id, name: cs.class.name }));

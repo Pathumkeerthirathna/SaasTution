@@ -37,6 +37,8 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name?: string;
       description?: string;
+      monthlyFee?: number;
+      paymentDueWeek?: number;
       schedule?: string;
       schedules?: {
         dayOfWeek?: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";

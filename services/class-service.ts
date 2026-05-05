@@ -12,6 +12,8 @@ type ListClassesParams = {
 type ClassWriteInput = {
   name: string;
   description?: string;
+  monthlyFee: number;
+  paymentDueWeek: number;
   schedule?: string;
   schedules: {
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
@@ -74,6 +76,8 @@ export async function listClassesByTeacher(params: ListClassesParams) {
         id: true,
         name: true,
         description: true,
+        monthlyFee: true,
+        paymentDueWeek: true,
         schedule: true,
         schedules: {
           select: {
@@ -85,6 +89,23 @@ export async function listClassesByTeacher(params: ListClassesParams) {
           orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
         },
         createdAt: true,
+        students: {
+          select: {
+            id: true,
+            isActive: true,
+            assignedAt: true,
+            removedAt: true,
+            removeReason: true,
+            student: {
+              select: {
+                id: true,
+                name: true,
+                registrationNumber: true,
+              },
+            },
+          },
+          orderBy: [{ assignedAt: "desc" }],
+        },
       },
     }),
     prisma.class.count({
@@ -106,6 +127,8 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       teacherId,
       name: input.name,
       description: input.description,
+      monthlyFee: input.monthlyFee,
+      paymentDueWeek: input.paymentDueWeek,
       schedule: scheduleSummary,
       schedules: {
         create: input.schedules,
@@ -115,6 +138,8 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       id: true,
       name: true,
       description: true,
+      monthlyFee: true,
+      paymentDueWeek: true,
       schedule: true,
       schedules: {
         select: {
@@ -136,6 +161,8 @@ export async function updateClassForTeacher(
   input: {
     name?: string;
     description?: string;
+    monthlyFee?: number;
+    paymentDueWeek?: number;
     schedule?: string;
     schedules?: {
       dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
@@ -178,6 +205,8 @@ export async function updateClassForTeacher(
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.monthlyFee !== undefined ? { monthlyFee: input.monthlyFee } : {}),
+        ...(input.paymentDueWeek !== undefined ? { paymentDueWeek: input.paymentDueWeek } : {}),
         ...(scheduleSummary !== undefined ? { schedule: scheduleSummary } : {}),
         ...(input.schedules
           ? {
@@ -191,6 +220,8 @@ export async function updateClassForTeacher(
         id: true,
         name: true,
         description: true,
+        monthlyFee: true,
+        paymentDueWeek: true,
         schedule: true,
         schedules: {
           select: {

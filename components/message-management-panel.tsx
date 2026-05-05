@@ -265,7 +265,7 @@ export function MessageManagementPanel() {
   return (
     <>
     <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_1.9fr]">
-      <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+      <article className="panel-shell">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold">Send class message</h2>
@@ -276,7 +276,7 @@ export function MessageManagementPanel() {
           <button
             type="button"
             onClick={() => setIsHelpOpen(true)}
-            className="shrink-0 rounded-xl border border-black/15 px-3 py-1.5 text-sm font-semibold hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+            className="btn-ghost shrink-0 px-3 py-1.5"
           >
             Help
           </button>
@@ -297,7 +297,7 @@ export function MessageManagementPanel() {
                 void loadMessages(nextClassId, 1);
                 void loadPaperSupportMessages(nextClassId);
               }}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-select"
             >
               <option value="">Select class</option>
               {classes.map((item) => (
@@ -318,7 +318,7 @@ export function MessageManagementPanel() {
               rows={6}
               value={content}
               onChange={(event) => setContent(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-textarea"
               placeholder="Write announcement, homework reminder, or class update"
             />
           </div>
@@ -360,7 +360,7 @@ export function MessageManagementPanel() {
                 type="button"
                 disabled={isSubmitting || !selectedClassId || !content.trim()}
                 onClick={() => void handleSend()}
-                className="mt-3 w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary mt-3 w-full"
               >
                 {isSubmitting ? "Sending..." : "Send to all students"}
               </button>
@@ -369,13 +369,13 @@ export function MessageManagementPanel() {
         </form>
 
         {successMessage ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p className="notice-success mt-4">
             {successMessage}
           </p>
         ) : null}
       </article>
 
-      <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+      <article className="panel-shell">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold">Message history</h2>
           <p className="text-sm text-muted">
@@ -393,7 +393,7 @@ export function MessageManagementPanel() {
               type="date"
               value={historyDateFrom}
               onChange={(event) => setHistoryDateFrom(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-input"
             />
           </div>
           <div>
@@ -405,7 +405,7 @@ export function MessageManagementPanel() {
               type="date"
               value={historyDateTo}
               onChange={(event) => setHistoryDateTo(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-input"
             />
           </div>
           <button
@@ -415,7 +415,7 @@ export function MessageManagementPanel() {
               void loadMessages(selectedClassId, 1);
               void loadPaperSupportMessages(selectedClassId);
             }}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary"
           >
             Apply
           </button>
@@ -428,14 +428,14 @@ export function MessageManagementPanel() {
               void loadMessages(selectedClassId, 1, { dateFrom: "", dateTo: "" });
               void loadPaperSupportMessages(selectedClassId, { dateFrom: "", dateTo: "" });
             }}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-ghost"
           >
             Clear
           </button>
         </div>
 
         {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="notice-error mt-4">
             {errorMessage}
           </p>
         ) : null}
@@ -448,7 +448,7 @@ export function MessageManagementPanel() {
 
         <div className="mt-5 space-y-3">
           {messages.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
+            <div key={item.id} className="surface-card p-4">
               <p className="whitespace-pre-wrap text-sm">{item.content}</p>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <span className="rounded-lg bg-black/[0.04] px-2 py-1 text-muted dark:bg-white/[0.06]">
@@ -476,7 +476,7 @@ export function MessageManagementPanel() {
             type="button"
             disabled={isLoading || page <= 1 || !selectedClassId}
             onClick={() => void loadMessages(selectedClassId, page - 1)}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-ghost"
           >
             Previous
           </button>
@@ -484,7 +484,7 @@ export function MessageManagementPanel() {
             type="button"
             disabled={isLoading || page >= totalPages || !selectedClassId}
             onClick={() => void loadMessages(selectedClassId, page + 1)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary"
           >
             Next
           </button>

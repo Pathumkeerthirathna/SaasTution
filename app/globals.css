@@ -100,6 +100,12 @@
   .surface-panel {
     @apply rounded-3xl border border-brand-200 bg-card shadow-panel;
   }
+  .panel-shell {
+    @apply rounded-3xl border border-brand-200 bg-card p-5 shadow-card sm:p-6;
+  }
+  .surface-soft {
+    @apply rounded-xl border border-brand-100 bg-brand-50;
+  }
 
   /* ── Buttons ── */
   .btn-primary {
@@ -113,6 +119,62 @@
   }
   .btn-danger {
     @apply inline-flex items-center gap-1.5 justify-center rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition-all duration-180 hover:bg-rose-700 disabled:opacity-60 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-xl border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-180 hover:-translate-y-[1px] hover:border-brand-300 hover:bg-brand-50 disabled:pointer-events-none disabled:opacity-60;
+  }
+
+  /* ── Form controls ── */
+  .control-input {
+    @apply w-full rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
+  .control-select {
+    @apply w-full rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
+  .control-textarea {
+    @apply w-full rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
+
+  /* ── Notices ── */
+  .notice-error {
+    @apply rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
+  }
+  .notice-success {
+    @apply rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700;
+  }
+
+  /* ── Tabs ── */
+  .tab-strip {
+    @apply inline-flex items-center gap-1 rounded-xl border border-brand-200 bg-brand-50 p-1;
+  }
+  .tab-btn {
+    @apply rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors;
+  }
+  .tab-btn-active {
+    @apply bg-white text-brand-700 shadow-soft;
+  }
+  .tab-btn-inactive {
+    @apply text-muted hover:bg-white/70 hover:text-foreground;
+  }
+
+  /* ── Data tables ── */
+  .table-wrap {
+    @apply overflow-x-auto rounded-2xl border border-brand-200 bg-white;
+  }
+  .table-modern {
+    @apply min-w-full divide-y divide-brand-100 text-left text-sm;
+  }
+  .table-modern thead {
+    @apply bg-brand-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted;
+  }
+  .table-modern th {
+    @apply px-4 py-3;
+  }
+  .table-modern tbody {
+    @apply divide-y divide-brand-100;
+  }
+  .table-modern td {
+    @apply px-4 py-3 align-top;
   }
 
   /* ── Status badges ── */

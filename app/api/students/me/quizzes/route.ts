@@ -22,12 +22,23 @@ export async function GET(req: NextRequest) {
     const toDate = to ? new Date(`${to}T23:59:59.999`) : undefined;
 
     const where = {
-      lecture: {
-        class: {
-          ...(classId ? { id: classId } : {}),
-          students: { some: { studentId: session.studentId, isActive: true } },
+      ...(classId ? { lecture: { class: { id: classId } } } : {}),
+      OR: [
+        {
+          submissions: {
+            some: {
+              studentId: session.studentId,
+            },
+          },
         },
-      },
+        {
+          lecture: {
+            class: {
+              students: { some: { studentId: session.studentId, isActive: true } },
+            },
+          },
+        },
+      ],
       ...(fromDate || toDate
         ? {
             dueDate: {
@@ -95,7 +106,8 @@ export async function GET(req: NextRequest) {
 
     // Classes for filter dropdown
     const classStudents = await prisma.classStudent.findMany({
-      where: { studentId: session.studentId, isActive: true },
+      where: { studentId: session.studentId },
+      distinct: ["classId"],
       include: { class: { select: { id: true, name: true } } },
     });
     const classes = classStudents.map((cs) => ({ id: cs.class.id, name: cs.class.name }));

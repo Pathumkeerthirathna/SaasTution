@@ -6,12 +6,26 @@ type ClassItem = {
   id: string;
   name: string;
   description: string | null;
+  monthlyFee: number;
+  paymentDueWeek: number;
   schedule: string;
   schedules: {
     id: string;
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
     startTime: string;
     endTime: string;
+  }[];
+  students: {
+    id: string;
+    isActive: boolean;
+    assignedAt: string;
+    removedAt: string | null;
+    removeReason: string | null;
+    student: {
+      id: string;
+      name: string;
+      registrationNumber: string | null;
+    };
   }[];
   createdAt: string;
 };
@@ -37,6 +51,8 @@ type PaginatedResponse = {
 type FormState = {
   name: string;
   description: string;
+  monthlyFee: string;
+  paymentDueWeek: string;
   schedules: {
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
     startTime: string;
@@ -50,6 +66,7 @@ type FilterState = {
 };
 
 const PAGE_SIZE = 4;
+const CLASS_CONFIG_UPDATED_EVENT = "saastution:class-config-updated";
 const WEEK_DAYS: Array<FormState["schedules"][number]["dayOfWeek"]> = [
   "SUNDAY",
   "MONDAY",
@@ -103,6 +120,8 @@ export function ClassManagementPanel() {
   const [createForm, setCreateForm] = useState<FormState>({
     name: "",
     description: "",
+    monthlyFee: "0",
+    paymentDueWeek: "1",
     schedules: [getDefaultScheduleRow()],
   });
   const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
@@ -111,9 +130,11 @@ export function ClassManagementPanel() {
   const [editForm, setEditForm] = useState<FormState>({
     name: "",
     description: "",
+    monthlyFee: "0",
+    paymentDueWeek: "1",
     schedules: [getDefaultScheduleRow()],
   });
-  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule">>({});  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule" | "students">>({});  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const hasData = useMemo(() => items.length > 0, [items]);
 
   const loadClasses = useCallback(async (nextPage = 1, appliedFilters: FilterState) => {
@@ -168,7 +189,11 @@ export function ClassManagementPanel() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(createForm),
+        body: JSON.stringify({
+          ...createForm,
+          monthlyFee: Number(createForm.monthlyFee || 0),
+          paymentDueWeek: Number(createForm.paymentDueWeek || 1),
+        }),
       });
 
       const payload = (await response.json()) as {
@@ -184,11 +209,14 @@ export function ClassManagementPanel() {
       setCreateForm({
         name: "",
         description: "",
+        monthlyFee: "0",
+        paymentDueWeek: "1",
         schedules: [getDefaultScheduleRow()],
       });
       setIsCreatePanelOpen(false);
       setSuccessMessage("Class created successfully.");
       await loadClasses(1, filters);
+      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
     } catch {
       setErrorMessage("Unable to create class right now.");
     } finally {
@@ -201,6 +229,8 @@ export function ClassManagementPanel() {
     setEditForm({
       name: item.name,
       description: item.description ?? "",
+      monthlyFee: String(item.monthlyFee),
+      paymentDueWeek: String(item.paymentDueWeek),
       schedules:
         item.schedules.length > 0
           ? item.schedules.map((schedule) => ({
@@ -225,7 +255,11 @@ export function ClassManagementPanel() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          ...editForm,
+          monthlyFee: Number(editForm.monthlyFee || 0),
+          paymentDueWeek: Number(editForm.paymentDueWeek || 1),
+        }),
       });
 
       const payload = (await response.json()) as {
@@ -240,6 +274,7 @@ export function ClassManagementPanel() {
 
       setEditingId(null);
       setSuccessMessage("Class updated successfully.");
+      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
       await loadClasses(page, filters);
     } catch {
       setErrorMessage("Unable to update class right now.");
@@ -275,6 +310,7 @@ export function ClassManagementPanel() {
       }
 
       setSuccessMessage("Class deleted successfully.");
+      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
       const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
       await loadClasses(nextPage, filters);
     } catch {
@@ -286,7 +322,7 @@ export function ClassManagementPanel() {
 
   return (
     <section className="relative">
-      <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+      <article className="panel-shell">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Your classes</h2>
@@ -298,14 +334,14 @@ export function ClassManagementPanel() {
             <button
               type="button"
               onClick={() => setIsCreatePanelOpen(true)}
-              className="mt-3 inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background sm:mt-0"
+              className="btn-primary mt-3 sm:mt-0"
             >
               Add class
             </button>
             <button
               type="button"
               onClick={() => setIsHelpOpen(true)}
-              className="mt-3 inline-flex rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5 sm:mt-0"
+              className="btn-ghost mt-3 sm:mt-0"
             >
               Help
             </button>
@@ -317,13 +353,13 @@ export function ClassManagementPanel() {
             value={filters.name}
             onChange={(event) => setFilters((prev) => ({ ...prev, name: event.target.value }))}
             placeholder="Filter by class name"
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+            className="control-input"
           />
           <input
             value={filters.schedule}
             onChange={(event) => setFilters((prev) => ({ ...prev, schedule: event.target.value }))}
             placeholder="Filter by schedule"
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+            className="control-input"
           />
         </div>
 
@@ -332,7 +368,7 @@ export function ClassManagementPanel() {
             type="button"
             disabled={isLoading}
             onClick={() => void loadClasses(1, filters)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary"
           >
             Apply filters
           </button>
@@ -344,18 +380,18 @@ export function ClassManagementPanel() {
               setFilters(cleared);
               void loadClasses(1, cleared);
             }}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-ghost"
           >
             Clear filters
           </button>
         </div>
 
         {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+          <p className="notice-error mt-4">{errorMessage}</p>
         ) : null}
 
         {successMessage ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p className="notice-success mt-4">
             {successMessage}
           </p>
         ) : null}
@@ -370,11 +406,13 @@ export function ClassManagementPanel() {
           {items.map((item) => {
             const isEditing = editingId === item.id;
             const activeTab = activeTabs[item.id] ?? "details";
+            const activeStudents = item.students.filter((entry) => entry.isActive);
+            const pastStudents = item.students.filter((entry) => !entry.isActive);
 
             return (
               <div
                 key={item.id}
-                className="rounded-3xl border-2 border-slate-500/80 bg-transparent p-4 shadow-none dark:border-slate-300/80"
+                className="surface-card p-4"
               >
                 {isEditing ? (
                   <div className="space-y-3">
@@ -383,6 +421,24 @@ export function ClassManagementPanel() {
                       onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
                       className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
                     />
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.monthlyFee}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, monthlyFee: event.target.value }))}
+                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                      placeholder="Monthly fee"
+                    />
+                    <select
+                      value={editForm.paymentDueWeek}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, paymentDueWeek: event.target.value }))}
+                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+                    >
+                      <option value="1">Payment due in 1st week</option>
+                      <option value="2">Payment due in 2nd week</option>
+                      <option value="3">Payment due in 3rd week</option>
+                      <option value="4">Payment due in 4th week</option>
+                    </select>
                     <input
                       value={editForm.schedules
                         .map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`)
@@ -521,16 +577,18 @@ export function ClassManagementPanel() {
                         Created {new Date(item.createdAt).toLocaleDateString()}
                       </p>
                     </div>
+                    <p className="mt-2 text-sm font-medium text-brand-700">Monthly fee: Rs {item.monthlyFee.toLocaleString()}</p>
+                    <p className="mt-1 text-xs text-muted">Payment submission week: Week {item.paymentDueWeek}</p>
 
                     <div className="mt-3 border-b border-black/15 dark:border-white/15">
-                      <div className="flex items-center gap-4">
+                      <div className="tab-strip">
                         <button
                           type="button"
                           onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "details" }))}
-                          className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+                          className={`tab-btn ${
                             activeTab === "details"
-                              ? "border-foreground text-foreground"
-                              : "border-transparent text-muted hover:text-foreground"
+                              ? "tab-btn-active"
+                              : "tab-btn-inactive"
                           }`}
                         >
                           Details
@@ -538,32 +596,43 @@ export function ClassManagementPanel() {
                         <button
                           type="button"
                           onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "schedule" }))}
-                          className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+                          className={`tab-btn ${
                             activeTab === "schedule"
-                              ? "border-foreground text-foreground"
-                              : "border-transparent text-muted hover:text-foreground"
+                              ? "tab-btn-active"
+                              : "tab-btn-inactive"
                           }`}
                         >
                           Schedule
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "students" }))}
+                          className={`tab-btn ${
+                            activeTab === "students"
+                              ? "tab-btn-active"
+                              : "tab-btn-inactive"
+                          }`}
+                        >
+                          Students
                         </button>
                       </div>
                     </div>
 
                     {activeTab === "details" ? (
                       <div className="mt-3 space-y-2">
-                        <p className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-muted dark:border-white/10 dark:bg-transparent">
+                        <p className="surface-soft px-3 py-2 text-sm text-muted">
                           {item.description || "No description provided."}
                         </p>
                         <p className="text-xs font-medium text-muted">Summary: {item.schedule}</p>
                       </div>
-                    ) : (
+                    ) : activeTab === "schedule" ? (
                       <div className="mt-3">
                         {item.schedules.length > 0 ? (
                           <div className="space-y-2">
                             {item.schedules.map((schedule) => (
                               <div
                                 key={schedule.id}
-                                className="grid grid-cols-[90px_1fr] items-center rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-transparent"
+                                className="surface-soft grid grid-cols-[90px_1fr] items-center px-3 py-2 text-sm"
                               >
                                 <span className="font-semibold text-foreground">{getDayShortLabel(schedule.dayOfWeek)}</span>
                                 <span className="text-muted">
@@ -576,13 +645,59 @@ export function ClassManagementPanel() {
                           <p className="text-sm text-muted">No schedules configured for this class.</p>
                         )}
                       </div>
+                    ) : (
+                      <div className="mt-3 grid gap-3">
+                        <div className="surface-soft p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Active students ({activeStudents.length})</p>
+                          {activeStudents.length === 0 ? (
+                            <p className="mt-2 text-sm text-muted">No active students currently assigned.</p>
+                          ) : (
+                            <div className="mt-2 space-y-2">
+                              {activeStudents.map((entry) => (
+                                <div key={entry.id} className="rounded-lg border border-brand-200 bg-white px-3 py-2">
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {entry.student.name}
+                                    {entry.student.registrationNumber ? (
+                                      <span className="ml-1 text-xs font-normal text-muted">({entry.student.registrationNumber})</span>
+                                    ) : null}
+                                  </p>
+                                  <p className="text-xs text-muted">Joined: {new Date(entry.assignedAt).toLocaleString()}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="surface-soft p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Past students ({pastStudents.length})</p>
+                          {pastStudents.length === 0 ? (
+                            <p className="mt-2 text-sm text-muted">No past student records yet.</p>
+                          ) : (
+                            <div className="mt-2 space-y-2">
+                              {pastStudents.map((entry) => (
+                                <div key={entry.id} className="rounded-lg border border-brand-200 bg-white px-3 py-2">
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {entry.student.name}
+                                    {entry.student.registrationNumber ? (
+                                      <span className="ml-1 text-xs font-normal text-muted">({entry.student.registrationNumber})</span>
+                                    ) : null}
+                                  </p>
+                                  <p className="text-xs text-muted">Joined: {new Date(entry.assignedAt).toLocaleString()}</p>
+                                  <p className="text-xs text-muted">Removed: {entry.removedAt ? new Date(entry.removedAt).toLocaleString() : "-"}</p>
+                                  {entry.removeReason ? <p className="text-xs text-muted">Reason: {entry.removeReason}</p> : null}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
 
                     <div className="mt-4 flex gap-2">
                       <button
                         type="button"
                         onClick={() => beginEdit(item)}
-                        className="flex-1 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold dark:border-white/20"
+                        className="btn-ghost flex-1"
                       >
                         Edit
                       </button>
@@ -607,7 +722,7 @@ export function ClassManagementPanel() {
             type="button"
             disabled={page <= 1 || isLoading}
             onClick={() => void loadClasses(page - 1, filters)}
-            className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/20"
+            className="btn-ghost"
           >
             Previous
           </button>
@@ -616,7 +731,7 @@ export function ClassManagementPanel() {
             type="button"
             disabled={page >= totalPages || isLoading}
             onClick={() => void loadClasses(page + 1, filters)}
-            className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/20"
+            className="btn-ghost"
           >
             Next
           </button>
@@ -662,6 +777,40 @@ export function ClassManagementPanel() {
               className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
               placeholder="Math - Grade 7"
             />
+          </div>
+
+          <div>
+            <label htmlFor="classMonthlyFee" className="mb-1 block text-sm font-medium">
+              Monthly fee (LKR)
+            </label>
+            <input
+              id="classMonthlyFee"
+              type="number"
+              min="0"
+              required
+              value={createForm.monthlyFee}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, monthlyFee: event.target.value }))}
+              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              placeholder="2500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="classPaymentDueWeek" className="mb-1 block text-sm font-medium">
+              Payment due week
+            </label>
+            <select
+              id="classPaymentDueWeek"
+              required
+              value={createForm.paymentDueWeek}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, paymentDueWeek: event.target.value }))}
+              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+            >
+              <option value="1">First week</option>
+              <option value="2">Second week</option>
+              <option value="3">Third week</option>
+              <option value="4">Fourth week</option>
+            </select>
           </div>
 
           <div>

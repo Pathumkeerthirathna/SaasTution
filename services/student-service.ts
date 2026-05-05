@@ -231,7 +231,6 @@ export async function listStudentsByTeacher(params: {
       {
         classes: {
           some: {
-            isActive: true,
             class: {
               teacherId: params.teacherId,
             },
@@ -353,9 +352,16 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
   }
 
   const hasTeacherClass = student.classes.length > 0;
-  const isUnassigned = await prisma.classStudent.count({ where: { studentId, isActive: true } });
+  const hasTeacherHistory = await prisma.classStudent.count({
+    where: {
+      studentId,
+      class: {
+        teacherId,
+      },
+    },
+  });
 
-  if (!hasTeacherClass && isUnassigned > 0) {
+  if (!hasTeacherClass && hasTeacherHistory === 0) {
     throw new AppError("Student not available for this teacher.", 403, "FORBIDDEN");
   }
 

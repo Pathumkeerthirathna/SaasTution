@@ -39,7 +39,6 @@ export async function GET(
             class: {
               select: {
                 students: {
-                  where: { isActive: true },
                   select: { studentId: true },
                 },
               },

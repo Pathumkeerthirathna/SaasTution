@@ -228,7 +228,7 @@ export function StudentGuardianManagementPanel() {
             type="button"
             disabled={isLoadingList}
             onClick={() => void loadStudentList(1, filters)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary"
           >
             Apply filters
           </button>
@@ -240,18 +240,18 @@ export function StudentGuardianManagementPanel() {
               setFilters(cleared);
               void loadStudentList(1, cleared);
             }}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-ghost"
           >
             Clear
           </button>
         </div>
 
         {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+          <p className="notice-error mt-4">{errorMessage}</p>
         ) : null}
 
         {successMessage ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p className="notice-success mt-4">
             {successMessage}
           </p>
         ) : null}
@@ -262,9 +262,9 @@ export function StudentGuardianManagementPanel() {
           <p className="mt-5 text-sm text-muted">No students found. Add students or adjust your filters.</p>
         ) : null}
 
-        <div className="mt-5 overflow-x-auto rounded-2xl border border-black/10 dark:border-white/10">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-            <thead className="bg-black/[0.03] text-xs font-semibold uppercase tracking-wide text-muted dark:bg-white/[0.04]">
+        <div className="table-wrap mt-5">
+          <table className="table-modern">
+            <thead>
               <tr>
                 <th className="px-4 py-3">Reg no</th>
                 <th className="px-4 py-3">Student</th>
@@ -276,7 +276,7 @@ export function StudentGuardianManagementPanel() {
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/10">
+            <tbody>
               {students.map((student) => (
                 <tr key={student.id} className="bg-transparent">
                   <td className="px-4 py-3 font-semibold text-foreground">{student.registrationNumber ?? "-"}</td>
@@ -291,7 +291,7 @@ export function StudentGuardianManagementPanel() {
                         {student.classes.map((classItem) => (
                           <span
                             key={classItem.id}
-                            className="rounded-full border border-black/15 px-2 py-0.5 text-xs font-medium dark:border-white/20"
+                            className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700"
                           >
                             {classItem.name}
                           </span>
@@ -304,7 +304,7 @@ export function StudentGuardianManagementPanel() {
                   <td className="px-4 py-3">
                     <Link
                       href={`/dashboard/students/${student.id}`}
-                      className="inline-flex rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+                      className="btn-ghost px-3 py-1.5 text-xs"
                     >
                       View
                     </Link>
@@ -320,7 +320,7 @@ export function StudentGuardianManagementPanel() {
             type="button"
             disabled={isLoadingList || page <= 1}
             onClick={() => void loadStudentList(page - 1, filters)}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-ghost"
           >
             Previous
           </button>
@@ -328,7 +328,7 @@ export function StudentGuardianManagementPanel() {
             type="button"
             disabled={isLoadingList || page >= totalPages}
             onClick={() => void loadStudentList(page + 1, filters)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary"
           >
             Next
           </button>

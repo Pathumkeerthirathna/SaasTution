@@ -59,14 +59,17 @@ export async function GET(
     }
 
     const totalQuestions = quiz.questions.length;
-    const enrolledCount = await prisma.classStudent.count({
+    const enrollmentRows = await prisma.classStudent.findMany({
       where: {
         class: {
           lectures: {
             some: { id: lectureId },
           },
         },
-        isActive: true,
+      },
+      distinct: ["studentId"],
+      select: {
+        studentId: true,
       },
     });
 
@@ -79,7 +82,7 @@ export async function GET(
         totalQuestions,
       },
       stats: {
-        totalEnrolled: enrolledCount,
+        totalEnrolled: enrollmentRows.length,
         totalSubmissions: quiz.submissions.length,
         averageScore:
           quiz.submissions.length > 0

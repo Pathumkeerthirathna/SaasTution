@@ -63,7 +63,8 @@ export async function GET(req: NextRequest) {
     }));
 
     const allClasses = await prisma.classStudent.findMany({
-      where: { studentId: session.studentId, isActive: true },
+      where: { studentId: session.studentId },
+      distinct: ["classId"],
       include: { class: { select: { id: true, name: true } } },
     });
 
