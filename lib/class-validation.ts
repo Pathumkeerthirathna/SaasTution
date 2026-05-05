@@ -20,13 +20,13 @@ const classSchedule = z
   .max(120, "Schedule must be at most 120 characters long.");
 
 const classMonthlyFee = z
-  .number({ invalid_type_error: "Monthly fee must be a number." })
+  .coerce.number()
   .int("Monthly fee must be a whole number.")
   .min(0, "Monthly fee cannot be negative.")
   .max(1_000_000_000, "Monthly fee is too large.");
 
 const classPaymentDueWeek = z
-  .number({ invalid_type_error: "Payment due week must be a number." })
+  .coerce.number()
   .int("Payment due week must be a whole number.")
   .min(1, "Payment due week must be between 1 and 4.")
   .max(4, "Payment due week must be between 1 and 4.");

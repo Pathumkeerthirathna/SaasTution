@@ -6,6 +6,15 @@ import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
+type SubmissionListItem = {
+  id: string;
+  studentId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  submittedAt: Date;
+};
+
 export async function GET(
   _request: Request,
   context: { params: { bundleId: string; itemId: string } }
@@ -68,7 +77,11 @@ export async function GET(
 
     const studentIds = bundleItem.bundle.class.students.map((entry) => entry.student.id);
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findMany: (...args: unknown[]) => unknown } })
+    const submissionDelegate = (prisma as {
+      materialBundleItemSubmission?: {
+        findMany: (...args: unknown[]) => Promise<SubmissionListItem[]>;
+      };
+    })
       .materialBundleItemSubmission;
 
     if (!submissionDelegate) {
@@ -79,14 +92,7 @@ export async function GET(
       );
     }
 
-    let submissions: Array<{
-      id: string;
-      studentId: string;
-      fileName: string;
-      mimeType: string;
-      sizeBytes: number;
-      submittedAt: Date;
-    }> = [];
+    let submissions: SubmissionListItem[] = [];
 
     if (studentIds.length > 0) {
       try {

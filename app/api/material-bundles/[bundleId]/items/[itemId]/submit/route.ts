@@ -9,6 +9,14 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type CreatedSubmission = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  submittedAt: Date;
+};
+
 const PDF_MIME_TYPE = "application/pdf";
 const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_GRACE_MINUTES = 20;
@@ -132,7 +140,11 @@ export async function POST(
 
     const fileUrl = `material-bundle-submissions/${itemId}/${session.studentId}/${storedFileName}`;
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { create: (...args: unknown[]) => unknown } })
+    const submissionDelegate = (prisma as {
+      materialBundleItemSubmission?: {
+        create: (...args: unknown[]) => Promise<CreatedSubmission>;
+      };
+    })
       .materialBundleItemSubmission;
 
     if (!submissionDelegate) {
