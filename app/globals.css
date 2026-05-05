@@ -3,55 +3,67 @@
 @tailwind utilities;
 
 :root {
-  --background: #f4f6fb;
-  --background-soft: #eef2f8;
-  --foreground: #111c37;
-  --muted: #5f6f8a;
+  --background: #f3f6fc;
+  --background-soft: #eaeff8;
+  --foreground: #0d1a2e;
+  --muted: #556070;
   --card: #ffffff;
-  --border: #d8e0ef;
-  --brand-50: #eaf0ff;
-  --brand-100: #d9e4ff;
-  --brand-200: #c4d5ff;
-  --brand-300: #9fbaf8;
-  --brand-700: #243f8f;
-  --accent: #148064;
+  --border: #dae2f0;
+
+  /* Brand — rich indigo-blue */
+  --brand-50:  #eef2ff;
+  --brand-100: #e0e8ff;
+  --brand-200: #c4d2fd;
+  --brand-300: #93aafc;
+  --brand-400: #6183f8;
+  --brand-500: #3d5ef2;
+  --brand-600: #2d4ee8;
+  --brand-700: #1e3cd4;
+  --brand-800: #1831a8;
+  --brand-900: #132585;
+
+  /* Accent — teal-green */
+  --accent: #0d9488;
+  --accent-light: #ccfbf1;
+
+  /* Tones */
+  --tone-emerald: #059669;
+  --tone-amber:   #d97706;
+  --tone-rose:    #e11d48;
+  --tone-violet:  #7c3aed;
+  --tone-sky:     #0284c7;
 }
 
 @layer base {
-  html,
-  body {
-    min-height: 100%;
-  }
+  html, body { min-height: 100%; }
 
   body {
     background:
-      radial-gradient(circle at 6% -4%, rgba(120, 148, 220, 0.15) 0%, rgba(120, 148, 220, 0) 40%),
-      radial-gradient(circle at 105% 10%, rgba(80, 102, 170, 0.12) 0%, rgba(80, 102, 170, 0) 42%),
-      linear-gradient(180deg, #f6f8fd 0%, #eff3f9 100%);
+      radial-gradient(ellipse at 0% 0%, rgba(99,131,248,0.10) 0%, transparent 50%),
+      radial-gradient(ellipse at 100% 5%, rgba(61,94,242,0.08) 0%, transparent 50%),
+      linear-gradient(160deg, #f3f6fc 0%, #eaeff8 100%);
     color: var(--foreground);
     font-family: var(--font-sans), sans-serif;
     letter-spacing: -0.01em;
+    line-height: 1.55;
     text-rendering: optimizeLegibility;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
+  h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display), var(--font-sans), sans-serif;
     letter-spacing: -0.02em;
-    color: #16233f;
+    line-height: 1.15;
+    color: #0d1a2e;
   }
 
-  a,
-  button,
-  input,
-  select,
-  textarea {
+  a, button, input, select, textarea {
     transition-duration: 180ms;
     transition-timing-function: ease;
+  }
+
+  ::selection {
+    background: rgba(45, 78, 232, 0.18);
+    color: #0d1a2e;
   }
 
   a:focus-visible,
@@ -59,89 +71,68 @@
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid rgba(36, 63, 143, 0.45);
+    outline: 2px solid rgba(61,94,242,0.5);
     outline-offset: 2px;
+  }
+
+  input, select, textarea {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--brand-400);
+    box-shadow: 0 0 0 3px rgba(61,94,242,0.12);
+    outline: none;
   }
 }
 
 @layer components {
+  /* ── Surface containers ── */
   .surface-card {
     @apply rounded-2xl border border-brand-200 bg-card shadow-card;
   }
-
   .surface-panel {
     @apply rounded-3xl border border-brand-200 bg-card shadow-panel;
   }
 
+  /* ── Buttons ── */
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-soft transition-all duration-180 hover:-translate-y-[1px] hover:brightness-110 active:translate-y-0 disabled:opacity-60;
+    @apply inline-flex items-center gap-1.5 justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold tracking-[0.01em] text-white shadow-soft transition-all duration-180 hover:-translate-y-[1px] hover:bg-brand-600 hover:shadow-md active:translate-y-0 active:bg-brand-800 disabled:pointer-events-none disabled:opacity-60;
   }
-
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-xl border border-brand-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-soft transition-all duration-180 hover:bg-brand-50;
+    @apply inline-flex items-center gap-1.5 justify-center rounded-xl border border-brand-200 bg-white px-4 py-2 text-sm font-semibold tracking-[0.01em] text-brand-700 shadow-soft transition-all duration-180 hover:-translate-y-[1px] hover:border-brand-300 hover:bg-brand-50 disabled:pointer-events-none disabled:opacity-60;
+  }
+  .btn-accent {
+    @apply inline-flex items-center gap-1.5 justify-center rounded-xl bg-accent px-4 py-2 text-sm font-semibold tracking-[0.01em] text-white shadow-soft transition-all duration-180 hover:-translate-y-[1px] hover:brightness-110 hover:shadow-md active:translate-y-0 disabled:pointer-events-none disabled:opacity-60;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-1.5 justify-center rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition-all duration-180 hover:bg-rose-700 disabled:opacity-60 disabled:pointer-events-none;
   }
 
+  /* ── Status badges ── */
   .status-pill {
-    @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold;
+    @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold;
   }
-}
 
-.bg-background-soft {
-  background: var(--background-soft);
-}
+  /* ── Sidebar nav item ── */
+  .nav-item {
+    @apply flex w-full items-center gap-3 rounded-xl border border-transparent px-3.5 py-2.5 text-sm font-medium transition-all duration-180;
+  }
+  .nav-item-active {
+    @apply border-brand-700 bg-brand-700 text-white shadow-md;
+  }
+  .nav-item-inactive {
+    @apply text-slate-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700;
+  }
 
-.text-brand-700 {
-  color: var(--brand-700);
-}
-
-.text-slate-900 {
-  color: #13233f;
-}
-
-.text-slate-800 {
-  color: #1f3152;
-}
-
-.text-slate-700 {
-  color: #304867;
-}
-
-.text-slate-600 {
-  color: #5b6f8e;
-}
-
-.border-brand-200 {
-  border-color: var(--brand-200);
-}
-
-.border-brand-300 {
-  border-color: var(--brand-300);
-}
-
-.bg-brand-50 {
-  background: var(--brand-50);
-}
-
-.bg-brand-100 {
-  background: var(--brand-100);
-}
-
-.bg-brand-700 {
-  background: var(--brand-700);
-}
-
-.text-accent {
-  color: var(--accent);
-}
-
-.bg-accent {
-  background: var(--accent);
-}
-
-a {
-  transition: opacity 180ms ease;
-}
-
-a:hover {
-  opacity: 0.92;
+  /* ── Stat card accent strip ── */
+  .stat-card {
+    @apply surface-card relative overflow-hidden p-5;
+  }
 }

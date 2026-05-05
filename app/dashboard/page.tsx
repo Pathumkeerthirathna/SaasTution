@@ -2,6 +2,21 @@ import { cookies } from "next/headers";
 import { unstable_noStore as noStore } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import {
+  BookOpen,
+  Users,
+  Radio,
+  CalendarDays,
+  FileText,
+  ClipboardList,
+  HelpCircle,
+  MessageSquare,
+  GraduationCap,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  ArrowRight,
+} from "lucide-react";
 
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -398,222 +413,215 @@ export default async function DashboardPage() {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col pb-4">
-      <section className="surface-panel p-6 sm:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="flex w-full flex-col gap-6 pb-6">
+      {/* ── Welcome hero ── */}
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-900 p-6 text-white shadow-panel sm:p-8">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
+        <div className="pointer-events-none absolute -bottom-8 right-24 h-28 w-28 rounded-full bg-white/5" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Teacher Dashboard</p>
-            <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">Welcome back, {teacher.name}</h1>
-            <p className="mt-2 text-sm text-muted">Live overview of classes, learning activity, and upcoming work.</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-brand-200">Teacher Dashboard</p>
+            <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Welcome back, {teacher.name.split(" ")[0]}</h1>
+            <p className="mt-1.5 text-sm text-brand-200">Live overview of your classes, activity, and upcoming work.</p>
           </div>
-
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <article className="rounded-2xl border border-black/10 px-4 py-3 dark:border-white/10">
-              <p className="text-xs uppercase tracking-wide text-muted">Classes</p>
-              <p className="mt-1 text-xl font-semibold">{formatNumber(classCount)}</p>
-            </article>
-            <article className="rounded-2xl border border-black/10 px-4 py-3 dark:border-white/10">
-              <p className="text-xs uppercase tracking-wide text-muted">Students</p>
-              <p className="mt-1 text-xl font-semibold">{formatNumber(activeStudentCount)}</p>
-            </article>
-            <article className="rounded-2xl border border-black/10 px-4 py-3 dark:border-white/10">
-              <p className="text-xs uppercase tracking-wide text-muted">Live now</p>
-              <p className="mt-1 text-xl font-semibold">{formatNumber(activeSessionCount)}</p>
-            </article>
-            <article className="rounded-2xl border border-black/10 px-4 py-3 dark:border-white/10">
-              <p className="text-xs uppercase tracking-wide text-muted">Today</p>
-              <p className="mt-1 text-xl font-semibold">{formatNumber(lecturesTodayCount)}</p>
-            </article>
+            {[
+              { label: "Classes",  value: classCount,        icon: BookOpen },
+              { label: "Students", value: activeStudentCount, icon: Users },
+              { label: "Live Now", value: activeSessionCount, icon: Radio },
+              { label: "Today",    value: lecturesTodayCount, icon: CalendarDays },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-white backdrop-blur-sm transition hover:bg-white/15">
+                <div className="flex items-center gap-1.5">
+                  <Icon size={12} className="opacity-70" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+                </div>
+                <p className="mt-1 text-2xl font-bold">{formatNumber(value)}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <article className="surface-card p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Lectures</p>
-          <p className="mt-2 text-3xl font-semibold">{formatNumber(lectureCount)}</p>
-          <p className="mt-1 text-xs text-muted">Across all active classes</p>
+      {/* ── Stat cards ── */}
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Lectures",          value: lectureCount,    helper: "Across all classes",     icon: GraduationCap, bg: "bg-violet-50",  iconCls: "bg-violet-100 text-violet-600", valCls: "text-violet-700", border: "border-violet-200" },
+          { label: "Notes & Materials", value: noteCount,       helper: "Published resources",    icon: FileText,      bg: "bg-sky-50",     iconCls: "bg-sky-100 text-sky-600",       valCls: "text-sky-700",    border: "border-sky-200"    },
+          { label: "Assignments",       value: assignmentCount, helper: "Total records",          icon: ClipboardList, bg: "bg-amber-50",   iconCls: "bg-amber-100 text-amber-600",   valCls: "text-amber-700",  border: "border-amber-200"  },
+          { label: "Quizzes",           value: quizCount,       helper: "Assessment units",       icon: HelpCircle,    bg: "bg-emerald-50", iconCls: "bg-emerald-100 text-emerald-600",valCls: "text-emerald-700",border: "border-emerald-200"},
+        ].map(({ label, value, helper, icon: Icon, bg, iconCls, valCls, border }) => (
+          <article key={label} className={`relative overflow-hidden rounded-2xl border ${border} ${bg} p-5 shadow-card transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted">{label}</p>
+                <p className={`mt-2 text-3xl font-bold ${valCls}`}>{formatNumber(value)}</p>
+                <p className="mt-1.5 text-xs text-muted">{helper}</p>
+              </div>
+              <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${iconCls}`}>
+                <Icon size={20} />
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      {/* ── Upcoming events + Communication ── */}
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
+        {/* Upcoming events */}
+        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
+            <h2 className="font-bold text-foreground">Upcoming events</h2>
+            <Link href="/dashboard/lectures" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
+              View all <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div className="p-5">
+            {upcomingEvents.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-brand-200 bg-brand-50 px-4 py-4 text-sm text-muted">
+                No upcoming lectures, deadlines, or active sessions in the next 14 days.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {upcomingEvents.map((event) => (
+                  <Link
+                    key={`${event.type}-${event.id}`}
+                    href={event.href}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{event.title}</p>
+                      <p className="mt-0.5 text-xs text-muted">{event.secondary}</p>
+                      <p className="mt-1 text-xs text-muted">{formatCompactDateTime(event.when)} · {buildRelativeLabel(event.when)}</p>
+                    </div>
+                    <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getEventTone(event.type)}`}>
+                      {getEventLabel(event.type)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </article>
 
-        <article className="surface-card p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Notes & Materials</p>
-          <p className="mt-2 text-3xl font-semibold">{formatNumber(noteCount)}</p>
-          <p className="mt-1 text-xs text-muted">Published resources</p>
-        </article>
-
-        <article className="surface-card p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Assignments</p>
-          <p className="mt-2 text-3xl font-semibold">{formatNumber(assignmentCount)}</p>
-          <p className="mt-1 text-xs text-muted">Total assignment records</p>
-        </article>
-
-        <article className="surface-card p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quizzes</p>
-          <p className="mt-2 text-3xl font-semibold">{formatNumber(quizCount)}</p>
-          <p className="mt-1 text-xs text-muted">Assessment units created</p>
+        {/* Communication insights */}
+        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
+            <h2 className="font-bold text-foreground">Communication insights</h2>
+            <p className="mt-0.5 text-xs text-muted">Message pipeline from your classes</p>
+          </div>
+          <div className="p-5 space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                  <MessageSquare size={16} />
+                </div>
+                <p className="text-sm font-medium text-foreground">Total messages</p>
+              </div>
+              <p className="text-2xl font-bold text-brand-700">{formatNumber(messageCount)}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-center">
+                <CheckCircle2 size={14} className="mx-auto text-emerald-600" />
+                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Sent</p>
+                <p className="mt-1 text-xl font-bold text-emerald-800">{formatNumber(deliveryCountByStatus.SENT)}</p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-center">
+                <Clock size={14} className="mx-auto text-amber-600" />
+                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700">Queued</p>
+                <p className="mt-1 text-xl font-bold text-amber-800">{formatNumber(deliveryCountByStatus.QUEUED)}</p>
+              </div>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-center">
+                <XCircle size={14} className="mx-auto text-rose-600" />
+                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">Failed</p>
+                <p className="mt-1 text-xl font-bold text-rose-800">{formatNumber(deliveryCountByStatus.FAILED)}</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted">Data reflects current database state.</p>
+          </div>
         </article>
       </section>
 
-      <section className="mt-7 grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <article className="surface-card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">Upcoming events</h2>
-            <Link href="/dashboard/lectures" className="text-xs font-semibold text-brand-700 hover:underline">
-              Open lecture manager
-            </Link>
+      {/* ── Profile + Account ── */}
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Profile</h2>
           </div>
+          <div className="flex items-center gap-4 px-5 py-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-800 text-base font-bold text-white flex-shrink-0">
+              {teacher.name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase()}
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">{teacher.name}</p>
+              <p className="text-sm text-muted">{teacher.email}</p>
+            </div>
+          </div>
+        </article>
+        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Account Created</h2>
+          </div>
+          <div className="px-5 py-4">
+            <p className="font-semibold text-foreground">{teacher.createdAt.toLocaleDateString()}</p>
+            <p className="mt-1 text-xs text-muted font-mono">{teacher.id}</p>
+          </div>
+        </article>
+      </section>
 
-          {upcomingEvents.length === 0 ? (
-            <p className="mt-4 rounded-xl border border-dashed border-black/15 px-4 py-3 text-sm text-muted dark:border-white/15">
-              No upcoming lectures, deadlines, or active sessions in the next 14 days.
+      {/* ── Paper late messages ── */}
+      <section className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+        <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-amber-50 to-white px-5 py-4">
+          <div>
+            <h2 className="font-bold text-foreground">Paper late reasons from students</h2>
+            <p className="mt-0.5 text-xs text-muted">Messages sent when students miss paper submission deadlines</p>
+          </div>
+          <Link href="/dashboard/messages" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
+            View all <ArrowRight size={12} />
+          </Link>
+        </div>
+        <div className="p-5">
+          {paperSupportMessages.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-4 text-sm text-muted">
+              No late-reason messages yet.
             </p>
           ) : (
-            <div className="mt-4 space-y-3">
-              {upcomingEvents.map((event) => (
-                <Link
-                  key={`${event.type}-${event.id}`}
-                  href={event.href}
-                  className="block rounded-xl border border-black/10 px-4 py-3 transition hover:border-black/30 hover:bg-black/[0.02] dark:border-white/10 dark:hover:border-white/25 dark:hover:bg-white/[0.02]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">{event.title}</p>
-                      <p className="mt-1 text-xs text-muted">{event.secondary}</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getEventTone(event.type)}`}>
-                      {getEventLabel(event.type)}
-                    </span>
+            <div className="space-y-3">
+              {paperSupportMessages.map((msg) => (
+                <article key={msg.id} className="rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">
+                      {msg.student.name}
+                      {msg.student.registrationNumber ? (
+                        <span className="ml-1.5 text-xs font-normal text-muted">({msg.student.registrationNumber})</span>
+                      ) : null}
+                    </p>
+                    <time className="text-xs text-muted">{new Date(msg.createdAt).toLocaleString()}</time>
                   </div>
-                  <p className="mt-2 text-xs text-muted">{formatCompactDateTime(event.when)} • {buildRelativeLabel(event.when)}</p>
-                </Link>
+                  <p className="mt-1 text-xs text-brand-600 font-medium">{msg.class.name} · {msg.item.title}</p>
+                  <p className="mt-2 text-sm text-foreground whitespace-pre-line">{msg.message}</p>
+                </article>
               ))}
             </div>
           )}
-        </article>
-
-        <article className="surface-card p-5">
-          <h2 className="text-base font-semibold">Communication insights</h2>
-          <p className="mt-1 text-sm text-muted">Message pipeline status from your classes.</p>
-
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
-              <p className="text-xs uppercase tracking-wide text-muted">Messages sent</p>
-              <p className="mt-1 text-2xl font-semibold">{formatNumber(messageCount)}</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Sent</p>
-                <p className="mt-1 text-xl font-semibold text-emerald-800">{formatNumber(deliveryCountByStatus.SENT)}</p>
-              </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Queued</p>
-                <p className="mt-1 text-xl font-semibold text-amber-800">{formatNumber(deliveryCountByStatus.QUEUED)}</p>
-              </div>
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-red-700">Failed</p>
-                <p className="mt-1 text-xl font-semibold text-red-800">{formatNumber(deliveryCountByStatus.FAILED)}</p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-black/10 px-4 py-3 text-xs text-muted dark:border-white/10">
-              Data refreshes on page load and reflects the current database state.
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <article className="surface-card p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Profile</h2>
-          <p className="mt-3 text-base font-medium">{teacher.name}</p>
-          <p className="text-sm text-muted">{teacher.email}</p>
-        </article>
-
-        <article className="surface-card p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Account Created</h2>
-          <p className="mt-3 text-base font-medium">{teacher.createdAt.toLocaleString()}</p>
-          <p className="text-sm text-muted">Teacher ID: {teacher.id}</p>
-        </article>
-      </section>
-
-      <section className="surface-card mt-7 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">Paper late reasons from students</h2>
-            <p className="text-sm text-muted">Recent messages sent when students miss paper submission deadlines.</p>
-          </div>
-          <Link href="/dashboard/messages" className="text-xs font-semibold text-brand-700 hover:underline">
-            Open messages
-          </Link>
         </div>
-
-        {paperSupportMessages.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-dashed border-black/15 px-4 py-3 text-sm text-muted dark:border-white/15">
-            No late-reason messages yet.
-          </p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {paperSupportMessages.map((msg) => (
-              <article key={msg.id} className="rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-sm font-semibold">{msg.student.name}{msg.student.registrationNumber ? ` (${msg.student.registrationNumber})` : ""}</p>
-                  <time className="text-xs text-muted">{new Date(msg.createdAt).toLocaleString()}</time>
-                </div>
-                <p className="mt-1 text-xs text-muted">{msg.class.name} • {msg.item.title}</p>
-                <p className="mt-2 text-sm whitespace-pre-line">{msg.message}</p>
-              </article>
-            ))}
-          </div>
-        )}
       </section>
 
-      <div className="mt-6">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/dashboard/classes"
-            className="btn-primary"
-          >
-            Manage classes
-          </Link>
-          <Link
-            href="/dashboard/students"
-            className="btn-primary"
-          >
-            Manage students
-          </Link>
-          <Link
-            href="/dashboard/messages"
-            className="btn-primary"
-          >
-            Class messages
-          </Link>
-          <Link
-            href="/dashboard/lectures"
-            className="btn-primary"
-          >
-            Manage lectures
-          </Link>
-          <Link
-            href="/dashboard/sessions"
-            className="btn-primary"
-          >
-            Live sessions
-          </Link>
-          <Link
-            href="/guardian/login"
-            className="btn-secondary"
-          >
-            Guardian portal
-          </Link>
-          <Link
-            href="/"
-            className="btn-secondary"
-          >
-            Back to home
-          </Link>
+      {/* ── Quick actions ── */}
+      <section className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
+          <h2 className="font-bold text-foreground">Quick actions</h2>
         </div>
-      </div>
+        <div className="flex flex-wrap gap-3 p-5">
+          <Link href="/dashboard/classes"  className="btn-primary"><BookOpen size={14} /> Manage classes</Link>
+          <Link href="/dashboard/students" className="btn-primary"><Users size={14} /> Manage students</Link>
+          <Link href="/dashboard/messages" className="btn-primary"><MessageSquare size={14} /> Class messages</Link>
+          <Link href="/dashboard/lectures" className="btn-primary"><GraduationCap size={14} /> Manage lectures</Link>
+          <Link href="/dashboard/sessions" className="btn-primary"><Radio size={14} /> Live sessions</Link>
+          <Link href="/guardian/login"     className="btn-secondary">Guardian portal</Link>
+          <Link href="/"                   className="btn-secondary">Back to home</Link>
+        </div>
+      </section>
     </div>
   );
 }

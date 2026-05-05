@@ -53,16 +53,16 @@ export type AnnouncementItem = {
 };
 
 export const studentNavItems: StudentNavItem[] = [
-  { href: "/student/dashboard", label: "Dashboard", icon: "□" },
-  { href: "/student/classes", label: "My Classes", icon: "▤" },
-  { href: "/student/live-classes", label: "Live Classes", icon: "◉" },
-  { href: "/student/material-bundles", label: "Tutes / Papers", icon: "▥" },
-  { href: "/student/assignments", label: "Assignments", icon: "◫" },
-  { href: "/student/quizzes", label: "Quizzes", icon: "◌" },
-  { href: "/student/lectures", label: "Lectures / Notes", icon: "▣" },
-  { href: "/student/attendance", label: "Attendance / History", icon: "◍" },
-  { href: "/student/messages", label: "Messages / Announcements", icon: "◈" },
-  { href: "/student/settings", label: "Settings", icon: "⚙" },
+  { href: "/student/dashboard",        label: "Dashboard",             icon: "dashboard" },
+  { href: "/student/classes",          label: "My Classes",            icon: "classes" },
+  { href: "/student/live-classes",     label: "Live Classes",          icon: "live" },
+  { href: "/student/material-bundles", label: "Tutes / Papers",        icon: "folder" },
+  { href: "/student/assignments",      label: "Assignments",           icon: "assignments" },
+  { href: "/student/quizzes",          label: "Quizzes",               icon: "quizzes" },
+  { href: "/student/lectures",         label: "Lectures / Notes",      icon: "lectures" },
+  { href: "/student/attendance",       label: "Attendance / History",  icon: "attendance" },
+  { href: "/student/messages",         label: "Messages",              icon: "messages" },
+  { href: "/student/settings",         label: "Settings",              icon: "settings" },
 ];
 
 export const ongoingClassesSeed: LiveClassItem[] = [
