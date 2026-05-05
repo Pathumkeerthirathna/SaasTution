@@ -141,6 +141,7 @@ export default async function DashboardPage() {
     upcomingAssignments,
     activeSessions,
     deliveryStats,
+    paperSupportMessages,
   ] = await Promise.all([
     prisma.class.count({
       where: {
@@ -307,6 +308,36 @@ export default async function DashboardPage() {
         status: true,
       },
     }),
+    prisma.paperSupportMessage.findMany({
+      where: {
+        teacherId: teacher.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 6,
+      select: {
+        id: true,
+        message: true,
+        createdAt: true,
+        class: {
+          select: {
+            name: true,
+          },
+        },
+        student: {
+          select: {
+            name: true,
+            registrationNumber: true,
+          },
+        },
+        item: {
+          select: {
+            title: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const uniqueStudentIds = new Set(
@@ -367,8 +398,8 @@ export default async function DashboardPage() {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col py-4">
-      <section className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
+    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col pb-4">
+      <section className="surface-panel p-6 sm:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Teacher Dashboard</p>
@@ -397,34 +428,34 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+      <section className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article className="surface-card p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Lectures</p>
           <p className="mt-2 text-3xl font-semibold">{formatNumber(lectureCount)}</p>
           <p className="mt-1 text-xs text-muted">Across all active classes</p>
         </article>
 
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+        <article className="surface-card p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Notes & Materials</p>
           <p className="mt-2 text-3xl font-semibold">{formatNumber(noteCount)}</p>
           <p className="mt-1 text-xs text-muted">Published resources</p>
         </article>
 
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+        <article className="surface-card p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Assignments</p>
           <p className="mt-2 text-3xl font-semibold">{formatNumber(assignmentCount)}</p>
           <p className="mt-1 text-xs text-muted">Total assignment records</p>
         </article>
 
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+        <article className="surface-card p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quizzes</p>
           <p className="mt-2 text-3xl font-semibold">{formatNumber(quizCount)}</p>
           <p className="mt-1 text-xs text-muted">Assessment units created</p>
         </article>
       </section>
 
-      <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+      <section className="mt-7 grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
+        <article className="surface-card p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold">Upcoming events</h2>
             <Link href="/dashboard/lectures" className="text-xs font-semibold text-brand-700 hover:underline">
@@ -460,7 +491,7 @@ export default async function DashboardPage() {
           )}
         </article>
 
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+        <article className="surface-card p-5">
           <h2 className="text-base font-semibold">Communication insights</h2>
           <p className="mt-1 text-sm text-muted">Message pipeline status from your classes.</p>
 
@@ -492,61 +523,92 @@ export default async function DashboardPage() {
         </article>
       </section>
 
-      <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+      <section className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <article className="surface-card p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Profile</h2>
           <p className="mt-3 text-base font-medium">{teacher.name}</p>
           <p className="text-sm text-muted">{teacher.email}</p>
         </article>
 
-        <article className="rounded-2xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+        <article className="surface-card p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Account Created</h2>
           <p className="mt-3 text-base font-medium">{teacher.createdAt.toLocaleString()}</p>
           <p className="text-sm text-muted">Teacher ID: {teacher.id}</p>
         </article>
       </section>
 
+      <section className="surface-card mt-7 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Paper late reasons from students</h2>
+            <p className="text-sm text-muted">Recent messages sent when students miss paper submission deadlines.</p>
+          </div>
+          <Link href="/dashboard/messages" className="text-xs font-semibold text-brand-700 hover:underline">
+            Open messages
+          </Link>
+        </div>
+
+        {paperSupportMessages.length === 0 ? (
+          <p className="mt-4 rounded-xl border border-dashed border-black/15 px-4 py-3 text-sm text-muted dark:border-white/15">
+            No late-reason messages yet.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {paperSupportMessages.map((msg) => (
+              <article key={msg.id} className="rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold">{msg.student.name}{msg.student.registrationNumber ? ` (${msg.student.registrationNumber})` : ""}</p>
+                  <time className="text-xs text-muted">{new Date(msg.createdAt).toLocaleString()}</time>
+                </div>
+                <p className="mt-1 text-xs text-muted">{msg.class.name} • {msg.item.title}</p>
+                <p className="mt-2 text-sm whitespace-pre-line">{msg.message}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <div className="mt-6">
         <div className="flex flex-col gap-3 sm:flex-row">
           <Link
             href="/dashboard/classes"
-            className="inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="btn-primary"
           >
             Manage classes
           </Link>
           <Link
             href="/dashboard/students"
-            className="inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="btn-primary"
           >
             Manage students
           </Link>
           <Link
             href="/dashboard/messages"
-            className="inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="btn-primary"
           >
             Class messages
           </Link>
           <Link
             href="/dashboard/lectures"
-            className="inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="btn-primary"
           >
             Manage lectures
           </Link>
           <Link
             href="/dashboard/sessions"
-            className="inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="btn-primary"
           >
             Live sessions
           </Link>
           <Link
             href="/guardian/login"
-            className="inline-flex rounded-xl border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className="btn-secondary"
           >
             Guardian portal
           </Link>
           <Link
             href="/"
-            className="inline-flex rounded-xl border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className="btn-secondary"
           >
             Back to home
           </Link>

@@ -147,3 +147,40 @@ export async function sendLiveSessionInviteEmail(input: LiveSessionInviteEmailIn
     html: `<p>Hi ${safeStudentName},</p><p><strong>${safeTeacherName}</strong> has ${actionText} a live class for <strong>${safeClassName}</strong>.</p><p>Open this secure link, sign in with your registration number and password, and you will be auto-joined to the classroom:</p><p><a href="${safeLoginLink}">${safeLoginLink}</a></p><p>If this was not expected, please contact your teacher.</p>`,
   });
 }
+
+type ClassAnnouncementEmailInput = {
+  to: string;
+  studentName: string;
+  className: string;
+  content: string;
+};
+
+export async function sendClassAnnouncementEmail(input: ClassAnnouncementEmailInput) {
+  const from = process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
+  const transporter = createTransport();
+
+  if (!transporter) {
+    if (process.env.NODE_ENV === "production") {
+      throw new AppError("Email service is not configured.", 500, "EMAIL_NOT_CONFIGURED");
+    }
+
+    console.info("[DEV ONLY] Class announcement email", {
+      to: input.to,
+      className: input.className,
+      content: input.content,
+    });
+    return;
+  }
+
+  const safeStudentName = escapeHtml(input.studentName);
+  const safeClassName = escapeHtml(input.className);
+  const safeContent = escapeHtml(input.content).replace(/\n/g, "<br>");
+
+  await transporter.sendMail({
+    from,
+    to: input.to,
+    subject: `Announcement: ${input.className}`,
+    text: `Hi ${input.studentName},\n\nYour teacher has sent an announcement for ${input.className}:\n\n${input.content}`,
+    html: `<p>Hi ${safeStudentName},</p><p>Your teacher has sent an announcement for <strong>${safeClassName}</strong>:</p><blockquote style="border-left:3px solid #ccc;padding:0 1em;margin:1em 0;">${safeContent}</blockquote>`,
+  });
+}

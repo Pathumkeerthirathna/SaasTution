@@ -15,7 +15,7 @@ type NavItem = {
   href: string;
   label: string;
 };
-//
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/);
 
@@ -44,6 +44,8 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
       { href: "/dashboard/students", label: "Students" },
       { href: "/dashboard/messages", label: "Messages" },
       { href: "/dashboard/lectures", label: "Lectures" },
+      { href: "/dashboard/material-bundles", label: "Tutes & Papers" },
+      { href: "/dashboard/material-bundles/configuration", label: "Paper Configuration" },
       { href: "/dashboard/sessions", label: "Live Sessions" },
     ];
   }, [role]);
@@ -64,18 +66,19 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
 
   return (
     <div className="min-h-screen bg-background-soft text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1400px]">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1440px]">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-brand-200 bg-card p-5 shadow-xl transition-transform duration-300 lg:static lg:translate-x-0 lg:shadow-none ${
+          className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-brand-200/90 bg-card p-6 shadow-panel transition-transform duration-220 lg:static lg:translate-x-0 lg:shadow-none ${
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="mb-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">SaasTution Panel</p>
+          <div className="mb-8 border-b border-brand-200/70 pb-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-700">SaasTution Panel</p>
             <h2 className="mt-2 text-xl font-semibold text-slate-900">{role === "ADMIN" ? "Admin Console" : "Teacher Workspace"}</h2>
+            <p className="mt-2 text-sm text-slate-600">Manage classes, delivery status, and teaching operations.</p>
           </div>
 
-          <nav className="space-y-2">
+          <nav className="space-y-1.5">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
 
@@ -84,13 +87,17 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                   key={item.href}
                   href={item.href}
                   onClick={() => setIsSidebarOpen(false)}
-                  className={`block rounded-xl px-4 py-2.5 text-sm font-medium transition ${
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-180 ${
                     isActive
-                      ? "bg-brand-700 text-white"
-                      : "text-slate-700 hover:bg-brand-100 hover:text-brand-800"
+                      ? "bg-brand-700 text-white shadow-soft"
+                      : "text-slate-700 hover:bg-brand-50 hover:text-brand-800"
                   }`}
                 >
-                  {item.label}
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 rounded-full ${isActive ? "bg-white" : "bg-brand-300"}`}
+                  />
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
@@ -107,7 +114,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-brand-200 bg-background/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-20 border-b border-brand-200/80 bg-background/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
@@ -121,8 +128,8 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                   </svg>
                 </button>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-700">Professional Dashboard</p>
-                  <p className="text-sm text-slate-700">Manage classes, users, and visibility in one place</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700">Professional Dashboard</p>
+                  <p className="text-sm text-slate-700">Clean, focused control for your daily teaching workflow</p>
                 </div>
               </div>
 
@@ -130,7 +137,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                 <button
                   type="button"
                   onClick={() => setIsProfileOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-card px-3 py-2 text-sm font-medium text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-card px-3 py-2 text-sm font-medium text-slate-800 shadow-soft"
                 >
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-700 text-xs font-semibold text-white">
                     {getInitials(name)}
@@ -139,7 +146,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                 </button>
 
                 {isProfileOpen ? (
-                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-brand-200 bg-card p-4 shadow-2xl">
+                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-brand-200 bg-card p-4 shadow-panel">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">Logged In User</p>
                     <p className="mt-2 text-base font-semibold text-slate-900">{name}</p>
                     <p className="text-sm text-slate-600">{email}</p>
@@ -147,7 +154,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
 
                     <Link
                       href="/account/security"
-                      className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-brand-300 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-brand-50"
+                      className="btn-secondary mt-3 w-full"
                     >
                       Change password
                     </Link>
@@ -156,7 +163,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                       type="button"
                       onClick={handleSignOut}
                       disabled={isSigningOut}
-                      className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+                      className="btn-primary mt-3 w-full bg-accent hover:brightness-105"
                     >
                       {isSigningOut ? "Signing out..." : "Sign out"}
                     </button>
@@ -166,7 +173,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="flex-1 px-4 py-7 sm:px-6 lg:px-8">{children}</main>
         </div>
       </div>
     </div>

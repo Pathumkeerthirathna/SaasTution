@@ -56,43 +56,60 @@ enum QuizAnswerType {
   MULTIPLE
 }
 
+enum MaterialBundleStatus {
+  DRAFT
+  SENT
+}
+
+enum MaterialBundleItemType {
+  TUTE
+  PAPER
+}
+
 model Teacher {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
   password  String
   classes   Class[]
+  paperConfig TeacherPaperConfig?
+  paperSupportMessages PaperSupportMessage[]
   createdAt DateTime @default(now())
 
   @@index([createdAt])
 }
 
 model Student {
-  id                 String       @id @default(uuid())
-  name               String
-  grade              GradeLevel?
-  password           String?
-  contact            String
-  contact01          String?
-  contact02          String?
-  email              String?
-  registrationNumber String?      @unique
-  guardians          Guardian[]
-  classes            ClassStudent[]
-  deliveries         MessageDelivery[]
-  attendance         Attendance[]
-  createdAt          DateTime     @default(now())
+  id                       String                    @id @default(uuid())
+  name                     String
+  grade                    GradeLevel?
+  password                 String?
+  contact                  String
+  contact01                String?
+  contact02                String?
+  email                    String?
+  registrationNumber       String?                   @unique
+  guardians                Guardian[]
+  classes                  ClassStudent[]
+  deliveries               MessageDelivery[]
+  attendance               Attendance[]
+  submissions              AssignmentSubmission[]
+  quizSubmissions          QuizSubmission[]
+  materialBundleRecipients MaterialBundleRecipient[]
+  materialBundleItemSubmissions MaterialBundleItemSubmission[]
+  paperSupportMessages     PaperSupportMessage[]
+  createdAt                DateTime                  @default(now())
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
   role      Role
   userId    String
   email     String
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([role, userId])
   @@index([expiresAt])
@@ -113,32 +130,137 @@ model Guardian {
 }
 
 model Class {
-  id          String         @id @default(uuid())
-  name        String
-  description String?
-  schedule    String         @default("TBD")
-  teacher     Teacher        @relation(fields: [teacherId], references: [id])
-  teacherId   String
-  students    ClassStudent[]
-  lectures    Lecture[]
-  messages    Message[]
-  sessions    ClassSession[]
-  schedules   ClassSchedule[]
+  id              String           @id @default(uuid())
+  name            String
+  description     String?
+  schedule        String           @default("TBD")
+  teacher         Teacher          @relation(fields: [teacherId], references: [id])
+  teacherId       String
+  students        ClassStudent[]
+  lectures        Lecture[]
+  messages        Message[]
+  sessions        ClassSession[]
+  schedules       ClassSchedule[]
+  materialBundles MaterialBundle[]
+  paperSupportMessages PaperSupportMessage[]
 
-  createdAt   DateTime       @default(now())
+  createdAt DateTime @default(now())
 
   @@index([teacherId, createdAt])
 }
 
-model ClassSchedule {
-  id        String   @id @default(uuid())
+model TeacherPaperConfig {
+  id                       String   @id @default(uuid())
+  teacher                  Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId                String   @unique
+  countdownLeadMinutes     Int      @default(30)
+  submissionGraceMinutes   Int      @default(20)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
 
-  classId   String
-  class     Class    @relation(fields: [classId], references: [id])
+model MaterialBundle {
+  id         String                    @id @default(uuid())
+  class      Class                     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId    String
+  title      String
+  year       Int
+  month      Int
+  status     MaterialBundleStatus      @default(DRAFT)
+  sentAt     DateTime?
+  items      MaterialBundleItem[]
+  recipients MaterialBundleRecipient[]
+  paperSupportMessages PaperSupportMessage[]
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+
+  @@index([classId, year, month])
+  @@index([status, sentAt])
+}
+
+model MaterialBundleItem {
+  id           String                 @id @default(uuid())
+  bundle       MaterialBundle         @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  bundleId     String
+  type         MaterialBundleItemType
+  title        String
+  description  String?
+  fileName     String?
+  fileUrl      String?
+  mimeType     String?
+  sizeBytes    Int?
+  paperStartAt DateTime?
+  paperEndAt   DateTime?
+  submissions  MaterialBundleItemSubmission[]
+  paperSupportMessages PaperSupportMessage[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([bundleId, type, createdAt])
+}
+
+model PaperSupportMessage {
+  id         String             @id @default(uuid())
+  bundle     MaterialBundle     @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  bundleId   String
+  item       MaterialBundleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId     String
+  class      Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId    String
+  teacher    Teacher            @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId  String
+  student    Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId  String
+  message    String
+  createdAt  DateTime           @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([studentId, createdAt])
+  @@index([teacherId, createdAt])
+  @@index([classId, createdAt])
+}
+
+model MaterialBundleItemSubmission {
+  id         String             @id @default(uuid())
+  item       MaterialBundleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId     String
+  student    Student            @relation(fields: [studentId], references: [id])
+  studentId  String
+  fileName   String
+  fileUrl    String
+  mimeType   String
+  sizeBytes  Int
+  submittedAt DateTime          @default(now())
+  createdAt  DateTime           @default(now())
+
+  @@index([itemId, studentId, submittedAt])
+  @@index([studentId, submittedAt])
+}
+
+model MaterialBundleRecipient {
+  id          String         @id @default(uuid())
+  bundle      MaterialBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  bundleId    String
+  student     Student        @relation(fields: [studentId], references: [id])
+  studentId   String
+  willReceive Boolean        @default(true)
+  receivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([bundleId, studentId])
+  @@index([studentId, willReceive])
+}
+
+model ClassSchedule {
+  id String @id @default(uuid())
+
+  classId String
+  class   Class  @relation(fields: [classId], references: [id])
 
   dayOfWeek Weekday
-  startTime String   // "09:00"
-  endTime   String   // "11:00"
+  startTime String // "09:00"
+  endTime   String // "11:00"
 
   createdAt DateTime @default(now())
 
@@ -165,13 +287,13 @@ model ClassSession {
 }
 
 model ClassStudent {
-  id           String   @id @default(uuid())
-  class        Class    @relation(fields: [classId], references: [id])
+  id           String    @id @default(uuid())
+  class        Class     @relation(fields: [classId], references: [id])
   classId      String
-  student      Student  @relation(fields: [studentId], references: [id])
+  student      Student   @relation(fields: [studentId], references: [id])
   studentId    String
-  isActive     Boolean  @default(true)
-  assignedAt   DateTime @default(now())
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
   removedAt    DateTime?
   removeReason String?
 
@@ -181,64 +303,87 @@ model ClassStudent {
 }
 
 model Lecture {
-  id        String      @id @default(uuid())
-  title     String
-  date      DateTime
-  class     Class       @relation(fields: [classId], references: [id])
-  classId   String
-  notes     Note[]
+  id          String         @id @default(uuid())
+  title       String
+  date        DateTime
+  class       Class          @relation(fields: [classId], references: [id])
+  classId     String
+  notes       Note[]
   assignments Assignment[]
-  quizzes   Quiz[]
-  sessions  ClassSession[]
-  createdAt DateTime    @default(now())
+  quizzes     Quiz[]
+  sessions    ClassSession[]
+  createdAt   DateTime       @default(now())
 
   @@index([classId, date])
 }
 
 model Note {
-  id         String   @id @default(uuid())
-  title      String
-  fileUrl    String
-  kind       NoteKind @default(NOTE)
-  mimeType   String
-  sizeBytes  Int
-  downloadCount Int   @default(0)
+  id               String    @id @default(uuid())
+  title            String
+  fileUrl          String
+  kind             NoteKind  @default(NOTE)
+  mimeType         String
+  sizeBytes        Int
+  downloadCount    Int       @default(0)
   lastDownloadedAt DateTime?
-  lecture    Lecture  @relation(fields: [lectureId], references: [id])
-  lectureId  String
+  lecture          Lecture   @relation(fields: [lectureId], references: [id])
+  lectureId        String
 
   @@index([lectureId])
 }
 
 model Assignment {
-  id          String   @id @default(uuid())
+  id          String                 @id @default(uuid())
   title       String
   description String
   dueDate     DateTime
-  lecture     Lecture  @relation(fields: [lectureId], references: [id])
+  lecture     Lecture                @relation(fields: [lectureId], references: [id])
   lectureId   String
+  submissions AssignmentSubmission[]
 
   @@index([lectureId, dueDate])
 }
 
+model AssignmentSubmission {
+  id           String     @id @default(uuid())
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId String
+  student      Student    @relation(fields: [studentId], references: [id])
+  studentId    String
+  fileName     String
+  fileUrl      String
+  mimeType     String
+  sizeBytes    Int
+  notes        String?
+  submittedAt  DateTime   @default(now())
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+  @@index([assignmentId])
+}
+
 model Quiz {
-  id        String   @id @default(uuid())
-  title     String
-  lecture   Lecture  @relation(fields: [lectureId], references: [id])
-  lectureId String
-  questions QuizQuestion[]
+  id          String           @id @default(uuid())
+  title       String
+  maxAttempts Int?
+  dueDate     DateTime?
+  lecture     Lecture          @relation(fields: [lectureId], references: [id])
+  lectureId   String
+  questions   QuizQuestion[]
+  submissions QuizSubmission[]
 
   @@index([lectureId])
 }
 
 model QuizQuestion {
-  id         String           @id @default(uuid())
-  quiz       Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  quizId     String
-  text       String
-  orderIndex Int
-  answerType QuizAnswerType
-  options    QuizQuestionOption[]
+  id                String                 @id @default(uuid())
+  quiz              Quiz                   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId            String
+  text              String
+  orderIndex        Int
+  answerType        QuizAnswerType
+  options           QuizQuestionOption[]
+  submissionAnswers QuizSubmissionAnswer[]
 
   @@index([quizId, orderIndex])
 }
@@ -252,6 +397,37 @@ model QuizQuestionOption {
   orderIndex Int
 
   @@index([questionId, orderIndex])
+}
+
+model QuizSubmission {
+  id             String                 @id @default(uuid())
+  quiz           Quiz                   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId         String
+  student        Student                @relation(fields: [studentId], references: [id])
+  studentId      String
+  score          Int
+  totalQuestions Int
+  attemptCount   Int                    @default(1)
+  answers        QuizSubmissionAnswer[]
+  submittedAt    DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([quizId, studentId])
+  @@index([studentId])
+  @@index([quizId])
+}
+
+model QuizSubmissionAnswer {
+  id                String         @id @default(uuid())
+  submission        QuizSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId      String
+  question          QuizQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId        String
+  selectedOptionIds String[]
+  isCorrect         Boolean
+
+  @@unique([submissionId, questionId])
+  @@index([questionId])
 }
 
 model Attendance {

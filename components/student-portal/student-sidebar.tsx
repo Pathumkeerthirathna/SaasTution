@@ -15,25 +15,34 @@ type StudentSidebarProps = {
   onClose: () => void;
 };
 
-function NavIcon({ icon }: { icon: string }) {
-  return <span className="text-base leading-none">{icon}</span>;
+function NavIcon({ icon, active }: { icon: string; active: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm leading-none transition-colors ${
+        active ? "bg-white/20 text-white" : "bg-brand-50 text-brand-700"
+      }`}
+      aria-hidden="true"
+    >
+      {icon}
+    </span>
+  );
 }
 
 export function StudentSidebar({ items, activePath, open, onClose }: StudentSidebarProps) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-brand-200 bg-card p-5 shadow-xl transition-transform duration-300 lg:static lg:translate-x-0 lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-brand-200/90 bg-card p-6 shadow-panel transition-transform duration-220 lg:static lg:translate-x-0 lg:shadow-none ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Student Portal</p>
+        <div className="mb-8 border-b border-brand-200/70 pb-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-700">Student Portal</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">Learning Dashboard</h2>
-          <p className="mt-2 text-sm text-slate-600">Track classes, assignments, and progress.</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">Track classes, assignments, messages, and progress in one place.</p>
         </div>
 
-        <nav className="space-y-2">
+        <nav className="space-y-1.5">
           {items.map((item) => {
             const isActive = activePath === item.href;
 
@@ -42,11 +51,13 @@ export function StudentSidebar({ items, activePath, open, onClose }: StudentSide
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-sm font-medium transition ${
-                  isActive ? "bg-brand-700 text-white" : "text-slate-700 hover:bg-brand-100 hover:text-brand-700"
+                className={`group flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-180 ${
+                  isActive
+                    ? "bg-brand-700 text-white shadow-soft"
+                    : "text-slate-700 hover:bg-brand-50 hover:text-brand-700"
                 }`}
               >
-                <NavIcon icon={item.icon} />
+                <NavIcon icon={item.icon} active={isActive} />
                 <span>{item.label}</span>
               </Link>
             );
@@ -59,7 +70,7 @@ export function StudentSidebar({ items, activePath, open, onClose }: StudentSide
           type="button"
           aria-label="Close sidebar"
           onClick={onClose}
-          className="fixed inset-0 z-30 bg-slate-900/25 lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-900/30 lg:hidden"
         />
       ) : null}
     </>

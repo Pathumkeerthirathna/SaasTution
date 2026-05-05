@@ -11,10 +11,21 @@ const content = z
 export const bulkMessageSchema = z.object({
   classId,
   content,
+  channel: z.enum(["email", "whatsapp"]).default("email"),
 });
 
 export const listMessagesQuerySchema = z.object({
   classId,
+  dateFrom: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "dateFrom must be in YYYY-MM-DD format.")
+    .optional(),
+  dateTo: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "dateTo must be in YYYY-MM-DD format.")
+    .optional(),
 });
 
 export const messageDeliveryWebhookSchema = z.object({

@@ -115,6 +115,8 @@ const quizWithQuestionsSelect = {
   id: true,
   lectureId: true,
   title: true,
+  maxAttempts: true,
+  dueDate: true,
   questions: {
     orderBy: {
       orderIndex: "asc" as const,
@@ -419,6 +421,8 @@ export async function addQuizToLectureForTeacher(
     data: {
       lectureId,
       title: input.title,
+      maxAttempts: input.maxAttempts ?? null,
+      dueDate: input.dueDate ?? null,
       questions: {
         create: input.questions.map((question, questionIndex) => ({
           text: question.text,
@@ -452,6 +456,8 @@ export async function updateQuizForTeacher(
     },
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
       questions: {
         deleteMany: {},
         create: input.questions.map((question, questionIndex) => ({

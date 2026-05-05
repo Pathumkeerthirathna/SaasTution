@@ -73,6 +73,8 @@ export const createQuizSchema = z.object({
     .trim()
     .min(2, "Quiz title must be at least 2 characters long.")
     .max(150, "Quiz title must be at most 150 characters long."),
+  maxAttempts: z.number().int().min(1, "Max attempts must be at least 1.").max(100).nullable().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
   questions: z
     .array(
       z
@@ -132,6 +134,14 @@ export const updateNoteSchema = z
     message: "At least one field is required.",
   });
 
+export const submitAssignmentSchema = z.object({
+  notes: z
+    .string()
+    .trim()
+    .max(3000, "Submission notes must be at most 3000 characters long.")
+    .optional(),
+});
+
 export type CreateLectureInput = z.infer<typeof createLectureSchema>;
 export type UpdateLectureInput = z.infer<typeof updateLectureSchema>;
 export type CreateAssignmentInput = z.infer<typeof createAssignmentSchema>;
@@ -139,3 +149,4 @@ export type UpdateAssignmentInput = z.infer<typeof updateAssignmentSchema>;
 export type CreateQuizInput = z.infer<typeof createQuizSchema>;
 export type UpdateQuizInput = z.infer<typeof updateQuizSchema>;
 export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;
+export type SubmitAssignmentInput = z.infer<typeof submitAssignmentSchema>;

@@ -20,6 +20,8 @@ type QuizQuestion = {
 type LectureQuiz = {
   id: string;
   title: string;
+  maxAttempts: number | null;
+  dueDate: string | null;
   questions: Array<{
     id: string;
     text: string;
@@ -37,7 +39,34 @@ type LectureQuiz = {
 type QuizDraft = {
   id?: string;
   title: string;
+  maxAttempts: number | null;
+  dueDate: string | null;
   questions: QuizQuestion[];
+};
+
+type QuizResultsData = {
+  quiz: {
+    id: string;
+    title: string;
+    maxAttempts: number | null;
+    dueDate: string | null;
+    totalQuestions: number;
+  };
+  stats: {
+    totalEnrolled: number;
+    totalSubmissions: number;
+    averageScore: number | null;
+  };
+  submissions: {
+    studentId: string;
+    studentName: string;
+    registrationNumber: string | null;
+    score: number;
+    totalQuestions: number;
+    percentage: number;
+    attemptCount: number;
+    submittedAt: string;
+  }[];
 };
 
 type ApiError = {
@@ -70,6 +99,8 @@ function createEmptyQuestion(): QuizQuestion {
 function createEmptyDraft(): QuizDraft {
   return {
     title: "",
+    maxAttempts: null,
+    dueDate: null,
     questions: [createEmptyQuestion()],
   };
 }
@@ -78,6 +109,8 @@ function toDraft(quiz: LectureQuiz): QuizDraft {
   return {
     id: quiz.id,
     title: quiz.title,
+    maxAttempts: quiz.maxAttempts,
+    dueDate: quiz.dueDate,
     questions: quiz.questions
       .slice()
       .sort((left, right) => left.orderIndex - right.orderIndex)
@@ -108,6 +141,9 @@ export function LectureQuizPanel(props: {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resultsQuizId, setResultsQuizId] = useState<string | null>(null);
+  const [resultsData, setResultsData] = useState<QuizResultsData | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
 
   const selectedQuiz = useMemo(
     () => quizzes.find((item) => item.id === selectedQuizId) ?? null,
@@ -184,6 +220,36 @@ export function LectureQuizPanel(props: {
     setDraft(createEmptyDraft());
     setErrorMessage(null);
     setSuccessMessage(null);
+    setResultsQuizId(null);
+    setResultsData(null);
+  }
+
+  async function openResults(quizId: string) {
+    setResultsQuizId(quizId);
+    setResultsData(null);
+    setIsLoadingResults(true);
+
+    try {
+      const response = await fetch(`/api/lectures/${props.lectureId}/quizzes/${quizId}/results`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: QuizResultsData;
+        error?: { message?: string };
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(readApiError(payload, "Failed to load results."));
+      }
+
+      setResultsData(payload.data);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to load results.");
+      setResultsQuizId(null);
+    } finally {
+      setIsLoadingResults(false);
+    }
   }
 
   function updateQuestion(questionIndex: number, updater: (question: QuizQuestion) => QuizQuestion) {
@@ -325,6 +391,8 @@ export function LectureQuizPanel(props: {
     try {
       const payload = {
         title: draft.title.trim(),
+        maxAttempts: draft.maxAttempts,
+        dueDate: draft.dueDate,
         questions: draft.questions.map((question) => ({
           id: question.id,
           text: question.text.trim(),
@@ -444,6 +512,44 @@ export function LectureQuizPanel(props: {
             placeholder="Quiz title"
             className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
           />
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-muted">Max attempts (optional)</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={draft.maxAttempts ?? ""}
+                onChange={(event) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    maxAttempts: event.target.value ? Number(event.target.value) : null,
+                  }))
+                }
+                placeholder="Unlimited"
+                className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted">Due date (optional)</label>
+              <input
+                type="datetime-local"
+                value={
+                  draft.dueDate
+                    ? new Date(draft.dueDate).toISOString().slice(0, 16)
+                    : ""
+                }
+                onChange={(event) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
+                  }))
+                }
+                className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+              />
+            </div>
+          </div>
 
           <div className="mt-4 space-y-4">
             {draft.questions.map((question, questionIndex) => (
@@ -617,20 +723,148 @@ export function LectureQuizPanel(props: {
                 >
                   <p className="text-sm font-semibold">{quiz.title}</p>
                   <p className="text-xs text-muted">{quiz.questions.length} question(s)</p>
+                  {quiz.maxAttempts !== null ? (
+                    <p className="text-xs text-muted">Max {quiz.maxAttempts} attempt(s)</p>
+                  ) : null}
+                  {quiz.dueDate ? (
+                    <p className="text-xs text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
+                  ) : null}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteQuiz(quiz.id)}
-                  className="mt-2 rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700"
-                >
-                  Delete
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void openResults(quiz.id)}
+                    className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
+                  >
+                    View results
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteQuiz(quiz.id)}
+                    className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </aside>
       </div>
+
+      {resultsQuizId ? (
+        <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quiz Results</p>
+              {resultsData ? (
+                <h3 className="mt-0.5 text-sm font-semibold">{resultsData.quiz.title}</h3>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setResultsQuizId(null);
+                setResultsData(null);
+              }}
+              className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
+            >
+              Close results
+            </button>
+          </div>
+
+          {isLoadingResults ? (
+            <p className="mt-3 text-xs text-muted">Loading results...</p>
+          ) : resultsData ? (
+            <>
+              <div className="mt-3 flex flex-wrap gap-4">
+                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
+                  <p className="text-xs text-muted">Submissions</p>
+                  <p className="mt-0.5 text-lg font-semibold">
+                    {resultsData.stats.totalSubmissions}
+                    <span className="ml-1 text-sm font-normal text-muted">
+                      / {resultsData.stats.totalEnrolled} enrolled
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
+                  <p className="text-xs text-muted">Average score</p>
+                  <p className="mt-0.5 text-lg font-semibold">
+                    {resultsData.stats.averageScore !== null
+                      ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}`
+                      : "—"}
+                  </p>
+                </div>
+                {resultsData.quiz.maxAttempts !== null ? (
+                  <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
+                    <p className="text-xs text-muted">Max attempts</p>
+                    <p className="mt-0.5 text-lg font-semibold">{resultsData.quiz.maxAttempts}</p>
+                  </div>
+                ) : null}
+                {resultsData.quiz.dueDate ? (
+                  <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
+                    <p className="text-xs text-muted">Due</p>
+                    <p className="mt-0.5 text-sm font-semibold">
+                      {new Date(resultsData.quiz.dueDate).toLocaleDateString()}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              {resultsData.submissions.length === 0 ? (
+                <p className="mt-3 text-xs text-muted">No submissions yet.</p>
+              ) : (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[500px] text-sm">
+                    <thead>
+                      <tr className="border-b border-black/10 text-left text-xs font-semibold text-muted dark:border-white/10">
+                        <th className="pb-2 pr-4">Student</th>
+                        <th className="pb-2 pr-4">Score</th>
+                        <th className="pb-2 pr-4">%</th>
+                        <th className="pb-2 pr-4">Attempts</th>
+                        <th className="pb-2">Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                      {resultsData.submissions.map((sub) => (
+                        <tr key={sub.studentId}>
+                          <td className="py-2 pr-4">
+                            <p className="font-medium">{sub.studentName}</p>
+                            {sub.registrationNumber ? (
+                              <p className="text-xs text-muted">{sub.registrationNumber}</p>
+                            ) : null}
+                          </td>
+                          <td className="py-2 pr-4">
+                            {sub.score}/{sub.totalQuestions}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                sub.percentage >= 80
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : sub.percentage >= 50
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {sub.percentage}%
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4">{sub.attemptCount}</td>
+                          <td className="py-2 text-xs text-muted">
+                            {new Date(sub.submittedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

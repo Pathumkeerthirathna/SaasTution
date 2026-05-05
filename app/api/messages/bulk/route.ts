@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       classId?: string;
       content?: string;
+      channel?: string;
     };
 
     const parsed = bulkMessageSchema.safeParse(body);
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       teacherId: session.teacherId,
       classId: parsed.data.classId,
       content: parsed.data.content,
+      channel: parsed.data.channel,
     });
 
     return apiSuccess(result, {

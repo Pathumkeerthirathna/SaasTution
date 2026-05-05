@@ -5,6 +5,7 @@ import {
   getSummaryStats,
   upcomingClassesSeed,
 } from "@/components/student-portal/student-data";
+import { PaperCountdownList } from "@/components/student-portal/paper-countdown-list";
 import { Panel, StatusBadge, SummaryCard } from "@/components/student-portal/student-ui";
 import { requireStudentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
@@ -66,8 +67,77 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
 
   const summary = getSummaryStats();
 
+  const now = new Date();
+
+  const upcomingPaperItems = await prisma.materialBundleItem.findMany({
+    where: {
+      type: "PAPER",
+      paperStartAt: { not: null },
+      bundle: {
+        status: "SENT",
+        recipients: {
+          some: {
+            studentId: studentSession.studentId,
+            willReceive: true,
+          },
+        },
+        class: {
+          students: {
+            some: {
+              studentId: studentSession.studentId,
+              isActive: true,
+            },
+          },
+        },
+      },
+    },
+    select: {
+      id: true,
+      title: true,
+      paperStartAt: true,
+      bundle: {
+        select: {
+          title: true,
+          class: {
+            select: {
+              name: true,
+              teacher: {
+                select: {
+                  paperConfig: {
+                    select: {
+                      countdownLeadMinutes: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { paperStartAt: "asc" },
+    take: 20,
+  });
+
+  const countdownItems = upcomingPaperItems
+    .filter((item): item is typeof item & { paperStartAt: Date } => !!item.paperStartAt)
+    .filter((item) => {
+      const leadMinutes = item.bundle.class.teacher.paperConfig?.countdownLeadMinutes ?? 30;
+      const countdownStart = new Date(item.paperStartAt.getTime() - leadMinutes * 60 * 1000);
+      return now >= countdownStart && now < item.paperStartAt;
+    })
+    .map((item) => ({
+      itemId: item.id,
+      itemTitle: item.title,
+      className: item.bundle.class.name,
+      bundleTitle: item.bundle.title,
+      paperStartAt: item.paperStartAt.toISOString(),
+    }));
+
   return (
     <>
+      <PaperCountdownList items={countdownItems} />
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard title="Total Classes" value={String(summary.totalClasses)} helper="All enrolled classes" />
         <SummaryCard title="Upcoming Classes" value={String(summary.upcomingClasses)} helper="Scheduled next sessions" />
@@ -83,12 +153,12 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
       >
         <div className="grid gap-4 lg:grid-cols-2">
           {liveSessions.length === 0 ? (
-            <article className="rounded-2xl border border-dashed border-brand-200 bg-white/70 p-4 text-sm text-slate-600">
+            <article className="surface-card border-dashed bg-white/70 p-4 text-sm text-slate-600">
               No live classes are running right now.
             </article>
           ) : (
             liveSessions.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+              <article key={item.id} className="surface-card border-emerald-200 bg-emerald-50/60 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-semibold text-slate-900">{item.class.name}</h3>
@@ -101,7 +171,7 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
                 <div className="mt-4">
                   <Link
                     href={`/session/join?sessionId=${item.id}&role=student&studentId=${studentSession.studentId}`}
-                    className="inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white"
+                    className="btn-primary"
                   >
                     Join Now
                   </Link>
@@ -115,7 +185,7 @@ export default async function StudentDashboardPage({ searchParams }: StudentDash
       <Panel title="Upcoming Classes" subtitle="Your next scheduled sessions.">
         <div className="space-y-3">
           {upcomingClassesSeed.map((item) => (
-            <article key={`${item.className}-${item.dateTime}`} className="rounded-xl border border-brand-200 bg-white p-3">
+            <article key={`${item.className}-${item.dateTime}`} className="surface-card rounded-xl p-3">
               <h3 className="font-medium text-slate-900">{item.className}</h3>
               <p className="mt-1 text-sm text-slate-600">{item.dateTime}</p>
               <p className="text-sm text-slate-600">Teacher: {item.teacherName}</p>

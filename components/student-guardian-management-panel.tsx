@@ -76,6 +76,7 @@ export function StudentGuardianManagementPanel() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [studentForm, setStudentForm] = useState({
     name: "",
     grade: "" as "" | (typeof GRADE_OPTIONS)[number],
@@ -169,7 +170,7 @@ export function StudentGuardianManagementPanel() {
   }
 
   return (
-    <section className="relative mt-6">
+    <section className="relative">
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -177,13 +178,22 @@ export function StudentGuardianManagementPanel() {
             <p className="mt-1 text-sm text-muted">Page {page} of {totalPages}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsAddPanelOpen(true)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
-          >
-            Add student
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsAddPanelOpen(true)}
+              className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
+            >
+              Add student
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen(true)}
+              className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold dark:border-white/20"
+            >
+              Help
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -407,6 +417,51 @@ export function StudentGuardianManagementPanel() {
           </button>
         </form>
       </aside>
+
+      {isHelpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-black/10 bg-card p-4 shadow-2xl dark:border-white/10">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">About This Page</p>
+                <h3 className="mt-2 text-lg font-semibold">Student & Guardian Management</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="rounded-lg border border-black/10 px-3 py-1 text-sm font-semibold dark:border-white/15"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-sm text-muted">
+              <div>
+                <p className="font-semibold text-foreground">Add Students</p>
+                <p className="mt-1">Create student profiles with their contact information, grade level, and registration numbers for easy management.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Class Assignment</p>
+                <p className="mt-1">Assign students to your classes and track which students are enrolled in each class with an organized list view.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Guardian Profiles</p>
+                <p className="mt-1">Create and manage guardian profiles linked to students for parent communication and contact purposes.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">How to Use</p>
+                <ul className="mt-2 list-inside list-disc space-y-1">
+                  <li>Click "Add student" to create a new student profile</li>
+                  <li>Enter student details: name, grade, contact, and email</li>
+                  <li>Filter students by name or grade using the filter options</li>
+                  <li>View which classes each student is enrolled in</li>
+                  <li>Use the pagination to navigate through your student list</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

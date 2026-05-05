@@ -16,7 +16,7 @@ export default function StudentProfileRoutePage({
   };
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col py-2">
+    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col pb-2">
       <div className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Student Profile</p>
         <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">Student details, class assignment, and guardians</h1>

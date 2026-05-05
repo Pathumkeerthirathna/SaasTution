@@ -118,6 +118,7 @@ export function LectureManagementPanel() {
   const [assignmentPanelLecture, setAssignmentPanelLecture] = useState<AssignmentPanelLecture | null>(null);
   const [isNotePanelOpen, setIsNotePanelOpen] = useState(false);
   const [notePanelLecture, setNotePanelLecture] = useState<NotePanelLecture | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const filteredLectures = useMemo(() => {
     const text = searchText.trim().toLowerCase();
@@ -339,22 +340,32 @@ export function LectureManagementPanel() {
   }
 
   return (
-    <section className="mt-6 space-y-6">
+    <section className="space-y-6">
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Lectures</h2>
-            <p className="mt-1 text-sm text-muted">Page {page} of {totalPages}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Lecture Management</p>
+            <h2 className="mt-2 text-lg font-semibold">Lectures</h2>
+            <p className="mt-1 text-sm text-muted">Create lectures, manage files, assignments, and quizzes. Page {page} of {totalPages}</p>
           </div>
 
           <div className="flex w-full flex-col items-stretch gap-2 lg:w-auto lg:items-end">
-            <button
-              type="button"
-              onClick={() => setIsAddLecturePanelOpen(true)}
-              className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
-            >
-              Add lecture
-            </button>
+            <div className="flex w-full gap-2 lg:w-auto">
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(true)}
+                className="inline-flex items-center justify-center rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold dark:border-white/20"
+              >
+                Help
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddLecturePanelOpen(true)}
+                className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
+              >
+                Add lecture
+              </button>
+            </div>
 
             <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-[1.2fr_1fr_auto]">
             <input
@@ -536,6 +547,51 @@ export function LectureManagementPanel() {
         onClick={() => setIsNotePanelOpen(false)}
         aria-hidden
       />
+
+      {isHelpOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-3xl rounded-3xl border border-black/10 bg-card p-6 shadow-2xl dark:border-white/10">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">About This Page</p>
+                <h2 className="mt-2 text-xl font-semibold">Lecture Management</h2>
+                <p className="mt-2 text-sm text-muted">
+                  Manage lectures, files, assignments, and quizzes. Create lectures with dates, upload notes and supporting materials, and add assignments and quizzes for each lecture.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <p className="text-sm font-semibold">What you can do here</p>
+                <ul className="mt-2 space-y-2 text-sm text-muted">
+                  <li>Create and schedule lectures for each class.</li>
+                  <li>Upload notes and supporting materials for students.</li>
+                  <li>Add and manage assignments linked to each lecture.</li>
+                  <li>Create quizzes and manage lecture learning content in one place.</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <p className="text-sm font-semibold">How to use this page</p>
+                <ul className="mt-2 space-y-2 text-sm text-muted">
+                  <li>Use the class filter and search to find lectures quickly.</li>
+                  <li>Use Add lecture to create a new scheduled lecture.</li>
+                  <li>Open Notes, Assignments, or Quizzes from each lecture card.</li>
+                  <li>Keep everything for a lecture organized under one record.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <aside
         className={`fixed right-0 top-0 z-50 h-full w-full max-w-md transform border-l border-black/10 bg-card p-5 shadow-2xl transition-transform duration-200 dark:border-white/10 sm:p-6 ${

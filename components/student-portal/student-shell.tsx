@@ -74,7 +74,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-brand-200 bg-background/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-20 border-b border-brand-200/80 bg-background/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
@@ -88,7 +88,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                   </svg>
                 </button>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-700">Student Portal</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700">Student Portal</p>
                   <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">Welcome, {studentName}</h1>
                 </div>
               </div>
@@ -97,7 +97,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                 <button
                   type="button"
                   onClick={() => setIsProfileOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-card px-3 py-2 text-sm font-medium text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-card px-3 py-2 text-sm font-medium text-slate-800 shadow-soft"
                   aria-haspopup="menu"
                   aria-expanded={isProfileOpen}
                 >
@@ -111,7 +111,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                 </button>
 
                 {isProfileOpen ? (
-                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-brand-200 bg-card p-4 shadow-2xl">
+                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-brand-200 bg-card p-4 shadow-panel">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">Student Account</p>
                     <p className="mt-2 text-base font-semibold text-slate-900">{studentName}</p>
                     <p className="text-sm text-slate-600">{studentEmail ?? "No email"}</p>
@@ -121,7 +121,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                       type="button"
                       onClick={handleSignOut}
                       disabled={isSigningOut}
-                      className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+                      className="btn-primary mt-4 w-full bg-accent hover:brightness-105"
                     >
                       {isSigningOut ? "Logging out..." : "Logout"}
                     </button>
@@ -131,7 +131,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
             </div>
           </header>
 
-          <main className="flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="flex-1 space-y-7 px-4 py-7 sm:px-6 lg:px-8">{children}</main>
         </div>
       </div>
     </div>

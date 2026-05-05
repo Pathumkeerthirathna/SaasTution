@@ -113,8 +113,7 @@ export function ClassManagementPanel() {
     description: "",
     schedules: [getDefaultScheduleRow()],
   });
-  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule">>({});
-
+  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule">>({});  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const hasData = useMemo(() => items.length > 0, [items]);
 
   const loadClasses = useCallback(async (nextPage = 1, appliedFilters: FilterState) => {
@@ -286,7 +285,7 @@ export function ClassManagementPanel() {
   }
 
   return (
-    <section className="relative mt-6">
+    <section className="relative">
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -295,13 +294,22 @@ export function ClassManagementPanel() {
               Page {page} of {totalPages}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsCreatePanelOpen(true)}
-            className="mt-3 inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background sm:mt-0"
-          >
-            Add class
-          </button>
+          <div className="flex gap-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={() => setIsCreatePanelOpen(true)}
+              className="mt-3 inline-flex rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background sm:mt-0"
+            >
+              Add class
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen(true)}
+              className="mt-3 inline-flex rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5 sm:mt-0"
+            >
+              Help
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -796,6 +804,50 @@ export function ClassManagementPanel() {
           </button>
         </form>
       </aside>
+
+      {isHelpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-black/10 bg-card p-4 shadow-2xl dark:border-white/10">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Class Management</h2>
+              <button
+                onClick={() => setIsHelpOpen(false)}
+                className="inline-flex rounded-lg border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div>
+                <h3 className="font-semibold">Create Classes</h3>
+                <p className="mt-1 text-muted">Add new teaching classes with names, descriptions, and weekly schedules. Define which days and times each class meets.</p>
+              </div>
+              <div>
+                <h3 className="font-semibold">Edit Class Details</h3>
+                <p className="mt-1 text-muted">Update class information and schedules after creation. Click the edit button on any class card to modify its details.</p>
+              </div>
+              <div>
+                <h3 className="font-semibold">Filter & Search</h3>
+                <p className="mt-1 text-muted">Use name and schedule filters to find specific classes. Apply filters to narrow results or clear to see all classes.</p>
+              </div>
+              <div>
+                <h3 className="font-semibold">Manage Schedules</h3>
+                <p className="mt-1 text-muted">Add multiple schedule rows per class to define complex weekly patterns. Each row specifies a day and start/end time.</p>
+              </div>
+              <div className="border-t border-black/10 pt-4 dark:border-white/10">
+                <h3 className="font-semibold">How to Use</h3>
+                <ol className="mt-2 list-inside list-decimal space-y-1 text-muted">
+                  <li>Click "Add class" to open the creation form</li>
+                  <li>Enter a class name and optional description</li>
+                  <li>Add schedule rows with days and times</li>
+                  <li>Submit to create the class</li>
+                  <li>Use filters to find and manage your classes</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
