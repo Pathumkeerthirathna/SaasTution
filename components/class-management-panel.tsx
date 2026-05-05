@@ -986,7 +986,7 @@ export function ClassManagementPanel() {
               <div className="border-t border-black/10 pt-4 dark:border-white/10">
                 <h3 className="font-semibold">How to Use</h3>
                 <ol className="mt-2 list-inside list-decimal space-y-1 text-muted">
-                  <li>Click "Add class" to open the creation form</li>
+                  <li>Click &ldquo;Add class&rdquo; to open the creation form</li>
                   <li>Enter a class name and optional description</li>
                   <li>Add schedule rows with days and times</li>
                   <li>Submit to create the class</li>

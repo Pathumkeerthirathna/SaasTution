@@ -68,7 +68,7 @@ export async function GET(
 
     const studentIds = bundleItem.bundle.class.students.map((entry) => entry.student.id);
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findMany: Function } })
+    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findMany: (...args: unknown[]) => unknown } })
       .materialBundleItemSubmission;
 
     if (!submissionDelegate) {

@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useMemo, useState } from "react";
-import { Menu, LogOut, ChevronDown, UserCircle2, Hash } from "lucide-react";
+import { Menu, LogOut, ChevronDown, Hash } from "lucide-react";
 
 import { StudentSidebar } from "@/components/student-portal/student-sidebar";
 import { studentNavItems } from "@/components/student-portal/student-data";

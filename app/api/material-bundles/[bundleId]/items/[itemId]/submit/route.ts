@@ -132,7 +132,7 @@ export async function POST(
 
     const fileUrl = `material-bundle-submissions/${itemId}/${session.studentId}/${storedFileName}`;
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { create: Function } })
+    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { create: (...args: unknown[]) => unknown } })
       .materialBundleItemSubmission;
 
     if (!submissionDelegate) {

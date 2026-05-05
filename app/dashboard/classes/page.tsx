@@ -1,4 +1,3 @@
-import Link from "next/link";
 import dynamic from "next/dynamic";
 
 const ClassManagementPanel = dynamic(() => import("@/components/class-management-panel").then((mod) => mod.ClassManagementPanel), {

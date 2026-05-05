@@ -40,7 +40,7 @@ export async function GET(
       throw new AppError("Bundle id, item id and submission id are required.", 400, "VALIDATION_ERROR");
     }
 
-    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findFirst: Function } })
+    const submissionDelegate = (prisma as { materialBundleItemSubmission?: { findFirst: (...args: unknown[]) => unknown } })
       .materialBundleItemSubmission;
 
     if (!submissionDelegate) {

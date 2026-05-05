@@ -336,7 +336,7 @@ export function MessageManagementPanel() {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Email</p>
-                  <p className="text-xs text-muted">Sends directly to each student's email address</p>
+                  <p className="text-xs text-muted">Sends directly to each student&apos;s email address</p>
                 </div>
               </label>
 
@@ -549,7 +549,7 @@ export function MessageManagementPanel() {
                 <ol className="mt-2 list-inside list-decimal space-y-1 text-muted">
                   <li>Select the target class from the dropdown</li>
                   <li>Write your announcement in the message box</li>
-                  <li>Click "Send to all students" to broadcast</li>
+                  <li>Click &ldquo;Send to all students&rdquo; to broadcast</li>
                   <li>Check the delivery summary that appears after sending</li>
                   <li>Use the message history panel on the right to review past messages</li>
                 </ol>

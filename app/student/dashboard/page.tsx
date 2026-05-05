@@ -1,25 +1,20 @@
-﻿import { unstable_noStore as noStore } from "next/cache";
+import { unstable_noStore as noStore } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   BookOpen,
   Radio,
   ClipboardList,
-  HelpCircle,
   MessageSquare,
   CheckCircle2,
-  Clock,
-  XCircle,
   ArrowRight,
   Play,
-  CalendarDays,
   DollarSign,
   Bell,
   BarChart2,
   FileText,
   Package,
   UserCheck,
-  AlertCircle,
   BookMarked,
 } from "lucide-react";
 import { Weekday } from "@prisma/client";
@@ -61,7 +56,6 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   const currentMonthKey = getCurrentMonthKey();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
   const todayWeekday = WEEKDAY_NAMES[now.getDay()] as Weekday;
 
   const [
@@ -69,7 +63,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     liveSessions,
     todaySchedules,
     pendingAssignments,
-    submittedAssignmentIds,
+      /* submittedAssignmentIds unused */,
     recentQuizzes,
     recentNotes,
     materialBundles,
@@ -327,9 +321,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   const todayClassesWithStatus = todaySchedules.map((sch) => {
     const isLive = sch.class.sessions.length > 0;
     const liveSession = liveSessions.find((s) => s.class.id === sch.class.id) ?? null;
-    const [sh, sm] = sch.startTime.split(":").map(Number);
     const [eh, em] = sch.endTime.split(":").map(Number);
-    const startMs = sh * 60 + sm;
     const endMs = eh * 60 + em;
     const nowMs = now.getHours() * 60 + now.getMinutes();
     const status: "live" | "upcoming" | "completed" =

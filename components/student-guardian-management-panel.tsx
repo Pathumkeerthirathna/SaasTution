@@ -451,7 +451,7 @@ export function StudentGuardianManagementPanel() {
               <div>
                 <p className="font-semibold text-foreground">How to Use</p>
                 <ul className="mt-2 list-inside list-disc space-y-1">
-                  <li>Click "Add student" to create a new student profile</li>
+                  <li>Click &ldquo;Add student&rdquo; to create a new student profile</li>
                   <li>Enter student details: name, grade, contact, and email</li>
                   <li>Filter students by name or grade using the filter options</li>
                   <li>View which classes each student is enrolled in</li>

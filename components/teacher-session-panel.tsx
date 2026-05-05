@@ -1386,7 +1386,7 @@ export function TeacherSessionPanel() {
                 <p className="font-semibold text-foreground">How to Use</p>
                 <ul className="mt-2 list-inside list-disc space-y-1">
                   <li>Select a class and lecture from the dropdowns</li>
-                  <li>Click "Start session" to create the room and get the join link</li>
+                  <li>Click &ldquo;Start session&rdquo; to create the room and get the join link</li>
                   <li>Share the link with students to begin the class</li>
                   <li>End the session when class is complete</li>
                   <li>View session history and student attendance records below</li>
