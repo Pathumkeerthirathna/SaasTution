@@ -2,6 +2,7 @@ import { AppError } from "@/lib/error-handler";
 import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
+import { generateJitsiToken } from "@/lib/jitsi-auth";
 
 type NotifyChannels = {
   email: boolean;
@@ -10,6 +11,21 @@ type NotifyChannels = {
 
 function getJitsiDomain() {
   return process.env.JITSI_DOMAIN?.trim() || "meet.jit.si";
+}
+
+function shouldUseJitsiJwtAuth(jitsiDomain: string) {
+  const enabled = process.env.JITSI_ENABLE_JWT_AUTH?.trim().toLowerCase() === "true";
+
+  if (!enabled) {
+    return false;
+  }
+
+  // Public meet.jit.si does not accept arbitrary self-signed JWT secrets.
+  if (jitsiDomain === "meet.jit.si") {
+    return false;
+  }
+
+  return Boolean(process.env.JITSI_JWT_SECRET?.trim());
 }
 
 function createRoomName(classId: string) {
@@ -487,7 +503,7 @@ export async function getSessionJoinInfo(sessionId: string, studentId: string) {
   };
 }
 
-export async function getSessionJoinInfoForTeacher(sessionId: string) {
+export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?: string) {
   const session = await prisma.classSession.findUnique({
     where: {
       id: sessionId,
@@ -520,6 +536,15 @@ export async function getSessionJoinInfoForTeacher(sessionId: string) {
     throw new AppError("Class session is not active.", 404, "SESSION_NOT_ACTIVE");
   }
 
+  const jitsiToken = shouldUseJitsiJwtAuth(session.jitsiDomain)
+    ? await generateJitsiToken({
+        name: "Teacher",
+        room: session.roomName,
+        moderator: true,
+        jitsiDomain: session.jitsiDomain,
+      })
+    : null;
+
   return {
     session: {
       id: session.id,
@@ -530,6 +555,7 @@ export async function getSessionJoinInfoForTeacher(sessionId: string) {
     },
     lecture: session.lecture,
     class: session.class,
+    token: jitsiToken || undefined,
   };
 }
 

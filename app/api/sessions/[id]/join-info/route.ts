@@ -24,7 +24,7 @@ export async function GET(
     if (role === "teacher") {
       const teacherSession = await requireTeacherSession();
       await ensureSessionAccessForTeacher(teacherSession.teacherId, sessionId);
-      const joinInfo = await getSessionJoinInfoForTeacher(sessionId);
+      const joinInfo = await getSessionJoinInfoForTeacher(sessionId, teacherSession.teacherId);
       return apiSuccess(joinInfo);
     }
 

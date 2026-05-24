@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// Real security must be handled on backend (JWT/session). This is a basic client-side guard only.
 type UserRole = "teacher" | "student";
 
 type JoinInfo = {
@@ -30,6 +29,15 @@ type JoinInfo = {
     name: string;
     grade: string | null;
   };
+  token?: string;
+};
+
+type JitsiApi = {
+  executeCommand: (command: string, ...args: unknown[]) => void;
+  addListener: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+  getParticipantsInfo: () => Array<{ participantId: string; displayName: string }>;
+  dispose: () => void;
 };
 
 declare global {
@@ -39,17 +47,12 @@ declare global {
       options: {
         roomName: string;
         parentNode: HTMLElement;
+        jwt?: string;
         userInfo?: { displayName?: string };
         configOverwrite?: Record<string, unknown>;
         interfaceConfigOverwrite?: Record<string, unknown>;
       }
-    ) => {
-      executeCommand: (command: string, ...args: unknown[]) => void;
-      addListener: (event: string, listener: (...args: unknown[]) => void) => void;
-      removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
-      getParticipantsInfo: () => Array<{ participantId: string; displayName: string }>;
-      dispose: () => void;
-    };
+    ) => JitsiApi;
   }
 }
 
@@ -60,19 +63,14 @@ export function JitsiClassroom() {
   const studentId = searchParams.get("studentId") ?? "";
   const inviteToken = searchParams.get("invite") ?? "";
   const roleParam = searchParams.get("role");
-  // Real security must be handled on backend (JWT/session). This is a basic client-side guard only.
   const role: UserRole = roleParam === "teacher" ? "teacher" : "student";
   const teacherName = searchParams.get("teacherName") ?? "Teacher";
 
+  const meetingShellRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const apiRef = useRef<{
-    executeCommand: (command: string, ...args: unknown[]) => void;
-    addListener: (event: string, listener: (...args: unknown[]) => void) => void;
-    removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
-    getParticipantsInfo: () => Array<{ participantId: string; displayName: string }>;
-    dispose: () => void;
-  } | null>(null);
+  const apiRef = useRef<JitsiApi | null>(null);
   const teacherParticipantIdRef = useRef<string | null>(null);
+
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
   const [isJitsiReady, setIsJitsiReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,6 +80,8 @@ export function JitsiClassroom() {
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [isLeavingSession, setIsLeavingSession] = useState(false);
   const [isNotifyingRestart, setIsNotifyingRestart] = useState(false);
+  const [isTeacherControlsReady, setIsTeacherControlsReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [restartedSessionId, setRestartedSessionId] = useState<string | null>(null);
   const [teacherFlowStage, setTeacherFlowStage] = useState<"active" | "ended-await-restart" | "restarted-await-notify">("active");
   const [restartNotifyOptions, setRestartNotifyOptions] = useState({
@@ -90,6 +90,25 @@ export function JitsiClassroom() {
   });
 
   const dashboardHref = role === "teacher" ? "/dashboard/sessions" : "/student/dashboard";
+
+  function handleToggleFullscreen() {
+    const shell = meetingShellRef.current;
+
+    if (!shell) {
+      return;
+    }
+
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {
+        // Ignore browser-level fullscreen errors.
+      });
+      return;
+    }
+
+    void shell.requestFullscreen().catch(() => {
+      // Some browsers require additional user gesture context.
+    });
+  }
 
   async function handleStudentLeave() {
     if (!joinInfo?.student?.id) {
@@ -153,6 +172,7 @@ export function JitsiClassroom() {
 
       apiRef.current?.dispose();
       apiRef.current = null;
+      setIsTeacherControlsReady(false);
       setHasSessionEnded(true);
       setIsJitsiReady(false);
       setTeacherFlowStage("ended-await-restart");
@@ -200,6 +220,7 @@ export function JitsiClassroom() {
 
       apiRef.current?.dispose();
       apiRef.current = null;
+      setIsTeacherControlsReady(false);
       setRestartedSessionId(restartPayload.data.session.id);
       setTeacherFlowStage("restarted-await-notify");
       setHasSessionEnded(false);
@@ -428,22 +449,119 @@ export function JitsiClassroom() {
       return;
     }
 
+    const toolbarButtonsForRole =
+      role === "teacher"
+        ? [
+             // Most important classroom actions
+            "microphone",
+            "camera",
+            "desktop",
+            "chat",
+            "participants-pane",
+            "raisehand",
+            "hangup",
+
+            // Frequently used secondary actions
+            "fullscreen",
+            "tileview",
+            "filmstrip",
+            "settings",
+            "videoquality",
+            "select-background",
+            "videobackgroundblur",
+            "noisesuppression",
+
+            // Teacher / moderation features
+            "mute-everyone",
+            "security",
+            "whiteboard",
+            "breakoutrooms",
+            "recording",
+            "livestreaming",
+
+            // Collaboration tools
+            "sharedvideo",
+            "etherpad",
+            "invite",
+            "calendar",
+
+            // Accessibility & profile
+            "closedcaptions",
+            "profile",
+            "feedback",
+            "help",
+
+            // Advanced / less-used utilities
+            "speakerstats",
+            "stats",
+            "shortcuts",
+            "download",
+            "embedmeeting",
+            "fodeviceselection",
+            "toggle-camera",
+          ]
+        : [
+            "microphone",
+            "camera",
+            "chat",
+            "raisehand",
+            "participants-pane",
+            "tileview",
+            "fullscreen",
+            "settings",
+            "videoquality",
+            "shortcuts",
+            "hangup",
+          ];
+
     const api = new window.JitsiMeetExternalAPI(joinInfo.session.jitsiDomain, {
       roomName: joinInfo.session.roomName,
       parentNode: containerRef.current,
       userInfo: {
         displayName: role === "teacher" ? teacherName : (joinInfo.student?.name ?? "Student"),
       },
+      ...(joinInfo.token && { jwt: joinInfo.token }),
       configOverwrite: {
         prejoinPageEnabled: false,
+        prejoinConfig: {
+          enabled: false,
+        },
+        startWithAudioMuted: true,
+        startWithVideoMuted: true,
+        resolution: 360,
+        constraints: {
+          video: {
+            height: {
+              ideal: 360,
+              max: 360,
+              min: 180,
+            },
+          },
+        },
+        disableSimulcast: true,
         disableTileView: true,
+        channelLastN: 1,
+        enableWelcomePage: false,
+        enableNoAudioDetection: false,
+        enableNoisyMicDetection: false,
+        p2p: {
+          enabled: true,
+        },
       },
       interfaceConfigOverwrite: {
+        TOOLBAR_BUTTONS: toolbarButtonsForRole,
         DISABLE_TILE_VIEW: true,
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        SHOW_BRAND_WATERMARK: false,
+        BRAND_WATERMARK_LINK: "",
+        MOBILE_APP_PROMO: false,
+        DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
       },
     });
 
     apiRef.current = api;
+    setIsTeacherControlsReady(role === "teacher");
 
     const markJoined = async () => {
       if (role !== "student" || !joinInfo.student?.id) return;
@@ -470,23 +588,12 @@ export function JitsiClassroom() {
     const handleJoined = () => {
       void markJoined();
 
-      if (role === "teacher") {
-        // Auto-fullscreen for teacher only. Students must never auto-enter fullscreen.
-        const fullscreenRequest = containerRef.current?.requestFullscreen();
-        void fullscreenRequest?.catch(() => {
-          // Browser may block fullscreen without a user gesture — ignore silently.
-        });
-      }
-
       if (role === "student") {
-        // Auto-mute on join only. Students can unmute themselves afterwards.
         api.executeCommand("toggleAudio");
         api.executeCommand("toggleVideo");
-        // Enforce tile view off + filmstrip visible.
         api.executeCommand("setTileView", false);
         api.executeCommand("setFilmStripVisibility", true);
 
-        // Detect teacher already present in the room via getParticipantsInfo.
         try {
           const participants = api.getParticipantsInfo();
           const teacherParticipant = participants.find((p) => p.displayName === teacherName);
@@ -508,7 +615,6 @@ export function JitsiClassroom() {
       const candidate = participant as { id?: string; displayName?: string };
       if (!candidate?.id) return;
 
-      // Track teacher participant by display name — never use local or database IDs.
       if (candidate.displayName === teacherName) {
         teacherParticipantIdRef.current = candidate.id;
         if (role === "student") {
@@ -521,10 +627,8 @@ export function JitsiClassroom() {
       if (role !== "student") return;
       const e = event as { on?: boolean; id?: string };
       if (e.on && e.id) {
-        // Screen share started — focus on the sharer.
         api.executeCommand("setLargeVideoParticipant", e.id);
       } else if (!e.on && teacherParticipantIdRef.current) {
-        // Screen share ended — restore teacher as dominant view.
         api.executeCommand("setLargeVideoParticipant", teacherParticipantIdRef.current);
       }
     };
@@ -548,143 +652,90 @@ export function JitsiClassroom() {
       api.removeListener("screenSharingStatusChanged", handleScreenSharingChanged);
       api.dispose();
       apiRef.current = null;
+      setIsTeacherControlsReady(false);
       void markLeft();
     };
   }, [hasSessionEnded, joinInfo, isJitsiReady, role, teacherName]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const shell = meetingShellRef.current;
+      setIsFullscreen(Boolean(shell && document.fullscreenElement === shell));
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
-      <section className="rounded-3xl border border-black/10 bg-card p-4 shadow-sm dark:border-white/10 sm:p-6">
-        <h1 className="text-xl font-semibold sm:text-2xl">Classroom session</h1>
+      {isLoading ? <p className="text-sm text-muted">Loading session details...</p> : null}
 
-        {isLoading ? <p className="mt-2 text-sm text-muted">Loading session details...</p> : null}
+      {errorMessage ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+      ) : null}
 
-        {errorMessage ? (
-          <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
-        ) : null}
-
-        {joinInfo ? (
-          <div className="mt-3 text-sm text-muted">
-            <p>Class: {joinInfo.class.name}</p>
-            {joinInfo.lecture ? <p>Lecture: {joinInfo.lecture.title}</p> : null}
-            <p>Schedule: {joinInfo.class.schedule}</p>
-            {role === "student" && joinInfo.student ? <p>Student: {joinInfo.student.name}</p> : null}
-            {role === "teacher" ? <p>Teacher: {teacherName}</p> : null}
-          </div>
-        ) : null}
-
-        {joinInfo && !hasSessionEnded ? (
+      {hasSessionEnded ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+          <p className="font-semibold">Session ended</p>
+          <p className="mt-1">This live session has ended. Return to your dashboard to continue.</p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {role === "teacher" ? (
-              <>
-                {teacherFlowStage === "active" ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleTeacherEndSession()}
-                    disabled={isEndingSession || isRestarting || isNotifyingRestart}
-                    className="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isEndingSession ? "Ending..." : "End session"}
-                  </button>
-                ) : null}
-
-                {teacherFlowStage === "ended-await-restart" ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleTeacherRestartSession()}
-                    disabled={isRestarting || isEndingSession || isNotifyingRestart}
-                    className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isRestarting ? "Restarting..." : "Restart session"}
-                  </button>
-                ) : null}
-
-                {teacherFlowStage === "restarted-await-notify" ? (
-                  <>
-                    <div className="inline-flex items-center gap-3 rounded-xl border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                      <span className="font-semibold text-muted">Notify:</span>
-                      <label className="inline-flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={restartNotifyOptions.email}
-                          onChange={(event) =>
-                            setRestartNotifyOptions((prev) => ({
-                              ...prev,
-                              email: event.target.checked,
-                            }))
-                          }
-                        />
-                        Email
-                      </label>
-                      <label className="inline-flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={restartNotifyOptions.whatsapp}
-                          onChange={(event) =>
-                            setRestartNotifyOptions((prev) => ({
-                              ...prev,
-                              whatsapp: event.target.checked,
-                            }))
-                          }
-                        />
-                        WhatsApp
-                      </label>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleNotifyAfterRestart()}
-                      disabled={isNotifyingRestart || isRestarting || isEndingSession}
-                      className="rounded-xl bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isNotifyingRestart ? "Notifying..." : "Notify students"}
-                    </button>
-                  </>
-                ) : null}
-              </>
-            ) : null}
-
-            {role === "student" ? (
               <button
                 type="button"
-                onClick={() => void handleStudentLeave()}
-                disabled={isLeavingSession}
-                className="rounded-xl border border-black/15 px-3 py-2 text-sm font-semibold dark:border-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void handleTeacherRestartSession()}
+                disabled={teacherFlowStage !== "ended-await-restart" || isRestarting || isEndingSession}
+                className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isLeavingSession ? "Leaving..." : "Leave session"}
+                {isRestarting ? "Restarting..." : "Restart session"}
               </button>
             ) : null}
+
+            <Link
+              href={dashboardHref}
+              className="inline-flex items-center justify-center rounded-xl border border-black/20 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-black/5"
+            >
+              Go to dashboard
+            </Link>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {hasSessionEnded ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-            <p className="font-semibold">Session ended</p>
-            <p className="mt-1">This live session has ended. Return to your dashboard to continue.</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              {role === "teacher" ? (
-                <button
-                  type="button"
-                  onClick={() => void handleTeacherRestartSession()}
-                  disabled={teacherFlowStage !== "ended-await-restart" || isRestarting || isEndingSession}
-                  className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isRestarting ? "Restarting..." : "Restart session"}
-                </button>
-              ) : null}
+      <section
+        ref={meetingShellRef}
+        className={`relative mt-4 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm dark:border-white/10 ${hasSessionEnded ? "hidden" : ""}`}
+      >
+        <div className="pointer-events-none absolute right-3 top-3 z-20">
+          <button
+            type="button"
+            onClick={handleToggleFullscreen}
+            disabled={hasSessionEnded || isLoading}
+            className="pointer-events-auto rounded-lg border border-white/25 bg-black/60 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          </button>
+        </div>
 
-              <Link
-                href={dashboardHref}
-                className="inline-flex items-center justify-center rounded-xl border border-black/20 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-black/5"
-              >
-                Go to dashboard
-              </Link>
+        {role === "teacher" && joinInfo ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black/85 px-4 py-3 text-white sm:px-6">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-white/70">Class Title</p>
+              <p className="text-base font-semibold sm:text-lg">{joinInfo.class.name}</p>
+              <p className="text-xs text-white/70 sm:text-sm">
+                Lecture: {joinInfo.lecture?.title ?? "No lecture title"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold">{teacherName}</span>
+              <span className="rounded-full border border-red-300/30 bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-100">LIVE</span>
             </div>
           </div>
         ) : null}
-      </section>
 
-      <section className={`mt-4 overflow-hidden rounded-3xl border border-black/10 bg-black shadow-sm dark:border-white/10 ${hasSessionEnded ? "hidden" : ""}`}>
         <div
           ref={containerRef}
           className="h-[65vh] w-full min-h-[420px] sm:h-[72vh]"
