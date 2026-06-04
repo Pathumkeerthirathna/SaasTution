@@ -1,6 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  ChevronDown,
+  CircleHelp,
+  Clock3,
+  FileText,
+  Filter,
+  GraduationCap,
+  Plus,
+  Search,
+  SquarePen,
+  Trash2,
+  X,
+} from "lucide-react";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
@@ -341,68 +355,84 @@ export function LectureManagementPanel() {
 
   return (
     <section className="space-y-6">
-      <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Lecture Management</p>
-            <h2 className="mt-2 text-lg font-semibold">Lectures</h2>
-            <p className="mt-1 text-sm text-muted">Create lectures, manage files, assignments, and quizzes. Page {page} of {totalPages}</p>
+      <article className="surface-panel border border-brand-100 p-6 sm:p-7">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
+              <FileText size={26} />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Lecture Management</p>
+              <h2 className="mt-2 text-4xl font-semibold tracking-tight text-slate-900">Lectures</h2>
+              <p className="mt-2 text-sm text-muted">Create lectures, manage files, assignments, and quizzes.</p>
+              <p className="mt-5 text-sm font-medium text-slate-600">Page {page} of {totalPages}</p>
+            </div>
           </div>
 
-          <div className="flex w-full flex-col items-stretch gap-2 lg:w-auto lg:items-end">
-            <div className="flex w-full gap-2 lg:w-auto">
-              <button
-                type="button"
-                onClick={() => setIsHelpOpen(true)}
-                className="inline-flex items-center justify-center rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold dark:border-white/20"
-              >
-                Help
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsAddLecturePanelOpen(true)}
-                className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
-              >
-                Add lecture
-              </button>
-            </div>
-
-            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-[1.2fr_1fr_auto]">
-            <input
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search lectures..."
-              className="rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-            />
-            <select
-              value={filterClassId}
-              onChange={(event) => setFilterClassId(event.target.value)}
-              className="rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen(true)}
+              className="btn-secondary gap-2"
             >
-              <option value="">All classes</option>
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+              <CircleHelp size={15} />
+              Help
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAddLecturePanelOpen(true)}
+              className="btn-primary gap-2"
+            >
+              <Plus size={15} />
+              Add lecture
+            </button>
+          </div>
+        </div>
+
+        <div className="filter-shell mt-6">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.8fr_0.8fr_auto]">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search lectures..."
+                className="control-input h-14 pl-11 text-base"
+              />
+            </div>
+            <div className="relative">
+              <GraduationCap size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+              <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+              <select
+                value={filterClassId}
+                onChange={(event) => setFilterClassId(event.target.value)}
+                className="control-select h-14 appearance-none pl-11 pr-12 text-base"
+              >
+                <option value="">All classes</option>
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => void loadLectures(1, filterClassId)}
-              className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold dark:border-white/20"
+              className="btn-secondary h-14 gap-2 px-5"
             >
+              <Filter size={15} />
               Apply
             </button>
-            </div>
           </div>
         </div>
 
         {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+          <p className="notice-error mt-4">{errorMessage}</p>
         ) : null}
 
         {successMessage ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p className="notice-success mt-4">
             {successMessage}
           </p>
         ) : null}
@@ -413,41 +443,46 @@ export function LectureManagementPanel() {
           <p className="mt-4 text-sm text-muted">No lectures found for selected criteria.</p>
         ) : null}
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-5 space-y-4">
           {filteredLectures.map((lecture) => {
             const status = getLectureStatus(lecture.date);
 
             return (
-              <div key={lecture.id} className="rounded-2xl border border-black/10 p-4 shadow-sm dark:border-white/10">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div key={lecture.id} className="surface-panel border border-brand-100 p-5 sm:p-6">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex gap-4">
-                    <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200" />
+                    <div className="inline-flex h-28 w-28 shrink-0 items-center justify-center rounded-3xl bg-brand-50 text-brand-700 shadow-soft">
+                      <FileText size={36} />
+                    </div>
                     <div>
-                      <p className="text-xl font-semibold">{lecture.title}</p>
-                      <p className="mt-1 text-sm text-muted">
-                        {new Date(lecture.date).toLocaleDateString()} • {new Date(lecture.date).toLocaleTimeString()} • {lecture.class.name}
-                      </p>
-                      <p className="mt-1 text-xs text-muted">{lecture.class.schedule}</p>
+                      <p className="text-2xl font-semibold tracking-tight text-slate-900">{lecture.title}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                        <span className="inline-flex items-center gap-1.5"><Calendar size={14} />{new Date(lecture.date).toLocaleDateString()}</span>
+                        <span className="inline-flex items-center gap-1.5"><Clock3 size={14} />{new Date(lecture.date).toLocaleTimeString()}</span>
+                        <span className="inline-flex items-center gap-1.5"><GraduationCap size={14} />{lecture.class.name}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-muted">{lecture.class.schedule}</p>
 
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "notes")}
-                          className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                             isNotePanelOpen && notePanelLecture?.id === lecture.id
-                              ? "border-foreground bg-foreground text-background"
-                              : "border-black/15 dark:border-white/20"
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
                           }`}
                         >
+                          <FileText size={12} />
                           Notes {lecture._count.notes}
                         </button>
                         <button
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "assignments")}
-                          className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                             isAssignmentPanelOpen && assignmentPanelLecture?.id === lecture.id
-                              ? "border-foreground bg-foreground text-background"
-                              : "border-black/15 dark:border-white/20"
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
                           }`}
                         >
                           Assignments {lecture._count.assignments}
@@ -455,10 +490,10 @@ export function LectureManagementPanel() {
                         <button
                           type="button"
                           onClick={() => void openLectureTab(lecture.id, "quizzes")}
-                          className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                             isQuizPanelOpen && quizPanelLecture?.id === lecture.id
-                              ? "border-foreground bg-foreground text-background"
-                              : "border-black/15 dark:border-white/20"
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
                           }`}
                         >
                           Quizzes {lecture._count.quizzes}
@@ -474,16 +509,18 @@ export function LectureManagementPanel() {
                         type="button"
                         disabled={isSubmitting}
                         onClick={() => void handleUpdateLecture(lecture)}
-                        className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+                        className="btn-secondary gap-2 px-3 py-2 text-xs"
                       >
+                        <SquarePen size={12} />
                         Edit
                       </button>
                       <button
                         type="button"
                         disabled={isSubmitting}
                         onClick={() => void handleDeleteLecture(lecture)}
-                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+                        className="btn-danger gap-2 px-3 py-2 text-xs"
                       >
+                        <Trash2 size={12} />
                         Delete
                       </button>
                     </div>
@@ -495,12 +532,24 @@ export function LectureManagementPanel() {
           })}
         </div>
 
-        <div className="mt-5 flex items-center justify-between">
+        <div className="surface-soft mt-5 flex flex-col gap-3 rounded-3xl p-4 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            className="btn-secondary gap-2 w-fit"
+            disabled
+          >
+            6 per page
+            <ChevronDown size={13} />
+          </button>
+
+          <div className="flex items-center justify-center text-sm font-medium text-slate-500">Page {page} of {totalPages}</div>
+
+          <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={page <= 1 || isLoading}
             onClick={() => void loadLectures(page - 1, filterClassId)}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Previous
           </button>
@@ -509,10 +558,11 @@ export function LectureManagementPanel() {
             type="button"
             disabled={page >= totalPages || isLoading}
             onClick={() => void loadLectures(page + 1, filterClassId)}
-            className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20"
+            className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Next
           </button>
+          </div>
         </div>
       </article>
 
@@ -550,11 +600,11 @@ export function LectureManagementPanel() {
 
       {isHelpOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-3xl rounded-3xl border border-black/10 bg-card p-6 shadow-2xl dark:border-white/10">
+          <div className="w-full max-w-3xl rounded-3xl border border-brand-100 bg-white/95 p-6 shadow-panel backdrop-blur">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">About This Page</p>
-                <h2 className="mt-2 text-xl font-semibold">Lecture Management</h2>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">Lecture Management</h2>
                 <p className="mt-2 text-sm text-muted">
                   Manage lectures, files, assignments, and quizzes. Create lectures with dates, upload notes and supporting materials, and add assignments and quizzes for each lecture.
                 </p>
@@ -562,15 +612,15 @@ export function LectureManagementPanel() {
               <button
                 type="button"
                 onClick={() => setIsHelpOpen(false)}
-                className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
+                className="btn-secondary px-3 py-1.5 text-xs"
               >
                 Close
               </button>
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <p className="text-sm font-semibold">What you can do here</p>
+              <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-4 shadow-soft">
+                <p className="text-sm font-semibold text-slate-900">What you can do here</p>
                 <ul className="mt-2 space-y-2 text-sm text-muted">
                   <li>Create and schedule lectures for each class.</li>
                   <li>Upload notes and supporting materials for students.</li>
@@ -579,8 +629,8 @@ export function LectureManagementPanel() {
                 </ul>
               </div>
 
-              <div className="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <p className="text-sm font-semibold">How to use this page</p>
+              <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-4 shadow-soft">
+                <p className="text-sm font-semibold text-slate-900">How to use this page</p>
                 <ul className="mt-2 space-y-2 text-sm text-muted">
                   <li>Use the class filter and search to find lectures quickly.</li>
                   <li>Use Add lecture to create a new scheduled lecture.</li>
@@ -594,21 +644,21 @@ export function LectureManagementPanel() {
       ) : null}
 
       <aside
-        className={`fixed right-0 top-0 z-50 h-full w-full max-w-md transform border-l border-black/10 bg-card p-5 shadow-2xl transition-transform duration-200 dark:border-white/10 sm:p-6 ${
+        className={`drawer-panel transform transition-transform duration-200 ${
           isAddLecturePanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!isAddLecturePanelOpen}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 border-b border-brand-100 pb-4">
           <div>
-            <h2 className="text-lg font-semibold">Add lecture</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Add lecture</h2>
             <p className="mt-1 text-sm text-muted">Create lecture entries with class and schedule date.</p>
           </div>
 
           <button
             type="button"
             onClick={() => setIsAddLecturePanelOpen(false)}
-            className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+            className="btn-secondary"
           >
             Close
           </button>
@@ -618,7 +668,7 @@ export function LectureManagementPanel() {
           <select
             value={createLectureForm.classId}
             onChange={(event) => setCreateLectureForm((prev) => ({ ...prev, classId: event.target.value }))}
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+            className="control-select"
           >
             <option value="">Select class</option>
             {classes.map((item) => (
@@ -632,20 +682,20 @@ export function LectureManagementPanel() {
             value={createLectureForm.title}
             onChange={(event) => setCreateLectureForm((prev) => ({ ...prev, title: event.target.value }))}
             placeholder="Lecture title"
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+            className="control-input"
           />
 
           <input
             type="datetime-local"
             value={createLectureForm.date}
             onChange={(event) => setCreateLectureForm((prev) => ({ ...prev, date: event.target.value }))}
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+            className="control-input"
           />
 
           <button
             type="submit"
             disabled={isSubmitting || !createLectureForm.classId || !createLectureForm.title || !createLectureForm.date}
-            className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? "Saving..." : "Add lecture"}
           </button>
@@ -653,15 +703,15 @@ export function LectureManagementPanel() {
       </aside>
 
       <aside
-        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1400px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-white shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1400px] lg:border-l lg:border-brand-100 ${
           isQuizPanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!isQuizPanelOpen}
       >
-        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+        <div className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Lecture quizzes</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Lecture quizzes</h2>
               {quizPanelLecture ? (
                 <p className="mt-1 text-sm text-muted">
                   {quizPanelLecture.title} • {quizPanelLecture.class.name} • {new Date(quizPanelLecture.date).toLocaleString()}
@@ -674,7 +724,7 @@ export function LectureManagementPanel() {
             <button
               type="button"
               onClick={() => setIsQuizPanelOpen(false)}
-              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+              className="btn-secondary"
             >
               Close
             </button>
@@ -689,15 +739,15 @@ export function LectureManagementPanel() {
       </aside>
 
       <aside
-        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-white shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-brand-100 ${
           isAssignmentPanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!isAssignmentPanelOpen}
       >
-        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+        <div className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Lecture assignments</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Lecture assignments</h2>
               {assignmentPanelLecture ? (
                 <p className="mt-1 text-sm text-muted">
                   {assignmentPanelLecture.title} • {assignmentPanelLecture.class.name} • {new Date(assignmentPanelLecture.date).toLocaleString()}
@@ -710,7 +760,7 @@ export function LectureManagementPanel() {
             <button
               type="button"
               onClick={() => setIsAssignmentPanelOpen(false)}
-              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+              className="btn-secondary"
             >
               Close
             </button>
@@ -728,15 +778,15 @@ export function LectureManagementPanel() {
       </aside>
 
       <aside
-        className={`fixed inset-0 z-50 transform overflow-y-auto bg-card shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-black/10 dark:lg:border-white/10 ${
+        className={`fixed inset-0 z-50 transform overflow-y-auto bg-white shadow-2xl transition-transform duration-200 lg:left-auto lg:w-[94vw] lg:max-w-[1300px] lg:border-l lg:border-brand-100 ${
           isNotePanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!isNotePanelOpen}
       >
-        <div className="sticky top-0 z-10 border-b border-black/10 bg-card px-4 py-4 dark:border-white/10 sm:px-6">
+        <div className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Lecture notes</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Lecture notes</h2>
               {notePanelLecture ? (
                 <p className="mt-1 text-sm text-muted">
                   {notePanelLecture.title} • {notePanelLecture.class.name} • {new Date(notePanelLecture.date).toLocaleString()}
@@ -749,7 +799,7 @@ export function LectureManagementPanel() {
             <button
               type="button"
               onClick={() => setIsNotePanelOpen(false)}
-              className="rounded-lg border border-black/15 px-3 py-1 text-sm font-semibold dark:border-white/20"
+              className="btn-secondary"
             >
               Close
             </button>

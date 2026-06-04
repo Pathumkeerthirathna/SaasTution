@@ -6,7 +6,7 @@ const LectureManagementPanel = dynamic(() => import("@/components/lecture-manage
 
 export default function TeacherLecturesPage() {
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col pb-2">
+    <div className="flex w-full flex-1 flex-col pb-2">
       <LectureManagementPanel />
     </div>
   );

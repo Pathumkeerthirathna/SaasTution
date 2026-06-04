@@ -54,6 +54,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
         activePath={activePath}
         open={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        onToggle={() => setIsSidebarOpen((prev) => !prev)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">

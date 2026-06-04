@@ -2,6 +2,18 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  BookOpen,
+  Calendar,
+  ChevronRight,
+  Clock3,
+  Mail,
+  Phone,
+  Plus,
+  Sparkles,
+  User,
+  Users,
+} from "lucide-react";
 
 type ClassItem = {
   id: string;
@@ -105,6 +117,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
   const [removeReasonByClassId, setRemoveReasonByClassId] = useState<Record<string, string>>({});
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
+  const [isStudentEditOpen, setIsStudentEditOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -417,139 +430,298 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
   }
 
   return (
-    <div className="mt-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">{profile.name}</h2>
-          <p className="text-sm text-muted">Professional student profile</p>
-        </div>
-        <Link
-          href="/dashboard/students"
-          className="inline-flex rounded-xl border border-black/15 px-4 py-2 text-sm font-medium dark:border-white/20"
-        >
-          Back to students
-        </Link>
-      </div>
-
+    <div className="mt-6 space-y-5">
       {errorMessage ? (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        <p className="notice-error">{errorMessage}</p>
       ) : null}
 
       {successMessage ? (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p className="notice-success">
           {successMessage}
         </p>
       ) : null}
 
-      <div className="border-b border-black/15 dark:border-white/15">
-        <div className="flex items-center gap-4">
+      <div className="border-b border-brand-100">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
           <button
             type="button"
             onClick={() => setActiveTab("overview")}
-            className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+            className={`inline-flex items-center gap-2 rounded-t-xl border-b-2 px-3 py-2 text-xs font-semibold tracking-wide transition ${
               activeTab === "overview"
-                ? "border-foreground text-foreground"
+                ? "border-brand-500 text-brand-700"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
+            <Sparkles size={13} />
             Overview
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("classes")}
-            className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+            className={`inline-flex items-center gap-2 rounded-t-xl border-b-2 px-3 py-2 text-xs font-semibold tracking-wide transition ${
               activeTab === "classes"
-                ? "border-foreground text-foreground"
+                ? "border-brand-500 text-brand-700"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
+            <BookOpen size={13} />
             Classes
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("guardians")}
-            className={`-mb-px border-b-2 px-1 py-2 text-xs font-semibold tracking-wide transition ${
+            className={`inline-flex items-center gap-2 rounded-t-xl border-b-2 px-3 py-2 text-xs font-semibold tracking-wide transition ${
               activeTab === "guardians"
-                ? "border-foreground text-foreground"
+                ? "border-brand-500 text-brand-700"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
+            <Users size={13} />
             Guardians
           </button>
         </div>
       </div>
 
       {activeTab === "overview" ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_1fr]">
-          <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold uppercase tracking-wide text-muted">Student details</p>
-              <span className="rounded-full border border-black/15 px-2 py-0.5 text-xs font-semibold dark:border-white/20">
-                {profile.registrationNumber ?? "No reg no"}
-              </span>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.25fr_0.85fr]">
+            <article className="surface-panel border border-brand-100 p-6">
+              <div className="flex items-center justify-between gap-3 border-b border-brand-100 pb-4">
+                <h3 className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                    <User size={15} />
+                  </span>
+                  Student information
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsStudentEditOpen((prev) => !prev)}
+                  className="btn-secondary"
+                >
+                  {isStudentEditOpen ? "Cancel" : "Edit"}
+                </button>
+              </div>
+
+              {!isStudentEditOpen ? (
+                <div className="mt-3 divide-y divide-brand-100 text-sm">
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Registration No</p>
+                    <p className="font-medium text-slate-800">{profile.registrationNumber ?? "-"}</p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Full name</p>
+                    <p className="font-medium text-slate-800">{profile.name}</p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Grade</p>
+                    <p>
+                      <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                        {formatGradeLabel(profile.grade)}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Contact 01</p>
+                    <p className="inline-flex items-center gap-2 font-medium text-slate-800"><Phone size={13} />{profile.contact01 || "-"}</p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Contact 02</p>
+                    <p className="inline-flex items-center gap-2 font-medium text-slate-800"><Phone size={13} />{profile.contact02 || "-"}</p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Email</p>
+                    <p className="inline-flex items-center gap-2 font-medium text-slate-800"><Mail size={13} />{profile.email || "-"}</p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Status</p>
+                    <p>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Active</span>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-[170px_1fr] gap-4 py-3">
+                    <p className="text-slate-500">Joined on</p>
+                    <p className="inline-flex items-center gap-2 font-medium text-slate-800"><Calendar size={13} />{formatDate(profile.createdAt)}</p>
+                  </div>
+                </div>
+              ) : (
+                <form className="mt-4 space-y-3" onSubmit={handleUpdateStudent}>
+                  <input
+                    required
+                    value={studentForm.name}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="control-input"
+                    placeholder="Student name"
+                  />
+
+                  <select
+                    value={studentForm.grade}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, grade: event.target.value }))}
+                    className="control-select"
+                  >
+                    <option value="">Select grade (optional)</option>
+                    {GRADE_OPTIONS.map((grade) => (
+                      <option key={grade} value={grade}>
+                        {formatGradeLabel(grade)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    required
+                    value={studentForm.contact01}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, contact01: event.target.value }))}
+                    className="control-input"
+                    placeholder="Contact 01"
+                  />
+
+                  <input
+                    required
+                    value={studentForm.contact02}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, contact02: event.target.value }))}
+                    className="control-input"
+                    placeholder="Contact 02"
+                  />
+
+                  <input
+                    type="email"
+                    required
+                    value={studentForm.email}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, email: event.target.value }))}
+                    className="control-input"
+                    placeholder="Email"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="btn-primary"
+                  >
+                    Save student details
+                  </button>
+                </form>
+              )}
+            </article>
+
+            <article className="surface-panel border border-brand-100 p-6">
+              <h3 className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                  <Sparkles size={15} />
+                </span>
+                Quick actions
+              </h3>
+
+              <div className="mt-4 space-y-3">
+                <button type="button" onClick={() => setIsStudentEditOpen(true)} className="w-full rounded-2xl border border-brand-100 bg-white p-4 text-left shadow-soft transition hover:border-brand-200 hover:bg-brand-50">
+                  <p className="font-semibold text-slate-800">Edit student details</p>
+                  <p className="mt-1 text-xs text-slate-500">Update personal information</p>
+                </button>
+                <button type="button" onClick={() => setActiveTab("classes")} className="w-full rounded-2xl border border-brand-100 bg-white p-4 text-left shadow-soft transition hover:border-brand-200 hover:bg-brand-50">
+                  <p className="font-semibold text-slate-800">Assign to class</p>
+                  <p className="mt-1 text-xs text-slate-500">Add or change class assignment</p>
+                </button>
+                <button type="button" onClick={() => setActiveTab("guardians")} className="w-full rounded-2xl border border-brand-100 bg-white p-4 text-left shadow-soft transition hover:border-brand-200 hover:bg-brand-50">
+                  <p className="font-semibold text-slate-800">Manage guardians</p>
+                  <p className="mt-1 text-xs text-slate-500">Add or update guardian details</p>
+                </button>
+                <button type="button" className="w-full rounded-2xl border border-brand-100 bg-white p-4 text-left shadow-soft transition hover:border-brand-200 hover:bg-brand-50">
+                  <p className="font-semibold text-slate-800">View activity log</p>
+                  <p className="mt-1 text-xs text-slate-500">See recent activities and history</p>
+                </button>
+              </div>
+            </article>
+          </div>
+
+          <article className="surface-panel border border-brand-100 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                  <BookOpen size={15} />
+                </span>
+                Assigned classes
+              </h3>
+              <form className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row" onSubmit={handleAssignToClass}>
+                <select
+                  required
+                  value={assignClassId}
+                  onChange={(event) => setAssignClassId(event.target.value)}
+                  className="control-select min-w-[240px]"
+                >
+                  <option value="">Select class</option>
+                  {classOptions.map((classroom) => (
+                    <option key={classroom.id} value={classroom.id}>
+                      {classroom.name} ({classroom.schedule})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-primary"
+                >
+                  <Plus size={14} />
+                  Assign to class
+                </button>
+              </form>
             </div>
 
-            <form className="mt-4 space-y-3" onSubmit={handleUpdateStudent}>
-              <input
-                required
-                value={studentForm.name}
-                onChange={(event) => setStudentForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-                placeholder="Student name"
-              />
+            {profile.classes.length > 0 ? (
+              <div className="mt-5 space-y-3">
+                {profile.classes.map((classItem) => (
+                  <div key={classItem.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-soft">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-800">{classItem.name}</p>
+                        <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600"><Clock3 size={13} />Schedule: {classItem.schedule}</p>
+                        <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600"><Calendar size={13} />Assigned: {formatDate(classItem.assignedAt)}</p>
+                      </div>
 
-              <select
-                value={studentForm.grade}
-                onChange={(event) => setStudentForm((prev) => ({ ...prev, grade: event.target.value }))}
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-              >
-                <option value="">Select grade (optional)</option>
-                {GRADE_OPTIONS.map((grade) => (
-                  <option key={grade} value={grade}>
-                    {formatGradeLabel(grade)}
-                  </option>
+                      <div className="w-full max-w-sm">
+                        <textarea
+                          value={removeReasonByClassId[classItem.classId] ?? ""}
+                          onChange={(event) =>
+                            setRemoveReasonByClassId((prev) => ({
+                              ...prev,
+                              [classItem.classId]: event.target.value,
+                            }))
+                          }
+                          rows={2}
+                          className="control-textarea"
+                          placeholder="Reason for removing from class (optional)"
+                        />
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => void handleRemoveFromClass(classItem.classId, classItem.name)}
+                          className="btn-danger mt-2"
+                        >
+                          Remove from class
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </select>
-
-              <input
-                required
-                value={studentForm.contact01}
-                onChange={(event) => setStudentForm((prev) => ({ ...prev, contact01: event.target.value }))}
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-                placeholder="Contact 01"
-              />
-
-              <input
-                required
-                value={studentForm.contact02}
-                onChange={(event) => setStudentForm((prev) => ({ ...prev, contact02: event.target.value }))}
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-                placeholder="Contact 02"
-              />
-
-              <input
-                type="email"
-                required
-                value={studentForm.email}
-                onChange={(event) => setStudentForm((prev) => ({ ...prev, email: event.target.value }))}
-                className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-                placeholder="Email"
-              />
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
-              >
-                Save student details
-              </button>
-            </form>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted">No classes assigned yet.</p>
+            )}
           </article>
 
-          <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
-            <p className="text-sm font-semibold uppercase tracking-wide text-muted">Guardians quick edit</p>
+          <article className="surface-panel border border-brand-100 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                  <Users size={15} />
+                </span>
+                Guardians
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => setActiveTab("guardians")}>
+                <Plus size={14} />
+                Add guardian
+              </button>
+            </div>
+
             {profile.guardians.length > 0 ? (
-              <div className="mt-3 space-y-3">
+              <div className="mt-4 space-y-3">
                 {profile.guardians.map((guardian) => {
                   const draft = guardianDrafts[guardian.id] ?? {
                     name: guardian.name,
@@ -558,54 +730,77 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                   };
 
                   return (
-                    <div key={guardian.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-                      <input
-                        value={draft.name}
-                        onChange={(event) =>
-                          setGuardianDrafts((prev) => ({
-                            ...prev,
-                            [guardian.id]: {
-                              ...draft,
-                              name: event.target.value,
-                            },
-                          }))
-                        }
-                        className="mb-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                      />
-                      <input
-                        value={draft.relation}
-                        onChange={(event) =>
-                          setGuardianDrafts((prev) => ({
-                            ...prev,
-                            [guardian.id]: {
-                              ...draft,
-                              relation: event.target.value,
-                            },
-                          }))
-                        }
-                        className="mb-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                      />
-                      <input
-                        value={draft.phone}
-                        onChange={(event) =>
-                          setGuardianDrafts((prev) => ({
-                            ...prev,
-                            [guardian.id]: {
-                              ...draft,
-                              phone: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleUpdateGuardian(guardian.id)}
-                        disabled={isSubmitting}
-                        className="mt-2 rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
-                      >
-                        Save guardian
-                      </button>
+                    <div key={guardian.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-soft">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-lg font-semibold text-brand-700">
+                            {guardian.name.slice(0, 1).toUpperCase()}
+                          </span>
+                          <div>
+                            <p className="text-base font-semibold text-slate-800">{guardian.name}</p>
+                            <span className="mt-1 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                              {guardian.relation || "Guardian"}
+                            </span>
+                            <p className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600"><Phone size={12} />{guardian.phone}</p>
+                            <p className="mt-1 inline-flex items-center gap-2 text-xs text-slate-600"><Mail size={12} />{guardian.email || "Not registered"}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateGuardian(guardian.id)}
+                          disabled={isSubmitting}
+                          className="btn-ghost"
+                        >
+                          Save
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <input
+                          value={draft.name}
+                          onChange={(event) =>
+                            setGuardianDrafts((prev) => ({
+                              ...prev,
+                              [guardian.id]: {
+                                ...draft,
+                                name: event.target.value,
+                              },
+                            }))
+                          }
+                          className="control-input"
+                          placeholder="Guardian name"
+                        />
+                        <input
+                          value={draft.relation}
+                          onChange={(event) =>
+                            setGuardianDrafts((prev) => ({
+                              ...prev,
+                              [guardian.id]: {
+                                ...draft,
+                                relation: event.target.value,
+                              },
+                            }))
+                          }
+                          className="control-input"
+                          placeholder="Relation"
+                        />
+                        <input
+                          value={draft.phone}
+                          onChange={(event) =>
+                            setGuardianDrafts((prev) => ({
+                              ...prev,
+                              [guardian.id]: {
+                                ...draft,
+                                phone: event.target.value,
+                              },
+                            }))
+                          }
+                          className="control-input"
+                          placeholder="Phone"
+                        />
+                      </div>
                     </div>
                   );
                 })}
@@ -613,17 +808,52 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
             ) : (
               <p className="mt-3 text-sm text-muted">No guardians added yet.</p>
             )}
+
+            <form className="mt-4 rounded-2xl border border-dashed border-brand-200 bg-brand-50/40 p-4" onSubmit={handleAddGuardian}>
+              <p className="mb-3 text-sm font-semibold text-brand-700">Add another guardian</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input
+                  required
+                  value={guardianForm.name}
+                  onChange={(event) => setGuardianForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="control-input"
+                  placeholder="Guardian name"
+                />
+                <input
+                  required
+                  value={guardianForm.relation}
+                  onChange={(event) => setGuardianForm((prev) => ({ ...prev, relation: event.target.value }))}
+                  className="control-input"
+                  placeholder="Relation"
+                />
+                <input
+                  required
+                  value={guardianForm.phone}
+                  onChange={(event) => setGuardianForm((prev) => ({ ...prev, phone: event.target.value }))}
+                  className="control-input"
+                  placeholder="Phone"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn-primary mt-3"
+              >
+                <Plus size={14} />
+                Add guardian
+              </button>
+            </form>
           </article>
         </div>
       ) : null}
 
       {activeTab === "classes" ? (
-        <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+        <article className="surface-panel border border-brand-100 p-6">
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">Assigned classes</p>
           {profile.classes.length > 0 ? (
             <div className="mt-3 space-y-3">
               {profile.classes.map((classItem) => (
-                <div key={classItem.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+                <div key={classItem.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-soft">
                   <p className="text-sm font-semibold">{classItem.name}</p>
                   <p className="text-xs text-muted">Schedule: {classItem.schedule}</p>
                   <p className="text-xs text-muted">Assigned: {formatDate(classItem.assignedAt)}</p>
@@ -636,14 +866,14 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                       }))
                     }
                     rows={2}
-                    className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-xs outline-none dark:border-white/20 dark:bg-transparent"
+                    className="control-textarea mt-2 text-xs"
                     placeholder="Reason for removing from class (optional)"
                   />
                   <button
                     type="button"
                     disabled={isSubmitting}
                     onClick={() => void handleRemoveFromClass(classItem.classId, classItem.name)}
-                    className="mt-2 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700"
+                    className="btn-danger mt-2"
                   >
                     Remove from class
                   </button>
@@ -659,7 +889,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
               required
               value={assignClassId}
               onChange={(event) => setAssignClassId(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-select"
             >
               <option value="">Select class</option>
               {classOptions.map((classroom) => (
@@ -671,7 +901,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-xl border border-black/15 px-4 py-2 text-sm font-semibold dark:border-white/20"
+              className="btn-primary"
             >
               Assign to class
             </button>
@@ -680,9 +910,9 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
           <div className="mt-6">
             <p className="text-sm font-semibold uppercase tracking-wide text-muted">Assignment history</p>
             {profile.assignmentHistory.length > 0 ? (
-              <div className="mt-2 overflow-x-auto rounded-2xl border border-black/10 dark:border-white/10">
-                <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-                  <thead className="bg-black/[0.03] text-xs font-semibold uppercase tracking-wide text-muted dark:bg-white/[0.04]">
+              <div className="table-wrap mt-2">
+                <table className="table-modern">
+                  <thead>
                     <tr>
                       <th className="px-3 py-2">Class</th>
                       <th className="px-3 py-2">Assigned</th>
@@ -691,7 +921,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                       <th className="px-3 py-2">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-black/10 dark:divide-white/10">
+                  <tbody>
                     {profile.assignmentHistory.map((entry) => (
                       <tr key={entry.id}>
                         <td className="px-3 py-2">{entry.name}</td>
@@ -712,7 +942,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
       ) : null}
 
       {activeTab === "guardians" ? (
-        <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
+        <article className="surface-panel border border-brand-100 p-6">
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">Guardians</p>
 
           {profile.guardians.length > 0 ? (
@@ -725,7 +955,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                 };
 
                 return (
-                  <div key={guardian.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+                  <div key={guardian.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-soft">
                     <input
                       value={draft.name}
                       onChange={(event) =>
@@ -737,7 +967,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                           },
                         }))
                       }
-                      className="mb-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+                      className="control-input mb-2"
                     />
                     <input
                       value={draft.relation}
@@ -750,7 +980,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                           },
                         }))
                       }
-                      className="mb-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+                      className="control-input mb-2"
                     />
                     <input
                       value={draft.phone}
@@ -763,14 +993,14 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                           },
                         }))
                       }
-                      className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+                      className="control-input"
                     />
                     <p className="mt-1 text-xs text-muted">Email: {guardian.email || "Not registered"}</p>
                     <button
                       type="button"
                       onClick={() => void handleUpdateGuardian(guardian.id)}
                       disabled={isSubmitting}
-                      className="mt-2 rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
+                      className="btn-secondary mt-2"
                     >
                       Save guardian
                     </button>
@@ -787,27 +1017,27 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
               required
               value={guardianForm.name}
               onChange={(event) => setGuardianForm((prev) => ({ ...prev, name: event.target.value }))}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-input"
               placeholder="Guardian name"
             />
             <input
               required
               value={guardianForm.relation}
               onChange={(event) => setGuardianForm((prev) => ({ ...prev, relation: event.target.value }))}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-input"
               placeholder="Relation"
             />
             <input
               required
               value={guardianForm.phone}
               onChange={(event) => setGuardianForm((prev) => ({ ...prev, phone: event.target.value }))}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="control-input"
               placeholder="Phone"
             />
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background"
+              className="btn-primary"
             >
               Add guardian
             </button>

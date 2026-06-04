@@ -1,6 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  ChevronDown,
+  CircleHelp,
+  Eye,
+  FileText,
+  FolderOpen,
+  MoreVertical,
+  Plus,
+  Save,
+  Search,
+  SquareCheck,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
 type QuizAnswerType = "SINGLE" | "MULTIPLE";
 
@@ -144,6 +160,7 @@ export function LectureQuizPanel(props: {
   const [resultsQuizId, setResultsQuizId] = useState<string | null>(null);
   const [resultsData, setResultsData] = useState<QuizResultsData | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [isExpandedList, setIsExpandedList] = useState(false);
 
   const selectedQuiz = useMemo(
     () => quizzes.find((item) => item.id === selectedQuizId) ?? null,
@@ -476,394 +493,444 @@ export function LectureQuizPanel(props: {
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quizzes</p>
-        <button
-          type="button"
-          onClick={handleAddNewQuiz}
-          className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background"
-        >
-          Add new quiz
-        </button>
-      </div>
-
-      {errorMessage ? (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{errorMessage}</p>
-      ) : null}
-
-      {successMessage ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-          {successMessage}
-        </p>
-      ) : null}
-
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_0.9fr]">
-        <section className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-          <label className="text-xs font-semibold text-muted">Quiz title</label>
-          <input
-            value={draft.title}
-            onChange={(event) =>
-              setDraft((prev) => ({
-                ...prev,
-                title: event.target.value,
-              }))
-            }
-            placeholder="Quiz title"
-            className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-          />
-
-          <div className="mt-3 grid grid-cols-2 gap-3">
+    <div className="mt-4 space-y-6">
+      <article className="surface-panel overflow-hidden border border-brand-100 p-0">
+        <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-4">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
+              <FileText size={24} />
+            </span>
             <div>
-              <label className="text-xs font-semibold text-muted">Max attempts (optional)</label>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={draft.maxAttempts ?? ""}
-                onChange={(event) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    maxAttempts: event.target.value ? Number(event.target.value) : null,
-                  }))
-                }
-                placeholder="Unlimited"
-                className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-muted">Due date (optional)</label>
-              <input
-                type="datetime-local"
-                value={
-                  draft.dueDate
-                    ? new Date(draft.dueDate).toISOString().slice(0, 16)
-                    : ""
-                }
-                onChange={(event) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
-                  }))
-                }
-                className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-              />
+              <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Lecture quizzes</h3>
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                <span>{selectedQuiz?.title ?? "Select a quiz or create a new one"}</span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> {selectedQuiz ? (selectedQuiz.dueDate ? new Date(selectedQuiz.dueDate).toLocaleString() : "No due date") : "Ready to configure"}</span>
+              </p>
             </div>
           </div>
 
-          <div className="mt-4 space-y-4">
-            {draft.questions.map((question, questionIndex) => (
-              <article key={question.id ?? `new-${questionIndex}`} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Question {questionIndex + 1}</p>
-                  <button
-                    type="button"
-                    onClick={() => removeQuestion(questionIndex)}
-                    className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700"
-                  >
-                    Remove question
-                  </button>
+          <button type="button" onClick={() => setResultsQuizId(null)} className="btn-secondary gap-2">
+            <X size={15} />
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 py-5 sm:px-6">
+          {errorMessage ? <p className="notice-error mb-4 text-xs">{errorMessage}</p> : null}
+          {successMessage ? <p className="notice-success mb-4 text-xs">{successMessage}</p> : null}
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+            <section className="surface-card border border-brand-100 p-5 shadow-soft">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                    <Plus size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-xl font-semibold text-slate-900">Create or update quiz</h4>
+                    <p className="mt-1 text-sm text-muted">Build questions and set quiz details.</p>
+                  </div>
                 </div>
 
-                <textarea
-                  value={question.text}
-                  onChange={(event) =>
-                    updateQuestion(questionIndex, (current) => ({
-                      ...current,
-                      text: event.target.value,
-                    }))
-                  }
-                  rows={2}
-                  placeholder="Enter question text"
-                  className="mt-2 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-                />
+                <button type="button" onClick={handleAddNewQuiz} className="btn-primary gap-2 px-3 py-2 text-xs">
+                  <Plus size={14} />
+                  Add new quiz
+                </button>
+              </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-semibold text-muted">Answer type:</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateQuestion(questionIndex, (current) => {
-                        const correctedOptions = current.options.map((option, index) => ({
-                          ...option,
-                          isCorrect: index === 0 ? option.isCorrect : false,
-                        }));
-
-                        const hasCorrect = correctedOptions.some((option) => option.isCorrect);
-
-                        return {
-                          ...current,
-                          answerType: "SINGLE",
-                          options: hasCorrect
-                            ? correctedOptions
-                            : correctedOptions.map((option, index) => ({
-                                ...option,
-                                isCorrect: index === 0,
-                              })),
-                        };
-                      })
-                    }
-                    className={`rounded-lg border px-2.5 py-1 font-semibold ${
-                      question.answerType === "SINGLE"
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-black/15 dark:border-white/20"
-                    }`}
-                  >
-                    Single (radio)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateQuestion(questionIndex, (current) => ({
-                        ...current,
-                        answerType: "MULTIPLE",
-                      }))
-                    }
-                    className={`rounded-lg border px-2.5 py-1 font-semibold ${
-                      question.answerType === "MULTIPLE"
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-black/15 dark:border-white/20"
-                    }`}
-                  >
-                    Multiple (checkbox)
-                  </button>
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="form-label">Quiz title *</label>
+                  <div className="relative mt-2">
+                    <input
+                      value={draft.title}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder="Quiz title"
+                      className="control-input h-14 pr-16 text-base"
+                    />
+                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
+                      {draft.title.length}/120
+                    </span>
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  {question.options.map((option, optionIndex) => (
-                    <div key={option.id ?? `option-${optionIndex}`} className="flex items-center gap-2">
-                      {question.answerType === "SINGLE" ? (
-                        <input
-                          type="radio"
-                          checked={option.isCorrect}
-                          onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
-                          aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} single answer selector`}
-                        />
-                      ) : (
-                        <input
-                          type="checkbox"
-                          checked={option.isCorrect}
-                          onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
-                          aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} multiple answer selector`}
-                        />
-                      )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="form-label">Max attempts (optional)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={draft.maxAttempts ?? ""}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          maxAttempts: event.target.value ? Number(event.target.value) : null,
+                        }))
+                      }
+                      placeholder="Unlimited"
+                      className="control-input mt-2 h-14 text-base"
+                    />
+                  </div>
 
+                  <div>
+                    <label className="form-label">Due date (optional)</label>
+                    <div className="relative mt-2">
+                      <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
                       <input
-                        value={option.text}
+                        type="datetime-local"
+                        value={draft.dueDate ? new Date(draft.dueDate).toISOString().slice(0, 16) : ""}
                         onChange={(event) =>
-                          updateOption(questionIndex, optionIndex, (current) => ({
+                          setDraft((prev) => ({
+                            ...prev,
+                            dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
+                          }))
+                        }
+                        className="control-input h-14 pl-11 text-base"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {draft.questions.map((question, questionIndex) => (
+                    <article key={question.id ?? `new-${questionIndex}`} className="rounded-3xl border border-brand-100 bg-white p-4 shadow-soft">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 pb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
+                            {questionIndex + 1}
+                          </span>
+                          <div>
+                            <p className="text-base font-semibold text-slate-900">Question {questionIndex + 1}</p>
+                            <p className="text-sm text-muted">Build the prompt and answer options.</p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeQuestion(questionIndex)}
+                          className="btn-danger gap-2 px-3 py-2 text-xs"
+                        >
+                          <Trash2 size={13} />
+                          Remove question
+                        </button>
+                      </div>
+
+                      <textarea
+                        value={question.text}
+                        onChange={(event) =>
+                          updateQuestion(questionIndex, (current) => ({
                             ...current,
                             text: event.target.value,
                           }))
                         }
-                        placeholder={`Answer ${optionIndex + 1}`}
-                        className="flex-1 rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
+                        rows={2}
+                        placeholder="Enter question text"
+                        className="control-textarea mt-4 text-base"
                       />
 
-                      <button
-                        type="button"
-                        onClick={() => removeOption(questionIndex, optionIndex)}
-                        className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700"
-                      >
-                        Remove
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-semibold text-slate-500">Answer type</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuestion(questionIndex, (current) => {
+                              const correctedOptions = current.options.map((option, index) => ({
+                                ...option,
+                                isCorrect: index === 0 ? option.isCorrect : false,
+                              }));
+
+                              const hasCorrect = correctedOptions.some((option) => option.isCorrect);
+
+                              return {
+                                ...current,
+                                answerType: "SINGLE",
+                                options: hasCorrect
+                                  ? correctedOptions
+                                  : correctedOptions.map((option, index) => ({
+                                      ...option,
+                                      isCorrect: index === 0,
+                                    })),
+                              };
+                            })
+                          }
+                          className={`rounded-full border px-3 py-2 font-semibold ${
+                            question.answerType === "SINGLE"
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
+                          }`}
+                        >
+                          Single (radio)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuestion(questionIndex, (current) => ({
+                              ...current,
+                              answerType: "MULTIPLE",
+                            }))
+                          }
+                          className={`rounded-full border px-3 py-2 font-semibold ${
+                            question.answerType === "MULTIPLE"
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
+                          }`}
+                        >
+                          Multiple (checkbox)
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {question.options.map((option, optionIndex) => (
+                          <div key={option.id ?? `option-${optionIndex}`} className="flex items-center gap-3">
+                            {question.answerType === "SINGLE" ? (
+                              <input
+                                type="radio"
+                                checked={option.isCorrect}
+                                onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
+                                aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} single answer selector`}
+                                className="h-4 w-4 accent-brand-700"
+                              />
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={option.isCorrect}
+                                onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
+                                aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} multiple answer selector`}
+                                className="h-4 w-4 accent-brand-700"
+                              />
+                            )}
+
+                            <input
+                              value={option.text}
+                              onChange={(event) =>
+                                updateOption(questionIndex, optionIndex, (current) => ({
+                                  ...current,
+                                  text: event.target.value,
+                                }))
+                              }
+                              placeholder={`Answer ${optionIndex + 1}`}
+                              className="control-input flex-1"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => removeOption(questionIndex, optionIndex)}
+                              className="btn-danger px-3 py-2 text-xs"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button type="button" onClick={() => addOption(questionIndex)} className="btn-secondary mt-4 gap-2 px-3 py-2 text-xs">
+                        <Plus size={13} />
+                        Add answer
                       </button>
-                    </div>
+                    </article>
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => addOption(questionIndex)}
-                  className="mt-3 rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold dark:border-white/20"
-                >
-                  Add answer
-                </button>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={addQuestion}
-              className="rounded-lg border border-black/15 px-3 py-2 text-xs font-semibold dark:border-white/20"
-            >
-              Add question
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSaveQuiz()}
-              disabled={isSaving}
-              className="rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? "Saving..." : selectedQuiz ? "Save quiz" : "Create quiz"}
-            </button>
-          </div>
-        </section>
-
-        <aside className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-          <p className="text-sm font-semibold">Existing quizzes</p>
-          {isLoading ? <p className="mt-2 text-xs text-muted">Loading quizzes...</p> : null}
-          {!isLoading && quizzes.length === 0 ? <p className="mt-2 text-xs text-muted">No quizzes added yet.</p> : null}
-
-          <div className="mt-3 space-y-2">
-            {quizzes.map((quiz) => (
-              <div
-                key={quiz.id}
-                className={`rounded-lg border px-3 py-2 ${
-                  selectedQuizId === quiz.id
-                    ? "border-foreground bg-black/[0.03] dark:bg-white/[0.04]"
-                    : "border-black/10 dark:border-white/10"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => selectExistingQuiz(quiz.id)}
-                  className="w-full text-left"
-                >
-                  <p className="text-sm font-semibold">{quiz.title}</p>
-                  <p className="text-xs text-muted">{quiz.questions.length} question(s)</p>
-                  {quiz.maxAttempts !== null ? (
-                    <p className="text-xs text-muted">Max {quiz.maxAttempts} attempt(s)</p>
-                  ) : null}
-                  {quiz.dueDate ? (
-                    <p className="text-xs text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
-                  ) : null}
-                </button>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void openResults(quiz.id)}
-                    className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
-                  >
-                    View results
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button type="button" onClick={addQuestion} className="btn-secondary gap-2 px-4 py-3 text-sm">
+                    <Plus size={15} />
+                    Add question
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleDeleteQuiz(quiz.id)}
-                    className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700"
+                    onClick={() => void handleSaveQuiz()}
+                    disabled={isSaving}
+                    className="btn-primary gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Delete
+                    <Save size={15} />
+                    {isSaving ? "Saving..." : selectedQuiz ? "Save quiz" : "Create quiz"}
                   </button>
                 </div>
               </div>
-            ))}
+            </section>
+
+            <aside className="surface-card border border-brand-100 p-5 shadow-soft">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                    <Users size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-xl font-semibold text-slate-900">Existing quizzes</h4>
+                    <p className="mt-1 text-sm text-muted">Manage previously created quizzes.</p>
+                  </div>
+                </div>
+
+                <span className="metric-badge">{quizzes.length} total</span>
+              </div>
+
+              {isLoading ? <p className="mt-4 text-sm text-muted">Loading quizzes...</p> : null}
+              {!isLoading && quizzes.length === 0 ? <p className="mt-4 text-sm text-muted">No quizzes added yet.</p> : null}
+
+              <div className={`mt-4 space-y-3 ${isExpandedList ? "max-h-none" : "max-h-[560px] overflow-y-auto pr-1"}`}>
+                {quizzes.map((quiz) => (
+                  <div
+                    key={quiz.id}
+                    className={`rounded-2xl border p-4 shadow-soft transition ${
+                      selectedQuizId === quiz.id ? "border-brand-300 bg-brand-50/70" : "border-brand-100 bg-white"
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
+                        <FileText size={22} />
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <button type="button" onClick={() => selectExistingQuiz(quiz.id)} className="block w-full text-left">
+                          <p className="truncate text-lg font-semibold text-slate-900">{quiz.title}</p>
+                          <p className="mt-1 text-sm text-slate-500">{quiz.questions.length} question(s)</p>
+                          {quiz.maxAttempts !== null ? (
+                            <p className="mt-1 text-sm text-slate-500">Max {quiz.maxAttempts} attempt(s)</p>
+                          ) : null}
+                          {quiz.dueDate ? (
+                            <p className="mt-1 text-xs text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
+                          ) : null}
+                        </button>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <button type="button" onClick={() => void openResults(quiz.id)} className="btn-secondary gap-2 px-3 py-2 text-xs">
+                            <Eye size={13} />
+                            View results
+                          </button>
+                          <button type="button" onClick={() => void handleDeleteQuiz(quiz.id)} className="btn-danger gap-2 px-3 py-2 text-xs">
+                            <Trash2 size={13} />
+                            Delete
+                          </button>
+                          <button type="button" className="btn-ghost px-3 py-2 text-xs" disabled>
+                            <MoreVertical size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
           </div>
-        </aside>
-      </div>
+        </div>
+      </article>
 
       {resultsQuizId ? (
-        <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <article className="surface-panel border border-brand-100 p-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quiz Results</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Quiz results</p>
+              {resultsData ? <h3 className="mt-1 text-xl font-semibold text-slate-900">{resultsData.quiz.title}</h3> : null}
               {resultsData ? (
-                <h3 className="mt-0.5 text-sm font-semibold">{resultsData.quiz.title}</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  {resultsData.stats.totalSubmissions}/{resultsData.stats.totalEnrolled} submissions • Average score:{" "}
+                  {resultsData.stats.averageScore !== null ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}` : "—"}
+                </p>
               ) : null}
             </div>
+
             <button
               type="button"
               onClick={() => {
                 setResultsQuizId(null);
                 setResultsData(null);
               }}
-              className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
+              className="btn-secondary gap-2"
             >
+              <X size={14} />
               Close results
             </button>
           </div>
 
-          {isLoadingResults ? (
-            <p className="mt-3 text-xs text-muted">Loading results...</p>
-          ) : resultsData ? (
-            <>
-              <div className="mt-3 flex flex-wrap gap-4">
-                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                  <p className="text-xs text-muted">Submissions</p>
-                  <p className="mt-0.5 text-lg font-semibold">
-                    {resultsData.stats.totalSubmissions}
-                    <span className="ml-1 text-sm font-normal text-muted">
-                      / {resultsData.stats.totalEnrolled} enrolled
-                    </span>
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                  <p className="text-xs text-muted">Average score</p>
-                  <p className="mt-0.5 text-lg font-semibold">
-                    {resultsData.stats.averageScore !== null
-                      ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}`
-                      : "—"}
-                  </p>
-                </div>
-                {resultsData.quiz.maxAttempts !== null ? (
-                  <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                    <p className="text-xs text-muted">Max attempts</p>
-                    <p className="mt-0.5 text-lg font-semibold">{resultsData.quiz.maxAttempts}</p>
-                  </div>
-                ) : null}
-                {resultsData.quiz.dueDate ? (
-                  <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                    <p className="text-xs text-muted">Due</p>
-                    <p className="mt-0.5 text-sm font-semibold">
-                      {new Date(resultsData.quiz.dueDate).toLocaleDateString()}
+          <div className="px-5 py-5 sm:px-6">
+            {isLoadingResults ? (
+              <p className="text-sm text-muted">Loading results...</p>
+            ) : resultsData ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Submissions</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                      {resultsData.stats.totalSubmissions}
+                      <span className="ml-2 text-sm font-normal text-muted">/ {resultsData.stats.totalEnrolled}</span>
                     </p>
                   </div>
-                ) : null}
-              </div>
-
-              {resultsData.submissions.length === 0 ? (
-                <p className="mt-3 text-xs text-muted">No submissions yet.</p>
-              ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[500px] text-sm">
-                    <thead>
-                      <tr className="border-b border-black/10 text-left text-xs font-semibold text-muted dark:border-white/10">
-                        <th className="pb-2 pr-4">Student</th>
-                        <th className="pb-2 pr-4">Score</th>
-                        <th className="pb-2 pr-4">%</th>
-                        <th className="pb-2 pr-4">Attempts</th>
-                        <th className="pb-2">Submitted</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                      {resultsData.submissions.map((sub) => (
-                        <tr key={sub.studentId}>
-                          <td className="py-2 pr-4">
-                            <p className="font-medium">{sub.studentName}</p>
-                            {sub.registrationNumber ? (
-                              <p className="text-xs text-muted">{sub.registrationNumber}</p>
-                            ) : null}
-                          </td>
-                          <td className="py-2 pr-4">
-                            {sub.score}/{sub.totalQuestions}
-                          </td>
-                          <td className="py-2 pr-4">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                sub.percentage >= 80
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : sub.percentage >= 50
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {sub.percentage}%
-                            </span>
-                          </td>
-                          <td className="py-2 pr-4">{sub.attemptCount}</td>
-                          <td className="py-2 text-xs text-muted">
-                            {new Date(sub.submittedAt).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Average score</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                      {resultsData.stats.averageScore !== null
+                        ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}`
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Max attempts</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">{resultsData.quiz.maxAttempts ?? "Unlimited"}</p>
+                  </div>
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Due</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">
+                      {resultsData.quiz.dueDate ? new Date(resultsData.quiz.dueDate).toLocaleDateString() : "No due date"}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </>
-          ) : null}
-        </div>
+
+                {resultsData.submissions.length === 0 ? (
+                  <p className="mt-4 text-sm text-muted">No submissions yet.</p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-soft">
+                    <table className="min-w-[680px] w-full text-sm">
+                      <thead className="bg-brand-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Student</th>
+                          <th className="px-4 py-3 text-left">Score</th>
+                          <th className="px-4 py-3 text-left">%</th>
+                          <th className="px-4 py-3 text-left">Attempts</th>
+                          <th className="px-4 py-3 text-left">Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-brand-100">
+                        {resultsData.submissions.map((sub) => (
+                          <tr key={sub.studentId} className="align-top">
+                            <td className="px-4 py-4">
+                              <p className="font-semibold text-slate-900">{sub.studentName}</p>
+                              {sub.registrationNumber ? <p className="mt-1 text-xs text-muted">{sub.registrationNumber}</p> : null}
+                            </td>
+                            <td className="px-4 py-4 text-sm text-slate-700">
+                              {sub.score}/{sub.totalQuestions}
+                            </td>
+                            <td className="px-4 py-4">
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  sub.percentage >= 80
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : sub.percentage >= 50
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-rose-100 text-rose-700"
+                                }`}
+                              >
+                                {sub.percentage}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{sub.attemptCount}</td>
+                            <td className="px-4 py-4 text-sm text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+        </article>
       ) : null}
     </div>
   );

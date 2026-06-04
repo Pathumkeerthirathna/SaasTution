@@ -16,6 +16,7 @@ type PanelProps = {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  contentClassName?: string;
   children: ReactNode;
 };
 
@@ -59,7 +60,7 @@ export function SummaryCard({ title, value, helper, icon, color = "blue" }: Summ
   );
 }
 
-export function Panel({ id, title, subtitle, actions, children }: PanelProps) {
+export function Panel({ id, title, subtitle, actions, contentClassName, children }: PanelProps) {
   return (
     <section id={id} className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
       <header className="flex flex-col gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
@@ -69,7 +70,7 @@ export function Panel({ id, title, subtitle, actions, children }: PanelProps) {
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </header>
-      <div className="p-5 sm:p-6">{children}</div>
+      <div className={contentClassName ?? "p-5 sm:p-6"}>{children}</div>
     </section>
   );
 }

@@ -1,6 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Download,
+  Eye,
+  FileText,
+  Files,
+  GraduationCap,
+  List,
+  Pencil,
+  Plus,
+  MoreHorizontal,
+  Search,
+  Send,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
 type ClassItem = {
   id: string;
@@ -190,6 +213,8 @@ export function MaterialBundlePanel() {
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   const [submissionsView, setSubmissionsView] = useState<PaperSubmissionView | null>(null);
   const [submissionsItemId, setSubmissionsItemId] = useState<string | null>(null);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [previewItem, setPreviewItem] = useState<BundleItem | null>(null);
   const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
@@ -224,6 +249,30 @@ export function MaterialBundlePanel() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isActionMenuOpen) return;
+
+    function handleOutsideClick(event: MouseEvent) {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setIsActionMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsActionMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isActionMenuOpen]);
 
   async function loadBundles(nextPage = page) {
     setIsLoading(true);
@@ -639,256 +688,361 @@ export function MaterialBundlePanel() {
   );
 
   return (
-    <div className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Monthly Tutes & Papers</p>
-          <h2 className="mt-2 text-xl font-semibold">Create and send class bundles</h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Manage monthly tutes and papers by class, year, and month, then send each bundle to selected students.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setIsCreatePanelOpen(true)}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background hover:opacity-90"
-          >
-            Add bundle
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsHelpOpen(true)}
-            className="rounded-xl border border-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/[0.03] dark:border-white/15 dark:hover:bg-white/[0.05]"
-          >
-            Help
-          </button>
-        </div>
-      </div>
+    <div className="px-0 py-1 sm:py-0">
+
 
       {errorMessage ? (
-        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        <p className="notice-error mt-4">{errorMessage}</p>
       ) : null}
       {successMessage ? (
-        <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p className="notice-success mt-4">
           {successMessage}
         </p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-[320px_1fr]">
-        <aside className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Filters</p>
-          <div className="mt-3 space-y-2">
-            <select
-              value={filterClassId}
-              onChange={(e) => setFilterClassId(e.target.value)}
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-            >
-              <option value="">All classes</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                value={filterYear}
-                onChange={(e) => setFilterYear(e.target.value)}
-                placeholder="Year"
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              />
-              <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              >
-                <option value="">Month</option>
-                {Array.from({ length: 12 }).map((_, idx) => (
-                  <option key={idx + 1} value={String(idx + 1)}>
-                    {monthLabel(idx + 1)}
-                  </option>
-                ))}
-              </select>
+      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="self-start">
+          <section className="surface-card border border-brand-100/80 p-6 shadow-card">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
+                <p className="mt-1 text-sm text-slate-500">Select a monthly bundle to review recipients and content.</p>
+              </div>
+              <div className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-brand-100 px-2 text-xs font-semibold text-brand-700">
+                {bundles.length}
+              </div>
             </div>
-          </div>
 
-          <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Bundles</p>
-          {isLoading ? <p className="mt-2 text-xs text-muted">Loading...</p> : null}
-          <div className="mt-3 space-y-2">
-            {bundles.map((bundle) => (
+            <details className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/40 p-3">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                Filters
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="relative">
+                  <GraduationCap size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <ChevronDown size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <select
+                    value={filterClassId}
+                    onChange={(e) => setFilterClassId(e.target.value)}
+                    className="control-select h-12 appearance-none pl-12 pr-12 text-[14px]"
+                  >
+                    <option value="">All classes</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                    placeholder="Year"
+                    className="control-input h-12 text-[14px]"
+                  />
+                  <div className="relative">
+                    <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <select
+                      value={filterMonth}
+                      onChange={(e) => setFilterMonth(e.target.value)}
+                      className="control-select h-12 appearance-none pl-11 pr-11 text-[14px]"
+                    >
+                      <option value="">Month</option>
+                      {Array.from({ length: 12 }).map((_, idx) => (
+                        <option key={idx + 1} value={String(idx + 1)}>
+                          {monthLabel(idx + 1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            {isLoading ? <p className="mt-4 text-xs font-medium text-slate-400">Loading...</p> : null}
+            <div className="mt-4 space-y-3">
+              {bundles.map((bundle) => (
+                <button
+                  key={bundle.id}
+                  type="button"
+                  onClick={() => void loadBundleDetails(bundle.id)}
+                  className={`group w-full rounded-[20px] border px-4 py-4 text-left shadow-soft transition-all duration-200 ${
+                    selectedBundleId === bundle.id
+                      ? "border-brand-300 bg-brand-50/80 shadow-card"
+                      : "border-brand-100 bg-white hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-50/70 hover:shadow-card"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                      selectedBundleId === bundle.id ? "bg-white text-brand-700" : "bg-brand-50 text-brand-600"
+                    }`}>
+                      <FileText size={18} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="text-[16px] font-semibold leading-6 text-slate-900">{bundle.title}</p>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                          bundle.status === "SENT"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {bundle.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[13px] font-medium text-slate-500">
+                        {bundle.class.name} • {monthLabel(bundle.month)} {bundle.year}
+                      </p>
+                      <div className="mt-3 space-y-1.5 text-[13px] leading-5 text-slate-400">
+                        <p>{bundle._count.items} items in this bundle</p>
+                        <p>Created {new Date(bundle.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {!isLoading && bundles.length === 0 ? (
+                <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/50 p-5 text-center">
+                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                    <Files size={18} />
+                  </span>
+                  <p className="mt-3 text-sm font-semibold text-slate-800">No bundles found</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">Adjust the filters or create a new monthly bundle to get started.</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3 border-t border-brand-100 pt-4">
               <button
-                key={bundle.id}
                 type="button"
-                onClick={() => void loadBundleDetails(bundle.id)}
-                className={`w-full rounded-xl border px-3 py-2 text-left ${
-                  selectedBundleId === bundle.id
-                    ? "border-brand-500 bg-brand-50"
-                    : "border-black/10 hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.04]"
-                }`}
+                onClick={() => void loadBundles(Math.max(1, page - 1))}
+                disabled={page <= 1 || isLoading}
+                className="btn-ghost h-10 gap-1.5 px-3 text-xs disabled:opacity-40"
               >
-                <p className="text-sm font-semibold">{bundle.title}</p>
-                <p className="text-xs text-muted">
-                  {bundle.class.name} • {monthLabel(bundle.month)} {bundle.year}
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {bundle._count.items} items • {bundle.status === "SENT" ? "Sent" : "Draft"}
-                </p>
-                <p className="text-xs text-muted">
-                  Created {new Date(bundle.createdAt).toLocaleDateString()}
-                </p>
+                <ChevronLeft size={14} />
+                Prev
               </button>
-            ))}
-            {!isLoading && bundles.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-black/15 p-3 text-xs text-muted dark:border-white/15">
-                No bundles found.
+              <p className="text-[13px] font-medium text-slate-500">
+                {page} / {totalPages}
               </p>
-            ) : null}
-          </div>
-
-          <div className="mt-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => void loadBundles(Math.max(1, page - 1))}
-              disabled={page <= 1 || isLoading}
-              className="rounded-lg border border-black/10 px-2.5 py-1 text-xs disabled:opacity-40 dark:border-white/15"
-            >
-              Prev
-            </button>
-            <p className="text-xs text-muted">
-              {page} / {totalPages}
-            </p>
-            <button
-              type="button"
-              onClick={() => void loadBundles(Math.min(totalPages, page + 1))}
-              disabled={page >= totalPages || isLoading}
-              className="rounded-lg border border-black/10 px-2.5 py-1 text-xs disabled:opacity-40 dark:border-white/15"
-            >
-              Next
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => void loadBundles(Math.min(totalPages, page + 1))}
+                disabled={page >= totalPages || isLoading}
+                className="btn-ghost h-10 gap-1.5 px-3 text-xs disabled:opacity-40"
+              >
+                Next
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </section>
         </aside>
 
-        <section className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
+        <div className="grid gap-6">
           {!bundleDetail || isLoadingDetails ? (
-            <p className="text-sm text-muted">{isLoadingDetails ? "Loading bundle details..." : "Select a bundle to manage items and recipients."}</p>
+            <div className="surface-card flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-brand-100/80 px-6 py-10 text-center shadow-card">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-white text-brand-700 shadow-soft">
+                <FileText size={22} />
+              </span>
+              <p className="mt-4 text-lg font-semibold text-slate-900">
+                {isLoadingDetails ? "Loading bundle details..." : "Select a bundle to manage items and recipients."}
+              </p>
+              <p className="mt-2 max-w-md text-[15px] leading-7 text-slate-500">
+                Choose a bundle from the left panel to review students, upload monthly learning materials, and track paper submissions.
+              </p>
+            </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bundle Details</p>
-                  <h3 className="mt-1 text-lg font-semibold">
-                    {bundleDetail.title}
-                  </h3>
-                  <p className="text-xs text-muted">
-                    {bundleDetail.className} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
-                  </p>
-                  <p className="text-xs text-muted">
-                    Status: {bundleDetail.status}
-                    {bundleDetail.sentAt ? ` • Sent ${new Date(bundleDetail.sentAt).toLocaleString()}` : ""}
-                  </p>
-                  <p className="text-xs text-muted">
-                    Created {new Date(bundleDetail.createdAt).toLocaleString()}
-                  </p>
-                </div>
+              <section className="surface-card border border-brand-100/80 p-6 shadow-card sm:p-7">
+                <div className="flex items-start justify-between gap-6">
 
-                <button
-                  type="button"
-                  onClick={openRecipientPanel}
-                  className="rounded-xl bg-foreground px-3 py-2 text-xs font-semibold text-background"
-                >
-                  Set recipients & send
-                </button>
-              </div>
+                  <div className="flex min-w-0 flex-1 items-start gap-4">
+                    <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-brand-50 text-brand-700 shadow-soft">
+                      <FileText size={22} />
+                    </span>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-black/10 px-3 py-2 dark:border-white/10">
-                  <p className="text-xs text-muted">Class students</p>
-                  <p className="text-lg font-semibold">{bundleDetail.summary.totalStudents}</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <p className="text-xs text-emerald-700">Will receive</p>
-                  <p className="text-lg font-semibold text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-xs text-amber-700">Will not receive</p>
-                  <p className="text-lg font-semibold text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
-                </div>
-              </div>
+                    <div>
+                      
 
-              <div className="mt-6 rounded-xl border border-black/10 p-3 dark:border-white/10">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Add tute / paper</p>
-                    <p className="mt-1 text-xs text-muted">Open the side panel to add new items to this bundle.</p>
+                      <h3 className=" text-[30px] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[34px]">
+                        {bundleDetail.title}
+                      </h3>
+
+                      <p className="mt-2 text-[15px] font-medium text-slate-500">
+                        {bundleDetail.className} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
+                      </p>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={openAddItemPanel}
-                    className="rounded-xl border border-black/10 px-3 py-2 text-xs font-semibold dark:border-white/15"
-                  >
-                    Add tute / paper
-                  </button>
-                </div>
-              </div>
 
-              <div className="mt-5 rounded-xl border border-black/10 dark:border-white/10">
-                <div className="flex items-center gap-2 border-b border-black/10 p-2 dark:border-white/10">
+                  <div className="relative shrink-0" ref={actionMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsActionMenuOpen((prev) => !prev)}
+                      aria-label="Open actions menu"
+                      aria-expanded={isActionMenuOpen}
+                      className="btn-secondary h-10 w-10 rounded-xl p-0"
+                    >
+                      <MoreHorizontal size={18} />
+                    </button>
+
+                    {isActionMenuOpen ? (
+                      <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-brand-100 bg-white p-2 shadow-card">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsActionMenuOpen(false);
+                            openRecipientPanel();
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
+                        >
+                          <Send size={16} />
+                          Set recipients & send
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsActionMenuOpen(false);
+                            setIsHelpOpen(true);
+                          }}
+                          className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
+                        >
+                          <CircleHelp size={16} />
+                          Help
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsActionMenuOpen(false);
+                            setIsCreatePanelOpen(true);
+                          }}
+                          className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
+                        >
+                          <Plus size={16} />
+                          Add bundle
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                </div>
+
+                <div className="mt-7 grid gap-4 xl:grid-cols-3">
+                  <div className="rounded-[20px] border border-brand-100 bg-white p-5 shadow-soft">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">Class students</p>
+                        <p className="mt-3 text-[30px] font-bold leading-none text-slate-900">{bundleDetail.summary.totalStudents}</p>
+                      </div>
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                        <Users size={20} />
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-emerald-700">Will receive</p>
+                        <p className="mt-3 text-[30px] font-bold leading-none text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
+                      </div>
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-emerald-700">
+                        <CheckCircle2 size={20} />
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-amber-700">Will not receive</p>
+                        <p className="mt-3 text-[30px] font-bold leading-none text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
+                      </div>
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-amber-700">
+                        <AlertCircle size={20} />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-7 rounded-[24px] border border-brand-100 bg-gradient-to-r from-white via-brand-50/50 to-white p-5 shadow-soft">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                        <Files size={18} />
+                      </span>
+                      <div>
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Add tute / paper</p>
+                        <p className="mt-2 text-[15px] leading-6 text-slate-500">Open the side panel to add new items to this bundle.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openAddItemPanel}
+                      className="btn-secondary h-11 gap-2.5 px-4 text-sm"
+                    >
+                      <Plus size={18} />
+                      Add tute / paper
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-7 overflow-hidden rounded-[24px] border border-brand-100 bg-white shadow-soft">
+                  <div className="flex items-center gap-2 border-b border-brand-100 px-5 py-5">
                   <button
                     type="button"
                     onClick={() => setActiveItemTab("TUTE")}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                       activeItemTab === "TUTE"
-                        ? "bg-foreground text-background"
-                        : "border border-black/10 text-muted hover:bg-black/[0.03] dark:border-white/10 dark:hover:bg-white/[0.05]"
+                        ? "bg-brand-700 text-white shadow-soft"
+                        : "border border-brand-100 bg-white text-slate-500 hover:bg-brand-50 hover:text-slate-900"
                     }`}
                   >
+                    <FileText size={16} />
                     Tutes ({tuteItems.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveItemTab("PAPER")}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                       activeItemTab === "PAPER"
-                        ? "bg-foreground text-background"
-                        : "border border-black/10 text-muted hover:bg-black/[0.03] dark:border-white/10 dark:hover:bg-white/[0.05]"
+                        ? "bg-brand-700 text-white shadow-soft"
+                        : "border border-brand-100 bg-white text-slate-500 hover:bg-brand-50 hover:text-slate-900"
                     }`}
                   >
+                    <Files size={16} />
                     Papers ({paperItems.length})
                   </button>
-                </div>
+                  </div>
 
-                <div className="p-3">
+                  <div className="p-5 sm:p-6">
                   {activeItemTab === "TUTE" ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {tuteItems.map((item) => (
-                        <div key={item.id} className="rounded-lg border border-black/10 p-2 dark:border-white/10">
+                        <div key={item.id} className="rounded-[20px] border border-brand-100 bg-slate-50/70 p-4 shadow-soft">
                           {editItemId === item.id ? (
                             <>
                               <input
                                 value={editTitle}
                                 onChange={(e) => setEditTitle(e.target.value)}
-                                className="w-full rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                className="w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                               />
                               <textarea
                                 value={editDescription}
                                 onChange={(e) => setEditDescription(e.target.value)}
                                 rows={2}
-                                className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                className="mt-2 w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                               />
                               <div className="mt-2 flex gap-2">
                                 <button
                                   type="button"
                                   onClick={() => void handleSaveItemEdit(item.type)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-secondary px-3 py-1.5 text-xs"
                                 >
                                   Save
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setEditItemId(null)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-ghost px-3 py-1.5 text-xs"
                                 >
                                   Cancel
                                 </button>
@@ -896,16 +1050,28 @@ export function MaterialBundlePanel() {
                             </>
                           ) : (
                             <>
-                              <p className="text-sm font-semibold">{item.title}</p>
-                              {item.description ? <p className="text-xs text-muted">{item.description}</p> : null}
-                              <p className="text-xs text-muted">Created {new Date(item.createdAt).toLocaleString()}</p>
-                              <p className="text-xs text-muted">File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                                    <FileText size={18} />
+                                  </span>
+                                  <div>
+                                    <p className="text-[16px] font-semibold text-slate-900">{item.title}</p>
+                                    {item.description ? <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p> : null}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-4 space-y-1.5 text-[13px] leading-6 text-slate-400">
+                                <p>Created {new Date(item.createdAt).toLocaleString()}</p>
+                                <p>File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
+                              </div>
+                              <div className="mt-4 flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   onClick={() => beginEditItem(item)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
                                 >
+                                  <Pencil size={12} />
                                   Edit
                                 </button>
                                 {item.fileUrl ? (
@@ -913,14 +1079,16 @@ export function MaterialBundlePanel() {
                                     <button
                                       type="button"
                                       onClick={() => setPreviewItem(item)}
-                                      className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                      className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
                                     >
+                                      <Eye size={12} />
                                       Preview
                                     </button>
                                     <a
                                       href={`/api/material-bundles/${bundleDetail.id}/items/${item.id}/file?download=1`}
-                                      className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                      className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
                                     >
+                                      <Download size={12} />
                                       Download
                                     </a>
                                   </>
@@ -928,8 +1096,9 @@ export function MaterialBundlePanel() {
                                 <button
                                   type="button"
                                   onClick={() => void handleDeleteItem(item.id)}
-                                  className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700"
+                                  className="btn-danger gap-1.5 px-3 py-1.5 text-xs"
                                 >
+                                  <Trash2 size={12} />
                                   Delete
                                 </button>
                               </div>
@@ -937,51 +1106,59 @@ export function MaterialBundlePanel() {
                           )}
                         </div>
                       ))}
-                      {tuteItems.length === 0 ? <p className="text-xs text-muted">No tutes added yet.</p> : null}
+                      {tuteItems.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/40 p-6 text-center">
+                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                            <FileText size={18} />
+                          </span>
+                          <p className="mt-3 text-sm font-semibold text-slate-900">No tutes added yet</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-500">Use the add item panel to attach monthly tutes to this bundle.</p>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {paperItems.map((item) => (
-                        <div key={item.id} className="rounded-lg border border-black/10 p-2 dark:border-white/10">
+                        <div key={item.id} className="rounded-[20px] border border-brand-100 bg-slate-50/70 p-4 shadow-soft">
                           {editItemId === item.id ? (
                             <>
                               <input
                                 value={editTitle}
                                 onChange={(e) => setEditTitle(e.target.value)}
-                                className="w-full rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                className="w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                               />
                               <textarea
                                 value={editDescription}
                                 onChange={(e) => setEditDescription(e.target.value)}
                                 rows={2}
-                                className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                className="mt-2 w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                               />
-                              <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 <input
                                   type="datetime-local"
                                   value={editPaperStartAt}
                                   onChange={(e) => setEditPaperStartAt(e.target.value)}
-                                  className="rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                  className="rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                                 />
                                 <input
                                   type="datetime-local"
                                   value={editPaperEndAt}
                                   onChange={(e) => setEditPaperEndAt(e.target.value)}
-                                  className="rounded-lg border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                                  className="rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
                                 />
                               </div>
                               <div className="mt-2 flex gap-2">
                                 <button
                                   type="button"
                                   onClick={() => void handleSaveItemEdit(item.type)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-secondary px-3 py-1.5 text-xs"
                                 >
                                   Save
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setEditItemId(null)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-ghost px-3 py-1.5 text-xs"
                                 >
                                   Cancel
                                 </button>
@@ -989,27 +1166,40 @@ export function MaterialBundlePanel() {
                             </>
                           ) : (
                             <>
-                              <p className="text-sm font-semibold">{item.title}</p>
-                              {item.description ? <p className="text-xs text-muted">{item.description}</p> : null}
-                              <p className="text-xs text-muted">Created {new Date(item.createdAt).toLocaleString()}</p>
-                              <p className="text-xs text-muted">
-                                Window: {item.paperStartAt ? new Date(item.paperStartAt).toLocaleString() : "-"} -{" "}
-                                {item.paperEndAt ? new Date(item.paperEndAt).toLocaleString() : "-"}
-                              </p>
-                              <p className="text-xs text-muted">File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                                    <Files size={18} />
+                                  </span>
+                                  <div>
+                                    <p className="text-[16px] font-semibold text-slate-900">{item.title}</p>
+                                    {item.description ? <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p> : null}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-4 space-y-1.5 text-[13px] leading-6 text-slate-400">
+                                <p>Created {new Date(item.createdAt).toLocaleString()}</p>
+                                <p>
+                                  Window: {item.paperStartAt ? new Date(item.paperStartAt).toLocaleString() : "-"} -{" "}
+                                  {item.paperEndAt ? new Date(item.paperEndAt).toLocaleString() : "-"}
+                                </p>
+                                <p>File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
+                              </div>
+                              <div className="mt-4 flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   onClick={() => beginEditItem(item)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
                                 >
+                                  <Pencil size={12} />
                                   Edit
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => void openSubmissions(item)}
-                                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
                                 >
+                                  <List size={12} />
                                   Submissions
                                 </button>
                                 {item.fileUrl ? (
@@ -1017,14 +1207,16 @@ export function MaterialBundlePanel() {
                                     <button
                                       type="button"
                                       onClick={() => setPreviewItem(item)}
-                                      className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                      className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
                                     >
+                                      <Eye size={12} />
                                       Preview
                                     </button>
                                     <a
                                       href={`/api/material-bundles/${bundleDetail.id}/items/${item.id}/file?download=1`}
-                                      className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/10"
+                                      className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
                                     >
+                                      <Download size={12} />
                                       Download
                                     </a>
                                   </>
@@ -1032,8 +1224,9 @@ export function MaterialBundlePanel() {
                                 <button
                                   type="button"
                                   onClick={() => void handleDeleteItem(item.id)}
-                                  className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700"
+                                  className="btn-danger gap-1.5 px-3 py-1.5 text-xs"
                                 >
+                                  <Trash2 size={12} />
                                   Delete
                                 </button>
                               </div>
@@ -1041,57 +1234,70 @@ export function MaterialBundlePanel() {
                           )}
                         </div>
                       ))}
-                      {paperItems.length === 0 ? <p className="text-xs text-muted">No papers added yet.</p> : null}
+                      {paperItems.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/40 p-6 text-center">
+                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                            <Files size={18} />
+                          </span>
+                          <p className="mt-3 text-sm font-semibold text-slate-900">No papers added yet</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-500">Add a paper with a time window when you are ready to collect submissions.</p>
+                        </div>
+                      ) : null}
                     </div>
                   )}
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="text-sm font-semibold text-emerald-700">
-                    {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {bundleDetail.students
-                      .filter((s) => s.willReceive)
-                      .map((student) => (
-                        <div key={student.id} className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200/70 bg-white/60 px-2 py-1.5 text-xs text-emerald-700">
-                          <span>
-                            {student.name}
-                            {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 font-semibold ${student.receivedAt ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                            {student.receivedAt ? `Confirmed ${new Date(student.receivedAt).toLocaleString()}` : "Waiting for confirmation"}
-                          </span>
-                        </div>
-                      ))}
-                    {bundleDetail.students.filter((s) => s.willReceive).length === 0 ? (
-                      <p className="text-xs text-emerald-700/80">No students selected.</p>
-                    ) : null}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-sm font-semibold text-amber-700">Students who will not receive</p>
-                  <div className="mt-2 space-y-1">
-                    {bundleDetail.students
-                      .filter((s) => !s.willReceive)
-                      .map((student) => (
-                        <p key={student.id} className="text-xs text-amber-700">
-                          {student.name}
-                          {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
-                        </p>
-                      ))}
-                    {bundleDetail.students.filter((s) => !s.willReceive).length === 0 ? (
-                      <p className="text-xs text-amber-700/80">All students are selected.</p>
-                    ) : null}
+                <div className="mt-7 grid gap-4 lg:grid-cols-2">
+                  <div className="flex h-full flex-col rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft lg:h-[220px]">
+                    <p className="text-base font-semibold text-emerald-700">
+                      {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
+                    </p>
+                    <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
+                      <div className="space-y-2">
+                        {bundleDetail.students
+                          .filter((s) => s.willReceive)
+                          .map((student) => (
+                            <div key={student.id} className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200/70 bg-white/80 px-3 py-2.5 text-sm text-emerald-700">
+                              <span className="font-medium text-slate-700">
+                                {student.name}
+                                {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
+                              </span>
+                              <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${student.receivedAt ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                {student.receivedAt ? `Confirmed ${new Date(student.receivedAt).toLocaleString()}` : "Waiting for confirmation"}
+                              </span>
+                            </div>
+                          ))}
+                        {bundleDetail.students.filter((s) => s.willReceive).length === 0 ? (
+                          <p className="text-sm leading-6 text-emerald-700/80">No students selected.</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex h-full flex-col rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft lg:h-[220px]">
+                    <p className="text-base font-semibold text-amber-700">Students who will not receive</p>
+                    <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
+                      <div className="space-y-2">
+                        {bundleDetail.students
+                          .filter((s) => !s.willReceive)
+                          .map((student) => (
+                            <div key={student.id} className="rounded-2xl border border-amber-200/80 bg-white/80 px-3 py-2.5 text-sm font-medium text-slate-700">
+                              {student.name}
+                              {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
+                            </div>
+                          ))}
+                        {bundleDetail.students.filter((s) => !s.willReceive).length === 0 ? (
+                          <p className="text-sm leading-6 text-amber-700/80">All students are selected.</p>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </section>
             </>
           )}
-        </section>
+        </div>
       </div>
 
       {isRecipientPanelOpen && bundleDetail ? (
@@ -1120,7 +1326,7 @@ export function MaterialBundlePanel() {
               Select students who should receive this month bundle. All students are pre-selected initially.
             </p>
 
-            <div className="mt-3 max-h-[320px] overflow-y-auto rounded-xl border border-black/10 p-3 dark:border-white/10">
+            <div className="scrollbar-none mt-3 max-h-[320px] overflow-y-auto rounded-xl border border-black/10 p-3 dark:border-white/10">
               {bundleDetail.students.map((student) => (
                 <label key={student.id} className="flex items-center gap-2 border-b border-black/5 py-1.5 last:border-b-0 dark:border-white/5">
                   <input
@@ -1166,126 +1372,155 @@ export function MaterialBundlePanel() {
 
       {/* Submissions side panel */}
       <div
-        className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-card shadow-2xl transition-transform duration-300 lg:w-1/2 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col border-l border-brand-100 bg-white/95 shadow-[0_24px_64px_-24px_rgba(13,26,46,0.38)] backdrop-blur-xl transition-transform duration-300 ${
           isSubmissionsOpen && selectedBundleId ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-black/10 px-4 py-3 dark:border-white/10">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Paper Submissions</p>
-            <h4 className="text-base font-semibold">
-              {submissionsView?.item.title ?? (isLoadingSubmissions ? "Loading…" : "")}
-            </h4>
-            <p className="text-xs text-muted">{submissionsView?.classroom.name ?? ""}</p>
-            {submissionsView?.item.paperEndAt ? (
-              <p className="text-xs text-muted">
-                Deadline: {new Date(submissionsView.item.paperEndAt).toLocaleString()}
-              </p>
-            ) : null}
+        <div className="border-b border-brand-100 bg-gradient-to-b from-white to-slate-50 px-5 py-5 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
+                  <Files size={18} />
+                </span>
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Paper Submissions</p>
+                  <h4 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-slate-900">
+                    {submissionsView?.item.title ?? (isLoadingSubmissions ? "Loading..." : "Submissions")}
+                  </h4>
+                </div>
+              </div>
+              <p className="mt-3 text-sm font-medium text-slate-500">{submissionsView?.classroom.name ?? "Track student uploads and late reasons."}</p>
+              {submissionsView?.item.paperEndAt ? (
+                <p className="mt-1 text-[13px] leading-6 text-slate-400">
+                  Deadline: {new Date(submissionsView.item.paperEndAt).toLocaleString()}
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
+              className="btn-secondary h-10 shrink-0 px-4 text-xs"
+            >
+              Close
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
-            className="mt-0.5 shrink-0 rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
-          >
-            Close
-          </button>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-brand-100 bg-white px-4 py-3 shadow-soft">
+              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-muted">Total students</p>
+              <p className="mt-2 text-[28px] font-bold leading-none text-slate-900">{submissionsView?.summary.totalStudents ?? 0}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 shadow-soft">
+              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-emerald-700">Submitted</p>
+              <p className="mt-2 text-[28px] font-bold leading-none text-emerald-700">{submissionsView?.summary.submittedStudents ?? 0}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-soft">
+              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-amber-700">Not submitted</p>
+              <p className="mt-2 text-[28px] font-bold leading-none text-amber-700">{submissionsView?.summary.notSubmittedStudents ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-brand-100 bg-white px-4 py-3 shadow-soft">
+            <Search size={18} className="text-slate-400" />
+            <p className="text-sm text-slate-500">Submission records for the selected paper are listed below.</p>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="scrollbar-none flex-1 overflow-y-auto px-5 py-5 sm:px-6">
           {isLoadingSubmissions ? (
             <p className="text-sm text-muted">Loading submissions…</p>
           ) : null}
 
           {submissionsView ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-black/10 px-3 py-2 dark:border-white/10">
-                  <p className="text-xs text-muted">Total students</p>
-                  <p className="text-lg font-semibold">{submissionsView.summary.totalStudents}</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <p className="text-xs text-emerald-700">Submitted</p>
-                  <p className="text-lg font-semibold text-emerald-700">{submissionsView.summary.submittedStudents}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-xs text-amber-700">Not submitted</p>
-                  <p className="text-lg font-semibold text-amber-700">{submissionsView.summary.notSubmittedStudents}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {submissionsView.students.map((student) => (
-                  <div key={student.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">
+            <div className="space-y-4">
+              {submissionsView.students.map((student) => (
+                <div key={student.id} className="rounded-[22px] border border-brand-100 bg-white p-4 shadow-soft">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[16px] font-semibold text-slate-900">
                         {student.name}
                         {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
                       </p>
+                      <p className="mt-1 text-[13px] leading-6 text-slate-400">
+                        {student.hasSubmitted ? "Submission history available below." : "No submission uploaded yet."}
+                      </p>
+                    </div>
+                    <div>
                       {student.hasSubmitted ? (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[12px] font-semibold text-emerald-700">
                           Submitted
                         </span>
                       ) : (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[12px] font-semibold text-amber-700">
                           Not submitted
                         </span>
                       )}
                     </div>
+                  </div>
 
-                    {student.hasSubmitted ? (
-                      <>
-                        <p className="mt-1 text-xs text-muted">
-                          Latest: {student.latestSubmittedAt ? new Date(student.latestSubmittedAt).toLocaleString() : "-"}
-                        </p>
-                        <div className="mt-2 space-y-2">
-                          {student.submissions.map((submission) => (
-                            <div key={submission.id} className="rounded-lg border border-black/10 px-2.5 py-2 text-xs dark:border-white/10">
-                              <p className="font-semibold">{submission.fileName}</p>
-                              <p className="text-muted">
-                                Submitted {new Date(submission.submittedAt).toLocaleString()} • {formatBytes(submission.sizeBytes)}
-                              </p>
-                              <p className={submission.isLate ? "text-red-700" : "text-emerald-700"}>
-                                {submission.isLate ? "Late submission" : "On-time submission"}
-                              </p>
-                              <div className="mt-1 flex gap-2">
-                                <a
-                                  href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="rounded-lg border border-black/10 px-2 py-1 dark:border-white/10"
-                                >
-                                  Preview
-                                </a>
-                                <a
-                                  href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file?download=1`}
-                                  className="rounded-lg border border-black/10 px-2 py-1 dark:border-white/10"
-                                >
-                                  Download
-                                </a>
-                              </div>
+                  {student.hasSubmitted ? (
+                    <>
+                      <p className="mt-3 text-[13px] leading-6 text-slate-400">
+                        Latest: {student.latestSubmittedAt ? new Date(student.latestSubmittedAt).toLocaleString() : "-"}
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {student.submissions.map((submission) => (
+                          <div key={submission.id} className="rounded-2xl border border-brand-100 bg-slate-50/70 px-3 py-3 text-sm">
+                            <p className="font-semibold text-slate-900">{submission.fileName}</p>
+                            <p className="mt-1 text-[13px] leading-6 text-slate-400">
+                              Submitted {new Date(submission.submittedAt).toLocaleString()} • {formatBytes(submission.sizeBytes)}
+                            </p>
+                            <p className={`mt-1 text-[13px] font-medium ${submission.isLate ? "text-red-700" : "text-emerald-700"}`}>
+                              {submission.isLate ? "Late submission" : "On-time submission"}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <a
+                                href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn-secondary px-3 py-1.5 text-xs"
+                              >
+                                Preview
+                              </a>
+                              <a
+                                href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file?download=1`}
+                                className="btn-secondary px-3 py-1.5 text-xs"
+                              >
+                                Download
+                              </a>
                             </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : null}
-
-                    {student.supportMessages.length > 0 ? (
-                      <div className="mt-2 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Student late reasons</p>
-                        {student.supportMessages.map((msg) => (
-                          <div key={msg.id} className="rounded-md border border-amber-200 bg-white px-2 py-1.5 text-xs">
-                            <p className="text-slate-700 whitespace-pre-line">{msg.message}</p>
-                            <p className="mt-1 text-[11px] text-slate-500">{new Date(msg.createdAt).toLocaleString()}</p>
                           </div>
                         ))}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </>
+                    </>
+                  ) : null}
+
+                  {student.supportMessages.length > 0 ? (
+                    <div className="mt-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-700">Student late reasons</p>
+                      {student.supportMessages.map((msg) => (
+                        <div key={msg.id} className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">
+                          <p className="whitespace-pre-line text-slate-700">{msg.message}</p>
+                          <p className="mt-2 text-[12px] leading-5 text-slate-400">{new Date(msg.createdAt).toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           ) : null}
+        </div>
+
+        <div className="border-t border-brand-100 bg-white/95 px-5 py-4 shadow-[0_-16px_30px_-26px_rgba(13,26,46,0.35)] sm:px-6">
+          <button
+            type="button"
+            onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
+            className="btn-primary h-11 w-full"
+          >
+            Close submissions panel
+          </button>
         </div>
       </div>
 
@@ -1376,128 +1611,170 @@ export function MaterialBundlePanel() {
         </div>
       ) : null}
 
-      {isCreatePanelOpen && (
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-black/10 bg-card shadow-xl dark:border-white/10">
-          <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-black/10 bg-card p-4 dark:border-white/10">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Create New Bundle</p>
-              <h4 className="mt-1 text-lg font-semibold">Monthly bundle details</h4>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsCreatePanelOpen(false)}
-              className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
-            >
-              Close
-            </button>
-          </div>
+      {isCreatePanelOpen ? (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/35"
+            onClick={() => setIsCreatePanelOpen(false)}
+            aria-hidden
+          />
 
-          <div className="space-y-3 p-4 pt-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Class</label>
-              <select
-                value={createClassId}
-                onChange={(e) => setCreateClassId(e.target.value)}
-                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              >
-                <option value="">Select class</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Bundle title</label>
-              <input
-                type="text"
-                placeholder="e.g. Monthly Tutes"
-                value={createTitle}
-                onChange={(e) => setCreateTitle(e.target.value)}
-                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium">Year</label>
-                <input
-                  type="number"
-                  value={createYear}
-                  onChange={(e) => setCreateYear(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-                />
+          <aside className="drawer-panel scrollbar-none z-50 w-full max-w-[520px] border-l border-brand-100 bg-white/98 p-0 shadow-2xl">
+            <div className="flex h-full flex-col">
+              <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-6 py-6">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Create New Bundle</p>
+                    <h4 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Monthly bundle details</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatePanelOpen(false)}
+                    className="btn-secondary h-10 w-10 rounded-xl p-0"
+                    aria-label="Close create bundle panel"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Month</label>
-                <select
-                  value={createMonth}
-                  onChange={(e) => setCreateMonth(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-                >
-                  {Array.from({ length: 12 }).map((_, idx) => (
-                    <option key={idx + 1} value={String(idx + 1)}>
-                      {monthLabel(idx + 1)}
-                    </option>
-                  ))}
-                </select>
+
+              <div className="scrollbar-none flex-1 space-y-6 overflow-y-auto px-6 py-6">
+                <section className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Class</p>
+                  <div className="relative">
+                    <GraduationCap size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <select
+                      value={createClassId}
+                      onChange={(e) => setCreateClassId(e.target.value)}
+                      className="control-select h-14 appearance-none pl-11 pr-12 text-base"
+                    >
+                      <option value="">Select class</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bundle title</p>
+                  <div className="relative">
+                    <FileText size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      type="text"
+                      placeholder="e.g. Monthly Tutes"
+                      value={createTitle}
+                      onChange={(e) => setCreateTitle(e.target.value)}
+                      className="control-input h-14 pl-11 pr-16 text-base"
+                    />
+                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
+                      {createTitle.length}/60
+                    </span>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Period</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="relative">
+                      <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                      <input
+                        type="number"
+                        value={createYear}
+                        onChange={(e) => setCreateYear(e.target.value)}
+                        className="control-input h-14 pl-11 text-base"
+                      />
+                    </div>
+                    <div className="relative">
+                      <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                      <select
+                        value={createMonth}
+                        onChange={(e) => setCreateMonth(e.target.value)}
+                        className="control-select h-14 appearance-none pr-12 text-base"
+                      >
+                        {Array.from({ length: 12 }).map((_, idx) => (
+                          <option key={idx + 1} value={String(idx + 1)}>
+                            {monthLabel(idx + 1)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="notice-info">
+                  A new bundle will be created for the selected class, year, and month. You can add tutes and papers after creating the bundle.
+                </div>
+              </div>
+
+              <div className="border-t border-brand-100 bg-white px-6 py-5">
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatePanelOpen(false)}
+                    className="btn-secondary flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleCreateBundle();
+                      setIsCreatePanelOpen(false);
+                    }}
+                    disabled={isSaving}
+                    className="btn-primary flex-1 gap-2 disabled:opacity-60"
+                  >
+                    <Plus size={14} />
+                    {isSaving ? "Creating..." : "Create bundle"}
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsCreatePanelOpen(false)}
-                className="flex-1 rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleCreateBundle();
-                  setIsCreatePanelOpen(false);
-                }}
-                disabled={isSaving}
-                className="flex-1 rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-60"
-              >
-                {isSaving ? "Creating..." : "Create bundle"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </aside>
+        </>
+      ) : null}
 
       {isItemPanelOpen && bundleDetail && selectedBundleId ? (
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-black/10 bg-card shadow-xl dark:border-white/10">
-          <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-black/10 bg-card p-4 dark:border-white/10">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Add Item</p>
-              <h4 className="mt-1 text-lg font-semibold">Add tute / paper</h4>
-              <p className="text-xs text-muted">
-                {bundleDetail.title} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
-              </p>
+        <div className="scrollbar-none fixed inset-y-0 right-0 z-50 w-full max-w-[540px] overflow-y-auto border-l border-brand-100 bg-white/95 shadow-[0_24px_64px_-24px_rgba(13,26,46,0.38)] backdrop-blur-xl">
+          <div className="sticky top-0 border-b border-brand-100 bg-gradient-to-b from-white to-slate-50 px-5 py-5 sm:px-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
+                    <Files size={18} />
+                  </span>
+                  <div>
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Add Item</p>
+                    <h4 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-slate-900">Add tute / paper</h4>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm font-medium text-slate-500">
+                  {bundleDetail.title} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsItemPanelOpen(false)}
+                className="btn-secondary h-10 shrink-0 px-4 text-xs"
+              >
+                Close
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsItemPanelOpen(false)}
-              className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
-            >
-              Close
-            </button>
           </div>
 
-          <div className="space-y-3 p-4 pt-3">
+          <div className="space-y-5 p-5 sm:p-6">
             {bundleDetail.status === "SENT" ? (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+              <div className="rounded-[20px] border border-amber-300 bg-amber-50/90 p-4 text-sm text-amber-800 shadow-soft">
                 <p className="font-semibold">Warning: bundle already sent</p>
-                <p className="mt-1">
+                <p className="mt-2 leading-6">
                   This bundle was already sent
                   {bundleDetail.sentAt ? ` on ${new Date(bundleDetail.sentAt).toLocaleString()}` : ""}. Adding new items now will not automatically re-send to students.
                 </p>
-                <label className="mt-3 flex items-start gap-2 text-xs">
+                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-white/70 px-3 py-3 text-xs">
                   <input
                     type="checkbox"
                     checked={confirmAddToSentBundle}
@@ -1508,60 +1785,78 @@ export function MaterialBundlePanel() {
               </div>
             ) : null}
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <select
-                value={itemType}
-                onChange={(e) => setItemType(e.target.value as "TUTE" | "PAPER")}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              >
-                <option value="TUTE">Tute</option>
-                <option value="PAPER">Paper</option>
-              </select>
-              <input
-                value={itemTitle}
-                onChange={(e) => setItemTitle(e.target.value)}
-                placeholder="Title"
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Item type</span>
+                <select
+                  value={itemType}
+                  onChange={(e) => setItemType(e.target.value as "TUTE" | "PAPER")}
+                  className="control-select h-14 text-[15px]"
+                >
+                  <option value="TUTE">Tute</option>
+                  <option value="PAPER">Paper</option>
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Title</span>
+                <input
+                  value={itemTitle}
+                  onChange={(e) => setItemTitle(e.target.value)}
+                  placeholder="Title"
+                  className="control-input h-14 text-[15px]"
+                />
+              </label>
             </div>
 
-            <textarea
-              value={itemDescription}
-              onChange={(e) => setItemDescription(e.target.value)}
-              rows={3}
-              placeholder="Description (optional)"
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-            />
+            <label className="block space-y-2">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Description</span>
+              <textarea
+                value={itemDescription}
+                onChange={(e) => setItemDescription(e.target.value)}
+                rows={4}
+                placeholder="Description (optional)"
+                className="control-textarea min-h-[120px] text-[15px] leading-6"
+              />
+            </label>
 
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => setItemFile(e.target.files?.[0] ?? null)}
-              className="block w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-            />
+            <label className="block space-y-2">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">PDF file</span>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setItemFile(e.target.files?.[0] ?? null)}
+                className="block w-full rounded-2xl border border-brand-200 bg-white px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:font-semibold file:text-brand-700"
+              />
+            </label>
 
             {itemType === "PAPER" ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
-                  value={paperStartAt}
-                  onChange={(e) => setPaperStartAt(e.target.value)}
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-                />
-                <input
-                  type="datetime-local"
-                  value={paperEndAt}
-                  onChange={(e) => setPaperEndAt(e.target.value)}
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Start time</span>
+                  <input
+                    type="datetime-local"
+                    value={paperStartAt}
+                    onChange={(e) => setPaperStartAt(e.target.value)}
+                    className="control-input h-14 text-[15px]"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">End time</span>
+                  <input
+                    type="datetime-local"
+                    value={paperEndAt}
+                    onChange={(e) => setPaperEndAt(e.target.value)}
+                    className="control-input h-14 text-[15px]"
+                  />
+                </label>
               </div>
             ) : null}
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-3 border-t border-brand-100 pt-4">
               <button
                 type="button"
                 onClick={() => setIsItemPanelOpen(false)}
-                className="flex-1 rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                className="btn-secondary flex-1"
               >
                 Cancel
               </button>
@@ -1569,7 +1864,7 @@ export function MaterialBundlePanel() {
                 type="button"
                 onClick={() => void handleAddItem()}
                 disabled={isSaving || (bundleDetail.status === "SENT" && !confirmAddToSentBundle)}
-                className="flex-1 rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-60"
+                className="btn-primary flex-1 disabled:opacity-60"
               >
                 {isSaving ? "Adding..." : "Add item"}
               </button>

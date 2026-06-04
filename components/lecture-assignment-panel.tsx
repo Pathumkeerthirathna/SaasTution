@@ -1,6 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  ChevronDown,
+  CircleHelp,
+  FileText,
+  FolderOpen,
+  MoreVertical,
+  Plus,
+  Save,
+  Search,
+  SquarePen,
+  Users,
+  X,
+  Download,
+  Eye,
+  Trash2,
+} from "lucide-react";
 
 type LectureAssignment = {
   id: string;
@@ -85,6 +102,7 @@ export function LectureAssignmentPanel(props: {
   const [submissionsAssignmentId, setSubmissionsAssignmentId] = useState<string | null>(null);
   const [submissionsData, setSubmissionsData] = useState<SubmissionsData | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
+  const [isExpandedList, setIsExpandedList] = useState(false);
 
   const selectedAssignment = useMemo(
     () => assignments.find((item) => item.id === selectedAssignmentId) ?? null,
@@ -315,125 +333,197 @@ export function LectureAssignmentPanel(props: {
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Assignments</p>
-        <button
-          type="button"
-          onClick={handleAddNewAssignment}
-          className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background"
-        >
-          Add new assignment
-        </button>
-      </div>
-
-      {errorMessage ? (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{errorMessage}</p>
-      ) : null}
-
-      {successMessage ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-          {successMessage}
-        </p>
-      ) : null}
-
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_1fr]">
-        <section className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-          <label className="text-xs font-semibold text-muted">Assignment title</label>
-          <input
-            value={draft.title}
-            onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
-            placeholder="Assignment title"
-            className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-          />
-
-          <label className="mt-3 block text-xs font-semibold text-muted">Description</label>
-          <textarea
-            value={draft.description}
-            onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))}
-            rows={5}
-            placeholder="Assignment description"
-            className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-          />
-
-          <label className="mt-3 block text-xs font-semibold text-muted">Due date</label>
-          <input
-            type="datetime-local"
-            value={draft.dueDate}
-            onChange={(event) => setDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
-            className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-transparent"
-          />
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleSaveAssignment()}
-              disabled={isSaving}
-              className="rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? "Saving..." : selectedAssignment ? "Save assignment" : "Create assignment"}
-            </button>
-
-            {selectedAssignment ? (
-              <button
-                type="button"
-                onClick={() => void handleDeleteAssignment(selectedAssignment.id)}
-                disabled={isSaving}
-                className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Delete assignment
-              </button>
-            ) : null}
+    <div className="mt-4 space-y-6">
+      <article className="surface-panel overflow-hidden border border-brand-100 p-0">
+        <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-4">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
+              <FileText size={24} />
+            </span>
+            <div>
+              <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Lecture assignments</h3>
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                <span>{selectedAssignment?.title ?? "Select an assignment or create a new one"}</span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> {selectedAssignment ? new Date(selectedAssignment.dueDate).toLocaleString() : "Ready to schedule"}</span>
+              </p>
+            </div>
           </div>
-        </section>
 
-        <aside className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-          <p className="text-sm font-semibold">Existing assignments</p>
-          {isLoading ? <p className="mt-2 text-xs text-muted">Loading assignments...</p> : null}
-          {!isLoading && assignments.length === 0 ? (
-            <p className="mt-2 text-xs text-muted">No assignments added yet.</p>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setIsExpandedList((prev) => !prev)}
+            className="btn-secondary gap-2"
+          >
+            {isExpandedList ? <ChevronDown size={15} /> : <FolderOpen size={15} />}
+            {isExpandedList ? "Collapse" : "Expand"}
+          </button>
+        </div>
 
-          <div className="mt-3 space-y-2">
-            {assignments.map((assignment) => (
-              <div
-                key={assignment.id}
-                className={`rounded-lg border px-3 py-2 ${
-                  selectedAssignmentId === assignment.id
-                    ? "border-foreground bg-black/[0.03] dark:bg-white/[0.04]"
-                    : "border-black/10 dark:border-white/10"
-                }`}
-              >
+        <div className="px-5 py-5 sm:px-6">
+          {errorMessage ? <p className="notice-error mb-4 text-xs">{errorMessage}</p> : null}
+          {successMessage ? <p className="notice-success mb-4 text-xs">{successMessage}</p> : null}
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <section className="surface-card border border-brand-100 p-5 shadow-soft">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                    <Plus size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-xl font-semibold text-slate-900">Create or update assignment</h4>
+                    <p className="mt-1 text-sm text-muted">Manage title, description, and due date here.</p>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => handleSelectAssignment(assignment.id)}
-                  className="w-full text-left"
+                  onClick={handleAddNewAssignment}
+                  className="btn-primary gap-2 px-3 py-2 text-xs"
                 >
-                  <p className="text-sm font-semibold">{assignment.title}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted">{assignment.description}</p>
-                  <p className="mt-1 text-xs text-muted">Due: {new Date(assignment.dueDate).toLocaleString()}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void openSubmissions(assignment.id)}
-                  className="mt-2 rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
-                >
-                  View submissions
+                  <Plus size={14} />
+                  Add new assignment
                 </button>
               </div>
-            ))}
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="form-label">Assignment title</label>
+                  <input
+                    value={draft.title}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
+                    placeholder="Assignment title"
+                    className="control-input mt-2 h-14 text-base"
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Description</label>
+                  <textarea
+                    value={draft.description}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))}
+                    rows={6}
+                    placeholder="Assignment description"
+                    className="control-textarea mt-2 text-base"
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Due date</label>
+                  <div className="relative mt-2">
+                    <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      type="datetime-local"
+                      value={draft.dueDate}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                      className="control-input h-14 pl-11 text-base"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveAssignment()}
+                    disabled={isSaving}
+                    className="btn-primary gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Save size={15} />
+                    {isSaving ? "Saving..." : selectedAssignment ? "Save assignment" : "Create assignment"}
+                  </button>
+
+                  {selectedAssignment ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteAssignment(selectedAssignment.id)}
+                      disabled={isSaving}
+                      className="btn-danger gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Trash2 size={15} />
+                      Delete assignment
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+
+            <aside className="surface-card border border-brand-100 p-5 shadow-soft">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                    <Users size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-xl font-semibold text-slate-900">Existing assignments</h4>
+                    <p className="mt-1 text-sm text-muted">Open a record to edit or inspect submissions.</p>
+                  </div>
+                </div>
+
+                <span className="metric-badge">{assignments.length} total</span>
+              </div>
+
+              {isLoading ? <p className="mt-4 text-sm text-muted">Loading assignments...</p> : null}
+              {!isLoading && assignments.length === 0 ? (
+                <p className="mt-4 text-sm text-muted">No assignments added yet.</p>
+              ) : null}
+
+              <div className={`mt-4 space-y-3 ${isExpandedList ? "max-h-none" : "max-h-[520px] overflow-y-auto pr-1"}`}>
+                {assignments.map((assignment) => (
+                  <div
+                    key={assignment.id}
+                    className={`rounded-2xl border p-4 shadow-soft transition ${
+                      selectedAssignmentId === assignment.id
+                        ? "border-brand-300 bg-brand-50/70"
+                        : "border-brand-100 bg-white"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAssignment(assignment.id)}
+                      className="block w-full text-left"
+                    >
+                      <p className="truncate text-lg font-semibold text-slate-900">{assignment.title}</p>
+                      <p className="mt-1 line-clamp-2 text-sm text-slate-500">{assignment.description}</p>
+                      <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500">
+                        <Calendar size={12} />
+                        Due: {new Date(assignment.dueDate).toLocaleString()}
+                      </p>
+                    </button>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void openSubmissions(assignment.id)}
+                        className="btn-secondary gap-2 px-3 py-2 text-xs"
+                      >
+                        <Eye size={13} />
+                        View submissions
+                      </button>
+                      <button type="button" className="btn-ghost px-3 py-2 text-xs" disabled>
+                        <MoreVertical size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
           </div>
-        </aside>
-      </div>
+        </div>
+      </article>
 
       {submissionsAssignmentId ? (
-        <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="surface-panel border border-brand-100 p-0 overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Student Submissions</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Student submissions</p>
               {submissionsData ? (
-                <h3 className="mt-0.5 text-sm font-semibold">{submissionsData.assignment.title}</h3>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">{submissionsData.assignment.title}</h3>
+              ) : null}
+              {submissionsData ? (
+                <p className="mt-2 text-sm text-slate-600">
+                  Due {new Date(submissionsData.assignment.dueDate).toLocaleString()} • {submissionsData.totalSubmissions}/{submissionsData.assignment.totalEnrolled} submissions
+                </p>
               ) : null}
             </div>
             <button
@@ -442,90 +532,92 @@ export function LectureAssignmentPanel(props: {
                 setSubmissionsAssignmentId(null);
                 setSubmissionsData(null);
               }}
-              className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
+              className="btn-secondary gap-2"
             >
+              <X size={14} />
               Close
             </button>
           </div>
 
-          {isLoadingSubmissions ? (
-            <p className="mt-3 text-xs text-muted">Loading submissions...</p>
-          ) : submissionsData ? (
-            <>
-              <div className="mt-3 flex flex-wrap gap-4">
-                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                  <p className="text-xs text-muted">Submissions</p>
-                  <p className="mt-0.5 text-lg font-semibold">
-                    {submissionsData.totalSubmissions}
-                    <span className="ml-1 text-sm font-normal text-muted">
-                      / {submissionsData.assignment.totalEnrolled} enrolled
-                    </span>
-                  </p>
+          <div className="px-5 py-5 sm:px-6">
+            {isLoadingSubmissions ? (
+              <p className="text-sm text-muted">Loading submissions...</p>
+            ) : submissionsData ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Submissions</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                      {submissionsData.totalSubmissions}
+                      <span className="ml-2 text-sm font-normal text-muted">/ {submissionsData.assignment.totalEnrolled} enrolled</span>
+                    </p>
+                  </div>
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Due</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{new Date(submissionsData.assignment.dueDate).toLocaleString()}</p>
+                  </div>
+                  <div className="metric-tile">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Status</p>
+                    <p className="mt-2 text-sm font-semibold text-emerald-700">Ready for review</p>
+                  </div>
                 </div>
-                <div className="rounded-lg border border-black/10 px-4 py-2.5 dark:border-white/10">
-                  <p className="text-xs text-muted">Due</p>
-                  <p className="mt-0.5 text-sm font-semibold">
-                    {new Date(submissionsData.assignment.dueDate).toLocaleString()}
-                  </p>
-                </div>
-              </div>
 
-              {submissionsData.submissions.length === 0 ? (
-                <p className="mt-3 text-xs text-muted">No submissions yet.</p>
-              ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[540px] text-sm">
-                    <thead>
-                      <tr className="border-b border-black/10 text-left text-xs font-semibold text-muted dark:border-white/10">
-                        <th className="pb-2 pr-4">Student</th>
-                        <th className="pb-2 pr-4">Submitted</th>
-                        <th className="pb-2 pr-4">File</th>
-                        <th className="pb-2">Notes</th>
-                        <th className="pb-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                      {submissionsData.submissions.map((sub) => (
-                        <tr key={sub.submissionId}>
-                          <td className="py-2 pr-4">
-                            <p className="font-medium">{sub.studentName}</p>
-                            {sub.registrationNumber ? (
-                              <p className="text-xs text-muted">{sub.registrationNumber}</p>
-                            ) : null}
-                          </td>
-                          <td className="py-2 pr-4 text-xs text-muted">
-                            {new Date(sub.submittedAt).toLocaleString()}
-                          </td>
-                          <td className="py-2 pr-4">
-                            <p className="max-w-[160px] truncate text-xs">{sub.fileName}</p>
-                            <p className="text-xs text-muted">{formatBytes(sub.sizeBytes)}</p>
-                          </td>
-                          <td className="py-2 pr-4">
-                            {sub.notes ? (
-                              <p className="max-w-[180px] truncate text-xs text-muted" title={sub.notes}>
-                                {sub.notes}
-                              </p>
-                            ) : (
-                              <span className="text-xs text-muted">—</span>
-                            )}
-                          </td>
-                          <td className="py-2">
-                            <a
-                              href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
-                              download
-                              className="rounded-lg border border-black/15 px-2.5 py-1 text-xs font-semibold dark:border-white/20"
-                            >
-                              Download
-                            </a>
-                          </td>
+                {submissionsData.submissions.length === 0 ? (
+                  <p className="mt-4 text-sm text-muted">No submissions yet.</p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-soft">
+                    <table className="min-w-[640px] w-full text-sm">
+                      <thead className="bg-brand-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Student</th>
+                          <th className="px-4 py-3 text-left">Submitted</th>
+                          <th className="px-4 py-3 text-left">File</th>
+                          <th className="px-4 py-3 text-left">Notes</th>
+                          <th className="px-4 py-3 text-left"></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          ) : null}
+                      </thead>
+                      <tbody className="divide-y divide-brand-100">
+                        {submissionsData.submissions.map((sub) => (
+                          <tr key={sub.submissionId} className="align-top">
+                            <td className="px-4 py-4">
+                              <p className="font-semibold text-slate-900">{sub.studentName}</p>
+                              {sub.registrationNumber ? (
+                                <p className="mt-1 text-xs text-muted">{sub.registrationNumber}</p>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-4 text-sm text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
+                            <td className="px-4 py-4">
+                              <p className="max-w-[180px] truncate text-sm text-slate-800">{sub.fileName}</p>
+                              <p className="mt-1 text-xs text-muted">{formatBytes(sub.sizeBytes)}</p>
+                            </td>
+                            <td className="px-4 py-4">
+                              {sub.notes ? (
+                                <p className="max-w-[220px] truncate text-sm text-slate-600" title={sub.notes}>
+                                  {sub.notes}
+                                </p>
+                              ) : (
+                                <span className="text-sm text-muted">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4">
+                              <a
+                                href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
+                                download
+                                className="btn-secondary gap-2 px-3 py-2 text-xs"
+                              >
+                                <Download size={13} />
+                                Download
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

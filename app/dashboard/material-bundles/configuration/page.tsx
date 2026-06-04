@@ -79,8 +79,8 @@ export default function PaperConfigurationPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
-      <section className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
+    <div className="flex w-full flex-1 flex-col">
+      <section className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6 lg:p-7">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Paper Workflow Configuration</p>
         <h1 className="mt-3 text-2xl font-semibold">Countdown and Submission Timing</h1>
         <p className="mt-2 text-sm text-muted">

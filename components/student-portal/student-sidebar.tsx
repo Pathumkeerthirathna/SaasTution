@@ -14,6 +14,7 @@ import {
   Settings,
   GraduationCap,
   X,
+  ChevronRight,
   LucideIcon,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ type StudentSidebarProps = {
   activePath: string;
   open: boolean;
   onClose: () => void;
+  onToggle: () => void;
 };
 
 const iconMap: Record<string, LucideIcon> = {
@@ -57,32 +59,32 @@ function NavIcon({ iconKey, active }: { iconKey: string; active: boolean }) {
   );
 }
 
-export function StudentSidebar({ items, activePath, open, onClose }: StudentSidebarProps) {
+export function StudentSidebar({ items, activePath, open, onClose, onToggle }: StudentSidebarProps) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-white shadow-panel transition-transform duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none lg:border-r lg:border-brand-200 ${
-          open ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none lg:border-r lg:border-brand-200 ${
+          open ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-20"
         }`}
       >
         {/* Brand header */}
-        <div className="flex items-center justify-between border-b border-brand-100 px-5 py-5">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between border-b border-brand-100 px-4 py-5 lg:px-4">
+          <div className={`flex items-center gap-2.5 ${open ? "" : "lg:justify-center"}`}>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-800 text-white shadow-soft">
               <GraduationCap size={16} />
             </div>
-            <div>
+            <div className={open ? "" : "hidden lg:hidden"}>
               <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">SaasTution</p>
               <p className="text-xs leading-tight text-muted">Student Portal</p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-muted hover:bg-brand-50 lg:hidden"
-            aria-label="Close sidebar"
+            onClick={onToggle}
+            className="rounded-lg p-1 text-muted hover:bg-brand-50"
+            aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
           >
-            <X size={18} />
+            {open ? <X size={18} /> : <ChevronRight size={18} />}
           </button>
         </div>
 
@@ -94,18 +96,19 @@ export function StudentSidebar({ items, activePath, open, onClose }: StudentSide
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onClose}
-                className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"}`}
+                title={!open ? item.label : undefined}
+                aria-label={item.label}
+                className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"} ${open ? "" : "lg:justify-center lg:px-0"}`}
               >
                 <NavIcon iconKey={item.icon} active={isActive} />
-                <span className="tracking-[0.01em]">{item.label}</span>
+                <span className={`tracking-[0.01em] ${open ? "" : "hidden lg:hidden"}`}>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* Bottom decoration */}
-        <div className="border-t border-brand-100 px-4 py-4">
+        <div className={`border-t border-brand-100 px-4 py-4 ${open ? "" : "hidden lg:hidden"}`}>
           <p className="text-[11px] text-muted text-center">Student Learning Portal</p>
         </div>
       </aside>

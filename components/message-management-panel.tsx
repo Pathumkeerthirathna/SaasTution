@@ -264,7 +264,7 @@ export function MessageManagementPanel() {
 
   return (
     <>
-    <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_1.9fr]">
+    <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_1.9fr]">
       <article className="panel-shell">
         <div className="flex items-center justify-between gap-2">
           <div>

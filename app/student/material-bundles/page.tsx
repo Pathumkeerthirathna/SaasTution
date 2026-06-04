@@ -241,6 +241,7 @@ export default function StudentMaterialBundlesPage() {
           ? "Teacher-sent tutes and papers waiting for your delivery confirmation."
           : "Previously confirmed bundle deliveries."
       }
+      contentClassName="px-5 pb-5 sm:px-6 sm:pb-6"
     >
       <div className="mb-4 flex flex-wrap gap-2">
         <button

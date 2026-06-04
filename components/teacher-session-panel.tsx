@@ -890,7 +890,7 @@ export function TeacherSessionPanel() {
   }, [activeSession, isStudentPanelOpen, selectedSessionId]);
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-5">
       <article className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>

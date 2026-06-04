@@ -1,6 +1,24 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  BadgeCheck,
+  BookOpen,
+  CalendarDays,
+  CircleDollarSign,
+  Clock3,
+  FileText,
+  LoaderCircle,
+  MessageSquare,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  Upload,
+  UserCircle2,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 
 type TeacherClass = {
   id: string;
@@ -72,6 +90,19 @@ function statusClass(status: PaymentItem["status"]) {
   return "bg-brand-50 text-brand-700 border border-brand-200";
 }
 
+function getClassIcon(name: string): { Icon: LucideIcon; tone: string } {
+  const normalized = name.toLowerCase();
+
+  if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) {
+    return { Icon: CircleDollarSign, tone: "bg-blue-100 text-blue-700" };
+  }
+  if (/(science|chem|biology|bio|physics|lab)/.test(normalized)) {
+    return { Icon: Wallet, tone: "bg-emerald-100 text-emerald-700" };
+  }
+
+  return { Icon: BookOpen, tone: "bg-brand-100 text-brand-700" };
+}
+
 export function TeacherClassPaymentsPanel() {
   const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [selectedClassId, setSelectedClassId] = useState("");
@@ -92,6 +123,7 @@ export function TeacherClassPaymentsPanel() {
     () => classes.find((item) => item.id === selectedClassId) ?? null,
     [classes, selectedClassId]
   );
+  const selectedClassIcon = useMemo(() => getClassIcon(selectedClass?.name ?? "class"), [selectedClass?.name]);
 
   async function loadClasses() {
     setIsLoadingClasses(true);
@@ -297,40 +329,50 @@ export function TeacherClassPaymentsPanel() {
           <p className="text-sm text-muted">Review monthly student payments, confirm them, or request clarification.</p>
         </div>
         {selectedClass ? (
-          <p className="text-sm font-medium text-brand-700">
-            Default fee: Rs {selectedClass.monthlyFee.toLocaleString()} · Due week {selectedClass.paymentDueWeek}
-          </p>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${selectedClassIcon.tone}`}>
+              <selectedClassIcon.Icon size={14} />
+            </span>
+            <span>Default fee: Rs {selectedClass.monthlyFee.toLocaleString()} · Due week {selectedClass.paymentDueWeek}</span>
+          </div>
         ) : null}
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Class</label>
-          <select
-            value={selectedClassId}
-            onChange={(event) => setSelectedClassId(event.target.value)}
-            className="control-select"
-            disabled={isLoadingClasses}
-          >
-            <option value="">Select class</option>
-            {classes.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-                {` (Week ${item.paymentDueWeek})`}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <BookOpen size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <select
+              value={selectedClassId}
+              onChange={(event) => setSelectedClassId(event.target.value)}
+              className="control-select pl-9"
+              disabled={isLoadingClasses}
+            >
+              <option value="">Select class</option>
+              {classes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                  {` (Week ${item.paymentDueWeek})`}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Month</label>
-          <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="control-input" />
+          <div className="relative">
+            <CalendarDays size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="control-input pl-9" />
+          </div>
         </div>
         <button
           type="button"
           onClick={() => void loadPayments(selectedClassId, month)}
-          className="btn-primary"
+          className="btn-primary gap-2"
           disabled={!selectedClassId || isLoadingPayments}
         >
+          <RefreshCw size={14} className={isLoadingPayments ? "animate-spin" : ""} />
           Refresh
         </button>
       </div>
@@ -338,15 +380,17 @@ export function TeacherClassPaymentsPanel() {
       {errorMessage ? <p className="notice-error mt-4">{errorMessage}</p> : null}
       {successMessage ? <p className="notice-success mt-4">{successMessage}</p> : null}
 
-      {isLoadingPayments ? <p className="mt-5 text-sm text-muted">Loading payments...</p> : null}
+      {isLoadingPayments ? (
+        <p className="mt-5 inline-flex items-center gap-2 text-sm text-muted"><LoaderCircle size={15} className="animate-spin" />Loading payments...</p>
+      ) : null}
       {!isLoadingPayments && selectedClassId && payments.length === 0 ? (
-        <p className="mt-5 text-sm text-muted">No payment submissions for selected month.</p>
+        <p className="notice-info mt-5 inline-flex items-center gap-2"><BadgeCheck size={15} />No payment submissions for selected month.</p>
       ) : null}
 
       {summary ? (
         <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
           <article className="surface-soft p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Due Window</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Clock3 size={13} />Due Window</p>
             <p className="mt-2 text-sm text-muted">{summary.dueWeekLabel} of selected month</p>
             <p className="mt-1 text-sm text-muted">Due date: <span className="font-semibold text-foreground">{new Date(summary.dueDate).toLocaleDateString()}</span></p>
             <p className={`mt-1 text-xs font-semibold ${summary.isPastDue ? "text-rose-700" : "text-emerald-700"}`}>
@@ -355,14 +399,14 @@ export function TeacherClassPaymentsPanel() {
           </article>
 
           <article className="surface-soft p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Monthly Amounts</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><CircleDollarSign size={13} />Monthly Amounts</p>
             <p className="mt-2 text-sm text-muted">Expected: <span className="font-semibold text-foreground">Rs {summary.expectedAmount.toLocaleString()}</span></p>
             <p className="mt-1 text-sm text-muted">Submitted: <span className="font-semibold text-brand-700">Rs {summary.submittedAmount.toLocaleString()}</span></p>
             <p className="mt-1 text-sm text-muted">Confirmed: <span className="font-semibold text-emerald-700">Rs {summary.confirmedAmount.toLocaleString()}</span></p>
           </article>
 
           <article className="surface-soft p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Payment Status Counts</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Wallet size={13} />Payment Status Counts</p>
             <div className="mt-2 flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 font-semibold text-brand-700">Submitted {summary.submittedCount}</span>
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Confirmed {summary.confirmedCount}</span>
@@ -373,7 +417,7 @@ export function TeacherClassPaymentsPanel() {
           </article>
 
           <article className="surface-soft p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Defaulters ({summary.defaulterCount})</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><ShieldAlert size={13} />Defaulters ({summary.defaulterCount})</p>
             {defaulters.length === 0 ? (
               <p className="mt-2 text-sm text-emerald-700">No defaulters for this month.</p>
             ) : (
@@ -397,7 +441,8 @@ export function TeacherClassPaymentsPanel() {
           <article key={payment.id} className="surface-card p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-foreground">
+                <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <UserCircle2 size={15} className="text-brand-600" />
                   {payment.student.name}
                   {payment.student.registrationNumber ? (
                     <span className="ml-1 text-xs font-normal text-muted">({payment.student.registrationNumber})</span>
@@ -411,7 +456,8 @@ export function TeacherClassPaymentsPanel() {
 
             {payment.note ? <p className="mt-2 text-sm text-muted">{payment.note}</p> : null}
             {payment.hasSlip ? (
-              <a href={`/api/payments/${payment.id}/slip`} className="btn-ghost mt-3 text-xs" target="_blank" rel="noreferrer">
+              <a href={`/api/payments/${payment.id}/slip`} className="btn-ghost mt-3 inline-flex items-center gap-2 text-xs" target="_blank" rel="noreferrer">
+                <FileText size={13} />
                 View payment slip
               </a>
             ) : (
@@ -423,10 +469,12 @@ export function TeacherClassPaymentsPanel() {
             ) : null}
 
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" onClick={() => void confirmPayment(payment.id)} className="btn-primary" disabled={isSaving || payment.status === "CONFIRMED"}>
+              <button type="button" onClick={() => void confirmPayment(payment.id)} className="btn-primary gap-2" disabled={isSaving || payment.status === "CONFIRMED"}>
+                <BadgeCheck size={14} />
                 Confirm
               </button>
-              <button type="button" onClick={() => void requestClarification(payment.id)} className="btn-secondary" disabled={isSaving}>
+              <button type="button" onClick={() => void requestClarification(payment.id)} className="btn-secondary gap-2" disabled={isSaving}>
+                <AlertCircle size={14} />
                 Request clarification
               </button>
             </div>
@@ -442,7 +490,7 @@ export function TeacherClassPaymentsPanel() {
             <div className="mt-4 space-y-2">
               {payment.messages.map((message) => (
                 <div key={message.id} className="surface-soft px-3 py-2">
-                  <p className="text-xs font-semibold text-foreground">{message.senderRole} • {message.senderName}</p>
+                  <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><MessageSquare size={13} />{message.senderRole} • {message.senderName}</p>
                   <p className="mt-1 text-sm text-muted whitespace-pre-line">{message.message}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[11px] text-muted">{new Date(message.createdAt).toLocaleString()}</p>
@@ -470,7 +518,10 @@ export function TeacherClassPaymentsPanel() {
                 onChange={(event) => setReplyFile((prev) => ({ ...prev, [payment.id]: event.target.files?.[0] ?? null }))}
                 className="control-input"
               />
-              <button type="submit" className="btn-secondary" disabled={isSaving}>Send message</button>
+              <button type="submit" className="btn-secondary gap-2" disabled={isSaving}><Send size={14} />Send message</button>
+              {replyFile[payment.id] ? (
+                <p className="inline-flex items-center gap-1.5 text-xs text-muted"><Upload size={12} />Attached: {replyFile[payment.id]?.name}</p>
+              ) : null}
             </form>
           </article>
         ))}

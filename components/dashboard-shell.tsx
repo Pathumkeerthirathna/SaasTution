@@ -18,7 +18,7 @@ import {
   LogOut,
   KeyRound,
   ChevronDown,
-  
+  ChevronRight,
 } from "lucide-react";
 
 type DashboardShellProps = {
@@ -78,28 +78,28 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     <div className="flex min-h-screen w-full bg-background-soft text-foreground">
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-white shadow-panel transition-transform duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none lg:border-r lg:border-brand-200 ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none lg:border-r lg:border-brand-200 ${
+          isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-20"
         }`}
       >
         {/* Logo / Brand */}
-        <div className="flex items-center justify-between px-5 py-5 border-b border-brand-100">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between border-b border-brand-100 px-4 py-5 lg:px-4">
+          <div className={`flex items-center gap-2.5 ${isSidebarOpen ? "" : "lg:justify-center"}`}>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white shadow-soft">
               <GraduationCap size={16} />
             </div>
-            <div>
+            <div className={isSidebarOpen ? "" : "hidden lg:hidden"}>
               <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">SaasTution</p>
               <p className="text-xs text-muted leading-tight">{role === "ADMIN" ? "Admin Console" : "Teacher Panel"}</p>
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setIsSidebarOpen(false)}
-            className="rounded-lg p-1 text-muted hover:bg-brand-50 lg:hidden"
-            aria-label="Close sidebar"
+            onClick={() => setIsSidebarOpen((prev) => !prev)}
+            className="rounded-lg p-1 text-muted hover:bg-brand-50"
+            aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
-            <X size={18} />
+            {isSidebarOpen ? <X size={18} /> : <ChevronRight size={18} />}
           </button>
         </div>
 
@@ -111,22 +111,23 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setIsSidebarOpen(false)}
-                className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"}`}
+                title={!isSidebarOpen ? item.label : undefined}
+                aria-label={item.label}
+                className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"} ${isSidebarOpen ? "" : "lg:justify-center lg:px-0"}`}
               >
                 <span className={`flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0 transition-colors ${
                   isActive ? "bg-white/20 text-white" : "bg-brand-50 text-brand-600"
                 }`}>
                   {item.icon}
                 </span>
-                <span className="tracking-[0.01em]">{item.label}</span>
+                <span className={`tracking-[0.01em] ${isSidebarOpen ? "" : "hidden lg:hidden"}`}>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* Profile footer */}
-        <div className="border-t border-brand-100 px-4 py-4">
+        <div className={`border-t border-brand-100 px-4 py-4 ${isSidebarOpen ? "" : "hidden lg:hidden"}`}>
           <div className="flex items-center gap-3 rounded-xl p-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-800 text-xs font-bold text-white flex-shrink-0">
               {getInitials(name)}
