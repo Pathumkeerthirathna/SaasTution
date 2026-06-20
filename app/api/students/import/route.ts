@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
-import { generateStudentRegistrationNumber } from "@/services/student-service";
 
 type ImportStudentRow = {
     registrationNumber?: string;

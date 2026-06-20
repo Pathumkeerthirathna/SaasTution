@@ -1,8 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { deactivateClassForTeacher } from "@/services/class-service";
-import { activateStudentForTeacher, deactivateStudentForTeacher } from "@/services/student-service";
+import { deactivateStudentForTeacher } from "@/services/student-service";
 
 export async function PUT(
   _request: Request,

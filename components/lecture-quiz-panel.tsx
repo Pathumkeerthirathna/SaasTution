@@ -3,16 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
-  ChevronDown,
-  CircleHelp,
   Eye,
   FileText,
-  FolderOpen,
   MoreVertical,
   Plus,
   Save,
-  Search,
-  SquareCheck,
   Trash2,
   Users,
   X,
@@ -160,7 +155,7 @@ export function LectureQuizPanel(props: {
   const [resultsQuizId, setResultsQuizId] = useState<string | null>(null);
   const [resultsData, setResultsData] = useState<QuizResultsData | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
-  const [isExpandedList, setIsExpandedList] = useState(false);
+  // const [isExpandedList, setIsExpandedList] = useState(false);
 
   const selectedQuiz = useMemo(
     () => quizzes.find((item) => item.id === selectedQuizId) ?? null,
@@ -774,7 +769,7 @@ export function LectureQuizPanel(props: {
               {isLoading ? <p className="mt-4 text-sm text-muted">Loading quizzes...</p> : null}
               {!isLoading && quizzes.length === 0 ? <p className="mt-4 text-sm text-muted">No quizzes added yet.</p> : null}
 
-              <div className={`mt-4 space-y-3 ${isExpandedList ? "max-h-none" : "max-h-[560px] overflow-y-auto pr-1"}`}>
+              <div className={`mt-4 space-y-3 "max-h-[560px] overflow-y-auto pr-1"}`}>
                 {quizzes.map((quiz) => (
                   <div
                     key={quiz.id}

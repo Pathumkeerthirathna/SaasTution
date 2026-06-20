@@ -77,17 +77,10 @@ export function JitsiClassroom() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasSessionEnded, setHasSessionEnded] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
-  const [isEndingSession, setIsEndingSession] = useState(false);
-  const [isLeavingSession, setIsLeavingSession] = useState(false);
-  const [isNotifyingRestart, setIsNotifyingRestart] = useState(false);
-  const [isTeacherControlsReady, setIsTeacherControlsReady] = useState(false);
+  // const [isEndingSession, setIsEndingSession] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [restartedSessionId, setRestartedSessionId] = useState<string | null>(null);
+  // const [restartedSessionId, setRestartedSessionId] = useState<string | null>(null);
   const [teacherFlowStage, setTeacherFlowStage] = useState<"active" | "ended-await-restart" | "restarted-await-notify">("active");
-  const [restartNotifyOptions, setRestartNotifyOptions] = useState({
-    email: true,
-    whatsapp: false,
-  });
 
   const dashboardHref = role === "teacher" ? "/dashboard/sessions" : "/student/dashboard";
 
@@ -110,78 +103,50 @@ export function JitsiClassroom() {
     });
   }
 
-  async function handleStudentLeave() {
-    if (!joinInfo?.student?.id) {
-      return;
-    }
 
-    const confirmed = window.confirm("Leave this live session and return to dashboard?");
 
-    if (!confirmed) {
-      return;
-    }
+  // async function handleTeacherEndSession() {
+  //   if (!joinInfo || role !== "teacher") {
+  //     return;
+  //   }
 
-    setIsLeavingSession(true);
+  //   const confirmed = window.confirm("End this live session now?");
 
-    try {
-      await fetch(`/api/sessions/${joinInfo.session.id}/leave`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: joinInfo.student.id,
-        }),
-      });
-    } catch {
-      // Ignore leave tracking failures and continue navigation to avoid trapping students.
-    } finally {
-      apiRef.current?.dispose();
-      apiRef.current = null;
-      router.push("/student/dashboard");
-    }
-  }
+  //   if (!confirmed) {
+  //     return;
+  //   }
 
-  async function handleTeacherEndSession() {
-    if (!joinInfo || role !== "teacher") {
-      return;
-    }
+  //   setIsEndingSession(true);
+  //   setErrorMessage(null);
 
-    const confirmed = window.confirm("End this live session now?");
+  //   try {
+  //     const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
+  //       method: "POST",
+  //     });
 
-    if (!confirmed) {
-      return;
-    }
+  //     const payload = (await response.json()) as {
+  //       success: boolean;
+  //       error?: {
+  //         message?: string;
+  //       };
+  //     };
 
-    setIsEndingSession(true);
-    setErrorMessage(null);
+  //     if (!response.ok || !payload.success) {
+  //       throw new Error(payload.error?.message ?? "Failed to end session.");
+  //     }
 
-    try {
-      const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
-        method: "POST",
-      });
-
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: {
-          message?: string;
-        };
-      };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error?.message ?? "Failed to end session.");
-      }
-
-      apiRef.current?.dispose();
-      apiRef.current = null;
-      setIsTeacherControlsReady(false);
-      setHasSessionEnded(true);
-      setIsJitsiReady(false);
-      setTeacherFlowStage("ended-await-restart");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
-    } finally {
-      setIsEndingSession(false);
-    }
-  }
+  //     apiRef.current?.dispose();
+  //     apiRef.current = null;
+  //     setIsTeacherControlsReady(false);
+  //     setHasSessionEnded(true);
+  //     setIsJitsiReady(false);
+  //     setTeacherFlowStage("ended-await-restart");
+  //   } catch (error) {
+  //     setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
+  //   } finally {
+  //     setIsEndingSession(false);
+  //   }
+  // }
 
   async function handleTeacherRestartSession() {
     if (!joinInfo || role !== "teacher") {
@@ -220,8 +185,8 @@ export function JitsiClassroom() {
 
       apiRef.current?.dispose();
       apiRef.current = null;
-      setIsTeacherControlsReady(false);
-      setRestartedSessionId(restartPayload.data.session.id);
+      // setIsTeacherControlsReady(false);
+      // setRestartedSessionId(restartPayload.data.session.id);
       setTeacherFlowStage("restarted-await-notify");
       setHasSessionEnded(false);
       router.push(`/session/join?sessionId=${restartPayload.data.session.id}&role=teacher`);
@@ -233,58 +198,58 @@ export function JitsiClassroom() {
     }
   }
 
-  async function handleNotifyAfterRestart() {
-    if (role !== "teacher") {
-      return;
-    }
+  // async function handleNotifyAfterRestart() {
+  //   if (role !== "teacher") {
+  //     return;
+  //   }
 
-    const targetSessionId = restartedSessionId ?? joinInfo?.session.id;
+  //   const targetSessionId = restartedSessionId ?? joinInfo?.session.id;
 
-    if (!targetSessionId) {
-      setErrorMessage("No restarted session is available for notifications.");
-      return;
-    }
+  //   if (!targetSessionId) {
+  //     setErrorMessage("No restarted session is available for notifications.");
+  //     return;
+  //   }
 
-    if (!restartNotifyOptions.email && !restartNotifyOptions.whatsapp) {
-      setErrorMessage("At least one notify channel must be selected.");
-      return;
-    }
+  //   if (!restartNotifyOptions.email && !restartNotifyOptions.whatsapp) {
+  //     setErrorMessage("At least one notify channel must be selected.");
+  //     return;
+  //   }
 
-    setIsNotifyingRestart(true);
-    setErrorMessage(null);
+  //   setIsNotifyingRestart(true);
+  //   setErrorMessage(null);
 
-    try {
-      const response = await fetch(`/api/sessions/${targetSessionId}/notify`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: restartNotifyOptions.email,
-          whatsapp: restartNotifyOptions.whatsapp,
-          notificationType: "restarted",
-        }),
-      });
+  //   try {
+  //     const response = await fetch(`/api/sessions/${targetSessionId}/notify`, {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //       body: JSON.stringify({
+  //         email: restartNotifyOptions.email,
+  //         whatsapp: restartNotifyOptions.whatsapp,
+  //         notificationType: "restarted",
+  //       }),
+  //     });
 
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: {
-          message?: string;
-        };
-      };
+  //     const payload = (await response.json()) as {
+  //       success: boolean;
+  //       error?: {
+  //         message?: string;
+  //       };
+  //     };
 
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error?.message ?? "Failed to notify students.");
-      }
+  //     if (!response.ok || !payload.success) {
+  //       throw new Error(payload.error?.message ?? "Failed to notify students.");
+  //     }
 
-      setTeacherFlowStage("active");
-      setRestartedSessionId(null);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to notify students right now.");
-    } finally {
-      setIsNotifyingRestart(false);
-    }
-  }
+  //     setTeacherFlowStage("active");
+  //     setRestartedSessionId(null);
+  //   } catch (error) {
+  //     setErrorMessage(error instanceof Error ? error.message : "Unable to notify students right now.");
+  //   } finally {
+  //     setIsNotifyingRestart(false);
+  //   }
+  // }
 
   const canJoin = useMemo(() => {
     if (inviteToken.length > 0) return true;
@@ -561,7 +526,7 @@ export function JitsiClassroom() {
     });
 
     apiRef.current = api;
-    setIsTeacherControlsReady(role === "teacher");
+    // setIsTeacherControlsReady(role === "teacher");
 
     const markJoined = async () => {
       if (role !== "student" || !joinInfo.student?.id) return;
@@ -652,7 +617,7 @@ export function JitsiClassroom() {
       api.removeListener("screenSharingStatusChanged", handleScreenSharingChanged);
       api.dispose();
       apiRef.current = null;
-      setIsTeacherControlsReady(false);
+      // setIsTeacherControlsReady(false);
       void markLeft();
     };
   }, [hasSessionEnded, joinInfo, isJitsiReady, role, teacherName]);
@@ -687,7 +652,7 @@ export function JitsiClassroom() {
               <button
                 type="button"
                 onClick={() => void handleTeacherRestartSession()}
-                disabled={teacherFlowStage !== "ended-await-restart" || isRestarting || isEndingSession}
+                disabled={teacherFlowStage !== "ended-await-restart" || isRestarting }
                 className="inline-flex items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRestarting ? "Restarting..." : "Restart session"}

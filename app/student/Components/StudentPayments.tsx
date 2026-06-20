@@ -6,29 +6,49 @@ import {
   Clock3,
   AlertCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface StudentPaymentsProps {
   studentId: string;
 }
 
+interface PaymentSummary {
+  confirmed: number;
+  pending: number;
+  clarification: number;
+  totalPaid: number;
+}
+
+interface ClassPayment {
+  classId: string;
+  className: string;
+  monthlyFee: number;
+  paidMonths: number;
+  pendingMonths: number;
+  totalAmount: number;
+}
+
+interface PaymentRecord {
+  id: string;
+  month: string;
+  amount: number;
+  status: "CONFIRMED" | "PENDING" | "CLARIFICATION";
+  submittedAt?: string;
+}
+
 export function StudentPayments({
   studentId,
 }: StudentPaymentsProps) {
-  const [summary, setSummary] = useState<any>(null);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [summary, setSummary] = useState<PaymentSummary | null>(null);
+  const [classes, setClasses] = useState<ClassPayment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedClassId, setSelectedClassId] =
     useState<string | null>(null);
 
-  const [payments, setPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
 
-  useEffect(() => {
-    loadPayments();
-  }, [studentId]);
-
-  async function loadPayments() {
+  const loadPayments = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -47,7 +67,11 @@ export function StudentPayments({
     } finally {
       setLoading(false);
     }
-  }
+  }, [studentId]);
+
+  useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
 
   async function togglePaymentDetails(
     classId: string

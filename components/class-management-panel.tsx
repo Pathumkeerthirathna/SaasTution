@@ -8,24 +8,13 @@ import { ExternalLink, Eye } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Atom,
   BookOpen,
-  Calculator,
   Calendar,
   CalendarDays,
   CheckSquare2,
   CircleHelp,
-  Clock3,
-  Eraser,
-  FileText,
-  Filter,
-  FlaskConical,
-  Globe2,
   GraduationCap,
-  Languages,
   Layers3,
-  // Link,
-  Music2,
   Pencil,
   RotateCcw,
   Search,
@@ -35,8 +24,7 @@ import {
   UserPlus,
   Users,
   Wallet,
-  X,
-  type LucideIcon,
+  X
 } from "lucide-react";
 
 type ClassItem = {
@@ -152,45 +140,45 @@ function getDayShortLabel(day: FormState["schedules"][number]["dayOfWeek"]) {
   }
 }
 
-function getClassIcon(name: string): { Icon: LucideIcon; iconWrapClass: string } {
-  const normalized = name.toLowerCase();
+// function getClassIcon(name: string): { Icon: LucideIcon; iconWrapClass: string }{
+//   const normalized = name.toLowerCase();
 
-  if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) {
-    return { Icon: Calculator, iconWrapClass: "bg-blue-100 text-blue-700" };
-  }
-  if (/(science|chem|biology|bio|lab)/.test(normalized)) {
-    return { Icon: FlaskConical, iconWrapClass: "bg-emerald-100 text-emerald-700" };
-  }
-  if (/(physics|astronomy|space)/.test(normalized)) {
-    return { Icon: Atom, iconWrapClass: "bg-cyan-100 text-cyan-700" };
-  }
-  if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) {
-    return { Icon: Languages, iconWrapClass: "bg-violet-100 text-violet-700" };
-  }
-  if (/(history|civics|geography|social)/.test(normalized)) {
-    return { Icon: Globe2, iconWrapClass: "bg-amber-100 text-amber-700" };
-  }
-  if (/(music|drama|dance)/.test(normalized)) {
-    return { Icon: Music2, iconWrapClass: "bg-pink-100 text-pink-700" };
-  }
-  if (/(art|drawing|paint|design)/.test(normalized)) {
-    return { Icon: Eraser, iconWrapClass: "bg-rose-100 text-rose-700" };
-  }
+//   if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) {
+//     return { Icon: Calculator, iconWrapClass: "bg-blue-100 text-blue-700" };
+//   }
+//   if (/(science|chem|biology|bio|lab)/.test(normalized)) {
+//     return { Icon: FlaskConical, iconWrapClass: "bg-emerald-100 text-emerald-700" };
+//   }
+//   if (/(physics|astronomy|space)/.test(normalized)) {
+//     return { Icon: Atom, iconWrapClass: "bg-cyan-100 text-cyan-700" };
+//   }
+//   if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) {
+//     return { Icon: Languages, iconWrapClass: "bg-violet-100 text-violet-700" };
+//   }
+//   if (/(history|civics|geography|social)/.test(normalized)) {
+//     return { Icon: Globe2, iconWrapClass: "bg-amber-100 text-amber-700" };
+//   }
+//   if (/(music|drama|dance)/.test(normalized)) {
+//     return { Icon: Music2, iconWrapClass: "bg-pink-100 text-pink-700" };
+//   }
+//   if (/(art|drawing|paint|design)/.test(normalized)) {
+//     return { Icon: Eraser, iconWrapClass: "bg-rose-100 text-rose-700" };
+//   }
 
-  return { Icon: BookOpen, iconWrapClass: "bg-brand-100 text-brand-700" };
-}
+//   return { Icon: BookOpen, iconWrapClass: "bg-brand-100 text-brand-700" };
+// }
 
-function getClassTypeLabel(name: string): string {
-  const normalized = name.toLowerCase();
-  if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) return "Mathematics";
-  if (/(science|chem|biology|bio|lab)/.test(normalized)) return "Science";
-  if (/(physics|astronomy|space)/.test(normalized)) return "Physics";
-  if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) return "Language";
-  if (/(history|civics|geography|social)/.test(normalized)) return "Social Studies";
-  if (/(music|drama|dance)/.test(normalized)) return "Performing Arts";
-  if (/(art|drawing|paint|design)/.test(normalized)) return "Art";
-  return "General";
-}
+// function getClassTypeLabel(name: string): string {
+//   const normalized = name.toLowerCase();
+//   if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) return "Mathematics";
+//   if (/(science|chem|biology|bio|lab)/.test(normalized)) return "Science";
+//   if (/(physics|astronomy|space)/.test(normalized)) return "Physics";
+//   if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) return "Language";
+//   if (/(history|civics|geography|social)/.test(normalized)) return "Social Studies";
+//   if (/(music|drama|dance)/.test(normalized)) return "Performing Arts";
+//   if (/(art|drawing|paint|design)/.test(normalized)) return "Art";
+//   return "General";
+// }
 
 function formatTime12h(time: string): string {
   const [hourStr, minute] = time.split(":");
@@ -232,7 +220,6 @@ export function ClassManagementPanel() {
     schedules: [getDefaultScheduleRow()],
   });
   const [totalItems, setTotalItems] = useState(0);
-  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule" | "students" | null>>({});
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [studentsPanelClassId, setStudentsPanelClassId] = useState<string | null>(null);
 
@@ -894,13 +881,9 @@ export function ClassManagementPanel() {
 
         <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
           {items.map((item) => {
-            const activeTab = activeTabs[item.id] ?? "details";
-            const activeStudents = item.students.filter((entry) => entry.isActive);
-            const classIcon = getClassIcon(item.name);
-            const ClassIcon = classIcon.Icon;
-
             return (
              <div
+              key={item.id}
               className="
                 group
                 overflow-hidden
@@ -982,7 +965,7 @@ export function ClassManagementPanel() {
                     </div>
 
                     <p className="mt-2 text-2xl font-bold text-blue-700">
-                      {activeStudents.length}
+                      {overview.activeStudents}
                     </p>
                   </div>
 

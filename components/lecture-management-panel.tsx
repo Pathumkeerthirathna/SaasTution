@@ -13,7 +13,6 @@ import {
   Search,
   SquarePen,
   Trash2,
-  X,
 } from "lucide-react";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";

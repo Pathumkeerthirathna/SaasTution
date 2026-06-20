@@ -1,13 +1,36 @@
 "use client";
 
-import { StudentClasses } from "@/app/student/Components/StudentClasses";
 import { StudentProfileHeader } from "@/app/student/Components/StudentProfileHeader";
 import { StudentProfileTabs } from "@/app/student/Components/StudentProfileTabs";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-interface StudentProfilePageProps {
-  studentId: string;
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: {
+    message: string;
+    code?: string;
+  };
+}
+
+interface Student {
+  id: string;
+  name: string;
+  contact: string;
+  email: string | null;
+  contact01: string | null;
+  contact02: string | null;
+  registrationNumber: string | null;
+  gradeId: number | null;
+  status: number;
+  teacherId: string;
+  createdAt: string;
+  actionTakenDate: string | null;
+  grade?: { name: string } | null;
+  classes?: Array<{ classId: string }>;
+  guardians?: Array<{ id: string }>;
 }
 
 export default function StudentProfilePage() {
@@ -15,78 +38,10 @@ export default function StudentProfilePage() {
   const params = useParams();
   const studentId = params.id as string;
   
-  const [student, setStudent] = useState<any>(null);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingClasses, setLoadingClasses] = useState(true);
 
-  // useEffect(() => {
-  //   loadStudent();
-  // }, [studentId]);
-
-  useEffect(() => {
-    if (studentId) {
-      loadPageData();
-    }
-  }, [studentId]);
-
-  async function loadPageData() {
-    try {
-      setLoading(true);
-
-      loadStudent();
-
-
-      // const response = await fetch(
-      //    `/api/student/Profile/${studentId}/classes`
-      // );
-
-      // const studentResult = await response.json();
-
-      //   console.log("API response status:", studentResult.data);
-
-      // if (studentResult.success) {
-      //   setStudent(studentResult.data);
-      // }
-
-      // const [studentResponse] = await Promise.all([
-      //   fetch(`/api/student/profile/${studentId}/classes`)
-      // ]);
-
-      // const studentResult = await studentResponse.json();
-
-      // console.log(studentResult);
-
-      // if (studentResult.success) {
-      //   setStudent(studentResult.data);
-      // }
-
-      // const [classesResponse] = await Promise.all([
-        
-      //   fetch(`/api/student/profile/${studentId}/classes`)
-      // ]);
-
-      // const studentResult = await response.json();
-      // const classesResult = await classesResponse.json();
-
-      // console.log("Student API response:", studentResult);
-      // console.log("Classes API response:", classesResult);
-
-      // if (studentResult.success) {
-      //   setStudent(studentResult.data);
-      // }
-
-      // if (classesResult.success) {
-      //   setClasses(classesResult.data);
-      // }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadStudent() {
+  const loadStudent = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -96,18 +51,39 @@ export default function StudentProfilePage() {
          `/api/student/Profile/${studentId}`
       );
 
-      const result = await response.json();
-       console.log("API response status:", result.data);
+      const result: ApiResponse<Student> = await response.json();
+      console.log("API response status:", result.data);
 
-      if (result.success) {
+      if (result.success && result.data) {
         setStudent(result.data);
       }
     } catch (error) {
-      console.error(error);
+      console.error("Error loading student:", error);
     } finally {
       setLoading(false);
     }
-  }
+  }, [studentId]);
+
+  const loadPageData = useCallback(async () => {
+    try {
+      setLoading(true);
+      await loadStudent();
+    } catch (error) {
+      console.error("Error loading page data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadStudent]);
+
+  // useEffect(() => {
+  //   loadStudent();
+  // }, [studentId]);
+
+  useEffect(() => {
+    if (studentId) {
+      loadPageData();
+    }
+  }, [studentId, loadPageData]);
 
   if (loading) {
     return <div>Loading student...</div>;

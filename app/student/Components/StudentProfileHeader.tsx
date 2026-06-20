@@ -11,8 +11,26 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+interface Student {
+  id: string;
+  name: string;
+  contact: string;
+  email: string | null;
+  contact01: string | null;
+  contact02: string | null;
+  registrationNumber: string | null;
+  gradeId: number | null;
+  status: number;
+  teacherId: string;
+  createdAt: string;
+  actionTakenDate: string | null;
+  grade?: { name: string } | null;
+  classes?: Array<{ classId: string }>;
+  guardians?: Array<{ id: string }>;
+}
+
 interface StudentProfileHeaderProps {
-  student: any;
+  student: Student;
 }
 
 export function StudentProfileHeader({
@@ -98,7 +116,7 @@ export function StudentProfileHeader({
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                 <GraduationCap className="h-3.5 w-3.5" />
-                {student.grade?.replace("_", " ")}
+                {student.grade?.name?.replace("_", " ")}
               </span>
 
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">

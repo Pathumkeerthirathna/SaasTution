@@ -12,7 +12,7 @@ export async function GET() {
     return NextResponse.json(grades);
   } catch (error) {
     return NextResponse.json(
-      { message: "Failed to retrieve grades" },
+      { message: "Failed to retrieve grades",error },
       { status: 500 }
     );
   }

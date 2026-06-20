@@ -6,7 +6,42 @@ import {
   XCircle,
   Trophy,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+interface QuizSummary {
+  attempted: number;
+  passed: number;
+  failed: number;
+  totalScore: number;
+  totalQuizzes: number;
+  missed:number;
+  averageScore: number;
+}
+
+interface QuizRecord {
+  id: string;
+  title: string;
+  score: number | null;
+  totalScore: number;
+  passed: boolean;
+  submittedAt: string | null;
+  quizId: string;
+  quizTitle: string;
+  lectureTitle: string;
+  totalQuestions: number;
+  percentage: number | null;
+  attempted: boolean;
+}
+
+interface ClassQuiz {
+  classId: string;
+  className: string;
+  quizzesCount: number;
+  totalQuizzes: number;
+  attempted: number;
+  missed: number;
+  averageScore: number;
+}
 
 interface StudentQuizzesProps {
   studentId: string;
@@ -15,20 +50,16 @@ interface StudentQuizzesProps {
 export function StudentQuizzes({
   studentId,
 }: StudentQuizzesProps) {
-  const [summary, setSummary] = useState<any>(null);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [summary, setSummary] = useState<QuizSummary | null>(null);
+  const [classes, setClasses] = useState<ClassQuiz[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedClassId, setSelectedClassId] =
     useState<string | null>(null);
 
-  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [quizzes, setQuizzes] = useState<QuizRecord[]>([]);
 
-  useEffect(() => {
-    loadQuizSummary();
-  }, [studentId]);
-
-  async function loadQuizSummary() {
+  const loadQuizSummary = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -45,7 +76,11 @@ export function StudentQuizzes({
     } finally {
       setLoading(false);
     }
-  }
+  }, [studentId]);
+
+  useEffect(() => {
+    loadQuizSummary();
+  }, [loadQuizSummary]);
 
   async function toggleQuizDetails(
     classId: string

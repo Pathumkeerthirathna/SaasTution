@@ -1,7 +1,27 @@
 "use client";
 
-import { BookOpen, CalendarCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+
+interface ClassAttendance {
+  classId: string;
+  className: string;
+  attendedLectures: number;
+  totalLectures: number;
+  attendancePercentage: number;
+}
+
+interface LectureAttendance {
+  lectureId: string;
+  title: string;
+  date: string;
+  attended: boolean;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+}
 
 interface StudentAttendanceProps {
   studentId: string;
@@ -10,17 +30,13 @@ interface StudentAttendanceProps {
 export function StudentAttendance({
   studentId,
 }: StudentAttendanceProps) {
-  const [classes, setClasses] = useState<any[]>([]);
+  const [classes, setClasses] = useState<ClassAttendance[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [lectures, setLectures] = useState<any[]>([]);
+  const [lectures, setLectures] = useState<LectureAttendance[]>([]);
 
-  useEffect(() => {
-    loadAttendance();
-  }, [studentId]);
-
-  async function loadAttendance() {
+  const loadAttendance = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -28,32 +44,21 @@ export function StudentAttendance({
         `/api/student/Profile/${studentId}/attendance`
       );
 
-      const result = await response.json();
+      const result: ApiResponse<ClassAttendance[]> = await response.json();
 
-      if (result.success) {
+      if (result.success && result.data) {
         setClasses(result.data);
       }
     } finally {
       setLoading(false);
     }
-  }
+  }, [studentId]);
 
-  async function loadAttendanceDetails(classId: string) {
-    setSelectedClassId(classId);
+  useEffect(() => {
+    loadAttendance();
+  }, [loadAttendance]);
 
-    const response = await fetch(
-      `/api/student/Profile/${studentId}/attendance/${classId}`
-    );
-
-    const result = await response.json();
-
-    if (result.success) {
-      setLectures(result.data);
-    }
-  }
-
-  async function toggleAttendanceDetails(classId: string) {
-
+  const toggleAttendanceDetails = useCallback(async (classId: string) => {
     if (selectedClassId === classId) {
       setSelectedClassId(null);
       setLectures([]);
@@ -66,12 +71,12 @@ export function StudentAttendance({
       `/api/student/Profile/${studentId}/attendance/${classId}`
     );
 
-    const result = await response.json();
+    const result: ApiResponse<LectureAttendance[]> = await response.json();
 
-    if (result.success) {
+    if (result.success && result.data) {
       setLectures(result.data);
     }
-  }
+  }, [selectedClassId, studentId]);
 
   if (loading) {
     return <div>Loading attendance...</div>;

@@ -10,7 +10,7 @@ import {
   FileText,
   History,
 } from "lucide-react";
-import { StudentOverview } from "./StudentOverview";
+// import { StudentOverview } from "./StudentOverview";
 import { StudentAttendance } from "./StudentAttendance";
 import { StudentClasses } from "./StudentClasses";
 import { StudentHistory } from "./StudentHistory";
@@ -90,9 +90,9 @@ export function StudentProfileTabs({
         </div>
 
       <div>
-        {activeTab === "overview" && (
+        {/* {activeTab === "overview" && (
           <StudentOverview student={studentId} />
-        )}
+        )} */}
 
         {activeTab === "classes" && (
           <StudentClasses studentId={studentId} />

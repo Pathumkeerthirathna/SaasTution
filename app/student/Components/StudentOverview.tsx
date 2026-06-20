@@ -7,8 +7,26 @@ import {
   Calendar,
 } from "lucide-react";
 
+interface Student {
+  id: string;
+  name: string;
+  contact: string;
+  email: string | null;
+  contact01: string | null;
+  contact02: string | null;
+  registrationNumber: string | null;
+  gradeId: number | null;
+  status: number;
+  teacherId: string;
+  createdAt: string;
+  actionTakenDate: string | null;
+  grade?: { name: string } | null;
+  classes?: Array<{ classId: string }>;
+  guardians?: Array<{ id: string }>;
+}
+
 interface StudentDetailsProps {
-  student: any;
+  student: Student;
 }
 
 export function StudentOverview({
@@ -29,7 +47,7 @@ export function StudentOverview({
     },
     {
       label: "Grade",
-      value: student.grade?.replace("_", " "),
+      value: student.grade?.name?.replace("_", " "),
       icon: GraduationCap,
       color: "text-emerald-600 bg-emerald-50",
     },

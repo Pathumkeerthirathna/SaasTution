@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo,  useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -13,7 +13,6 @@ import {
   ChevronRight,
   CircleHelp,
   Eye,
-  Filter,
   GraduationCap,
   Mail,
   MoreVertical,
@@ -25,7 +24,6 @@ import {
   Trash2,
   User,
   Users,
-  X,
 } from "lucide-react";
 
 // import * as XLSX from "xlsx";
@@ -67,6 +65,16 @@ type PaginatedStudentsResponse = {
     hasNextPage: boolean;
     hasPreviousPage: boolean;
   };
+};
+
+type ImportStudentRow = {
+  registrationNumber: string;
+  studentName: string;
+  grade: string;
+  gradeId: number | null;
+  primaryContact: string;
+  secondaryContact: string;
+  email: string;
 };
 
 const PAGE_SIZE = 6;
@@ -281,7 +289,7 @@ export function StudentGuardianManagementPanel() {
       }
     }
 
-  const actionMenuRef = useRef<HTMLDivElement>(null);
+  // const actionMenuRef = useRef<HTMLDivElement>(null);
 
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -422,14 +430,14 @@ export function StudentGuardianManagementPanel() {
         setIsLoadingList(false);
       }
     },
-    []
+    [sortBy, sortOrder]
   );
 
   const [grades, setGrades] = useState<Grade[]>([]);
 
   const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
 
-  const [importStudents, setImportStudents] = useState<any[]>([]);
+  const [importStudents, setImportStudents] = useState<ImportStudentRow[]>([]);
 
   const [previewPage, setPreviewPage] = useState(1);
 
@@ -454,6 +462,24 @@ export function StudentGuardianManagementPanel() {
     (previewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE,
     previewPage * IMPORT_PREVIEW_PAGE_SIZE
   );
+
+  const loadGrades = useCallback(async () => {
+    try {
+      const response = await fetch("/api/Grade");
+
+      if (!response.ok) {
+        throw new Error();
+      }
+
+      const data = await response.json();
+
+      console.log("Loaded grades:", data);
+
+      setGrades(data);
+    } catch {
+      console.error("Failed to load grades");
+    }
+  }, []);
 
   useEffect(() => {
 
@@ -487,7 +513,7 @@ export function StudentGuardianManagementPanel() {
     );
   };
 
-  }, [loadStudentList]);
+  }, [loadStudentList,loadGrades,loadRegistrationNumber]);
 
   // async function downloadTemplate() {
   
@@ -664,23 +690,7 @@ export function StudentGuardianManagementPanel() {
     );
  }
 
-  const loadGrades = useCallback(async () => {
-    try {
-      const response = await fetch("/api/Grade");
-
-      if (!response.ok) {
-        throw new Error();
-      }
-
-      const data = await response.json();
-
-      console.log("Loaded grades:", data);
-
-      setGrades(data);
-    } catch {
-      console.error("Failed to load grades");
-    }
-  }, []);
+  
 
   async function handleExcelUpload(
   event: React.ChangeEvent<HTMLInputElement>
@@ -706,7 +716,7 @@ export function StudentGuardianManagementPanel() {
       return;
     }
 
-    const rows: any[] = [];
+    const rows: ImportStudentRow[] = [];
 
     worksheet.eachRow((row, rowNumber) => {
       // Skip header row
@@ -2058,7 +2068,7 @@ async function handleConfirmImport() {
 
               <tbody>
                 {paginatedStudents.map(
-                  (student: any, index: number) => (
+                  (student: ImportStudentRow, index: number) => (
                     <tr
                       key={`${student.registrationNumber}-${index}`}
                       className="border-b border-slate-100"

@@ -3,7 +3,36 @@ import {
   Calendar,
   ChevronRight,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+interface ClassPaymentRecord {
+  id: string;
+  month: string;
+  status: "CONFIRMED" | "PENDING" | "CLARIFICATION";
+}
+
+interface ClassHistoryRecord {
+  id: string;
+  action: string;
+  actionDate: string;
+  reason?: string;
+}
+
+interface ClassInfo {
+  name: string;
+  description?: string;
+  schedule: string;
+  monthlyFee: number;
+  payments: ClassPaymentRecord[];
+  studentHistory: ClassHistoryRecord[];
+}
+
+interface StudentClass {
+  id: string;
+  isActive: boolean;
+  assignedAt: string;
+  class: ClassInfo;
+}
 
 interface StudentClassesProps {
   studentId: string;
@@ -15,60 +44,36 @@ export function StudentClasses({
 
   //Code
 
-  const [classes, setClasses] = useState([]);
+  const [classes, setClasses] = useState<StudentClass[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadClasses = useCallback(async () => {
     if (!studentId) return;
 
-    async function loadClasses() {
-      try {
-        setLoading(true);
+    try {
+      setLoading(true);
 
-         const [ classesResponse] = await Promise.all([
-          fetch(`/api/student/Profile/${studentId}/classes`)
-        ]);
+       const [ classesResponse] = await Promise.all([
+        fetch(`/api/student/Profile/${studentId}/classes`)
+      ]);
 
-        const result = await classesResponse.json();
+      const result = await classesResponse.json();
 
-        console.log(result.data);
+      console.log(result.data);
 
-        if (result.success) {
-          setClasses(result.data);
-        }
-      } catch (error) {
-        console.error("Failed to load classes:", error);
-      } finally {
-        setLoading(false);
+      if (result.success) {
+        setClasses(result.data);
       }
+    } catch (error) {
+      console.error("Failed to load classes:", error);
+    } finally {
+      setLoading(false);
     }
-
-    loadClasses();
   }, [studentId]);
 
-   async function loadStudentClasses() {
-      try {
-        //setLoadingClasses(true);
-  
-        const [ classesResponse] = await Promise.all([
-          fetch(`/api/student/Profile/${studentId}/classes`)
-        ]);
-  
-      
-        const classesResult = await classesResponse.json();
-  
-        console.log("Classes API response:", classesResult);
-  
-        if (classesResult.success) {
-          setClasses(classesResult.data);
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    
+  useEffect(() => {
+    loadClasses();
+  }, [loadClasses]);
 
   //End code
 
@@ -126,7 +131,7 @@ export function StudentClasses({
   return (
     <div className="space-y-5">
 
-      {classes.map((item: any) => (
+      {classes.map((item: StudentClass) => (
         <div
           key={item.id}
           className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
@@ -211,7 +216,7 @@ export function StudentClasses({
               </p>
             ) : (
               <div className="mt-3 space-y-2">
-                {item.class.payments.map((payment: any) => (
+                {item.class.payments.map((payment: ClassPaymentRecord) => (
                   <div
                     key={payment.id}
                     className="flex items-center justify-between rounded-lg border border-slate-100 p-3"
@@ -240,7 +245,7 @@ export function StudentClasses({
             </h4>
 
             <div className="space-y-4">
-              {item.class.studentHistory.map((history: any) => (
+              {item.class.studentHistory.map((history: ClassHistoryRecord) => (
                 <div
                   key={history.id}
                   className="flex gap-3"

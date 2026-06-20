@@ -745,18 +745,22 @@ export async function listSessionAttendanceForTeacher(params: {
   const joinedStudentsMap = new Map<
     string,
     {
-      student: {
-        id: string;
-        name: string;
-        grade: string | null;
-        contact: string;
-      };
-      logs: Array<{
-        id: string;
-        joinedAt: Date;
-        leftAt: Date | null;
-      }>;
-    }
+    student: {
+      id: string;
+      name: string;
+      grade: {
+        id: number;
+        GradeDesc: string;
+        Status: number;
+      } | null;
+      contact: string;
+    };
+    logs: Array<{
+      id: string;
+      joinedAt: Date;
+      leftAt: Date | null;
+    }>;
+  }
   >();
 
   for (const record of records) {

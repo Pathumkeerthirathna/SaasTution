@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ClassItem = {
   id: string;
@@ -77,94 +77,100 @@ export function MessageManagementPanel() {
     return payload.data ?? [];
   }
 
-  async function loadMessages(
-    classId: string,
-    nextPage = 1,
-    filters?: { dateFrom?: string; dateTo?: string }
-  ) {
-    if (!classId) {
-      setMessages([]);
-      setPage(1);
-      setTotalPages(1);
-      return;
-    }
-
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    try {
-      const activeDateFrom = filters?.dateFrom ?? historyDateFrom;
-      const activeDateTo = filters?.dateTo ?? historyDateTo;
-
-      const query = new URLSearchParams({
-        classId,
-        page: String(nextPage),
-        pageSize: String(PAGE_SIZE),
-      });
-
-      if (activeDateFrom) {
-        query.set("dateFrom", activeDateFrom);
+  const loadMessages = useCallback(
+    async (
+      classId: string,
+      nextPage = 1,
+      filters?: { dateFrom?: string; dateTo?: string }
+    ) => {
+      if (!classId) {
+        setMessages([]);
+        setPage(1);
+        setTotalPages(1);
+        return;
       }
 
-      if (activeDateTo) {
-        query.set("dateTo", activeDateTo);
-      }
+      setIsLoading(true);
+      setErrorMessage(null);
 
-      const response = await fetch(`/api/messages?${query.toString()}`);
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: MessageItem[];
-        error?: ApiError;
-        pagination?: {
-          page: number;
-          totalPages: number;
+      try {
+        const activeDateFrom = filters?.dateFrom ?? historyDateFrom;
+        const activeDateTo = filters?.dateTo ?? historyDateTo;
+
+        const query = new URLSearchParams({
+          classId,
+          page: String(nextPage),
+          pageSize: String(PAGE_SIZE),
+        });
+
+        if (activeDateFrom) {
+          query.set("dateFrom", activeDateFrom);
+        }
+
+        if (activeDateTo) {
+          query.set("dateTo", activeDateTo);
+        }
+
+        const response = await fetch(`/api/messages?${query.toString()}`);
+        const payload = (await response.json()) as {
+          success: boolean;
+          data?: MessageItem[];
+          error?: ApiError;
+          pagination?: {
+            page: number;
+            totalPages: number;
+          };
         };
-      };
 
-      if (!response.ok || !payload.success) {
-        setErrorMessage(payload.error?.message ?? "Failed to load message history.");
-        return;
+        if (!response.ok || !payload.success) {
+          setErrorMessage(payload.error?.message ?? "Failed to load message history.");
+          return;
+        }
+
+        setMessages(payload.data ?? []);
+        setPage(payload.pagination?.page ?? nextPage);
+        setTotalPages(payload.pagination?.totalPages ?? 1);
+      } catch {
+        setErrorMessage("Unable to load message history right now.");
+      } finally {
+        setIsLoading(false);
       }
+    },
+    [historyDateFrom, historyDateTo]
+  );
 
-      setMessages(payload.data ?? []);
-      setPage(payload.pagination?.page ?? nextPage);
-      setTotalPages(payload.pagination?.totalPages ?? 1);
-    } catch {
-      setErrorMessage("Unable to load message history right now.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const loadPaperSupportMessages = useCallback(
+    async (classId?: string, filters?: { dateFrom?: string; dateTo?: string }) => {
+      try {
+        const activeDateFrom = filters?.dateFrom ?? historyDateFrom;
+        const activeDateTo = filters?.dateTo ?? historyDateTo;
 
-  async function loadPaperSupportMessages(classId?: string, filters?: { dateFrom?: string; dateTo?: string }) {
-    try {
-      const activeDateFrom = filters?.dateFrom ?? historyDateFrom;
-      const activeDateTo = filters?.dateTo ?? historyDateTo;
+        const query = new URLSearchParams({
+          page: "1",
+          pageSize: "6",
+        });
 
-      const query = new URLSearchParams({
-        page: "1",
-        pageSize: "6",
-      });
+        if (classId) query.set("classId", classId);
+        if (activeDateFrom) query.set("from", activeDateFrom);
+        if (activeDateTo) query.set("to", activeDateTo);
 
-      if (classId) query.set("classId", classId);
-      if (activeDateFrom) query.set("from", activeDateFrom);
-      if (activeDateTo) query.set("to", activeDateTo);
+        const response = await fetch(`/api/paper-support-messages?${query.toString()}`);
+        const payload = (await response.json()) as {
+          success: boolean;
+          data?: { messages: PaperSupportMessageItem[] };
+        };
 
-      const response = await fetch(`/api/paper-support-messages?${query.toString()}`);
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: { messages: PaperSupportMessageItem[] };
-      };
+        if (!response.ok || !payload.success) {
+          return;
+        }
 
-      if (!response.ok || !payload.success) {
-        return;
+        setPaperSupportMessages(payload.data?.messages ?? []);
+      } catch {
+        // Keep announcement UX unaffected if support message query fails.
       }
-
-      setPaperSupportMessages(payload.data?.messages ?? []);
-    } catch {
-      // Keep announcement UX unaffected if support message query fails.
-    }
-  }
+    },
+    [historyDateFrom, historyDateTo]
+  );
 
   useEffect(() => {
     async function bootstrap() {
@@ -188,7 +194,7 @@ export function MessageManagementPanel() {
     }
 
     void bootstrap();
-  }, []);
+  }, [loadMessages, loadPaperSupportMessages]);
 
   type BulkPayload = {
     success: boolean;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Panel } from "@/components/student-portal/student-ui";
 import type { PaginationMeta } from "@/lib/api-types";
@@ -68,7 +68,7 @@ export default function StudentMaterialBundlesPage() {
     };
   }
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -100,11 +100,11 @@ export default function StudentMaterialBundlesPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [view, classId, from, to, page]);
 
   useEffect(() => {
     void loadData();
-  }, [view, classId, from, to, page]);
+  }, [loadData]);
 
   function setPaperSubmitting(itemId: string, value: boolean) {
     setIsSubmittingPaper((prev) => ({ ...prev, [itemId]: value }));

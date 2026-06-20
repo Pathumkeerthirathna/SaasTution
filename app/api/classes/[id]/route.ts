@@ -2,7 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { updateClassSchema } from "@/lib/class-validation";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { deactivateClassForTeacher, deleteClassForTeacher, updateClassForTeacher } from "@/services/class-service";
+import { deactivateClassForTeacher, updateClassForTeacher } from "@/services/class-service";
 
 export const dynamic = "force-dynamic";
 

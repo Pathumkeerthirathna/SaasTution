@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
-import { listAllStudentsByTeacher, listStudentsByTeacher } from "@/services/student-service";
+import { listAllStudentsByTeacher } from "@/services/student-service";
 
 export async function GET(request: Request) {
   try {
