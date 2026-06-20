@@ -358,13 +358,12 @@ export function LectureManagementPanel() {
       <article className="surface-panel border border-brand-100 p-6 sm:p-7">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
-              <FileText size={26} />
+            <span className="page-header-icon">
+              <FileText size={28} />
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Lecture Management</p>
-              <h2 className="mt-2 text-4xl font-semibold tracking-tight text-slate-900">Lectures</h2>
-              <p className="mt-2 text-sm text-muted">Create lectures, manage files, assignments, and quizzes.</p>
+              <h2 className="page-title">Lectures</h2>
+              <p className="page-subtitle">Create lectures, manage files, assignments, and quizzes.</p>
               <p className="mt-5 text-sm font-medium text-slate-600">Page {page} of {totalPages}</p>
             </div>
           </div>

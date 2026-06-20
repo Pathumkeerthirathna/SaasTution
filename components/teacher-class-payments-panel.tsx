@@ -322,14 +322,14 @@ export function TeacherClassPaymentsPanel() {
   }
 
   return (
-    <section className="panel-shell mt-6">
+    <section className="panel-shell mt-6 rounded-xl p-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Class Payments</h2>
           <p className="text-sm text-muted">Review monthly student payments, confirm them, or request clarification.</p>
         </div>
         {selectedClass ? (
-          <div className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700">
             <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${selectedClassIcon.tone}`}>
               <selectedClassIcon.Icon size={14} />
             </span>
@@ -346,7 +346,10 @@ export function TeacherClassPaymentsPanel() {
             <select
               value={selectedClassId}
               onChange={(event) => setSelectedClassId(event.target.value)}
-              className="control-select pl-9"
+              className="control-select pl-9 h-10
+rounded-md
+border-slate-200
+text-sm"
               disabled={isLoadingClasses}
             >
               <option value="">Select class</option>
@@ -369,7 +372,10 @@ export function TeacherClassPaymentsPanel() {
         <button
           type="button"
           onClick={() => void loadPayments(selectedClassId, month)}
-          className="btn-primary gap-2"
+          className="btn-primary h-9
+rounded-md
+px-3
+text-sm"
           disabled={!selectedClassId || isLoadingPayments}
         >
           <RefreshCw size={14} className={isLoadingPayments ? "animate-spin" : ""} />
@@ -389,7 +395,15 @@ export function TeacherClassPaymentsPanel() {
 
       {summary ? (
         <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <article className="surface-soft p-4">
+          <article
+  className="
+    rounded-lg
+    border
+    border-slate-200
+    bg-white
+    p-4
+  "
+>
             <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Clock3 size={13} />Due Window</p>
             <p className="mt-2 text-sm text-muted">{summary.dueWeekLabel} of selected month</p>
             <p className="mt-1 text-sm text-muted">Due date: <span className="font-semibold text-foreground">{new Date(summary.dueDate).toLocaleDateString()}</span></p>
@@ -408,10 +422,10 @@ export function TeacherClassPaymentsPanel() {
           <article className="surface-soft p-4">
             <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Wallet size={13} />Payment Status Counts</p>
             <div className="mt-2 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 font-semibold text-brand-700">Submitted {summary.submittedCount}</span>
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Confirmed {summary.confirmedCount}</span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Pending {summary.pendingCount}</span>
-              <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Clarification {summary.clarificationCount}</span>
+              <span className="rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 font-semibold text-brand-700">Submitted {summary.submittedCount}</span>
+              <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Confirmed {summary.confirmedCount}</span>
+              <span className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Pending {summary.pendingCount}</span>
+              <span className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Clarification {summary.clarificationCount}</span>
             </div>
             <p className="mt-2 text-xs text-muted">Active students: {summary.enrolledCount}</p>
           </article>
@@ -423,7 +437,14 @@ export function TeacherClassPaymentsPanel() {
             ) : (
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
                 {defaulters.map((student) => (
-                  <li key={student.id} className="rounded-lg border border-brand-200 bg-white px-2.5 py-1.5">
+                  <li key={student.id} className="
+                          rounded-md
+                          border
+                          border-slate-200
+                          bg-white
+                          px-3
+                          py-2
+                          ">
                     <span className="font-semibold text-foreground">{student.name}</span>
                     {student.registrationNumber ? (
                       <span className="ml-1 text-xs text-muted">({student.registrationNumber})</span>
@@ -438,7 +459,17 @@ export function TeacherClassPaymentsPanel() {
 
       <div className="mt-5 space-y-4">
         {payments.map((payment) => (
-          <article key={payment.id} className="surface-card p-4">
+          <article
+  key={payment.id}
+  className="
+    rounded-lg
+    border
+    border-slate-200
+    bg-white
+    p-4
+    shadow-sm
+  "
+>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -451,7 +482,7 @@ export function TeacherClassPaymentsPanel() {
                 <p className="mt-0.5 text-xs text-muted">Submitted: {new Date(payment.submittedAt).toLocaleString()}</p>
                 <p className="mt-1 text-sm font-medium text-brand-700">Amount: Rs {payment.amount.toLocaleString()}</p>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(payment.status)}`}>{payment.status.replaceAll("_", " ")}</span>
+              <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${statusClass(payment.status)}`}>{payment.status.replaceAll("_", " ")}</span>
             </div>
 
             {payment.note ? <p className="mt-2 text-sm text-muted">{payment.note}</p> : null}
@@ -489,7 +520,17 @@ export function TeacherClassPaymentsPanel() {
 
             <div className="mt-4 space-y-2">
               {payment.messages.map((message) => (
-                <div key={message.id} className="surface-soft px-3 py-2">
+                <div
+  key={message.id}
+  className="
+    rounded-md
+    border
+    border-slate-200
+    bg-slate-50
+    px-3
+    py-2
+  "
+>
                   <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><MessageSquare size={13} />{message.senderRole} • {message.senderName}</p>
                   <p className="mt-1 text-sm text-muted whitespace-pre-line">{message.message}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">

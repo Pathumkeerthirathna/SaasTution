@@ -223,7 +223,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</main>
+        <main className="flex-1 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-5">{children}</main>
       </div>
     </div>
   );

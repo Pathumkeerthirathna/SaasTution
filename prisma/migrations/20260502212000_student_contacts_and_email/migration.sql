@@ -1,8 +1,0 @@
-ALTER TABLE "Student"
-ADD COLUMN IF NOT EXISTS "contact01" TEXT,
-ADD COLUMN IF NOT EXISTS "contact02" TEXT,
-ADD COLUMN IF NOT EXISTS "email" TEXT;
-
-UPDATE "Student"
-SET "contact01" = "contact"
-WHERE "contact01" IS NULL;

@@ -14,6 +14,7 @@ model Teacher {
   password               String
   createdAt              DateTime              @default(now())
   classes                Class[]
+  students               Student[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
   paperSupportMessages   PaperSupportMessage[]
   paymentMessages        PaymentMessage[]
@@ -25,10 +26,17 @@ model Teacher {
 model Student {
   id                            String                         @id @default(uuid())
   name                          String
+  teacherId                     String
   createdAt                     DateTime                       @default(now())
   contact                       String
-  registrationNumber            String?                        @unique
-  grade                         GradeLevel?
+  registrationNumber            String?  
+
+  status                        Int      @default(0) // 0=Active, 1=Inactive, 2=Deleted
+  actionTakenDate               DateTime?
+
+  gradeId                       Int? @default(6)
+  grade                         Grade? @relation(fields: [gradeId], references: [id])
+
   contact01                     String?
   contact02                     String?
   email                         String?
@@ -37,6 +45,7 @@ model Student {
   attendance                    Attendance[]
   classPayments                 ClassPayment[]
   classes                       ClassStudent[]
+  classHistory                  ClassStudentHistory[]
   guardians                     Guardian[]
   materialBundleItemSubmissions MaterialBundleItemSubmission[]
   materialBundleRecipients      MaterialBundleRecipient[]
@@ -44,6 +53,7 @@ model Student {
   paperSupportMessages          PaperSupportMessage[]
   paymentMessages               PaymentMessage[]
   quizSubmissions               QuizSubmission[]
+  teacher                       Teacher @relation(fields: [teacherId], references: [id])
 }
 
 model PasswordResetToken {
@@ -80,6 +90,7 @@ model Class {
   description          String?
   teacherId            String
   createdAt            DateTime              @default(now())
+  status               Int                   @default(0)
   schedule             String                @default("TBD")
   monthlyFee           Int                   @default(0)
   paymentDueWeek       Int                   @default(1)
@@ -88,6 +99,7 @@ model Class {
   schedules            ClassSchedule[]
   sessions             ClassSession[]
   students             ClassStudent[]
+  studentHistory  ClassStudentHistory[]
   lectures             Lecture[]
   materialBundles      MaterialBundle[]
   messages             Message[]
@@ -243,6 +255,21 @@ model ClassStudent {
 
   @@index([studentId])
   @@index([classId, isActive])
+}
+
+model ClassStudentHistory {
+  id          String   @id @default(uuid())
+  classId     String
+  studentId   String
+  action      StudentClassAction
+  actionDate  DateTime @default(now())
+  reason      String?
+
+  class       Class    @relation(fields:[classId], references:[id])
+  student     Student  @relation(fields:[studentId], references:[id])
+
+  @@index([classId])
+  @@index([studentId])
 }
 
 model Lecture {
@@ -466,6 +493,16 @@ model PaymentMessage {
   @@index([paymentId, createdAt])
 }
 
+model Grade {
+
+  id        Int    @id @default(autoincrement())
+  GradeDesc String
+  Status    Int    @default(0)
+
+  students  Student[]
+
+}
+
 enum Role {
   TEACHER
   STUDENT
@@ -494,21 +531,6 @@ enum Weekday {
   SATURDAY
 }
 
-enum GradeLevel {
-  GRADE_01
-  GRADE_02
-  GRADE_03
-  GRADE_04
-  GRADE_05
-  GRADE_06
-  GRADE_07
-  GRADE_08
-  GRADE_09
-  GRADE_10
-  GRADE_11
-  GRADE_12
-  GRADE_13
-}
 
 enum QuizAnswerType {
   SINGLE
@@ -535,3 +557,14 @@ enum PaymentMessageSender {
   STUDENT
   TEACHER
 }
+
+enum StudentClassAction {
+  ASSIGNED
+  UNASSIGNED
+}
+
+export const STUDENT_STATUS = {
+  ACTIVE: 0,
+  INACTIVE: 1,
+  DELETED: 2,
+} as const;

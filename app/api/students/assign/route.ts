@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const session = await requireTeacherSession();
+    
     const body = (await request.json()) as {
       classId?: string;
       studentId?: string;

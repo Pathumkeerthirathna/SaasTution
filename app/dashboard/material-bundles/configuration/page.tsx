@@ -82,8 +82,8 @@ export default function PaperConfigurationPage() {
     <div className="flex w-full flex-1 flex-col">
       <section className="rounded-3xl border border-black/10 bg-card p-5 shadow-sm dark:border-white/10 sm:p-6 lg:p-7">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Paper Workflow Configuration</p>
-        <h1 className="mt-3 text-2xl font-semibold">Countdown and Submission Timing</h1>
-        <p className="mt-2 text-sm text-muted">
+        <h1 className="page-title mt-3">Countdown and Submission Timing</h1>
+        <p className="page-subtitle mt-2">
           These settings control when students see countdown timers before paper start and how many minutes they can upload a PDF after paper end.
         </p>
 

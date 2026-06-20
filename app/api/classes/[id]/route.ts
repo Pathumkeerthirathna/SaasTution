@@ -2,7 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { updateClassSchema } from "@/lib/class-validation";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { deleteClassForTeacher, updateClassForTeacher } from "@/services/class-service";
+import { deactivateClassForTeacher, deleteClassForTeacher, updateClassForTeacher } from "@/services/class-service";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +55,35 @@ export async function PUT(
   }
 }
 
+// export async function DELETE(
+//   _request: Request,
+//   context: {
+//     params: { id: string };
+//   }
+// ) {
+//   try {
+//     const session = await requireTeacherSession();
+//     const classId = context.params.id;
+
+//     if (!classId?.trim()) {
+//       throw new AppError("Class id is required.", 400, "VALIDATION_ERROR");
+//     }
+
+//     await deleteClassForTeacher(classId, session.teacherId);
+
+//     return apiSuccess(
+//       {
+//         id: classId,
+//       },
+//       {
+//         message: "Class deleted successfully.",
+//       }
+//     );
+//   } catch (error) {
+//     return handleRouteError(error);
+//   }
+// }
+
 export async function DELETE(
   _request: Request,
   context: {
@@ -66,17 +95,24 @@ export async function DELETE(
     const classId = context.params.id;
 
     if (!classId?.trim()) {
-      throw new AppError("Class id is required.", 400, "VALIDATION_ERROR");
+      throw new AppError(
+        "Class id is required.",
+        400,
+        "VALIDATION_ERROR"
+      );
     }
 
-    await deleteClassForTeacher(classId, session.teacherId);
+    await deactivateClassForTeacher(
+      classId,
+      session.teacherId
+    );
 
     return apiSuccess(
       {
         id: classId,
       },
       {
-        message: "Class deleted successfully.",
+        message: "Class deactivated successfully.",
       }
     );
   } catch (error) {

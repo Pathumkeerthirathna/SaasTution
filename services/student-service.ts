@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, StudentClassAction } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
@@ -48,7 +48,7 @@ function buildShortCode(value: string, maxLength: number) {
   return normalizedWords.join("").slice(0, maxLength);
 }
 
-async function generateStudentRegistrationNumber(teacherName: string) {
+export async function generateStudentRegistrationNumber(teacherName: string) {
   const year = new Date().getFullYear();
   const teacherCode = buildShortCode(teacherName, 3);
   const prefix = `${teacherCode}-${year}`;
@@ -66,6 +66,7 @@ async function generateStudentRegistrationNumber(teacherName: string) {
 }
 
 export async function createStudent(teacherId: string, input: CreateStudentInput) {
+
   const teacher = await prisma.teacher.findUnique({
     where: {
       id: teacherId,
@@ -80,6 +81,44 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     throw new AppError("Teacher not found.", 404, "TEACHER_NOT_FOUND");
   }
 
+  const existingRegistrationNumber =
+    await prisma.student.findFirst({
+      where: {
+        registrationNumber: input.registrationNumber,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (existingRegistrationNumber) {
+    throw new AppError(
+      "Registration number already exists.",
+      409,
+      "DUPLICATE_REGISTRATION_NUMBER"
+    );
+  }
+
+  const existingStudent =
+    await prisma.student.findFirst({
+      where: {
+        teacherId: teacher.id,
+        name: input.name,
+        gradeId: input.gradeId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (existingStudent) {
+    throw new AppError(
+      "Student name already exists.",
+      409,
+      "DUPLICATE_STUDENT_NAME"
+    );
+  }
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
     const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
@@ -87,14 +126,15 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     try {
       return await prisma.student.create({
         data: {
+          registrationNumber:input.registrationNumber??registrationNumber,
           name: input.name,
-          grade: input.grade,
+          gradeId: input.gradeId,
           password: passwordHash,
-          contact: input.contact01,
+          contact: input.contact01??"",
           contact01: input.contact01,
           contact02: input.contact02,
           email: input.email,
-          registrationNumber,
+          teacherId:teacher.id,
         },
         select: {
           id: true,
@@ -158,19 +198,48 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
       throw new AppError("Student is already assigned to this class.", 409, "DUPLICATE_ASSIGNMENT");
     }
 
-    const record = await prisma.classStudent.create({
-      data: {
-        classId,
-        studentId,
-        isActive: true,
-        assignedAt: new Date(),
-      },
-      select: {
-        id: true,
-        classId: true,
-        studentId: true,
-        assignedAt: true,
-      },
+    // const record = await prisma.classStudent.create({
+    //   data: {
+    //     classId,
+    //     studentId,
+    //     isActive: true,
+    //     assignedAt: new Date(),
+    //   },
+    //   select: {
+    //     id: true,
+    //     classId: true,
+    //     studentId: true,
+    //     assignedAt: true,
+    //   },
+    // });
+
+
+    const record = await prisma.$transaction(async (tx) => {
+      const assignment = await tx.classStudent.create({
+        data: {
+          classId,
+          studentId,
+          isActive: true,
+          assignedAt: new Date(),
+        },
+        select: {
+          id: true,
+          classId: true,
+          studentId: true,
+          assignedAt: true,
+        },
+      });
+
+      await tx.classStudentHistory.create({
+        data: {
+          classId,
+          studentId,
+          action: StudentClassAction.ASSIGNED,
+          actionDate: new Date(),
+        },
+      });
+
+      return assignment;
     });
 
     return {
@@ -187,13 +256,20 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
 }
 
 export async function listStudentsByTeacher(params: {
+
   teacherId: string;
   skip: number;
   take: number;
   name?: string;
-  grade?: string;
+  gradeId?: number;
+  sortBy?: string;
+  sortOrder?: string;
+
 }) {
   const where = {
+    status: {
+      not: 2,
+    },
     ...(params.name
       ? {
           name: {
@@ -202,24 +278,13 @@ export async function listStudentsByTeacher(params: {
           },
         }
       : {}),
-    ...(params.grade
+
+    ...(params.gradeId
       ? {
-          grade: params.grade as
-            | "GRADE_01"
-            | "GRADE_02"
-            | "GRADE_03"
-            | "GRADE_04"
-            | "GRADE_05"
-            | "GRADE_06"
-            | "GRADE_07"
-            | "GRADE_08"
-            | "GRADE_09"
-            | "GRADE_10"
-            | "GRADE_11"
-            | "GRADE_12"
-            | "GRADE_13",
+          gradeId: params.gradeId,
         }
       : {}),
+
     OR: [
       {
         classes: {
@@ -240,23 +305,41 @@ export async function listStudentsByTeacher(params: {
     ],
   };
 
+  const sortOrder: Prisma.SortOrder =
+  params.sortOrder === "desc"
+    ? "desc"
+    : "asc";
+
+  const orderBy: Prisma.StudentOrderByWithRelationInput =
+    params.sortBy === "name"
+      ? { name: sortOrder }
+      : { registrationNumber: sortOrder };
+
   const [students, totalItems] = await Promise.all([
+    
     prisma.student.findMany({
       where,
       skip: params.skip,
       take: params.take,
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy,
       select: {
         id: true,
         name: true,
-        grade: true,
+        status: true,
+        gradeId: true,
+        grade: {
+          select: {
+            id: true,
+            GradeDesc: true,
+          },
+        },
+
         contact01: true,
         contact02: true,
         email: true,
         registrationNumber: true,
         createdAt: true,
+
         classes: {
           where: {
             isActive: true,
@@ -275,6 +358,7 @@ export async function listStudentsByTeacher(params: {
         },
       },
     }),
+
     prisma.student.count({
       where,
     }),
@@ -284,6 +368,129 @@ export async function listStudentsByTeacher(params: {
     students: students.map((student) => ({
       id: student.id,
       name: student.name,
+      status: student.status,
+      gradeId: student.gradeId,
+      grade: student.grade,
+
+      contact01: student.contact01,
+      contact02: student.contact02,
+      email: student.email,
+
+      createdAt: student.createdAt,
+      registrationNumber: student.registrationNumber ?? null,
+
+      classes: student.classes.map((entry) => ({
+        id: entry.id,
+        name: entry.class.name,
+      })),
+    })),
+
+    totalItems,
+  };
+}
+
+export async function listAllStudentsByTeacher(params: {
+
+  teacherId: string;
+  name?: string;
+  gradeId?: number;
+  sortBy?: string;
+  sortOrder?: string;
+  
+}) {
+  const where = {
+    status: {
+      not: 2,
+    },
+    ...(params.name
+      ? {
+          name: {
+            contains: params.name,
+            mode: "insensitive" as const,
+          },
+        }
+      : {}),
+
+    ...(params.gradeId
+      ? {
+          gradeId: params.gradeId,
+        }
+      : {}),
+
+    OR: [
+      {
+        classes: {
+          none: {
+            isActive: true,
+          },
+        },
+      },
+      {
+        classes: {
+          some: {
+            class: {
+              teacherId: params.teacherId,
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  const sortOrder: Prisma.SortOrder =
+  params.sortOrder === "desc"
+    ? "desc"
+    : "asc";
+
+  const orderBy: Prisma.StudentOrderByWithRelationInput =
+    params.sortBy === "name"
+      ? { name: sortOrder }
+      : { registrationNumber: sortOrder };
+
+  const students = await prisma.student.findMany({
+    where,
+    orderBy,
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      gradeId: true,
+      grade: {
+        select: {
+          id: true,
+          GradeDesc: true,
+        },
+      },
+      contact01: true,
+      contact02: true,
+      email: true,
+      registrationNumber: true,
+      createdAt: true,
+      classes: {
+        where: {
+          isActive: true,
+          class: {
+            teacherId: params.teacherId,
+          },
+        },
+        select: {
+          id: true,
+          class: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return {
+    students: students.map((student) => ({
+      id: student.id,
+      name: student.name,
+      status: student.status,
+      gradeId: student.gradeId,
       grade: student.grade,
       contact01: student.contact01,
       contact02: student.contact02,
@@ -295,12 +502,60 @@ export async function listStudentsByTeacher(params: {
         name: entry.class.name,
       })),
     })),
-    totalItems,
   };
+
+}
+
+export async function activateStudentForTeacher(
+  teacherId: string,
+  studentId: string
+) {
+  return prisma.student.updateMany({
+    where: {
+      id: studentId,
+      teacherId,
+    },
+    data: {
+      status: 0,
+      actionTakenDate: new Date(),
+    },
+  });
+}
+
+export async function deactivateStudentForTeacher(
+  teacherId: string,
+  studentId: string
+) {
+  return prisma.student.updateMany({
+    where: {
+      id: studentId,
+      teacherId,
+    },
+    data: {
+      status: 1,
+      actionTakenDate: new Date(),
+    },
+  });
+}
+
+export async function deleteStudentForTeacher(
+  teacherId: string,
+  studentId: string
+) {
+  return prisma.student.updateMany({
+    where: {
+      id: studentId,
+      teacherId,
+    },
+    data: {
+      status: 2,
+      actionTakenDate: new Date(),
+    },
+  });
 }
 
 export async function getStudentProfileForTeacher(teacherId: string, studentId: string) {
-  const student = await prisma.student.findUnique({
+  const student = await prisma.student.findFirst({
     where: {
       id: studentId,
     },
@@ -351,19 +606,19 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
     throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
   }
 
-  const hasTeacherClass = student.classes.length > 0;
-  const hasTeacherHistory = await prisma.classStudent.count({
-    where: {
-      studentId,
-      class: {
-        teacherId,
-      },
-    },
-  });
+  // const hasTeacherClass = student.classes.length > 0;
+  // const hasTeacherHistory = await prisma.classStudent.count({
+  //   where: {
+  //     studentId,
+  //     class: {
+  //       teacherId,
+  //     },
+  //   },
+  // });
 
-  if (!hasTeacherClass && hasTeacherHistory === 0) {
-    throw new AppError("Student not available for this teacher.", 403, "FORBIDDEN");
-  }
+  // if (!hasTeacherClass && hasTeacherHistory === 0) {
+  //   throw new AppError("Student not available for this teacher.", 403, "FORBIDDEN");
+  // }
 
   const assignmentHistory = await prisma.classStudent.findMany({
     where: {
@@ -422,10 +677,58 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
 }
 
 export async function updateStudentForTeacher(teacherId: string, studentId: string, input: UpdateStudentInput) {
+
+  console.log("Updating student with input:", input);
+  console.log("Teacher ID:", teacherId, "Student ID:", studentId);
+
   const profile = await getStudentProfileForTeacher(teacherId, studentId);
 
   if (!profile) {
     throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
+  }
+
+  const duplicateRegistrationNumber =
+    await prisma.student.findFirst({
+      where: {
+        registrationNumber: input.registrationNumber,
+        NOT: {
+          id: studentId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (duplicateRegistrationNumber) {
+    throw new AppError(
+      "Registration number already exists.",
+      409,
+      "DUPLICATE_REGISTRATION_NUMBER"
+    );
+  }
+
+  const duplicateStudentName =
+    await prisma.student.findFirst({
+      where: {
+        name: input.name,
+        gradeId: input.gradeId,
+        teacherId,
+        NOT: {
+          id: studentId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (duplicateStudentName) {
+    throw new AppError(
+      "Student name already exists.",
+      409,
+      "DUPLICATE_STUDENT_NAME"
+    );
   }
 
   return prisma.student.update({
@@ -433,8 +736,9 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       id: studentId,
     },
     data: {
+      registrationNumber: input.registrationNumber,
       name: input.name,
-      grade: input.grade,
+      gradeId: input.gradeId,
       contact: input.contact01,
       contact01: input.contact01,
       contact02: input.contact02,
@@ -476,24 +780,58 @@ export async function removeStudentFromClassForTeacher(params: {
     throw new AppError("Active class assignment not found.", 404, "ASSIGNMENT_NOT_FOUND");
   }
 
-  return prisma.classStudent.update({
-    where: {
-      id: activeAssignment.id,
-    },
-    data: {
-      isActive: false,
-      removedAt: new Date(),
-      removeReason: params.reason,
-    },
-    select: {
-      id: true,
-      classId: true,
-      studentId: true,
-      assignedAt: true,
-      removedAt: true,
-      removeReason: true,
-    },
+  // return prisma.classStudent.update({
+  //   where: {
+  //     id: activeAssignment.id,
+  //   },
+  //   data: {
+  //     isActive: false,
+  //     removedAt: new Date(),
+  //     removeReason: params.reason,
+  //   },
+  //   select: {
+  //     id: true,
+  //     classId: true,
+  //     studentId: true,
+  //     assignedAt: true,
+  //     removedAt: true,
+  //     removeReason: true,
+  //   },
+  // });
+
+  return prisma.$transaction(async (tx) => {
+    const assignment = await tx.classStudent.update({
+      where: {
+        id: activeAssignment.id,
+      },
+      data: {
+        isActive: false,
+        removedAt: new Date(),
+        removeReason: params.reason,
+      },
+      select: {
+        id: true,
+        classId: true,
+        studentId: true,
+        assignedAt: true,
+        removedAt: true,
+        removeReason: true,
+      },
+    });
+
+    await tx.classStudentHistory.create({
+      data: {
+        classId: params.classId,
+        studentId: params.studentId,
+        action: StudentClassAction.UNASSIGNED,
+        actionDate: new Date(),
+        reason: params.reason,
+      },
+    });
+
+    return assignment;
   });
+
 }
 
 export async function addGuardianForTeacher(teacherId: string, input: CreateGuardianInput) {
@@ -651,4 +989,530 @@ export async function listStudentsByClassForTeacher(params: {
     students: classStudents.map((entry) => entry.student),
     totalItems,
   };
+}
+
+export async function getStudentClassesForTeacher(
+  studentId: string
+) {
+  return prisma.classStudent.findMany({
+    where: {
+      studentId,
+    },
+    orderBy: {
+      assignedAt: "desc",
+    },
+    select: {
+      id: true,
+      isActive: true,
+      assignedAt: true,
+      removedAt: true,
+      removeReason: true,
+
+      class: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          schedule: true,
+          monthlyFee: true,
+
+          payments: {
+            where: {
+              studentId,
+            },
+            orderBy: {
+              month: "desc",
+            },
+            select: {
+              id: true,
+              month: true,
+              amount: true,
+              status: true,
+              submittedAt: true,
+              confirmedAt: true,
+            },
+          },
+
+          studentHistory: {
+            where: {
+              studentId,
+            },
+            orderBy: {
+              actionDate: "desc",
+            },
+            select: {
+              id: true,
+              action: true,
+              actionDate: true,
+              reason: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function getStudentPaymentHistoryForTeacher(studentId: string) {
+
+}
+
+export async function getStudentClassAttendance(
+  studentId: string,
+  classId: string
+) {
+  const lectures = await prisma.lecture.findMany({
+    where: {
+      classId,
+    },
+    orderBy: {
+      date: "desc",
+    },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+
+      sessions: {
+        select: {
+          attendance: {
+            where: {
+              studentId,
+            },
+            select: {
+              id: true,
+              joinedAt: true,
+              leftAt: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return lectures.map((lecture) => {
+    const attendanceRecord = lecture.sessions.flatMap(
+      (session) => session.attendance
+    );
+
+    return {
+      lectureId: lecture.id,
+      title: lecture.title,
+      date: lecture.date,
+
+      attended: attendanceRecord.length > 0,
+
+      joinedAt:
+        attendanceRecord.length > 0
+          ? attendanceRecord[0].joinedAt
+          : null,
+
+      leftAt:
+        attendanceRecord.length > 0
+          ? attendanceRecord[0].leftAt
+          : null,
+    };
+  });
+}
+
+
+export async function getStudentQuizResults(
+  studentId: string,
+  classId: string
+) {
+  const quizzes = await prisma.quiz.findMany({
+    where: {
+      lecture: {
+        classId,
+      },
+    },
+    orderBy: {
+      lecture: {
+        date: "desc",
+      },
+    },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+          date: true,
+        },
+      },
+
+      submissions: {
+        where: {
+          studentId,
+        },
+        select: {
+          id: true,
+          score: true,
+          totalQuestions: true,
+          submittedAt: true,
+          attemptCount: true,
+        },
+      },
+    },
+  });
+
+  const results = quizzes.map((quiz) => {
+    const submission = quiz.submissions[0];
+
+    return {
+      quizId: quiz.id,
+      quizTitle: quiz.title,
+      lectureTitle: quiz.lecture.title,
+      lectureDate: quiz.lecture.date,
+
+      attempted: !!submission,
+
+      score: submission?.score ?? null,
+      totalQuestions: submission?.totalQuestions ?? null,
+      percentage: submission
+        ? Math.round(
+            (submission.score / submission.totalQuestions) * 100
+          )
+        : null,
+
+      submittedAt: submission?.submittedAt ?? null,
+      attemptCount: submission?.attemptCount ?? 0,
+    };
+  });
+
+  const totalQuizzes = results.length;
+
+  const attemptedQuizzes = results.filter(
+    (x) => x.attempted
+  ).length;
+
+  const missedQuizzes = totalQuizzes - attemptedQuizzes;
+
+  const averageScore =
+    attemptedQuizzes > 0
+      ? Math.round(
+          results
+            .filter((x) => x.percentage !== null)
+            .reduce(
+              (sum, x) => sum + (x.percentage ?? 0),
+              0
+            ) / attemptedQuizzes
+        )
+      : 0;
+
+  return {
+    summary: {
+      totalQuizzes,
+      attemptedQuizzes,
+      missedQuizzes,
+      averageScore,
+    },
+    quizzes: results,
+  };
+}
+
+export async function getStudentAttendanceSummary(
+  studentId: string
+) {
+  const studentClasses = await prisma.classStudent.findMany({
+    where: {
+      studentId,
+      isActive: true,
+    },
+    select: {
+      classId: true,
+      class: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  const summary = await Promise.all(
+    studentClasses.map(async (studentClass) => {
+      const totalLectures = await prisma.lecture.count({
+        where: {
+          classId: studentClass.classId,
+        },
+      });
+
+      const attendedLectures = await prisma.lecture.count({
+        where: {
+          classId: studentClass.classId,
+          sessions: {
+            some: {
+              attendance: {
+                some: {
+                  studentId,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const missedLectures =
+        totalLectures - attendedLectures;
+
+      const attendancePercentage =
+        totalLectures === 0
+          ? 0
+          : Number(
+              (
+                (attendedLectures / totalLectures) *
+                100
+              ).toFixed(2)
+            );
+
+      return {
+        classId: studentClass.class.id,
+        className: studentClass.class.name,
+        totalLectures,
+        attendedLectures,
+        missedLectures,
+        attendancePercentage,
+      };
+    })
+  );
+
+  return summary;
+}
+
+export async function getStudentPaymentSummary(
+  studentId: string
+) {
+  const classes = await prisma.classStudent.findMany({
+    where: {
+      studentId,
+    },
+    select: {
+      classId: true,
+      class: {
+        select: {
+          id: true,
+          name: true,
+          monthlyFee: true,
+
+          payments: {
+            where: {
+              studentId,
+            },
+            select: {
+              id: true,
+              month: true,
+              amount: true,
+              status: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return classes;
+}
+
+export async function getStudentQuizSummary(
+  studentId: string
+) {
+  const studentClasses = await prisma.classStudent.findMany({
+    where: {
+      studentId,
+      isActive: true,
+    },
+    select: {
+      classId: true,
+      class: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  const classes = await Promise.all(
+    studentClasses.map(async (studentClass) => {
+      const quizzes = await prisma.quiz.findMany({
+        where: {
+          lecture: {
+            classId: studentClass.classId,
+          },
+        },
+        select: {
+          id: true,
+          submissions: {
+            where: {
+              studentId,
+            },
+            select: {
+              score: true,
+              totalQuestions: true,
+            },
+          },
+        },
+      });
+
+      const totalQuizzes = quizzes.length;
+
+      const attempted = quizzes.filter(
+        (quiz) => quiz.submissions.length > 0
+      );
+
+      const attemptedCount = attempted.length;
+
+      const missedCount =
+        totalQuizzes - attemptedCount;
+
+      const averageScore =
+        attemptedCount === 0
+          ? 0
+          : Math.round(
+              attempted.reduce((sum, quiz) => {
+                const submission =
+                  quiz.submissions[0];
+
+                return (
+                  sum +
+                  (
+                    (submission.score /
+                      submission.totalQuestions) *
+                    100
+                  )
+                );
+              }, 0) / attemptedCount
+            );
+
+      return {
+        classId: studentClass.class.id,
+        className: studentClass.class.name,
+        totalQuizzes,
+        attempted: attemptedCount,
+        missed: missedCount,
+        averageScore,
+      };
+    })
+  );
+
+  const totalQuizzes = classes.reduce(
+    (sum, c) => sum + c.totalQuizzes,
+    0
+  );
+
+  const attempted = classes.reduce(
+    (sum, c) => sum + c.attempted,
+    0
+  );
+
+  const missed = classes.reduce(
+    (sum, c) => sum + c.missed,
+    0
+  );
+
+  const averageScore =
+    classes.length === 0
+      ? 0
+      : Math.round(
+          classes.reduce(
+            (sum, c) => sum + c.averageScore,
+            0
+          ) / classes.length
+        );
+
+  return {
+    summary: {
+      totalQuizzes,
+      attempted,
+      missed,
+      averageScore,
+    },
+    classes,
+  };
+}
+
+export async function getStudentClassQuizResults(
+  studentId: string,
+  classId: string
+) {
+  const quizzes = await prisma.quiz.findMany({
+    where: {
+      lecture: {
+        classId,
+      },
+    },
+    orderBy: {
+      dueDate: "desc",
+    },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+
+      lecture: {
+        select: {
+          title: true,
+          date: true,
+        },
+      },
+
+      submissions: {
+        where: {
+          studentId,
+        },
+        select: {
+          score: true,
+          totalQuestions: true,
+          submittedAt: true,
+          attemptCount: true,
+        },
+      },
+    },
+  });
+
+  return quizzes.map((quiz) => {
+    const submission =
+      quiz.submissions[0];
+
+    return {
+      quizId: quiz.id,
+      quizTitle: quiz.title,
+      dueDate: quiz.dueDate,
+
+      lectureTitle:
+        quiz.lecture.title,
+
+      lectureDate:
+        quiz.lecture.date,
+
+      attempted: !!submission,
+
+      score:
+        submission?.score ?? null,
+
+      totalQuestions:
+        submission?.totalQuestions ??
+        null,
+
+      percentage:
+        submission
+          ? Math.round(
+              (submission.score /
+                submission.totalQuestions) *
+              100
+            )
+          : null,
+
+      attemptCount:
+        submission?.attemptCount ?? 0,
+
+      submittedAt:
+        submission?.submittedAt ??
+        null,
+    };
+  });
 }

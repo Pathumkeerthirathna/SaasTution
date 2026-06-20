@@ -47,6 +47,7 @@ function buildScheduleSummary(schedules: ClassWriteInput["schedules"]) {
 
 export async function listClassesByTeacher(params: ListClassesParams) {
   const where = {
+    status:0,
     teacherId: params.teacherId,
     ...(params.name
       ? {
@@ -254,6 +255,21 @@ export async function deleteClassForTeacher(classId: string, teacherId: string) 
   await prisma.class.delete({
     where: {
       id: classId,
+    },
+  });
+}
+
+export async function deactivateClassForTeacher(
+  classId: string,
+  teacherId: string
+) {
+  return prisma.class.update({
+    where: {
+      id: classId,
+      teacherId,
+    },
+    data: {
+      status: 1,
     },
   });
 }

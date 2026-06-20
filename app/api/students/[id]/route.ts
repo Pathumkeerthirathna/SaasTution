@@ -2,7 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { updateStudentSchema } from "@/lib/student-validation";
-import { getStudentProfileForTeacher, updateStudentForTeacher } from "@/services/student-service";
+import { deleteStudentForTeacher, getStudentProfileForTeacher, updateStudentForTeacher } from "@/services/student-service";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ export async function PUT(
     }
 
     const body = (await request.json()) as {
+      registrationNumber?: string;
       name?: string;
       grade?: string;
       contact01?: string;
@@ -64,6 +65,40 @@ export async function PUT(
       },
       {
         message: "Student updated successfully.",
+      }
+    );
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: {
+    params: { id: string };
+  }
+) {
+  try {
+    const session = await requireTeacherSession();
+    const studentId = context.params.id;
+
+    if (!studentId?.trim()) {
+      throw new AppError(
+        "Student id is required.",
+        400,
+        "VALIDATION_ERROR"
+      );
+    }
+
+    await deleteStudentForTeacher(
+      session.teacherId,
+      studentId
+    );
+
+    return apiSuccess(
+      null,
+      {
+        message: "Student deleted successfully.",
       }
     );
   } catch (error) {

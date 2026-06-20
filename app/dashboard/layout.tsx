@@ -19,6 +19,9 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
 
   const session = await verifyAuthToken(token);
 
+
+  console.log("Session in DashboardLayout:", session);
+
   if (!session) {
     redirect("/login");
   }

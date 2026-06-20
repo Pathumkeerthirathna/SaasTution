@@ -1,49 +1,55 @@
 import { z } from "zod";
 
+const registrationNumber = z
+  .string()
+  .trim()
+  .min(1, "Registration number is required.")
+
 const studentName = z
   .string()
   .trim()
   .min(2, "Student name must be at least 2 characters long.")
   .max(120, "Student name must be at most 120 characters long.");
 
-const studentGrade = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  const gradeId = z
+  .number()
+  .int()
+  .positive()
+  .refine((value) => value > 0, {
+    message: "Grade is required.",
+  });
+
+const studentContact = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === ""
+      ? undefined
+      : value,
   z
-    .enum([
-      "GRADE_01",
-      "GRADE_02",
-      "GRADE_03",
-      "GRADE_04",
-      "GRADE_05",
-      "GRADE_06",
-      "GRADE_07",
-      "GRADE_08",
-      "GRADE_09",
-      "GRADE_10",
-      "GRADE_11",
-      "GRADE_12",
-      "GRADE_13",
-    ])
+    .string()
+    .trim()
+    .max(60, "Contact must be at most 60 characters long.")
     .optional()
 );
 
-const studentContact = z
-  .string()
-  .trim()
-  .min(5, "Contact is required.")
-  .max(60, "Contact must be at most 60 characters long.");
-
-const studentEmail = z
-  .string()
-  .trim()
-  .email("Invalid email format.")
-  .max(120, "Email must be at most 120 characters long.");
+const studentEmail = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === ""
+      ? undefined
+      : value,
+  z
+    .string()
+    .trim()
+    .email("Invalid email format.")
+    .max(120, "Email must be at most 120 characters long.")
+    .optional()
+);
 
 const entityId = z.string().trim().uuid("Invalid id format.");
 
 export const createStudentSchema = z.object({
+  registrationNumber:registrationNumber,
   name: studentName,
-  grade: studentGrade,
+  gradeId: gradeId,
   contact01: studentContact,
   contact02: studentContact,
   email: studentEmail,
@@ -66,8 +72,9 @@ export const removeStudentFromClassSchema = z.object({
 });
 
 export const updateStudentSchema = z.object({
+  registrationNumber:registrationNumber,
   name: studentName,
-  grade: studentGrade,
+  gradeId: gradeId,
   contact01: studentContact,
   contact02: studentContact,
   email: studentEmail,

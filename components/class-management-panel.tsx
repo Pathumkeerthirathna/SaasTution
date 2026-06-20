@@ -1,13 +1,19 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
+import Link from "next/link";
+import { ExternalLink, Eye } from "lucide-react";
+
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
+  AlertTriangle,
   Atom,
-  ArrowUpRight,
   BookOpen,
   Calculator,
+  Calendar,
   CalendarDays,
+  CheckSquare2,
   CircleHelp,
   Clock3,
   Eraser,
@@ -18,13 +24,17 @@ import {
   GraduationCap,
   Languages,
   Layers3,
+  // Link,
   Music2,
   Pencil,
+  RotateCcw,
   Search,
-  Sparkles,
-  TrendingUp,
+  Square,
   Trash2,
+  UserMinus,
+  UserPlus,
   Users,
+  Wallet,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -90,6 +100,17 @@ type FormState = {
 type FilterState = {
   name: string;
   schedule: string;
+};
+
+type TeacherStudent = {
+  id: string;
+  name: string;
+  grade: { id: string; GradeDesc: string } | null;
+  registrationNumber: string | null;
+  email: string | null;
+  contact01: string | null;
+  status: number;
+  classes: { id: string; class: { name: string } }[];
 };
 
 const PAGE_SIZE = 4;
@@ -159,6 +180,26 @@ function getClassIcon(name: string): { Icon: LucideIcon; iconWrapClass: string }
   return { Icon: BookOpen, iconWrapClass: "bg-brand-100 text-brand-700" };
 }
 
+function getClassTypeLabel(name: string): string {
+  const normalized = name.toLowerCase();
+  if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) return "Mathematics";
+  if (/(science|chem|biology|bio|lab)/.test(normalized)) return "Science";
+  if (/(physics|astronomy|space)/.test(normalized)) return "Physics";
+  if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) return "Language";
+  if (/(history|civics|geography|social)/.test(normalized)) return "Social Studies";
+  if (/(music|drama|dance)/.test(normalized)) return "Performing Arts";
+  if (/(art|drawing|paint|design)/.test(normalized)) return "Art";
+  return "General";
+}
+
+function formatTime12h(time: string): string {
+  const [hourStr, minute] = time.split(":");
+  const hour = parseInt(hourStr, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h}:${minute} ${ampm}`;
+}
+
 export function ClassManagementPanel() {
   const [items, setItems] = useState<ClassItem[]>([]);
   const [page, setPage] = useState(1);
@@ -182,6 +223,7 @@ export function ClassManagementPanel() {
   const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
   const [editForm, setEditForm] = useState<FormState>({
     name: "",
     description: "",
@@ -189,9 +231,23 @@ export function ClassManagementPanel() {
     paymentDueWeek: "1",
     schedules: [getDefaultScheduleRow()],
   });
-  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule" | "students">>({});
+  const [totalItems, setTotalItems] = useState(0);
+  const [activeTabs, setActiveTabs] = useState<Record<string, "details" | "schedule" | "students" | null>>({});
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [studentsPanelClassId, setStudentsPanelClassId] = useState<string | null>(null);
+
+  // Add-students modal
+  const [isAddStudentsOpen, setIsAddStudentsOpen] = useState(false);
+  const [availableStudents, setAvailableStudents] = useState<TeacherStudent[]>([]);
+  const [isLoadingAvailableStudents, setIsLoadingAvailableStudents] = useState(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [isAssigning, setIsAssigning] = useState(false);
+
+  // Remove-student confirmation
+  const [removingEntry, setRemovingEntry] = useState<{ studentId: string; name: string } | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [isRemoving, setIsRemoving] = useState(false);
   const hasData = useMemo(() => items.length > 0, [items]);
   const studentsPanelClass = useMemo(
     () => items.find((item) => item.id === studentsPanelClassId) ?? null,
@@ -205,6 +261,20 @@ export function ClassManagementPanel() {
     () => studentsPanelClass?.students.filter((entry) => !entry.isActive) ?? [],
     [studentsPanelClass]
   );
+  const activeStudentIdSet = useMemo(
+    () => new Set(studentsPanelActiveStudents.map((e) => e.student.id)),
+    [studentsPanelActiveStudents]
+  );
+  const filteredAvailableStudents = useMemo(() => {
+    if (!studentSearchQuery.trim()) return availableStudents;
+    const q = studentSearchQuery.toLowerCase();
+    return availableStudents.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.registrationNumber?.toLowerCase().includes(q) ?? false) ||
+        (s.grade?.GradeDesc.toLowerCase().replace("grade_0", "grade ").replace("grade_", "grade ").includes(q) ?? false)
+    );
+  }, [availableStudents, studentSearchQuery]);
   const overview = useMemo(() => {
     const totalClasses = items.length;
     const activeStudents = items.reduce(
@@ -224,6 +294,8 @@ export function ClassManagementPanel() {
       averageFee,
     };
   }, [items]);
+
+   const router = useRouter();
 
   const loadClasses = useCallback(async (nextPage = 1, appliedFilters: FilterState) => {
     setIsLoading(true);
@@ -254,6 +326,7 @@ export function ClassManagementPanel() {
       setItems(payload.data ?? []);
       setPage(payload.pagination?.page ?? nextPage);
       setTotalPages(payload.pagination?.totalPages ?? 1);
+      setTotalItems(payload.pagination?.totalItems ?? 0);
     } catch {
       setErrorMessage("Unable to load classes right now.");
     } finally {
@@ -321,6 +394,7 @@ export function ClassManagementPanel() {
 
   function beginEdit(item: ClassItem) {
     setEditingId(item.id);
+    setIsEditPanelOpen(true);
     setEditForm({
       name: item.name,
       description: item.description ?? "",
@@ -368,6 +442,7 @@ export function ClassManagementPanel() {
       }
 
       setEditingId(null);
+      setIsEditPanelOpen(false);
       setSuccessMessage("Class updated successfully.");
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
       await loadClasses(page, filters);
@@ -380,6 +455,8 @@ export function ClassManagementPanel() {
 
   async function deleteClass(classId: string) {
     const confirmed = window.confirm("Are you sure you want to delete this class?");
+
+    alert("Deleting a class will remove all associated schedules and student assignments. This action cannot be undone.");
 
     if (!confirmed) {
       return;
@@ -394,6 +471,8 @@ export function ClassManagementPanel() {
         method: "DELETE",
       });
 
+      console.log({ response });
+
       const payload = (await response.json()) as {
         success: boolean;
         error?: ApiError;
@@ -405,13 +484,88 @@ export function ClassManagementPanel() {
       }
 
       setSuccessMessage("Class deleted successfully.");
+
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+
       const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
+
       await loadClasses(nextPage, filters);
+
     } catch {
       setErrorMessage("Unable to delete class right now.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  const loadAvailableStudents = useCallback(async () => {
+    setIsLoadingAvailableStudents(true);
+    try {
+      const res = await fetch("/api/students?pageSize=200&page=1");
+      const payload = (await res.json()) as { success: boolean; data?: TeacherStudent[] };
+      if (payload.success && payload.data) {
+        setAvailableStudents(payload.data);
+      }
+    } catch {
+      // silently fail — error visible via empty list
+    } finally {
+      setIsLoadingAvailableStudents(false);
+    }
+  }, []);
+
+  function openAddStudents() {
+    setSelectedStudentIds(new Set());
+    setStudentSearchQuery("");
+    setIsAddStudentsOpen(true);
+    void loadAvailableStudents();
+  }
+
+  async function handleAssignStudents() {
+    if (!studentsPanelClassId || selectedStudentIds.size === 0) return;
+    setIsAssigning(true);
+    try {
+      await Promise.all(
+        Array.from(selectedStudentIds).map((studentId) =>
+          fetch("/api/students/assign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ classId: studentsPanelClassId, studentId }),
+          })
+        )
+      );
+      setIsAddStudentsOpen(false);
+      setSelectedStudentIds(new Set());
+      setStudentSearchQuery("");
+      await loadClasses(page, filters);
+      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+    } catch {
+      // silently fail
+    } finally {
+      setIsAssigning(false);
+    }
+  }
+
+  async function handleRemoveStudent() {
+    if (!studentsPanelClassId || !removingEntry) return;
+    setIsRemoving(true);
+    try {
+      await fetch("/api/students/remove-from-class", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classId: studentsPanelClassId,
+          studentId: removingEntry.studentId,
+          reason: removeReason.trim() || undefined,
+        }),
+      });
+      setRemovingEntry(null);
+      setRemoveReason("");
+      await loadClasses(page, filters);
+      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+    } catch {
+      // silently fail
+    } finally {
+      setIsRemoving(false);
     }
   }
 
@@ -420,494 +574,604 @@ export function ClassManagementPanel() {
       <div className="pointer-events-none absolute -left-28 -top-28 h-80 w-80 rounded-full bg-brand-100 blur-3xl" />
       <div className="pointer-events-none absolute -right-24 top-20 h-72 w-72 rounded-full bg-cyan-100 blur-3xl" />
 
-      <article className="panel-shell relative space-y-6">
-        <div className="hero-shell">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
-                <GraduationCap size={20} />
-              </span>
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">Your classes</h2>
-                <p className="mt-1 text-sm text-muted">Manage your classes, schedules and students in one place.</p>
-                <p className="mt-5">
-                  <span className="metric-badge"><Sparkles size={12} />Page {page} of {totalPages}</span>
+      <article
+          className="
+            relative
+            space-y-5
+            rounded-xl
+            border
+            border-slate-200
+            bg-white
+            p-6
+            shadow-sm
+          "
+        >
+        {/* <div className="hero-shell">
+
+        </div> */}
+
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+
+              {/* Left */}
+              <div className="flex items-start gap-3">
+                <span className="page-header-icon">
+                  <GraduationCap size={24} />
+                </span>
+
+                <div>
+                  <h2 className="page-title">Your Classes</h2>
+                  <p className="page-subtitle">
+                    Manage your classes, schedules and students in one place.
+                  </p>
+                </div>
+              </div>
+
+              {/* Right */}
+              <div className="flex flex-col items-end gap-3">
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  <span className="summary-chip">
+                    <Layers3 size={12} />
+                    {overview.totalClasses} Classes
+                  </span>
+
+                  <span className="summary-chip">
+                    <Users size={12} />
+                    {overview.activeStudents} Students
+                  </span>
+
+                  <span className="summary-chip">
+                    <CalendarDays size={12} />
+                    {overview.scheduleSlots} Slots
+                  </span>
+
+                  <span className="summary-chip">
+                    <BookOpen size={12} />
+                    Rs. {overview.averageFee.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsHelpOpen(true)}
+                    className="btn-secondary"
+                  >
+                    <CircleHelp size={14} />
+                    Help
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatePanelOpen(true)}
+                    className="btn-primary"
+                  >
+                    + Add Class
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+
+          <div
+            className="
+              mt-4
+              rounded-lg
+              border
+              border-slate-200
+              bg-white
+              px-4
+              py-3
+              shadow-sm
+            "
+          >
+            <div className="flex flex-wrap items-center gap-3">
+
+              {/* Search */}
+              <div className="relative w-full md:w-72">
+                <Search
+                  size={14}
+                  className="
+                    pointer-events-none
+                    absolute
+                    left-3
+                    top-1/2
+                    -translate-y-1/2
+                    text-slate-400
+                  "
+                />
+
+                <input
+                  value={filters.name}
+                  onChange={(event) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
+                  }
+                  placeholder="Class name"
+                  className="
+                    h-9
+                    w-full
+                    rounded-md
+                    border
+                    border-slate-200
+                    bg-white
+                    pl-9
+                    pr-3
+                    text-sm
+                    text-slate-700
+                    placeholder:text-slate-400
+                    focus:border-brand-400
+                    focus:outline-none
+                    focus:ring-1
+                    focus:ring-brand-100
+                  "
+                />
+              </div>
+
+              {/* Schedule */}
+              <div className="relative w-full md:w-56">
+                <CalendarDays
+                  size={14}
+                  className="
+                    pointer-events-none
+                    absolute
+                    left-3
+                    top-1/2
+                    -translate-y-1/2
+                    text-slate-400
+                  "
+                />
+
+                <input
+                  value={filters.schedule}
+                  onChange={(event) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      schedule: event.target.value,
+                    }))
+                  }
+                  placeholder="Schedule"
+                  className="
+                    h-9
+                    w-full
+                    rounded-md
+                    border
+                    border-slate-200
+                    bg-white
+                    pl-9
+                    pr-3
+                    text-sm
+                    text-slate-700
+                    placeholder:text-slate-400
+                    focus:border-brand-400
+                    focus:outline-none
+                    focus:ring-1
+                    focus:ring-brand-100
+                  "
+                />
+              </div>
+
+              {/* Apply */}
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => void loadClasses(1, filters)}
+                className="
+                  inline-flex
+                  h-9
+                  items-center
+                  justify-center
+                  rounded-md
+                  bg-brand-600
+                  px-4
+                  text-sm
+                  font-medium
+                  text-white
+                  transition-colors
+                  hover:bg-brand-700
+                  disabled:opacity-60
+                "
+              >
+                Apply
+              </button>
+
+              {/* Clear */}
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => {
+                  const cleared = {
+                    name: "",
+                    schedule: "",
+                  };
+
+                  setFilters(cleared);
+                  void loadClasses(1, cleared);
+                }}
+                className="
+                  inline-flex
+                  h-9
+                  items-center
+                  justify-center
+                  rounded-md
+                  border
+                  border-slate-200
+                  bg-white
+                  px-4
+                  text-sm
+                  font-medium
+                  text-slate-600
+                  transition-colors
+                  hover:bg-slate-50
+                  disabled:opacity-60
+                "
+              >
+                Clear
+              </button>
+
+              {/* Count */}
+              <div className="ml-auto">
+                <span
+                  className="
+                    inline-flex
+                    items-center
+                    rounded-md
+                    border
+                    border-slate-200
+                    bg-slate-50
+                    px-3
+                    py-1
+                    text-xs
+                    font-medium
+                    text-slate-600
+                  "
+                >
+                  {totalItems} Classes
+                </span>
+              </div>
+
+            </div>
+          </div>
+        {successMessage && (
+          <div className="fixed top-5 right-5 z-[100]">
+            <div className="flex min-w-[320px] items-center gap-3 rounded-xl border border-emerald-200 bg-white p-4 shadow-xl">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                <CheckSquare2 size={18} className="text-emerald-600" />
+              </div>
+
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  Class created successfully
+                </p>
+
+                <p className="text-xs text-slate-500">
+                  Students can now be assigned to this class.
                 </p>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
+
               <button
-                type="button"
-                onClick={() => setIsHelpOpen(true)}
-                className="btn-secondary gap-2"
+                onClick={() => setSuccessMessage(null)}
+                className="text-slate-400 hover:text-slate-600"
               >
-                <CircleHelp size={14} />
-                Help
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsCreatePanelOpen(true)}
-                className="btn-primary gap-2"
-              >
-                <span aria-hidden="true">+</span>
-                Add class
+                <X size={16} />
               </button>
             </div>
           </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="metric-tile">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                <Layers3 size={16} />
-              </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Total classes</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{overview.totalClasses}</p>
-              <p className="mt-1 inline-flex items-center gap-1 text-xs text-brand-700"><ArrowUpRight size={12} />Current page records</p>
-            </div>
-            <div className="metric-tile">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                <Users size={16} />
-              </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Active students</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{overview.activeStudents}</p>
-              <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700"><TrendingUp size={12} />Across visible classes</p>
-            </div>
-            <div className="metric-tile">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700">
-                <CalendarDays size={16} />
-              </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Schedule slots</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{overview.scheduleSlots}</p>
-              <p className="mt-1 inline-flex items-center gap-1 text-xs text-cyan-700"><Activity size={12} />Weekly timetable rows</p>
-            </div>
-            <div className="metric-tile">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                <BookOpen size={16} />
-              </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Average fee</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">Rs {overview.averageFee.toLocaleString()}</p>
-              <p className="mt-1 inline-flex items-center gap-1 text-xs text-amber-700"><ArrowUpRight size={12} />Per class (visible)</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="filter-shell mt-7">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="relative">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input
-                value={filters.name}
-                onChange={(event) => setFilters((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="Filter by class name"
-                className="control-input pl-9"
-              />
-            </div>
-            <div className="relative">
-              <CalendarDays size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input
-                value={filters.schedule}
-                onChange={(event) => setFilters((prev) => ({ ...prev, schedule: event.target.value }))}
-                placeholder="Filter by schedule"
-                className="control-input pl-9"
-              />
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() => void loadClasses(1, filters)}
-              className="btn-primary gap-2"
-            >
-              <Filter size={14} />
-              Apply filters
-            </button>
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() => {
-                const cleared = { name: "", schedule: "" };
-                setFilters(cleared);
-                void loadClasses(1, cleared);
-              }}
-              className="btn-ghost gap-2"
-            >
-              <X size={14} />
-              Clear filters
-            </button>
-          </div>
-        </div>
-
-        {errorMessage ? (
-          <p className="notice-error mt-6">{errorMessage}</p>
-        ) : null}
-
-        {successMessage ? (
-          <p className="notice-success mt-6">
-            {successMessage}
-          </p>
-        ) : null}
+        )}
 
         {isLoading ? <p className="mt-6 text-sm text-muted">Loading classes...</p> : null}
 
         {!isLoading && !hasData ? (
-          <div className="empty-state mt-6">
-            <span className="empty-state__icon"><GraduationCap size={18} /></span>
-            <p className="text-sm font-semibold text-foreground">No classes found</p>
-            <p className="text-sm text-muted">Try updating your filters or create a new class.</p>
-            <button type="button" onClick={() => setIsCreatePanelOpen(true)} className="btn-primary">Add class</button>
+          <div className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-12">
+            <div className="mx-auto flex max-w-lg flex-col items-center text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+                <GraduationCap className="h-8 w-8 text-primary" />
+              </div>
+
+              <h3 className="mt-5 text-lg font-semibold text-foreground">
+                No classes yet
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Get started by creating your first class. You can then
+                assign students, manage lessons, track attendance and
+                collect payments from one place.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setIsCreatePanelOpen(true)}
+                className="btn-primary mt-6"
+              >
+                Create First Class
+              </button>
+            </div>
           </div>
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
           {items.map((item) => {
-            const isEditing = editingId === item.id;
             const activeTab = activeTabs[item.id] ?? "details";
             const activeStudents = item.students.filter((entry) => entry.isActive);
-            const pastStudents = item.students.filter((entry) => !entry.isActive);
             const classIcon = getClassIcon(item.name);
             const ClassIcon = classIcon.Icon;
 
             return (
-              <div
-                key={item.id}
-                className="surface-card group rounded-3xl bg-gradient-to-br from-white to-brand-50 p-7 hover:-translate-y-1 hover:shadow-panel transition-all duration-300"
-              >
-                {isEditing ? (
-                  <div className="space-y-4">
-                    <div className="form-section">
-                      <label className="form-label">Class name</label>
-                      <input
-                        value={editForm.name}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
-                        className="control-input"
-                      />
+             <div
+              className="
+                group
+                overflow-hidden
+                rounded-3xl
+                border
+                border-slate-200
+                bg-gradient-to-b
+                from-white
+                to-slate-50/60
+                shadow-sm
+                transition-all
+                duration-300
+                hover:-translate-y-1
+                hover:border-brand-200
+                hover:shadow-xl
+              "
+            >
+              {/* Accent Bar */}
+              <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+
+              <div className="p-5">
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                  <div className="flex gap-4">
+                    <div
+                      className="
+                        flex h-14 w-14 items-center justify-center
+                        rounded-2xl
+                        bg-gradient-to-br
+                        from-blue-500
+                        to-indigo-600
+                        text-white
+                        shadow-md
+                      "
+                    >
+                      <BookOpen size={24} />
                     </div>
 
-                    <div className="form-section grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="form-label">Monthly fee</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={editForm.monthlyFee}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, monthlyFee: event.target.value }))}
-                          className="control-input"
-                          placeholder="Monthly fee"
-                        />
-                      </div>
-                      <div>
-                        <label className="form-label">Payment due week</label>
-                        <select
-                          value={editForm.paymentDueWeek}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, paymentDueWeek: event.target.value }))}
-                          className="control-select"
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-slate-900">
+                          {item.name}
+                        </h3>
+
+                        <span
+                          className="
+                            inline-flex items-center gap-1
+                            rounded-full
+                            bg-emerald-50
+                            px-2.5 py-1
+                            text-xs font-semibold
+                            text-emerald-700
+                          "
                         >
-                          <option value="1">Payment due in 1st week</option>
-                          <option value="2">Payment due in 2nd week</option>
-                          <option value="3">Payment due in 3rd week</option>
-                          <option value="4">Payment due in 4th week</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="form-section">
-                      <label className="form-label">Schedule summary</label>
-                      <input
-                        value={editForm.schedules
-                          .map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`)
-                          .join(" | ")}
-                        readOnly
-                        className="control-input"
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      {editForm.schedules.map((schedule, index) => (
-                        <div key={`${schedule.dayOfWeek}-${index}`} className="schedule-card">
-                          <div>
-                            <label className="form-label">
-                              Day of week
-                            </label>
-                            <select
-                              value={schedule.dayOfWeek}
-                              onChange={(event) => {
-                                const day = event.target.value as FormState["schedules"][number]["dayOfWeek"];
-                                setEditForm((prev) => ({
-                                  ...prev,
-                                  schedules: prev.schedules.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, dayOfWeek: day } : item
-                                  ),
-                                }));
-                              }}
-                              className="control-select"
-                            >
-                              {WEEK_DAYS.map((day) => (
-                                <option key={day} value={day}>
-                                  {day}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                            <div>
-                              <label className="form-label">
-                                Start time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.startTime}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setEditForm((prev) => ({
-                                    ...prev,
-                                    schedules: prev.schedules.map((item, itemIndex) =>
-                                      itemIndex === index ? { ...item, startTime: value } : item
-                                    ),
-                                  }));
-                                }}
-                                  className="control-input"
-                              />
-                            </div>
-
-                            <div>
-                                <label className="form-label">
-                                End time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.endTime}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setEditForm((prev) => ({
-                                    ...prev,
-                                    schedules: prev.schedules.map((item, itemIndex) =>
-                                      itemIndex === index ? { ...item, endTime: value } : item
-                                    ),
-                                  }));
-                                }}
-                                  className="control-input"
-                              />
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={editForm.schedules.length <= 1}
-                              onClick={() => {
-                                setEditForm((prev) => ({
-                                  ...prev,
-                                  schedules: prev.schedules.filter((_, itemIndex) => itemIndex !== index),
-                                }));
-                              }}
-                              className="btn-danger self-end"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditForm((prev) => ({
-                            ...prev,
-                            schedules: [...prev.schedules, getDefaultScheduleRow()],
-                          }));
-                        }}
-                        className="btn-secondary"
-                      >
-                        Add schedule row
-                      </button>
-                    </div>
-
-                    <div className="form-section">
-                      <label className="form-label">Description</label>
-                      <textarea
-                        rows={3}
-                        value={editForm.description}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
-                        className="control-textarea"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => void saveEdit(item.id)}
-                        className="btn-primary flex-1"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => setEditingId(null)}
-                        className="btn-secondary flex-1"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className={`mt-0.5 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${classIcon.iconWrapClass}`}>
-                          <ClassIcon size={16} />
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          Active
                         </span>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-base font-semibold">{item.name}</h3>
-                          <p className="mt-1 text-sm font-semibold text-brand-700">Monthly fee: Rs {item.monthlyFee.toLocaleString()}</p>
-                          <p className="mt-0.5 text-xs text-muted">Week {item.paymentDueWeek} payment submission</p>
-                        </div>
                       </div>
-                      <p className="text-xs text-muted">
-                        Created {new Date(item.createdAt).toLocaleDateString()}
+
+                      <p className="mt-1 text-sm text-slate-500">
+                        {"General"}
                       </p>
                     </div>
+                  </div>
 
-                    <div className="mt-6">
-                      <div className="tab-strip">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "details" }))}
-                          className={`tab-btn inline-flex items-center gap-1.5 ${
-                            activeTab === "details"
-                              ? "tab-btn-active"
-                              : "tab-btn-inactive"
-                          }`}
-                        >
-                          <FileText size={13} />
-                          Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTabs((prev) => ({ ...prev, [item.id]: "schedule" }))}
-                          className={`tab-btn inline-flex items-center gap-1.5 ${
-                            activeTab === "schedule"
-                              ? "tab-btn-active"
-                              : "tab-btn-inactive"
-                          }`}
-                        >
-                          <Clock3 size={13} />
-                          Schedule
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTabs((prev) => ({ ...prev, [item.id]: "students" }));
-                            setIsCreatePanelOpen(false);
-                            setStudentsPanelClassId(item.id);
-                          }}
-                          className={`tab-btn inline-flex items-center gap-1.5 ${
-                            activeTab === "students"
-                              ? "tab-btn-active"
-                              : "tab-btn-inactive"
-                          }`}
-                        >
-                          <Users size={13} />
-                          Students
-                        </button>
-                      </div>
+                  <span className="text-xs text-slate-400">
+                    {new Date(item.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+
+                {/* Stats */}
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-blue-50 p-3">
+                    <div className="flex items-center gap-2">
+                      <Users size={14} className="text-blue-600" />
+                      <span className="text-xs font-medium text-blue-600">
+                        Students
+                      </span>
                     </div>
 
-                    {activeTab === "details" ? (
-                      <div className="mt-6 space-y-3">
-                        <p className="surface-soft rounded-2xl p-5 text-sm text-muted">
-                          {item.description || "No description provided."}
-                        </p>
-                        <p className="metric-badge">Summary: {item.schedule}</p>
-                      </div>
-                    ) : activeTab === "schedule" ? (
-                      <div className="mt-6">
-                        {item.schedules.length > 0 ? (
-                          <div className="space-y-2">
-                            {item.schedules.map((schedule) => (
-                              <div
-                                key={schedule.id}
-                                className="schedule-card grid grid-cols-[90px_1fr] items-center text-sm"
-                              >
-                                <span className="font-semibold text-foreground">{getDayShortLabel(schedule.dayOfWeek)}</span>
-                                <span className="text-muted">
-                                  {schedule.startTime} - {schedule.endTime}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="empty-state">
-                            <span className="empty-state__icon"><CalendarDays size={16} /></span>
-                            <p className="text-sm text-muted">No schedules configured for this class.</p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="mt-6 space-y-4">
-                        <div className="surface-soft rounded-2xl p-5">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Class roster</p>
-                          <p className="mt-2 text-sm text-muted">Open this class roster in a side panel for a focused student view.</p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <span className="metric-badge">Active {activeStudents.length}</span>
-                            <span className="metric-badge">Past {pastStudents.length}</span>
-                            <span className="metric-badge">Total {item.students.length}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setStudentsPanelClassId(item.id)}
-                            className="btn-secondary mt-4"
-                          >
-                            Open students panel
-                          </button>
+                    <p className="mt-2 text-2xl font-bold text-blue-700">
+                      {activeStudents.length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-emerald-50 p-3">
+                    <div className="flex items-center gap-2">
+                      <Wallet size={14} className="text-emerald-600" />
+                      <span className="text-xs font-medium text-emerald-600">
+                        Fee
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-lg font-bold text-emerald-700">
+                      Rs.{item.monthlyFee.toLocaleString()}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-amber-50 p-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={14} className="text-amber-600" />
+                      <span className="text-xs font-medium text-amber-600">
+                        Due Week
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-lg font-bold text-amber-700">
+                      Week {item.paymentDueWeek}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Schedule */}
+                {item.schedules?.length > 0 && (
+                  <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+                    <div className="flex items-center gap-2">
+                      <CalendarDays
+                        size={15}
+                        className="text-indigo-600"
+                      />
+
+                      <span className="font-semibold text-indigo-900">
+                        Weekly Schedule
+                      </span>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {item.schedules.slice(0, 2).map((schedule) => (
+                        <div
+                          key={`${schedule.dayOfWeek}-${schedule.startTime}`}
+                          className="flex items-center justify-between rounded-xl bg-white px-3 py-2"
+                        >
+                          <span className="text-sm font-medium text-slate-700">
+                            {schedule.dayOfWeek}
+                          </span>
+
+                          <span className="text-sm text-slate-500">
+                            {formatTime12h(schedule.startTime)}
+                            {" → "}
+                            {formatTime12h(schedule.endTime)}
+                          </span>
                         </div>
-                      </div>
-                    )}
-
-                    <div className="mt-6 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => beginEdit(item)}
-                        className="btn-secondary flex-1 gap-2"
-                      >
-                        <Pencil size={14} />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => void deleteClass(item.id)}
-                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 shadow-soft transition-all duration-180 hover:bg-rose-100 disabled:opacity-60"
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </button>
+                      ))}
                     </div>
-                  </>
+                  </div>
                 )}
+
+                {/* Description */}
+                <div className="mt-5">
+                  <p className="line-clamp-2 text-sm leading-6 text-slate-600">
+                    {item.description ||
+                      "No class description provided."}
+                  </p>
+                </div>
+
+                {/* Footer */}
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <button
+                    className="
+                      inline-flex items-center gap-2
+                      rounded-xl
+                      bg-brand-600
+                      px-4 py-2
+                      text-sm font-medium
+                      text-white
+                      transition
+                      hover:bg-brand-700
+                    "
+                     onClick={() => setStudentsPanelClassId(item.id)}
+                  >
+                    <Users size={14} />
+                    Students
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="
+                        inline-flex items-center gap-2
+                        rounded-xl
+                        border
+                        border-slate-200
+                        px-4 py-2
+                        text-sm
+                        transition
+                        hover:bg-slate-50
+                      "
+                    >
+                      <CalendarDays size={14} />
+                      Schedule
+                    </button>
+
+                    <button
+                      className="
+                        inline-flex items-center gap-2
+                        rounded-xl
+                        border
+                        border-slate-200
+                        px-4 py-2
+                        text-sm
+                        transition
+                        hover:bg-slate-50
+                      "
+
+                      onClick={() => beginEdit(item)}
+                    >
+                      <Pencil size={14} />
+                      Edit
+                    </button>
+
+                    <button
+                      className="
+                        inline-flex items-center gap-2
+                        rounded-xl
+                        bg-rose-50
+                        px-4 py-2
+                        text-sm
+                        text-rose-700
+                        transition
+                        hover:bg-rose-100
+                      "
+                      onClick={() => void deleteClass(item.id)}
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
               </div>
+            </div>
+
             );
           })}
         </div>
 
-        <div className="mt-6 flex items-center justify-between">
-          <button
-            type="button"
-            disabled={page <= 1 || isLoading}
-            onClick={() => void loadClasses(page - 1, filters)}
-            className="btn-ghost"
-          >
-            Previous
-          </button>
-
-          <button
-            type="button"
-            disabled={page >= totalPages || isLoading}
-            onClick={() => void loadClasses(page + 1, filters)}
-            className="btn-ghost"
-          >
-            Next
-          </button>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            Showing {items.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0} to {(page - 1) * PAGE_SIZE + items.length} of {totalItems} classes
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1 || isLoading}
+              onClick={() => void loadClasses(page - 1, filters)}
+              className="btn-ghost"
+            >
+              Previous
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={isLoading}
+                onClick={() => void loadClasses(p, filters)}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold transition-colors ${
+                  p === page
+                    ? "bg-brand-700 text-white"
+                    : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={page >= totalPages || isLoading}
+              onClick={() => void loadClasses(page + 1, filters)}
+              className="btn-ghost"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </article>
 
@@ -923,145 +1187,196 @@ export function ClassManagementPanel() {
           isCreatePanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="sticky top-0 z-10 -mx-6 mb-6 border-b border-brand-200 bg-white/90 px-6 pb-4 pt-1 backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
-                <GraduationCap size={18} />
-              </span>
+
+
+        <div className="sticky top-0 z-10 -mx-6 mb-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-sm">
+                <GraduationCap size={22} />
+              </div>
+
               <div>
-                <h3 className="text-xl font-semibold">Add class</h3>
-                <p className="mt-1 text-sm text-muted">Add class details and schedules for your students.</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-semibold tracking-tight text-foreground">
+                    Create New Class
+                  </h3>
+
+                  <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-700">
+                    Setup
+                  </span>
+                </div>
+
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Configure class information, payment settings and weekly schedules.
+                </p>
               </div>
             </div>
+
             <button
               type="button"
               onClick={() => setIsCreatePanelOpen(false)}
-              className="btn-ghost"
+              className="inline-flex h-10 items-center rounded-xl border border-border bg-background px-4 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
             >
               Close
             </button>
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={handleCreate}>
-          <div className="form-section">
-            <label htmlFor="className" className="form-label">
-              Class name
-            </label>
-            <input
-              id="className"
-              required
-              value={createForm.name}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
-              className="control-input"
-              placeholder="Math - Grade 7"
-            />
-          </div>
+        <form className="space-y-5" onSubmit={handleCreate}>
 
-          <div className="form-section">
-            <label htmlFor="classMonthlyFee" className="form-label">
-              Monthly fee (LKR)
-            </label>
-            <input
-              id="classMonthlyFee"
-              type="number"
-              min="0"
-              required
-              value={createForm.monthlyFee}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, monthlyFee: event.target.value }))}
-              className="control-input"
-              placeholder="2500"
-            />
-          </div>
+                {/* {errorMessage ? (
 
-          <div className="form-section">
-            <label htmlFor="classPaymentDueWeek" className="form-label">
-              Payment due week
-            </label>
-            <select
-              id="classPaymentDueWeek"
-              required
-              value={createForm.paymentDueWeek}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, paymentDueWeek: event.target.value }))}
-              className="control-select"
-            >
-              <option value="1">First week</option>
-              <option value="2">Second week</option>
-              <option value="3">Third week</option>
-              <option value="4">Fourth week</option>
-            </select>
-          </div>
+                <p className="notice-error mt-6">{errorMessage}</p>
+              ) : null} */}
 
-          <div className="form-section">
-            <label className="form-label">Class schedules</label>
-            <div className="space-y-3">
-              {createForm.schedules.map((schedule, index) => (
-                <div key={`${schedule.dayOfWeek}-${index}`} className="schedule-card">
-                  <div>
-                    <label className="form-label">
-                      Day of week
-                    </label>
-                    <select
-                      value={schedule.dayOfWeek}
-                      onChange={(event) => {
-                        const day = event.target.value as FormState["schedules"][number]["dayOfWeek"];
-                        setCreateForm((prev) => ({
-                          ...prev,
-                          schedules: prev.schedules.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, dayOfWeek: day } : item
-                          ),
-                        }));
-                      }}
-                        className="control-select"
-                    >
-                      {WEEK_DAYS.map((day) => (
-                        <option key={day} value={day}>
-                          {day}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                    <div>
-                      <label className="form-label">
-                        Start time
-                      </label>
-                      <input
-                        type="time"
-                        value={schedule.startTime}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setCreateForm((prev) => ({
-                            ...prev,
-                            schedules: prev.schedules.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, startTime: value } : item
-                            ),
-                          }));
-                        }}
-                          className="control-input"
-                      />
+              {errorMessage && (
+                <div className="fixed bottom-5 right-5 z-[100]">
+                  <div className="flex min-w-[320px] items-start gap-3 rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                      <AlertTriangle size={18} className="text-red-600" />
                     </div>
 
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Validation Error
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        {errorMessage}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setErrorMessage(null)}
+                      className="text-slate-400 transition hover:text-slate-600"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+          {/* Basic Information */}
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-5">
+              <h3 className="text-base font-semibold text-foreground">
+                Basic Information
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Configure the core details of your class.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="className" className="form-label">
+                  Class name
+                </label>
+                <input
+                  id="className"
+                  required
+                  value={createForm.name}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
+                  }
+                  className="control-input"
+                  placeholder="Math - Grade 7"
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="classMonthlyFee" className="form-label">
+                    Monthly fee (LKR)
+                  </label>
+                  <input
+                    id="classMonthlyFee"
+                    type="number"
+                    min="0"
+                    required
+                    value={createForm.monthlyFee}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        monthlyFee: event.target.value,
+                      }))
+                    }
+                    className="control-input"
+                    placeholder="2500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="classPaymentDueWeek" className="form-label">
+                    Payment due week
+                  </label>
+                  <select
+                    id="classPaymentDueWeek"
+                    required
+                    value={createForm.paymentDueWeek}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        paymentDueWeek: event.target.value,
+                      }))
+                    }
+                    className="control-select"
+                  >
+                    <option value="1">First week</option>
+                    <option value="2">Second week</option>
+                    <option value="3">Third week</option>
+                    <option value="4">Fourth week</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Schedule Section */}
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Class Schedules
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure weekly class sessions.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    schedules: [...prev.schedules, getDefaultScheduleRow()],
+                  }));
+                }}
+                className="btn-secondary"
+              >
+                Add Schedule
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {createForm.schedules.map((schedule, index) => (
+                <div
+                  key={`${schedule.dayOfWeek}-${index}`}
+                  className="rounded-xl border border-border/70 bg-muted/20 p-4 transition-all hover:border-primary/30"
+                >
+                  <div className="mb-4 flex items-center justify-between">
                     <div>
-                        <label className="form-label">
-                        End time
-                      </label>
-                      <input
-                        type="time"
-                        value={schedule.endTime}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setCreateForm((prev) => ({
-                            ...prev,
-                            schedules: prev.schedules.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, endTime: value } : item
-                            ),
-                          }));
-                        }}
-                          className="control-input"
-                      />
+                      <p className="text-sm font-semibold text-foreground">
+                        Schedule {index + 1}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Configure day and timing
+                      </p>
                     </div>
 
                     <button
@@ -1070,7 +1385,315 @@ export function ClassManagementPanel() {
                       onClick={() => {
                         setCreateForm((prev) => ({
                           ...prev,
-                          schedules: prev.schedules.filter((_, itemIndex) => itemIndex !== index),
+                          schedules: prev.schedules.filter(
+                            (_, itemIndex) => itemIndex !== index
+                          ),
+                        }));
+                      }}
+                      className="btn-danger"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="form-label">
+                        Day of week
+                      </label>
+
+                      <select
+                        value={schedule.dayOfWeek}
+                        onChange={(event) => {
+                          const day =
+                            event.target.value as FormState["schedules"][number]["dayOfWeek"];
+
+                          setCreateForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, dayOfWeek: day }
+                                : item
+                            ),
+                          }));
+                        }}
+                        className="control-select"
+                      >
+                        {WEEK_DAYS.map((day) => (
+                          <option key={day} value={day}>
+                            {day}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="form-label">
+                        Start time
+                      </label>
+
+                      <input
+                        type="time"
+                        value={schedule.startTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+
+                          setCreateForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, startTime: value }
+                                : item
+                            ),
+                          }));
+                        }}
+                        className="control-input"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="form-label">
+                        End time
+                      </label>
+
+                      <input
+                        type="time"
+                        value={schedule.endTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+
+                          setCreateForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, endTime: value }
+                                : item
+                            ),
+                          }));
+                        }}
+                        className="control-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Additional Information */}
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-5">
+              <h3 className="text-base font-semibold text-foreground">
+                Additional Information
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Optional details about the class.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="classScheduleSummary" className="form-label">
+                  Schedule summary
+                </label>
+
+                <input
+                  id="classScheduleSummary"
+                  value={createForm.schedules
+                    .map(
+                      (row) =>
+                        `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`
+                    )
+                    .join(" | ")}
+                  readOnly
+                  className="control-input"
+                  placeholder="Auto-generated from schedule rows"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="classDescription" className="form-label">
+                  Description
+                </label>
+
+                <textarea
+                  id="classDescription"
+                  rows={4}
+                  value={createForm.description}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
+                  }
+                  className="control-textarea"
+                  placeholder="Weekly class focus and outcomes"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="btn-primary w-full"
+          >
+            {isSaving ? "Saving..." : "Create Class"}
+          </button>
+        </form>
+
+      </aside>
+
+      {/* Edit class panel */}
+      <button
+        type="button"
+        aria-label="Close edit class panel"
+        onClick={() => { setIsEditPanelOpen(false); setEditingId(null); }}
+        className={`fixed inset-0 z-40 bg-black/40 transition ${isEditPanelOpen ? "visible opacity-100" : "invisible opacity-0"}`}
+      />
+
+      <aside
+        className={`drawer-panel transition-transform duration-300 ${
+          isEditPanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div className="sticky top-0 z-10 -mx-6 mb-6 border-b border-brand-200 bg-white/90 px-6 pb-4 pt-1 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
+                <Pencil size={18} />
+              </span>
+              <div>
+                <h3 className="text-xl font-semibold">Edit class</h3>
+                <p className="mt-1 text-sm text-muted">Update class details and schedules.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setIsEditPanelOpen(false); setEditingId(null); }}
+              className="btn-ghost"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="form-section">
+            <label htmlFor="editClassName" className="form-label">
+              Class name
+            </label>
+            <input
+              id="editClassName"
+              required
+              value={editForm.name}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+              className="control-input"
+              placeholder="Math - Grade 7"
+            />
+          </div>
+
+          <div className="form-section grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="editMonthlyFee" className="form-label">
+                Monthly fee (LKR)
+              </label>
+              <input
+                id="editMonthlyFee"
+                type="number"
+                min="0"
+                required
+                value={editForm.monthlyFee}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, monthlyFee: event.target.value }))}
+                className="control-input"
+                placeholder="2500"
+              />
+            </div>
+            <div>
+              <label htmlFor="editPaymentDueWeek" className="form-label">
+                Payment due week
+              </label>
+              <select
+                id="editPaymentDueWeek"
+                value={editForm.paymentDueWeek}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, paymentDueWeek: event.target.value }))}
+                className="control-select"
+              >
+                <option value="1">First week</option>
+                <option value="2">Second week</option>
+                <option value="3">Third week</option>
+                <option value="4">Fourth week</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <label className="form-label">Class schedules</label>
+            <div className="space-y-3">
+              {editForm.schedules.map((schedule, index) => (
+                <div key={`${schedule.dayOfWeek}-${index}`} className="schedule-card">
+                  <div>
+                    <label className="form-label">Day of week</label>
+                    <select
+                      value={schedule.dayOfWeek}
+                      onChange={(event) => {
+                        const day = event.target.value as FormState["schedules"][number]["dayOfWeek"];
+                        setEditForm((prev) => ({
+                          ...prev,
+                          schedules: prev.schedules.map((s, i) =>
+                            i === index ? { ...s, dayOfWeek: day } : s
+                          ),
+                        }));
+                      }}
+                      className="control-select"
+                    >
+                      {WEEK_DAYS.map((day) => (
+                        <option key={day} value={day}>{day}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <div>
+                      <label className="form-label">Start time</label>
+                      <input
+                        type="time"
+                        value={schedule.startTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setEditForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((s, i) =>
+                              i === index ? { ...s, startTime: value } : s
+                            ),
+                          }));
+                        }}
+                        className="control-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">End time</label>
+                      <input
+                        type="time"
+                        value={schedule.endTime}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setEditForm((prev) => ({
+                            ...prev,
+                            schedules: prev.schedules.map((s, i) =>
+                              i === index ? { ...s, endTime: value } : s
+                            ),
+                          }));
+                        }}
+                        className="control-input"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={editForm.schedules.length <= 1}
+                      onClick={() => {
+                        setEditForm((prev) => ({
+                          ...prev,
+                          schedules: prev.schedules.filter((_, i) => i !== index),
                         }));
                       }}
                       className="btn-danger self-end"
@@ -1083,12 +1706,7 @@ export function ClassManagementPanel() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                setCreateForm((prev) => ({
-                  ...prev,
-                  schedules: [...prev.schedules, getDefaultScheduleRow()],
-                }));
-              }}
+              onClick={() => setEditForm((prev) => ({ ...prev, schedules: [...prev.schedules, getDefaultScheduleRow()] }))}
               className="btn-secondary mt-2"
             >
               Add schedule row
@@ -1096,42 +1714,37 @@ export function ClassManagementPanel() {
           </div>
 
           <div className="form-section">
-            <label htmlFor="classScheduleSummary" className="form-label">
-              Schedule summary (optional)
-            </label>
+            <label className="form-label">Schedule summary</label>
             <input
-              id="classScheduleSummary"
-              value={createForm.schedules
-                .map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`)
-                .join(" | ")}
+              value={editForm.schedules.map((row) => `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`).join(" | ")}
               readOnly
               className="control-input"
-              placeholder="Auto-generated from schedule rows"
             />
           </div>
 
           <div className="form-section">
-            <label htmlFor="classDescription" className="form-label">
+            <label htmlFor="editDescription" className="form-label">
               Description
             </label>
             <textarea
-              id="classDescription"
+              id="editDescription"
               rows={4}
-              value={createForm.description}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
+              value={editForm.description}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
               className="control-textarea"
               placeholder="Weekly class focus and outcomes"
             />
           </div>
 
           <button
-            type="submit"
-            disabled={isSaving}
+            type="button"
+            disabled={isSaving || !editingId}
+            onClick={() => editingId && void saveEdit(editingId)}
             className="btn-primary w-full"
           >
-            {isSaving ? "Saving..." : "Create class"}
+            {isSaving ? "Saving..." : "Update class"}
           </button>
-        </form>
+        </div>
       </aside>
 
       <button
@@ -1146,92 +1759,549 @@ export function ClassManagementPanel() {
           studentsPanelClassId ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="sticky top-0 z-10 -mx-6 mb-6 border-b border-brand-200 bg-white/90 px-6 pb-4 pt-1 backdrop-blur">
+        {/* Header */}
+        {/* Header */}
+        <div className="sticky top-0 z-10 -mx-6 mb-5 border-b border-slate-200 bg-white px-6 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                <Users size={16} />
+              </span>
+
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Students
+                </h3>
+
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {studentsPanelClass?.name ?? "Class"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openAddStudents}
+                className="
+                  inline-flex
+                  h-9
+                  items-center
+                  gap-2
+                  rounded-md
+                  bg-brand-600
+                  px-3
+                  text-sm
+                  font-medium
+                  text-white
+                  hover:bg-brand-700
+                "
+              >
+                <UserPlus size={14} />
+                Add Students
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStudentsPanelClassId(null)}
+                className="
+                  inline-flex
+                  h-9
+                  items-center
+                  rounded-md
+                  border
+                  border-slate-200
+                  px-3
+                  text-sm
+                  text-slate-600
+                  hover:bg-slate-50
+                "
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Overview */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Overview</p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Active {studentsPanelActiveStudents.length}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-600">
+                Past {studentsPanelPastStudents.length}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                Total {studentsPanelClass?.students.length ?? 0}
+              </span>
+            </div>
+          </div>
+
+          {/* Active Students */}
+          <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+                Active students ({studentsPanelActiveStudents.length})
+              </p>
+            </div>
+            {studentsPanelActiveStudents.length === 0 ? (
+              <div className="px-5 py-6 text-center">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
+                  <Users size={16} className="text-muted" />
+                </span>
+                <p className="mt-2 text-sm font-semibold text-foreground">No active students</p>
+                <p className="text-xs text-muted">Add students using the button above.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {studentsPanelActiveStudents.map((entry) => (
+                  <li
+                      key={entry.id}
+                      className="
+                        flex
+                        items-center
+                        justify-between
+                        gap-3
+                        px-4
+                        py-3
+                        transition-colors
+                        hover:bg-slate-50
+                      "
+                    >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                          className="
+                            inline-flex
+                            h-8
+                            w-8
+                            shrink-0
+                            items-center
+                            justify-center
+                            rounded-md
+                            bg-blue-50
+                            text-xs
+                            font-semibold
+                            text-blue-700
+                          "
+                        >
+                        {entry.student.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">{entry.student.name}</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {entry.student.registrationNumber ? (
+                            <span className="text-xs text-muted">{entry.student.registrationNumber}</span>
+                          ) : null}
+                          <span className="text-xs text-muted">
+                            Joined {new Date(entry.assignedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link
+                        href={`/dashboard/students/${entry.student.id}`}
+                        className="
+                          inline-flex
+                          items-center
+                          justify-center
+                          rounded-md
+                          border
+                          border-slate-200
+                          p-2
+                          text-slate-600
+                          transition-colors
+                          hover:bg-slate-50
+                          hover:text-brand-700
+                        "
+                        title="View Student Profile"
+                      >
+                        <Eye size={14} />
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRemovingEntry({
+                            studentId: entry.student.id,
+                            name: entry.student.name,
+                          })
+                        }
+                        className="
+                          inline-flex
+                          items-center
+                          gap-1
+                          rounded-md
+                          border
+                          border-rose-200
+                          px-2.5
+                          py-1.5
+                          text-xs
+                          font-medium
+                          text-rose-600
+                          transition-colors
+                          hover:bg-rose-50
+                        "
+                      >
+                        <UserMinus size={12} />
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Past Students */}
+          <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-gray-100 px-5 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+                Past students ({studentsPanelPastStudents.length})
+              </p>
+            </div>
+            {studentsPanelPastStudents.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted">No past student records yet.</p>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {studentsPanelPastStudents.map((entry) => (
+                  <li key={entry.id} className="px-5 py-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-500">
+                        {entry.student.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-foreground">{entry.student.name}</p>
+                          <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                            Removed
+                          </span>
+                        </div>
+                        {entry.student.registrationNumber ? (
+                          <p className="text-xs text-muted">{entry.student.registrationNumber}</p>
+                        ) : null}
+                        <div className="mt-1.5 space-y-0.5">
+                          <p className="flex items-center gap-1.5 text-xs text-muted">
+                            <span className="font-medium text-gray-500">Joined:</span>
+                            {new Date(entry.assignedAt).toLocaleString("en-GB", {
+                              day: "2-digit", month: "short", year: "numeric",
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </p>
+                          <p className="flex items-center gap-1.5 text-xs text-muted">
+                            <span className="font-medium text-rose-500">Removed:</span>
+                            {entry.removedAt
+                              ? new Date(entry.removedAt).toLocaleString("en-GB", {
+                                  day: "2-digit", month: "short", year: "numeric",
+                                  hour: "2-digit", minute: "2-digit",
+                                })
+                              : "—"}
+                          </p>
+                          {entry.removeReason ? (
+                            <p className="flex items-start gap-1.5 text-xs text-muted">
+                              <span className="font-medium text-gray-500">Reason:</span>
+                              <span className="italic">{entry.removeReason}</span>
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <Link
+                          href={`/dashboard/students/${entry.student.id}`}
+                          className="
+                            flex h-8 w-8 items-center justify-center
+                            rounded-lg
+                            border border-slate-200
+                            text-slate-500
+                            transition
+                            hover:border-brand-300
+                            hover:bg-brand-50
+                            hover:text-brand-700
+                          "
+                          title="View Student Profile"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
+                      
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+
+        </div>
+      </aside>
+
+      {/* ── Add Students Panel ───────────────────────────────────── */}
+      <button
+        type="button"
+        aria-label="Close add students panel"
+        onClick={() => setIsAddStudentsOpen(false)}
+        className={`fixed inset-0 z-50 bg-black/40 transition ${isAddStudentsOpen ? "visible opacity-100" : "invisible opacity-0"}`}
+      />
+
+      <aside
+        className={`drawer-panel flex flex-col transition-transform duration-300 ${
+          isAddStudentsOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Panel header */}
+        <div className="sticky top-0 z-10 -mx-6 shrink-0 border-b border-brand-200 bg-white/90 px-6 pb-4 pt-1 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
-                <Users size={18} />
+                <UserPlus size={18} />
               </span>
               <div>
-                <h3 className="text-xl font-semibold">Students</h3>
-                <p className="mt-1 text-sm text-muted">{studentsPanelClass?.name ?? "Class"}</p>
+                <h3 className="text-xl font-semibold">Add students</h3>
+                <p className="mt-1 text-sm text-muted">{studentsPanelClass?.name}</p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => setStudentsPanelClassId(null)}
+              onClick={() => setIsAddStudentsOpen(false)}
               className="btn-ghost"
             >
               Close
             </button>
           </div>
+
+          {/* Search */}
+          <div className="mt-4">
+            <div className="relative">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                value={studentSearchQuery}
+                onChange={(e) => setStudentSearchQuery(e.target.value)}
+                placeholder="Search by name or registration number..."
+                className="control-input pl-9"
+              />
+            </div>
+            {selectedStudentIds.size > 0 && (
+              <p className="mt-2 text-xs font-semibold text-brand-700">
+                {selectedStudentIds.size} student{selectedStudentIds.size !== 1 ? "s" : ""} selected
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="surface-soft rounded-2xl p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Overview</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="metric-badge">Active {studentsPanelActiveStudents.length}</span>
-              <span className="metric-badge">Past {studentsPanelPastStudents.length}</span>
-              <span className="metric-badge">Total {(studentsPanelClass?.students.length ?? 0)}</span>
+        {/* Student list */}
+        <div className="flex-1 overflow-y-auto -mx-6 px-4 py-3">
+          {isLoadingAvailableStudents ? (
+            <div className="flex items-center justify-center py-16">
+              <p className="text-sm text-muted">Loading students...</p>
             </div>
-          </div>
-
-          <div className="surface-soft rounded-2xl p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Active students ({studentsPanelActiveStudents.length})</p>
-            {studentsPanelActiveStudents.length === 0 ? (
-              <p className="mt-2 text-sm text-muted">No active students currently assigned.</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {studentsPanelActiveStudents.map((entry) => (
-                  <div key={entry.id} className="surface-soft rounded-2xl p-5">
-                    <div className="flex items-start gap-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-                        {entry.student.name.slice(0, 2).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{entry.student.name}</p>
-                        {entry.student.registrationNumber ? (
-                          <span className="text-xs font-normal text-muted">({entry.student.registrationNumber})</span>
-                        ) : null}
-                        <p className="text-xs text-muted">Joined: {new Date(entry.assignedAt).toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          ) : filteredAvailableStudents.length === 0 ? (
+            
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
+                <Users size={28} />
               </div>
-            )}
-          </div>
 
-          <div className="surface-soft rounded-2xl p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Past students ({studentsPanelPastStudents.length})</p>
-            {studentsPanelPastStudents.length === 0 ? (
-              <p className="mt-2 text-sm text-muted">No past student records yet.</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {studentsPanelPastStudents.map((entry) => (
-                  <div key={entry.id} className="surface-soft rounded-2xl p-5">
-                    <div className="flex items-start gap-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-                        {entry.student.name.slice(0, 2).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{entry.student.name}</p>
-                        {entry.student.registrationNumber ? (
-                          <span className="text-xs font-normal text-muted">({entry.student.registrationNumber})</span>
-                        ) : null}
-                        <p className="text-xs text-muted">Joined: {new Date(entry.assignedAt).toLocaleString()}</p>
-                        <p className="text-xs text-muted">Removed: {entry.removedAt ? new Date(entry.removedAt).toLocaleString() : "-"}</p>
-                        {entry.removeReason ? <p className="text-xs text-muted">Reason: {entry.removeReason}</p> : null}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <h3 className="mt-4 text-lg font-semibold text-foreground">
+                No Students Available
+              </h3>
+
+              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                There are no students available to assign to this class.
+                Create a student first and then return here to enroll them.
+              </p>
+
+              <div className="mt-6 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/students")}
+                  className="
+                    inline-flex items-center gap-2
+                    rounded-xl
+                    border border-slate-200
+                    px-4 py-2.5
+                    text-sm font-medium
+                    text-slate-600
+                    transition
+                    hover:bg-slate-50
+                  "
+                >
+                  <RotateCcw size={16} />
+                  Go to Students
+                </button>
+
+                
+
               </div>
-            )}
+            </div>
+
+
+
+
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {filteredAvailableStudents.map((student) => {
+                const isEnrolled = activeStudentIdSet.has(student.id);
+                const isSelected = selectedStudentIds.has(student.id);
+                return (
+                  <li key={student.id}>
+                    <button
+                      type="button"
+                      disabled={isEnrolled}
+                      onClick={() => {
+                        if (isEnrolled) return;
+                        setSelectedStudentIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(student.id)) next.delete(student.id);
+                          else next.add(student.id);
+                          return next;
+                        });
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors ${
+                        isEnrolled
+                          ? "cursor-default opacity-50"
+                          : isSelected
+                          ? "bg-brand-50"
+                          : "hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className={`shrink-0 ${isEnrolled ? "text-gray-300" : isSelected ? "text-brand-600" : "text-gray-300"}`}>
+                        {isSelected ? <CheckSquare2 size={18} /> : <Square size={18} />}
+                      </span>
+                      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                        isEnrolled ? "bg-gray-100 text-gray-400" : "bg-brand-100 text-brand-700"
+                      }`}>
+                        {student.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-foreground">{student.name}</p>
+                        <div className="flex flex-wrap items-center gap-x-2">
+                          {student.registrationNumber ? (
+                            <span className="text-xs text-muted">{student.registrationNumber}</span>
+                          ) : null}
+                          {student.grade ? (
+                            <span className="text-xs text-muted">
+                              {student.grade.GradeDesc
+                                .replace("GRADE_0", "Grade ")
+                                .replace("GRADE_", "Grade ")}
+                            </span>
+                          ) : null}
+
+                          {student.status === 0 ? (
+                            <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                              Inactive
+                            </span>
+                          )}
+
+                        </div>
+                      </div>
+
+                      {isEnrolled && (
+                        <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                          Enrolled
+                        </span>
+                      )}
+                      {student.status !== 0 && (
+                        <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-semibold text-red-700">
+                          Inactive
+                        </span>
+                      )}
+
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div className="-mx-6 shrink-0 border-t border-brand-200 bg-white px-6 py-4">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setIsAddStudentsOpen(false)}
+              className="btn-ghost flex-1"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={selectedStudentIds.size === 0 || isAssigning}
+              onClick={() => void handleAssignStudents()}
+              className="btn-primary flex-1 gap-2"
+            >
+              <UserPlus size={14} />
+              {isAssigning
+                ? "Adding..."
+                : selectedStudentIds.size > 0
+                ? `Add ${selectedStudentIds.size} student${selectedStudentIds.size !== 1 ? "s" : ""}`
+                : "Select students"}
+            </button>
           </div>
         </div>
       </aside>
+
+      {/* ── Remove Confirmation Modal ─────────────────────────────── */}
+      {removingEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-panel">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                <AlertTriangle size={18} />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Remove student?</h3>
+                <p className="mt-1 text-sm text-muted">
+                  <span className="font-semibold text-foreground">{removingEntry.name}</span> will be removed from{" "}
+                  <span className="font-semibold text-foreground">{studentsPanelClass?.name}</span>. Their activity history will be preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <label htmlFor="removeReason" className="form-label">
+                Reason <span className="font-normal text-muted">(optional)</span>
+              </label>
+              <textarea
+                id="removeReason"
+                rows={3}
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                placeholder="e.g. Completed the course, transferred to another class..."
+                className="control-textarea mt-1"
+              />
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                disabled={isRemoving}
+                onClick={() => { setRemovingEntry(null); setRemoveReason(""); }}
+                className="btn-ghost flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isRemoving}
+                onClick={() => void handleRemoveStudent()}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition-all hover:bg-rose-700 disabled:opacity-60"
+              >
+                <UserMinus size={14} />
+                {isRemoving ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isHelpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">

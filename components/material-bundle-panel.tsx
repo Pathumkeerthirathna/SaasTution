@@ -176,7 +176,7 @@ export function MaterialBundlePanel() {
   const [bundles, setBundles] = useState<BundleListItem[]>([]);
 
   const [filterClassId, setFilterClassId] = useState("");
-  const [filterYear, setFilterYear] = useState(String(now.getFullYear()));
+  const [filterYear, setFilterYear] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -281,7 +281,7 @@ export function MaterialBundlePanel() {
     try {
       const qs = new URLSearchParams({
         page: String(nextPage),
-        pageSize: "8",
+        pageSize: "4",
       });
 
       if (filterClassId) qs.set("classId", filterClassId);
@@ -1248,8 +1248,8 @@ export function MaterialBundlePanel() {
                   </div>
                 </div>
 
-                <div className="mt-7 grid gap-4 lg:grid-cols-2">
-                  <div className="flex h-full flex-col rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft lg:h-[220px]">
+                <div className="mt-7 grid gap-4 lg:auto-rows-fr lg:grid-cols-2">
+                  <div className="flex h-full min-h-[220px] flex-col rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft">
                     <p className="text-base font-semibold text-emerald-700">
                       {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
                     </p>
@@ -1275,7 +1275,7 @@ export function MaterialBundlePanel() {
                     </div>
                   </div>
 
-                  <div className="flex h-full flex-col rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft lg:h-[220px]">
+                  <div className="flex h-full min-h-[220px] flex-col rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft">
                     <p className="text-base font-semibold text-amber-700">Students who will not receive</p>
                     <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
                       <div className="space-y-2">
