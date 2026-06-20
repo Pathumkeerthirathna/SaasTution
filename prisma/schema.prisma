@@ -563,8 +563,3 @@ enum StudentClassAction {
   UNASSIGNED
 }
 
-export const STUDENT_STATUS = {
-  ACTIVE: 0,
-  INACTIVE: 1,
-  DELETED: 2,
-} as const;
