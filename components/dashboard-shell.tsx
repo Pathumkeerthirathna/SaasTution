@@ -19,6 +19,8 @@ import {
   KeyRound,
   ChevronDown,
   ChevronRight,
+  UserCircle2,
+  BadgeInfo,
 } from "lucide-react";
 
 type DashboardShellProps = {
@@ -53,6 +55,11 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     }
     return [
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={16} /> },
+       {
+        href: "/teacher/profile",
+        label: "Teacher Profile",
+        icon: <BadgeInfo size={16} />
+      },
       { href: "/dashboard/classes",                       label: "Classes",            icon: <BookOpen size={16} /> },
       { href: "/dashboard/students",                      label: "Students",           icon: <Users size={16} /> },
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={16} /> },

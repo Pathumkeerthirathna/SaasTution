@@ -1,0 +1,122 @@
+// components/teacherProfile/TeacherProfilePage.tsx
+
+"use client";
+
+import { useState } from "react";
+
+import TeacherProfileHeader from "../../components/teacherProfile/TeacherProfileHeader";
+import TeacherProfileStats from "./TeacherProfileStats";
+import TeacherProfileCompletionCard from "./TeacherProfileCompletionCard";
+
+import TeacherAboutCard from "./TeacherAboutCard";
+import TeacherMediumsCard from "./TeacherMediumsCard";
+import TeacherSocialLinksCard from "./TeacherSocialLinksCard";
+
+import TeacherQualificationCard from "./TeacherQualificationCard";
+import TeacherAchievementCard from "./TeacherAchievementCard";
+import TeacherSubjectsCard from "./TeacherSubjectsCard";
+import TeacherClassesCard from "./TeacherClassesCard";
+
+import TeacherProfileDrawer from "./TeacherProfileDrawer";
+
+export default function TeacherProfilePage() {
+  const [isDrawerOpen, setIsDrawerOpen] =
+    useState(false);
+
+  const [drawerMode, setDrawerMode] =
+    useState<string>("");
+
+  const openDrawer = (mode: string) => {
+    setDrawerMode(mode);
+    setIsDrawerOpen(true);
+  };
+
+  return (
+    <>
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-[1800px] px-3 py-4">
+
+          {/* Header */}
+          <TeacherProfileHeader
+            onEdit={() =>
+              openDrawer("profile")
+            }
+          />
+
+          {/* Stats */}
+          {/* <div className="mt-6">
+            <TeacherProfileStats />
+          </div> */}
+
+          {/* Main Content */}
+          <div className="mt-6 grid gap-4 lg:grid-cols-[320px_1fr]">
+
+            {/* Left Column */}
+            <div className="space-y-6">
+
+              <TeacherAboutCard
+                onEdit={() =>
+                  openDrawer("about")
+                }
+              />
+
+              <TeacherSocialLinksCard
+                onEdit={() =>
+                  openDrawer("social")
+                }
+              />
+
+              <TeacherProfileCompletionCard />
+
+              
+
+              <TeacherMediumsCard
+                onEdit={() =>
+                  openDrawer("mediums")
+                }
+              />
+
+              
+
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-6">
+
+              <TeacherClassesCard />
+
+               <TeacherSubjectsCard
+                onEdit={() =>
+                  openDrawer("subjects")
+                }
+              />
+
+              <TeacherQualificationCard
+                onAdd={() =>
+                  openDrawer("qualification")
+                }
+              />
+
+              <TeacherAchievementCard
+                onAdd={() =>
+                  openDrawer("achievement")
+                }
+              />
+
+
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <TeacherProfileDrawer
+        open={isDrawerOpen}
+        mode={drawerMode}
+        onClose={() =>
+          setIsDrawerOpen(false)
+        }
+      />
+    </>
+  );
+}

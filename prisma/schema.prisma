@@ -13,6 +13,9 @@ model Teacher {
   email                  String                @unique
   password               String
   createdAt              DateTime              @default(now())
+
+  profile                TeacherProfile?
+  
   classes                Class[]
   students               Student[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
@@ -21,7 +24,222 @@ model Teacher {
   paperConfig            TeacherPaperConfig?
 
   @@index([createdAt])
+
 }
+
+model District {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+
+  cities City[]
+
+  teacherProfiles TeacherProfile[]
+}
+
+model City {
+  id         Int      @id @default(autoincrement())
+  districtId Int
+
+  name       String
+
+  district   District @relation(fields:[districtId], references:[id])
+
+  teacherProfiles TeacherProfile[]
+
+  @@unique([districtId, name])
+}
+
+model TeacherProfile {
+  id                    String   @id @default(uuid())
+
+  // Owner teacher account
+  teacherId             String   @unique
+  teacher               Teacher  @relation(fields:[teacherId], references:[id])
+
+  // Public profile URL
+  // Example:
+  // slclassroom.live/pathum-kumara
+  // slclassroom.live/sarah-wickramasinghe
+  slug                  String   @unique
+
+  // Profile images
+  profileImageUrl       String?
+  coverImageUrl         String?
+
+  // Professional title shown under teacher name
+  // Examples:
+  // Mathematics Teacher
+  // Physics Lecturer
+  // Combined Maths Instructor
+  // ICT Tutor
+  designation           String?
+
+  // Short marketing headline
+  // Examples:
+  // Helping students achieve A passes in Mathematics
+  // Building strong foundations for O/L Science
+  // 8+ years guiding students to exam success
+  headline              String?
+
+  // Detailed teacher introduction
+  // Appears in "About Me" section
+  aboutMe               String? @db.Text
+
+  // Short qualification summary
+  // Examples:
+  // BSc (Hons) Mathematics, PGDE
+  // BSc Engineering, MSc Data Science
+  qualificationSummary  String? @db.Text
+
+  // Total teaching experience in years
+  // Example: 8
+  yearsOfExperience     Int?
+
+  // Contact information
+  phone                 String?
+  whatsapp              String?
+
+  // Location
+  // Example:
+  // District = Colombo
+  // City = Maharagama
+  districtId Int?
+  cityId     Int?
+
+  district District? @relation(fields:[districtId], references:[id])
+  city     City?     @relation(fields:[cityId], references:[id])
+
+  // Social media & website links
+  facebookUrl           String?
+  youtubeUrl            String?
+  tiktokUrl             String?
+  instagramUrl          String?
+  websiteUrl            String?
+
+  // SEO metadata for public profile page
+  // Example:
+  // Best Mathematics Teacher in Colombo
+  seoTitle              String?
+
+  // Example:
+  // Experienced Mathematics Teacher conducting
+  // Grade 6-11 classes in Sinhala and English mediums.
+  seoDescription        String?
+
+  // Platform verification badge
+  // Shows:
+  // ✓ Verified Teacher
+  isVerified            Boolean @default(false)
+
+  // Controls public visibility
+  // true  = profile visible
+  // false = profile hidden
+  isPublic              Boolean @default(true)
+
+  // Number of visits to public profile page
+  profileViewCount      Int @default(0)
+
+  // Qualifications
+  // Examples:
+  // BSc (Hons) Mathematics
+  // PG Diploma in Education
+  qualifications        TeacherQualification[]
+
+  // Achievements
+  // Examples:
+  // Best Teacher Award 2025
+  // 100% A Pass Rate
+  achievements          TeacherAchievement[]
+
+
+  // Teaching mediums
+  // Examples:
+  // Sinhala
+  // English
+  // Tamil
+  mediums               TeacherProfileMedium[]
+
+  subjects TeacherProfileSubject[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([districtId])
+  @@index([cityId])
+}
+
+model Medium {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+
+  teachers    TeacherProfileMedium[]
+}
+
+model TeacherProfileMedium {
+  id         String @id @default(uuid())
+
+  profileId  String
+  mediumId   Int
+
+  profile    TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  medium     Medium         @relation(fields: [mediumId], references: [id])
+
+  @@unique([profileId, mediumId])
+}
+
+model TeacherQualification {
+  id          String @id @default(uuid())
+
+  profileId   String
+
+  title       String
+  institute   String
+
+  startYear   Int?
+  endYear     Int?
+
+  displayOrder Int @default(0)
+
+  profile TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
+}
+
+model TeacherAchievement {
+  id          String @id @default(uuid())
+
+  profileId   String
+
+  title       String
+  description String?
+
+  displayOrder Int @default(0)
+
+  year        Int?
+
+  profile TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
+}
+
+model Subject {
+  id       Int    @id @default(autoincrement())
+  name     String @unique
+
+  teachers TeacherProfileSubject[]
+}
+
+model TeacherProfileSubject {
+  id         String @id @default(uuid())
+
+  profileId  String
+  subjectId  Int
+
+  gradeFrom  Int?
+  gradeTo    Int?
+
+  profile    TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
+  subject    Subject        @relation(fields:[subjectId], references:[id])
+
+  @@unique([profileId, subjectId])
+}
+
 
 model Student {
   id                            String                         @id @default(uuid())
