@@ -67,67 +67,188 @@ export function LoginForm() {
 
   return (
     <AuthShell
-      title="Teacher, Admin, and Student sign in"
-      subtitle="Teachers and admins can use email, while students can use registration number."
+      title="Welcome back"
+      subtitle="Sign in to manage classes, students, attendance and payments."
       footerText="Need a teacher account?"
       footerLinkHref="/register"
       footerLinkLabel="Register"
     >
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="loginId" className="mb-1 block text-sm font-medium">
-            Email or registration number
-          </label>
-          <input
-            id="loginId"
-            type="text"
-            required
-            autoComplete="username"
-            value={formState.loginId}
-            onChange={(event) => setFormState((prev) => ({ ...prev, loginId: event.target.value }))}
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none ring-0 transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-            placeholder="teacher@school.com or ABC-2026-001"
-          />
-        </div>
+      <form
+        className="space-y-5"
+        onSubmit={handleSubmit}
+      >
+        {/* Login */}
 
         <div>
-          <label htmlFor="password" className="mb-1 block text-sm font-medium">
-            Password
+          <label
+            htmlFor="loginId"
+            className="mb-2 block text-sm font-semibold text-slate-700"
+          >
+            Email or Registration Number
           </label>
+
+          <div className="relative">
+            <input
+              id="loginId"
+              type="text"
+              required
+              autoComplete="username"
+              value={formState.loginId}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  loginId: event.target.value,
+                }))
+              }
+              className="
+                w-full
+                rounded-2xl
+                border
+                border-slate-200
+                bg-slate-50
+                px-4
+                py-3
+                text-sm
+                outline-none
+                transition-all
+                placeholder:text-slate-400
+                focus:border-emerald-500
+                focus:bg-white
+                focus:ring-4
+                focus:ring-emerald-100
+              "
+              placeholder="teacher@mail.com or ST20260001"
+            />
+          </div>
+        </div>
+
+        {/* Password */}
+
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <label
+              htmlFor="password"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Password
+            </label>
+
+            <Link
+              href="/reset-password"
+              className="text-xs font-semibold text-orange-600 hover:text-orange-700"
+            >
+              Forgot Password?
+            </Link>
+          </div>
+
           <input
             id="password"
             type="password"
             required
             autoComplete="current-password"
             value={formState.password}
-            onChange={(event) => setFormState((prev) => ({ ...prev, password: event.target.value }))}
-            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none ring-0 transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+            onChange={(event) =>
+              setFormState((prev) => ({
+                ...prev,
+                password: event.target.value,
+              }))
+            }
+            className="
+              w-full
+              rounded-2xl
+              border
+              border-slate-200
+              bg-slate-50
+              px-4
+              py-3
+              text-sm
+              outline-none
+              transition-all
+              placeholder:text-slate-400
+              focus:border-emerald-500
+              focus:bg-white
+              focus:ring-4
+              focus:ring-emerald-100
+            "
             placeholder="Enter your password"
           />
         </div>
 
-        {errorMessage ? (
-          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
-        ) : null}
+        {/* Error */}
+
+        {errorMessage && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Button */}
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="
+            w-full
+            rounded-2xl
+            bg-gradient-to-r
+            from-emerald-600
+            to-orange-500
+            px-4
+            py-3
+            text-sm
+            font-semibold
+            text-white
+            shadow-lg
+            shadow-emerald-200
+            transition-all
+            duration-300
+            hover:-translate-y-0.5
+            hover:shadow-xl
+            hover:shadow-orange-200
+            disabled:cursor-not-allowed
+            disabled:opacity-60
+          "
         >
-          {isSubmitting ? "Signing in..." : "Sign in"}
+          {isSubmitting
+            ? "Signing in..."
+            : "Sign In"}
         </button>
 
-        <div className="text-center text-sm">
-          <Link href="/reset-password" className="font-medium text-brand-700 hover:underline">
-            Forgot password?
-          </Link>
+        {/* Divider */}
+
+        <div className="relative py-1">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200" />
+          </div>
+
+          <div className="relative flex justify-center">
+            <span className="bg-white px-4 text-xs font-medium uppercase tracking-wider text-slate-400">
+              Secure Login
+            </span>
+          </div>
+        </div>
+
+        {/* Info */}
+
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-orange-50 p-4">
+          <p className="text-sm font-semibold text-slate-800">
+            SaasTution Management System
+          </p>
+
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            Teachers and administrators can sign in using
+            their email address. Students can use their
+            registration number and password.
+          </p>
         </div>
       </form>
 
-      <div className="mt-6 text-center text-sm">
-        <Link href="/" className="font-medium">
-          Back to home
+      <div className="mt-6 border-t border-slate-200 pt-5 text-center">
+        <Link
+          href="/"
+          className="text-sm font-semibold text-slate-600 transition hover:text-emerald-600"
+        >
+          ← Back to Home
         </Link>
       </div>
     </AuthShell>

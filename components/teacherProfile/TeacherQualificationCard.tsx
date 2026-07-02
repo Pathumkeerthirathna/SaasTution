@@ -1,44 +1,182 @@
 "use client";
 
+import { TeacherQualification } from "@prisma/client";
 import {
   GraduationCap,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { QualificationForm } from "./qualification/qualification-types";
+import QualificationDrawer from "./qualification/QualificationDrawer";
 
-interface Props {
-  onAdd?: () => void;
-}
+// interface Props {
+//   onAdd?: () => void;
+// }
 
 export default function TeacherQualificationCard({
-  onAdd,
-}: Props) {
-  const qualifications = [
-    {
-      id: 1,
-      title: "BSc (Hons) Mathematics",
-      institute: "University of Colombo",
-      startYear: 2018,
-      endYear: 2022,
-    },
-    {
-      id: 2,
-      title: "Postgraduate Diploma in Education",
-      institute: "Open University of Sri Lanka",
-      startYear: 2023,
-      endYear: 2024,
-    },
-    {
-      id: 3,
-      title: "Advanced Certificate in Teaching",
-      institute: "National Institute of Education",
-      startYear: 2024,
-      endYear: 2025,
-    },
-  ];
+  
+}) {
+
+
+  const [qualifications, setQualifications] = useState<
+    TeacherQualification[]
+  >([]);
+
+  const [loading, setLoading] = useState(true);
+
+  const [drawerOpen, setDrawerOpen] =
+    useState(false);
+
+  const [editingQualification,
+      setEditingQualification] =
+  useState<TeacherQualification | null>(null);
+
+  const [saving, setSaving] =
+  useState(false);
+
+  useEffect(() => {
+    loadQualifications();
+  }, []);
+
+  async function loadQualifications() {
+    try {
+      const res = await fetch(
+        "/api/teacher/profile/qualifications"
+      );
+
+      if (!res.ok)
+        throw new Error("Failed to load qualifications");
+
+      const data = await res.json();
+
+      setQualifications(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openAddDrawer() {
+
+      setEditingQualification(null);
+
+      setDrawerOpen(true);
+
+  }
+
+  function openEditDrawer(
+    qualification: TeacherQualification
+  ) {
+
+      setEditingQualification(
+          qualification
+      );
+
+      setDrawerOpen(true);
+
+  }
+
+  async function saveQualification(
+  form: QualificationForm
+  ) {
+
+      setSaving(true);
+
+      try {
+
+          const editing =
+              editingQualification != null;
+
+          const url = editing
+              ? `/api/teacher/profile/qualifications/${editingQualification.id}`
+              : "/api/teacher/profile/qualifications";
+
+          const method =
+              editing ? "PUT" : "POST";
+
+          const response =
+              await fetch(url,{
+
+                  method,
+
+                  headers:{
+                      "Content-Type":
+                      "application/json"
+                  },
+
+                  body:JSON.stringify(form)
+
+              });
+
+          if(!response.ok){
+
+              const error =
+              await response.json();
+
+              throw new Error(
+                  error.message
+              );
+
+          }
+
+          alert(
+              editing
+                  ? "Qualification updated successfully."
+                  : "Qualification added successfully."
+          );
+
+          setDrawerOpen(false);
+
+          setEditingQualification(
+              null
+          );
+
+          await loadQualifications();
+
+      }
+      finally{
+
+          setSaving(false);
+
+      }
+
+  }
+
+  async function deleteQualification(
+    id:string
+    ){
+
+        if(
+    !confirm(
+    "Delete qualification?"
+    )
+    )
+    return;
+
+    const response = await fetch(
+        `/api/teacher/profile/qualifications/${id}`,
+        {
+            method: "DELETE",
+        }
+    );
+
+    if (!response.ok) {
+        const error = await response.json();
+        alert(error.message);
+        return;
+    }
+
+    await loadQualifications();
+
+  }
+
+  
 
   return (
+
+    
+
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
@@ -54,7 +192,7 @@ export default function TeacherQualificationCard({
         </div>
 
         <button
-          onClick={onAdd}
+          onClick={openAddDrawer}
           className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
@@ -100,15 +238,19 @@ export default function TeacherQualificationCard({
                     {/* Actions */}
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={() => openEditDrawer(qualification)}
                         className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-white"
                         title="Edit Qualification"
-                      >
+                    >
                         <Pencil className="h-4 w-4" />
                       </button>
 
                       <button
-                        className="rounded-xl border border-red-200 p-2 text-red-500 transition hover:bg-red-50"
-                        title="Delete Qualification"
+                          onClick={() =>
+                              deleteQualification(qualification.id)
+                          }
+                          className="rounded-xl border border-red-200 p-2 text-red-500 transition hover:bg-red-50"
+                          title="Delete Qualification"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -130,6 +272,18 @@ export default function TeacherQualificationCard({
           </p>
         </div>
       </div>
+
+      <QualificationDrawer
+          open={drawerOpen}
+          qualification={editingQualification}
+          saving={saving}
+          onClose={() => {
+              setDrawerOpen(false);
+              setEditingQualification(null);
+          }}
+          onSave={saveQualification}
+      />
+
     </div>
   );
 }

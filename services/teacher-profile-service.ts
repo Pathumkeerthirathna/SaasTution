@@ -1,47 +1,103 @@
 import { prisma } from "@/lib/prisma";
 import { AddAchievement } from "@/types/AddAchievement";
 import { AddQualification } from "@/types/AddQualification";
+import { TeacherProfile } from "@/types/teacherProfileTypes/ClassTeacher";
+import { UpdateSocialLinks } from "@/types/teacherProfileTypes/SocialLink/types";
+import { UpdateTeacherProfile } from "@/types/teacherProfileTypes/UpdateTeacherProfile";
 import { TeacherSearchFilter } from "@/types/TeacherSearchFilter";
 import { TeacherSubject } from "@/types/TeacherSubject";
 import { UpdateAchievement } from "@/types/UpdateAchievement";
 import { UpdateQualification } from "@/types/UpdateQualification";
-import { UpdateTeacherProfile } from "@/types/UpdateTeacherProfile";
+import { Prisma } from "@prisma/client";
+
+import { promises as fs } from "fs";
+import path from "path";
 
 export async function getTeacherProfile(
   teacherId: string
 ) {
+  const teacherProfileSelect = {
+    id: true,
+    teacherId: true,
+    slug: true,
+
+    profileImageUrl: true,
+    coverImageUrl: true,
+
+    designation: true,
+    headline: true,
+    aboutMe: true,
+    qualificationSummary: true,
+
+    yearsOfExperience: true,
+
+    phone: true,
+    whatsapp: true,
+
+    districtId: true,
+    cityId: true,
+
+    facebookUrl: true,
+    youtubeUrl: true,
+    instagramUrl: true,
+    tiktokUrl: true,
+    websiteUrl: true,
+
+    seoTitle: true,
+    seoDescription: true,
+
+    isVerified: true,
+    isPublic: true,
+
+    profileViewCount: true,
+
+    createdAt: true,
+    updatedAt: true,
+
+    qualifications:{
+      select:{
+        id:true,
+        displayOrder:true,
+        title:true,
+        institute:true,
+        profile:true
+      }
+    },
+
+    teacher: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    },
+
+    district: {
+      select: {
+        name: true,
+      },
+    },
+
+    city: {
+      select: {
+        name: true,
+      },
+    },
+     mediums: {
+      select: {
+        medium: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    },
+  } satisfies Prisma.TeacherProfileSelect;
+
   let profile = await prisma.teacherProfile.findUnique({
-    where: {
-      teacherId,
-    },
-    include: {
-      district: true,
-      city: true,
-
-      qualifications: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-      },
-
-      achievements: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-      },
-
-      mediums: {
-        include: {
-          medium: true,
-        },
-      },
-
-      subjects: {
-        include: {
-          subject: true,
-        },
-      },
-    },
+    where: { teacherId },
+    select: teacherProfileSelect,
   });
 
   if (!profile) {
@@ -56,53 +112,89 @@ export async function getTeacherProfile(
       throw new Error("Teacher not found");
     }
 
-    profile = await prisma.teacherProfile.create({
+    await prisma.teacherProfile.create({
       data: {
         teacherId,
         slug: teacher.name
           .toLowerCase()
           .replace(/\s+/g, "-"),
       },
-      include: {
-        district: true,
-        city: true,
-        qualifications: true,
-        achievements: true,
-        mediums: {
-          include: {
-            medium: true,
-          },
-        },
-        subjects: {
-          include: {
-            subject: true,
-          },
-        },
-      },
     });
+
+    profile = await prisma.teacherProfile.findUnique({
+      where: { teacherId },
+      select: teacherProfileSelect,
+    });
+
+    if (!profile) {
+      throw new Error("Failed to create teacher profile.");
+    }
   }
 
-  return profile;
+  const result: TeacherProfile = {
+    profileId: profile.id,
+    teacherId: profile.teacherId,
+    slug: profile.slug,
+
+    profileImageUrl: profile.profileImageUrl,
+    coverImageUrl: profile.coverImageUrl,
+
+    designation: profile.designation,
+    headline: profile.headline,
+    aboutMe: profile.aboutMe,
+    qualificationSummary:profile.qualifications.sort((a, b) => a.displayOrder - b.displayOrder)[0]?.title ?? null,
+
+    yearsOfExperience: profile.yearsOfExperience,
+
+    phone: profile.phone,
+    whatsapp: profile.whatsapp,
+
+    districtId: profile.districtId,
+    cityId: profile.cityId,
+
+    district: profile.district?.name ?? null,
+    city: profile.city?.name ?? null,
+
+    facebookUrl: profile.facebookUrl,
+    youtubeUrl: profile.youtubeUrl,
+    instagramUrl: profile.instagramUrl,
+    tiktokUrl: profile.tiktokUrl,
+    websiteUrl: profile.websiteUrl,
+
+    seoTitle: profile.seoTitle,
+    seoDescription: profile.seoDescription,
+
+    isVerified: profile.isVerified,
+    isPublic: profile.isPublic,
+
+    profileViewCount: profile.profileViewCount,
+
+    createdAt: profile.createdAt.toISOString(),
+    updatedAt: profile.updatedAt.toISOString(),
+
+    teacher: {
+      id: profile.teacher.id,
+      name: profile.teacher.name,
+      email: profile.teacher.email,
+    },
+
+    mediums: profile.mediums.map((m) => ({
+      id: m.medium.id,
+      name: m.medium.name,
+    })),
+  };
+
+  return result;
+
 }
+
+
+
 
 export async function updateTeacherProfile(
   teacherId: string,
   dto: UpdateTeacherProfile
 ) {
-
-  const existingSlug = await prisma.teacherProfile.findFirst({
-    where: {
-      slug: dto.slug,
-      NOT: {
-        teacherId,
-      },
-    },
-  });
-
-  if (existingSlug) {
-    throw new Error("Profile URL already taken");
-  }
-
   const teacher = await prisma.teacher.findUnique({
     where: { id: teacherId },
     select: {
@@ -121,75 +213,86 @@ export async function updateTeacherProfile(
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-");
 
-  const profile = await prisma.teacherProfile.upsert({
-    where: {
-      teacherId,
-    },
-    create: {
-      teacherId,
+  const slug =
+    dto.slug?.trim() || defaultSlug;
 
-      slug: dto.slug || defaultSlug,
+  const existingSlug =
+    await prisma.teacherProfile.findFirst({
+      where: {
+        slug,
+        NOT: {
+          teacherId,
+        },
+      },
+    });
 
-      designation: dto.designation,
-      headline: dto.headline,
+  if (existingSlug) {
+    throw new Error(
+      "Profile URL already taken."
+    );
+  }
 
-      aboutMe: dto.aboutMe,
-      qualificationSummary: dto.qualificationSummary,
+  await prisma.$transaction(async (tx) => {
 
-      yearsOfExperience: dto.yearsOfExperience,
+    await prisma.teacher.update({
+        where: {
+            id: teacherId,
+        },
+        data: {
+            name: dto.name,
+        },
+    });
 
-      phone: dto.phone,
-      whatsapp: dto.whatsapp,
+    await prisma.teacherProfile.upsert({
+      where: {
+        teacherId,
+      },
 
-      districtId: dto.districtId,
-      cityId: dto.cityId,
+      create: {
+        teacherId,
 
-      facebookUrl: dto.facebookUrl,
-      youtubeUrl: dto.youtubeUrl,
-      tiktokUrl: dto.tiktokUrl,
-      instagramUrl: dto.instagramUrl,
-      websiteUrl: dto.websiteUrl,
+        slug,
 
-      seoTitle: dto.seoTitle,
-      seoDescription: dto.seoDescription,
+        designation:
+          dto.designation?.trim() || null,
 
-      isPublic: dto.isPublic ?? true,
-    },
-    update: {
-      slug: dto.slug,
+        yearsOfExperience:
+          dto.yearsOfExperience,
 
-      designation: dto.designation,
-      headline: dto.headline,
+        phone:
+          dto.phone?.trim() || null,
 
-      aboutMe: dto.aboutMe,
-      qualificationSummary: dto.qualificationSummary,
+        whatsapp:
+          dto.whatsapp?.trim() || null,
 
-      yearsOfExperience: dto.yearsOfExperience,
+        isPublic:
+          dto.isPublic ?? true,
+      },
 
-      phone: dto.phone,
-      whatsapp: dto.whatsapp,
+      update: {
+        slug,
 
-      districtId: dto.districtId,
-      cityId: dto.cityId,
+        designation:
+          dto.designation?.trim() || null,
 
-      facebookUrl: dto.facebookUrl,
-      youtubeUrl: dto.youtubeUrl,
-      tiktokUrl: dto.tiktokUrl,
-      instagramUrl: dto.instagramUrl,
-      websiteUrl: dto.websiteUrl,
+        yearsOfExperience:
+          dto.yearsOfExperience,
 
-      seoTitle: dto.seoTitle,
-      seoDescription: dto.seoDescription,
+        phone:
+          dto.phone?.trim() || null,
 
-      isPublic: dto.isPublic,
-    },
-    include: {
-      district: true,
-      city: true,
-    },
+        whatsapp:
+          dto.whatsapp?.trim() || null,
+
+        isPublic:
+          dto.isPublic,
+      },
+    });
+
   });
 
-  return profile;
+
+  return getTeacherProfile(teacherId);
 }
 
 export async function getQualifications(
@@ -557,26 +660,41 @@ export async function getTeacherSubjects(
     where: {
       teacherId,
     },
-    include: {
+    select: {
       subjects: {
         include: {
           subject: true,
         },
-        orderBy: {
-          subject: {
-            name: "asc",
+        orderBy: [
+          {
+            subject: {
+              name: "asc",
+            },
           },
-        },
+          {
+            gradeFrom: "asc",
+          },
+        ],
       },
     },
   });
 
-  return profile?.subjects ?? [];
+  if (!profile) {
+    throw new Error("Teacher profile not found");
+  }
+
+  return profile.subjects;
 }
 
-export async function updateTeacherSubjects(
+export interface AddTeacherSubjectDto {
+  subjectId: number;
+  gradeFrom: number;
+  gradeTo: number;
+}
+
+export async function addTeacherSubject(
   teacherId: string,
-  subjects: TeacherSubject[]
+  dto: AddTeacherSubjectDto
 ) {
   const profile = await prisma.teacherProfile.findUnique({
     where: {
@@ -591,34 +709,71 @@ export async function updateTeacherSubjects(
     throw new Error("Teacher profile not found");
   }
 
-  await prisma.teacherProfileSubject.deleteMany({
-    where: {
-      profileId: profile.id,
-    },
-  });
-
-  if (subjects.length > 0) {
-    await prisma.teacherProfileSubject.createMany({
-      data: subjects.map((subject) => ({
+  const exists =
+    await prisma.teacherProfileSubject.findFirst({
+      where: {
         profileId: profile.id,
-        subjectId: subject.subjectId,
-        gradeFrom: subject.gradeFrom,
-        gradeTo: subject.gradeTo,
-      })),
-      skipDuplicates: true,
+        subjectId: dto.subjectId,
+        gradeFrom: dto.gradeFrom,
+        gradeTo: dto.gradeTo,
+      },
     });
+
+  if (exists) {
+    throw new Error(
+      "This subject and grade range already exists."
+    );
   }
 
-  return prisma.teacherProfile.findUnique({
-    where: {
-      id: profile.id,
+  return prisma.teacherProfileSubject.create({
+    data: {
+      profileId: profile.id,
+      subjectId: dto.subjectId,
+      gradeFrom: dto.gradeFrom,
+      gradeTo: dto.gradeTo,
     },
     include: {
-      subjects: {
-        include: {
-          subject: true,
+      subject: true,
+    },
+  });
+}
+
+export interface UpdateTeacherSubjectDto {
+  subjectId: number;
+  gradeFrom: number;
+  gradeTo: number;
+}
+
+export async function updateTeacherSubject(
+  teacherId: string,
+  teacherSubjectId: string,
+  dto: UpdateTeacherSubjectDto
+) {
+  const existing =
+    await prisma.teacherProfileSubject.findFirst({
+      where: {
+        id: teacherSubjectId,
+        profile: {
+          teacherId,
         },
       },
+    });
+
+  if (!existing) {
+    throw new Error("Subject not found.");
+  }
+
+  return prisma.teacherProfileSubject.update({
+    where: {
+      id: teacherSubjectId,
+    },
+    data: {
+      subjectId: dto.subjectId,
+      gradeFrom: dto.gradeFrom,
+      gradeTo: dto.gradeTo,
+    },
+    include: {
+      subject: true,
     },
   });
 }
@@ -626,12 +781,12 @@ export async function updateTeacherSubjects(
 
 export async function deleteTeacherSubject(
   teacherId: string,
-  teacherProfileSubjectId: string
+  teacherSubjectId: string
 ) {
-  const record =
+  const existing =
     await prisma.teacherProfileSubject.findFirst({
       where: {
-        id: teacherProfileSubjectId,
+        id: teacherSubjectId,
         profile: {
           teacherId,
         },
@@ -641,19 +796,18 @@ export async function deleteTeacherSubject(
       },
     });
 
-  if (!record) {
-    throw new Error("Subject not found");
+  if (!existing) {
+    throw new Error("Subject not found.");
   }
 
   await prisma.teacherProfileSubject.delete({
     where: {
-      id: teacherProfileSubjectId,
+      id: teacherSubjectId,
     },
   });
 
   return {
     success: true,
-    message: "Subject deleted successfully",
   };
 }
 
@@ -929,21 +1083,95 @@ export async function searchPublicTeachers(
 
 export async function updateProfilePhoto(
   teacherId: string,
-  profileImageUrl: string
+  file: File
 ) {
-  return prisma.teacherProfile.upsert({
+  const profile = await prisma.teacherProfile.findUnique({
+    where: {
+      teacherId,
+    },
+    select: {
+      profileImageUrl: true,
+    },
+  });
+
+  // Ensure upload folder exists
+  const uploadDir = path.join(
+    process.cwd(),
+    "public",
+    "uploads",
+    "teachers"
+  );
+
+  await fs.mkdir(uploadDir, {
+    recursive: true,
+  });
+
+  // Delete previous image
+  if (profile?.profileImageUrl) {
+    try {
+      const oldFile = path.join(
+        process.cwd(),
+        "public",
+        profile.profileImageUrl.replace(/^\/+/, "")
+      );
+
+      await fs.unlink(oldFile);
+    } catch {
+      // Ignore if file doesn't exist
+    }
+  }
+
+  // Extension
+  const extension =
+    path.extname(file.name) || ".jpg";
+
+  // Unique filename
+  const fileName = `${teacherId}-${Date.now()}${extension}`;
+
+  const filePath = path.join(
+    uploadDir,
+    fileName
+  );
+
+  // Save file
+  const bytes = await file.arrayBuffer();
+
+  await fs.writeFile(
+    filePath,
+    Buffer.from(bytes)
+  );
+
+  const imageUrl = `/uploads/teachers/${fileName}`;
+
+  await prisma.teacherProfile.upsert({
     where: {
       teacherId,
     },
     create: {
       teacherId,
       slug: `teacher-${teacherId}`,
-      profileImageUrl,
+      profileImageUrl: imageUrl,
     },
     update: {
-      profileImageUrl,
+      profileImageUrl: imageUrl,
     },
   });
+
+  return getTeacherProfile(teacherId);
+}
+
+
+export async function getTeacherProfilePhoto(
+    teacherId: string
+) {
+    return prisma.teacherProfile.findUnique({
+        where: {
+            teacherId,
+        },
+        select: {
+            profileImageUrl: true,
+        },
+    });
 }
 
 export async function updateCoverPhoto(
@@ -961,6 +1189,103 @@ export async function updateCoverPhoto(
     },
     update: {
       coverImageUrl,
+    },
+  });
+}
+
+
+export async function getAboutMe(
+  teacherId: string
+) {
+  const profile =
+    await prisma.teacherProfile.findUnique({
+      where: {
+        teacherId,
+      },
+      select: {
+        aboutMe: true,
+      },
+    });
+
+  if (!profile)
+    throw new Error("Teacher profile not found.");
+
+  return profile;
+}
+
+export async function updateAboutMe(
+  teacherId: string,
+  aboutMe: string
+) {
+  return prisma.teacherProfile.update({
+    where: {
+      teacherId,
+    },
+    data: {
+      aboutMe,
+    },
+    select: {
+      aboutMe: true,
+    },
+  });
+}
+
+export async function getSocialLinks(
+  teacherId: string
+) {
+  const profile =
+    await prisma.teacherProfile.findUnique({
+      where: {
+        teacherId,
+      },
+      select: {
+        facebookUrl: true,
+        youtubeUrl: true,
+        tiktokUrl: true,
+        instagramUrl: true,
+        websiteUrl: true,
+      },
+    });
+
+  if (!profile) {
+    throw new Error(
+      "Teacher profile not found"
+    );
+  }
+
+  return profile;
+}
+
+
+export async function updateSocialLinks(
+  teacherId: string,
+  dto: UpdateSocialLinks
+) {
+  return prisma.teacherProfile.update({
+    where: {
+      teacherId,
+    },
+
+    data: {
+      facebookUrl: dto.facebookUrl?.trim() || null,
+
+      youtubeUrl: dto.youtubeUrl?.trim() || null,
+
+      tiktokUrl: dto.tiktokUrl?.trim() || null,
+
+      instagramUrl:
+        dto.instagramUrl?.trim() || null,
+
+      websiteUrl:
+        dto.websiteUrl?.trim() || null,
+    },
+
+    select: {
+      facebookUrl: true,
+      youtubeUrl: true,
+      tiktokUrl: true,
+      instagramUrl: true,
+      websiteUrl: true,
     },
   });
 }

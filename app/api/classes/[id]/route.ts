@@ -2,9 +2,40 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { updateClassSchema } from "@/lib/class-validation";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { deactivateClassForTeacher, updateClassForTeacher } from "@/services/class-service";
+import { deactivateClassForTeacher, getClassByIdForTeacher, updateClassForTeacher } from "@/services/class-service";
 
 export const dynamic = "force-dynamic";
+
+export async function GET(
+  _request: Request,
+  context: {
+    params: { id: string };
+  }
+) {
+  try {
+    const session = await requireTeacherSession();
+
+    const classId = context.params.id;
+
+    if (!classId?.trim()) {
+      throw new AppError(
+        "Class id is required.",
+        400,
+        "VALIDATION_ERROR"
+      );
+    }
+
+    const classInfo =
+      await getClassByIdForTeacher(
+        classId,
+        session.teacherId
+      );
+
+    return apiSuccess(classInfo);
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
 
 export async function PUT(
   request: Request,

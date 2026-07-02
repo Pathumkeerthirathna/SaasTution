@@ -3,40 +3,48 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   updateProfilePhoto,
 } from "@/services/teacher-profile-service";
-import { requireAppSession } from "@/lib/auth-session";
+import { requireAppSession, requireTeacherSession } from "@/lib/auth-session";
+import { prisma } from "@/lib/prisma";
 
-export async function PUT(
-  request: NextRequest
-) {
-  try {
-    const session = await requireAppSession();
+export async function GET() {
+    const session = await requireTeacherSession();
 
-    if (!session?.userId || session.role !== "TEACHER") {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    const profile = await prisma.teacherProfile.findUnique({
+        where: {
+            teacherId: session.teacherId,
+        },
+        select: {
+            profileImageUrl: true,
+        },
+    });
 
-    const {
-      profileImageUrl,
-    } = await request.json();
+    return Response.json({
+        profileImageUrl:
+            profile?.profileImageUrl ??
+            "/images/avatar.png",
+    });
+}
 
-    const result =
-      await updateProfilePhoto(
-        session.userId,
-        profileImageUrl
-      );
+export async function PUT(request: Request) {
+  const form = await request.formData();
 
-    return NextResponse.json(result);
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update photo",
-      },
+  const file = form.get("photo") as File;
+
+  const session = await requireTeacherSession();
+
+  if (!file) {
+    return Response.json(
+      { message: "Photo is required." },
       { status: 400 }
     );
   }
+
+  const teacherId = session.teacherId; // your auth
+
+  const teacher = await updateProfilePhoto(
+    teacherId,
+    file
+  );
+
+  return Response.json(teacher);
 }

@@ -109,7 +109,7 @@ export function StudentGuardianManagementPanel() {
     grade: "",
   });
 
-  const [sortBy, setSortBy] = useState("registrationNumber");
+  const [sortBy, setSortBy] = useState("CreatedAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
     const loadRegistrationNumber = useCallback(async () => {

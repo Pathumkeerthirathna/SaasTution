@@ -27,7 +27,7 @@ import {
   X
 } from "lucide-react";
 
-type ClassItem = {
+export type ClassItem = {
   id: string;
   name: string;
   description: string | null;
@@ -139,46 +139,6 @@ function getDayShortLabel(day: FormState["schedules"][number]["dayOfWeek"]) {
       return "Sat";
   }
 }
-
-// function getClassIcon(name: string): { Icon: LucideIcon; iconWrapClass: string }{
-//   const normalized = name.toLowerCase();
-
-//   if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) {
-//     return { Icon: Calculator, iconWrapClass: "bg-blue-100 text-blue-700" };
-//   }
-//   if (/(science|chem|biology|bio|lab)/.test(normalized)) {
-//     return { Icon: FlaskConical, iconWrapClass: "bg-emerald-100 text-emerald-700" };
-//   }
-//   if (/(physics|astronomy|space)/.test(normalized)) {
-//     return { Icon: Atom, iconWrapClass: "bg-cyan-100 text-cyan-700" };
-//   }
-//   if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) {
-//     return { Icon: Languages, iconWrapClass: "bg-violet-100 text-violet-700" };
-//   }
-//   if (/(history|civics|geography|social)/.test(normalized)) {
-//     return { Icon: Globe2, iconWrapClass: "bg-amber-100 text-amber-700" };
-//   }
-//   if (/(music|drama|dance)/.test(normalized)) {
-//     return { Icon: Music2, iconWrapClass: "bg-pink-100 text-pink-700" };
-//   }
-//   if (/(art|drawing|paint|design)/.test(normalized)) {
-//     return { Icon: Eraser, iconWrapClass: "bg-rose-100 text-rose-700" };
-//   }
-
-//   return { Icon: BookOpen, iconWrapClass: "bg-brand-100 text-brand-700" };
-// }
-
-// function getClassTypeLabel(name: string): string {
-//   const normalized = name.toLowerCase();
-//   if (/(math|algebra|geometry|calculus|arith)/.test(normalized)) return "Mathematics";
-//   if (/(science|chem|biology|bio|lab)/.test(normalized)) return "Science";
-//   if (/(physics|astronomy|space)/.test(normalized)) return "Physics";
-//   if (/(english|sinhala|tamil|language|literature|grammar)/.test(normalized)) return "Language";
-//   if (/(history|civics|geography|social)/.test(normalized)) return "Social Studies";
-//   if (/(music|drama|dance)/.test(normalized)) return "Performing Arts";
-//   if (/(art|drawing|paint|design)/.test(normalized)) return "Art";
-//   return "General";
-// }
 
 function formatTime12h(time: string): string {
   const [hourStr, minute] = time.split(":");
@@ -577,251 +537,208 @@ export function ClassManagementPanel() {
 
         </div> */}
 
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          {/* Premium Compact SaaS Header */}
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
 
-              {/* Left */}
-              <div className="flex items-start gap-3">
-                <span className="page-header-icon">
-                  <GraduationCap size={24} />
-                </span>
+            {/* Background */}
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute -right-24 -top-24 h-44 w-44 rounded-full bg-orange-100/60 blur-3xl" />
+              <div className="absolute -left-16 bottom-0 h-36 w-36 rounded-full bg-emerald-100/70 blur-3xl" />
+            </div>
 
-                <div>
-                  <h2 className="page-title">Your Classes</h2>
-                  <p className="page-subtitle">
-                    Manage your classes, schedules and students in one place.
-                  </p>
-                </div>
-              </div>
+            <div className="relative px-6 py-6">
 
-              {/* Right */}
-              <div className="flex flex-col items-end gap-3">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
 
-                <div className="flex flex-wrap justify-end gap-2">
-                  <span className="summary-chip">
-                    <Layers3 size={12} />
-                    {overview.totalClasses} Classes
-                  </span>
+                {/* Left */}
+                <div className="flex items-start gap-4">
 
-                  <span className="summary-chip">
-                    <Users size={12} />
-                    {overview.activeStudents} Students
-                  </span>
-
-                  <span className="summary-chip">
-                    <CalendarDays size={12} />
-                    {overview.scheduleSlots} Slots
-                  </span>
-
-                  <span className="summary-chip">
-                    <BookOpen size={12} />
-                    Rs. {overview.averageFee.toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsHelpOpen(true)}
-                    className="btn-secondary"
+                  <div
+                    className="
+                      flex h-18 w-18 shrink-0 items-center justify-center
+                      rounded-2xl
+                      bg-gradient-to-br
+                      from-emerald-500
+                      via-green-500
+                      to-orange-500
+                      text-white
+                      shadow-md
+                      shadow-emerald-200
+                    "
                   >
-                    <CircleHelp size={14} />
-                    Help
-                  </button>
+                    <GraduationCap size={24} />
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatePanelOpen(true)}
-                    className="btn-primary"
-                  >
-                    + Add Class
-                  </button>
+                  <div>
+
+                    {/* <span
+                      className="
+                        inline-flex
+                        items-center
+                        rounded-full
+                        border
+                        border-emerald-200
+                        bg-emerald-50
+                        px-2.5
+                        py-1
+                        text-[10px]
+                        font-semibold
+                        uppercase
+                        tracking-[0.15em]
+                        text-emerald-700
+                      "
+                    >
+                      Teaching Workspace
+                    </span> */}
+
+                    <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                      Class Management
+                    </h1>
+
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                      Manage classes, schedules, student enrolments and payments from one workspace.
+                    </p>
+
+                  </div>
+
+                </div>
+
+                {/* Right */}
+                <div className="flex flex-col items-end gap-3">
+
+                  <div className="flex flex-wrap justify-end gap-2">
+
+                    {/* Classes */}
+                    <div className="min-w-[105px] rounded-xl border border-slate-200 bg-white px-4 py-3">
+
+                      <div className="flex items-center gap-1.5 text-emerald-600">
+                        <Layers3 size={13} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">
+                          Classes
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-xl font-bold text-slate-900">
+                        {overview.totalClasses}
+                      </p>
+
+                    </div>
+
+                    {/* Students */}
+                    <div className="min-w-[105px] rounded-xl border border-slate-200 bg-white px-4 py-3">
+
+                      <div className="flex items-center gap-1.5 text-orange-600">
+                        <Users size={13} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">
+                          Students
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-xl font-bold text-slate-900">
+                        {overview.activeStudents}
+                      </p>
+
+                    </div>
+
+                    {/* Sessions */}
+                    <div className="min-w-[105px] rounded-xl border border-slate-200 bg-white px-4 py-3">
+
+                      <div className="flex items-center gap-1.5 text-green-600">
+                        <CalendarDays size={13} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">
+                          Sessions
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-xl font-bold text-slate-900">
+                        {overview.scheduleSlots}
+                      </p>
+
+                    </div>
+
+                    {/* Fee */}
+                    <div className="min-w-[130px] rounded-xl border border-slate-200 bg-white px-4 py-3">
+
+                      <div className="flex items-center gap-1.5 text-amber-600">
+                        <Wallet size={13} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">
+                          Avg. Fee
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-lg font-bold text-slate-900">
+                        Rs. {overview.averageFee.toLocaleString()}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <div className="flex gap-2">
+
+                    <button
+                      type="button"
+                      onClick={() => setIsHelpOpen(true)}
+                      className="
+                        inline-flex
+                        h-9
+                        items-center
+                        gap-2
+                        rounded-lg
+                        border
+                        border-slate-200
+                        bg-white
+                        px-4
+                        text-xs
+                        font-semibold
+                        text-slate-700
+                        transition
+                        hover:border-orange-200
+                        hover:bg-orange-50
+                      "
+                    >
+                      <CircleHelp size={14} />
+                      Help
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatePanelOpen(true)}
+                      className="
+                        inline-flex
+                        h-9
+                        items-center
+                        gap-2
+                        rounded-lg
+                        bg-gradient-to-r
+                        from-emerald-500
+                        via-green-500
+                        to-orange-500
+                        px-5
+                        text-xs
+                        font-semibold
+                        text-white
+                        shadow-md
+                        shadow-emerald-200
+                        transition
+                        hover:scale-[1.02]
+                      "
+                    >
+                      <BookOpen size={14} />
+                      New Class
+                    </button>
+
+                  </div>
+
                 </div>
 
               </div>
 
             </div>
 
-          <div
-            className="
-              mt-4
-              rounded-lg
-              border
-              border-slate-200
-              bg-white
-              px-4
-              py-3
-              shadow-sm
-            "
-          >
-            <div className="flex flex-wrap items-center gap-3">
-
-              {/* Search */}
-              <div className="relative w-full md:w-72">
-                <Search
-                  size={14}
-                  className="
-                    pointer-events-none
-                    absolute
-                    left-3
-                    top-1/2
-                    -translate-y-1/2
-                    text-slate-400
-                  "
-                />
-
-                <input
-                  value={filters.name}
-                  onChange={(event) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  placeholder="Class name"
-                  className="
-                    h-9
-                    w-full
-                    rounded-md
-                    border
-                    border-slate-200
-                    bg-white
-                    pl-9
-                    pr-3
-                    text-sm
-                    text-slate-700
-                    placeholder:text-slate-400
-                    focus:border-brand-400
-                    focus:outline-none
-                    focus:ring-1
-                    focus:ring-brand-100
-                  "
-                />
-              </div>
-
-              {/* Schedule */}
-              <div className="relative w-full md:w-56">
-                <CalendarDays
-                  size={14}
-                  className="
-                    pointer-events-none
-                    absolute
-                    left-3
-                    top-1/2
-                    -translate-y-1/2
-                    text-slate-400
-                  "
-                />
-
-                <input
-                  value={filters.schedule}
-                  onChange={(event) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      schedule: event.target.value,
-                    }))
-                  }
-                  placeholder="Schedule"
-                  className="
-                    h-9
-                    w-full
-                    rounded-md
-                    border
-                    border-slate-200
-                    bg-white
-                    pl-9
-                    pr-3
-                    text-sm
-                    text-slate-700
-                    placeholder:text-slate-400
-                    focus:border-brand-400
-                    focus:outline-none
-                    focus:ring-1
-                    focus:ring-brand-100
-                  "
-                />
-              </div>
-
-              {/* Apply */}
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={() => void loadClasses(1, filters)}
-                className="
-                  inline-flex
-                  h-9
-                  items-center
-                  justify-center
-                  rounded-md
-                  bg-brand-600
-                  px-4
-                  text-sm
-                  font-medium
-                  text-white
-                  transition-colors
-                  hover:bg-brand-700
-                  disabled:opacity-60
-                "
-              >
-                Apply
-              </button>
-
-              {/* Clear */}
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={() => {
-                  const cleared = {
-                    name: "",
-                    schedule: "",
-                  };
-
-                  setFilters(cleared);
-                  void loadClasses(1, cleared);
-                }}
-                className="
-                  inline-flex
-                  h-9
-                  items-center
-                  justify-center
-                  rounded-md
-                  border
-                  border-slate-200
-                  bg-white
-                  px-4
-                  text-sm
-                  font-medium
-                  text-slate-600
-                  transition-colors
-                  hover:bg-slate-50
-                  disabled:opacity-60
-                "
-              >
-                Clear
-              </button>
-
-              {/* Count */}
-              <div className="ml-auto">
-                <span
-                  className="
-                    inline-flex
-                    items-center
-                    rounded-md
-                    border
-                    border-slate-200
-                    bg-slate-50
-                    px-3
-                    py-1
-                    text-xs
-                    font-medium
-                    text-slate-600
-                  "
-                >
-                  {totalItems} Classes
-                </span>
-              </div>
-
-            </div>
           </div>
+
+          
         {successMessage && (
           <div className="fixed top-5 right-5 z-[100]">
             <div className="flex min-w-[320px] items-center gap-3 rounded-xl border border-emerald-200 bg-white p-4 shadow-xl">
@@ -897,222 +814,224 @@ export function ClassManagementPanel() {
                 transition-all
                 duration-300
                 hover:-translate-y-1
-                hover:border-brand-200
-                hover:shadow-xl
+                hover:border-orange-200
+                hover:shadow-2xl
+                hover:-translate-y-1
               "
             >
               {/* Accent Bar */}
-              <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+              <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-green-500 to-orange-500" />
 
-              <div className="p-5">
-                {/* Header */}
-                <div className="flex items-start justify-between">
-                  <div className="flex gap-4">
-                    <div
-                      className="
-                        flex h-14 w-14 items-center justify-center
-                        rounded-2xl
-                        bg-gradient-to-br
-                        from-blue-500
-                        to-indigo-600
-                        text-white
-                        shadow-md
-                      "
-                    >
-                      <BookOpen size={24} />
+                <div className="p-5">
+                  {/* Header */}
+                  <div className="flex items-start justify-between">
+                    <div className="flex gap-4">
+                      <div
+                        className="
+                          flex h-14 w-14 items-center justify-center
+                          rounded-2xl
+                          bg-gradient-to-br
+                          from-emerald-500
+                          via-green-500
+                          to-orange-500
+                          text-white
+                          shadow-md
+                        "
+                      >
+                        <BookOpen size={24} />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-bold text-slate-900">
+                            {item.name}
+                          </h3>
+
+                          <span
+                            className="
+                              inline-flex items-center gap-1
+                              rounded-full
+                              border
+                              border-emerald-200
+                              bg-emerald-50
+                              text-emerald-700
+                            "
+                          >
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            Active
+                          </span>
+                        </div>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                          {"General"}
+                        </p>
+                      </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-slate-900">
-                          {item.name}
-                        </h3>
+                    <span className="text-xs text-slate-400">
+                      {new Date(item.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
 
-                        <span
-                          className="
-                            inline-flex items-center gap-1
-                            rounded-full
-                            bg-emerald-50
-                            px-2.5 py-1
-                            text-xs font-semibold
-                            text-emerald-700
-                          "
-                        >
-                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                          Active
+                  {/* Stats */}
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl bg-blue-50 p-3">
+                      <div className="flex items-center gap-2">
+                        <Users size={14} className="text-blue-600" />
+                        <span className="text-xs font-medium text-blue-600">
+                          Students
                         </span>
                       </div>
 
-                      <p className="mt-1 text-sm text-slate-500">
-                        {"General"}
+                      <p className="mt-2 text-2xl font-bold text-blue-700">
+                        {overview.activeStudents}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-emerald-50 p-3">
+                      <div className="flex items-center gap-2">
+                        <Wallet size={14} className="text-emerald-600" />
+                        <span className="text-xs font-medium text-emerald-600">
+                          Fee
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-lg font-bold text-emerald-700">
+                        Rs.{item.monthlyFee.toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-amber-50 p-3">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} className="text-amber-600" />
+                        <span className="text-xs font-medium text-amber-600">
+                          Due Week
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-lg font-bold text-amber-700">
+                        Week {item.paymentDueWeek}
                       </p>
                     </div>
                   </div>
 
-                  <span className="text-xs text-slate-400">
-                    {new Date(item.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
+                  {/* Schedule */}
+                  {item.schedules?.length > 0 && (
+                    <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays
+                          size={15}
+                          className="text-indigo-600"
+                        />
 
-                {/* Stats */}
-                <div className="mt-5 grid grid-cols-3 gap-3">
-                  <div className="rounded-2xl bg-blue-50 p-3">
-                    <div className="flex items-center gap-2">
-                      <Users size={14} className="text-blue-600" />
-                      <span className="text-xs font-medium text-blue-600">
-                        Students
-                      </span>
+                        <span className="font-semibold text-indigo-900">
+                          Weekly Schedule
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {item.schedules.slice(0, 2).map((schedule) => (
+                          <div
+                            key={`${schedule.dayOfWeek}-${schedule.startTime}`}
+                            className="flex items-center justify-between rounded-xl bg-white px-3 py-2"
+                          >
+                            <span className="text-sm font-medium text-slate-700">
+                              {schedule.dayOfWeek}
+                            </span>
+
+                            <span className="text-sm text-slate-500">
+                              {formatTime12h(schedule.startTime)}
+                              {" → "}
+                              {formatTime12h(schedule.endTime)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  )}
 
-                    <p className="mt-2 text-2xl font-bold text-blue-700">
-                      {overview.activeStudents}
+                  {/* Description */}
+                  <div className="mt-5">
+                    <p className="line-clamp-2 text-sm leading-6 text-slate-600">
+                      {item.description ||
+                        "No class description provided."}
                     </p>
                   </div>
 
-                  <div className="rounded-2xl bg-emerald-50 p-3">
-                    <div className="flex items-center gap-2">
-                      <Wallet size={14} className="text-emerald-600" />
-                      <span className="text-xs font-medium text-emerald-600">
-                        Fee
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-lg font-bold text-emerald-700">
-                      Rs.{item.monthlyFee.toLocaleString()}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-amber-50 p-3">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} className="text-amber-600" />
-                      <span className="text-xs font-medium text-amber-600">
-                        Due Week
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-lg font-bold text-amber-700">
-                      Week {item.paymentDueWeek}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Schedule */}
-                {item.schedules?.length > 0 && (
-                  <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
-                    <div className="flex items-center gap-2">
-                      <CalendarDays
-                        size={15}
-                        className="text-indigo-600"
-                      />
-
-                      <span className="font-semibold text-indigo-900">
-                        Weekly Schedule
-                      </span>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {item.schedules.slice(0, 2).map((schedule) => (
-                        <div
-                          key={`${schedule.dayOfWeek}-${schedule.startTime}`}
-                          className="flex items-center justify-between rounded-xl bg-white px-3 py-2"
-                        >
-                          <span className="text-sm font-medium text-slate-700">
-                            {schedule.dayOfWeek}
-                          </span>
-
-                          <span className="text-sm text-slate-500">
-                            {formatTime12h(schedule.startTime)}
-                            {" → "}
-                            {formatTime12h(schedule.endTime)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Description */}
-                <div className="mt-5">
-                  <p className="line-clamp-2 text-sm leading-6 text-slate-600">
-                    {item.description ||
-                      "No class description provided."}
-                  </p>
-                </div>
-
-                {/* Footer */}
-                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                  <button
-                    className="
-                      inline-flex items-center gap-2
-                      rounded-xl
-                      bg-brand-600
-                      px-4 py-2
-                      text-sm font-medium
-                      text-white
-                      transition
-                      hover:bg-brand-700
-                    "
-                     onClick={() => setStudentsPanelClassId(item.id)}
-                  >
-                    <Users size={14} />
-                    Students
-                  </button>
-
-                  <div className="flex items-center gap-2">
+                  {/* Footer */}
+                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
                     <button
                       className="
                         inline-flex items-center gap-2
                         rounded-xl
-                        border
-                        border-slate-200
+                        bg-brand-600
                         px-4 py-2
-                        text-sm
+                        text-sm font-medium
+                        text-white
                         transition
-                        hover:bg-slate-50
+                        hover:bg-brand-700
                       "
+                      onClick={() => setStudentsPanelClassId(item.id)}
                     >
-                      <CalendarDays size={14} />
-                      Schedule
+                      <Users size={14} />
+                      Students
                     </button>
 
-                    <button
-                      className="
-                        inline-flex items-center gap-2
-                        rounded-xl
-                        border
-                        border-slate-200
-                        px-4 py-2
-                        text-sm
-                        transition
-                        hover:bg-slate-50
-                      "
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="
+                          inline-flex items-center gap-2
+                          rounded-xl
+                          border
+                          border-slate-200
+                          px-4 py-2
+                          text-sm
+                          transition
+                          hover:bg-slate-50
+                        "
+                      >
+                        <CalendarDays size={14} />
+                        Schedule
+                      </button>
 
-                      onClick={() => beginEdit(item)}
-                    >
-                      <Pencil size={14} />
-                      Edit
-                    </button>
+                      <button
+                        className="
+                          inline-flex items-center gap-2
+                          rounded-xl
+                          border
+                          border-slate-200
+                          px-4 py-2
+                          text-sm
+                          transition
+                          hover:bg-slate-50
+                        "
 
-                    <button
-                      className="
-                        inline-flex items-center gap-2
-                        rounded-xl
-                        bg-rose-50
-                        px-4 py-2
-                        text-sm
-                        text-rose-700
-                        transition
-                        hover:bg-rose-100
-                      "
-                      onClick={() => void deleteClass(item.id)}
-                    >
-                      <Trash2 size={14} />
-                      Delete
-                    </button>
+                        onClick={() => beginEdit(item)}
+                      >
+                        <Pencil size={14} />
+                        Edit
+                      </button>
+
+                      <button
+                        className="
+                          inline-flex items-center gap-2
+                          rounded-xl
+                          bg-rose-50
+                          px-4 py-2
+                          text-sm
+                          text-rose-700
+                          transition
+                          hover:bg-rose-100
+                        "
+                        onClick={() => void deleteClass(item.id)}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
             );
           })}

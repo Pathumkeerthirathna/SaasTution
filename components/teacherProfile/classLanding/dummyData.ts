@@ -1,4 +1,4 @@
-import { ClassTeacher } from "@/types/teacherProfileTypes/ClassTeacher";
+
 import {
   PublicClassLandingPage,
 } from "../../../types/teacherProfileTypes/PublicClassLandingPage";
@@ -10,86 +10,86 @@ import { ClassTestimonial } from "@/types/teacherProfileTypes/ClassTestimonial";
 import { RegisterClassInfo } from "@/types/teacherProfileTypes/RegisterClassInfo";
 import { ClassBenefit } from "@/types/teacherProfileTypes/ClassBenefit";
 
-export const dummyTeacher: ClassTeacher = {
-  id: "teacher-001",
+// export const dummyTeacher: ClassTeacher = {
+//   id: "teacher-001",
 
-  slug: "pathum-kumara",
+//   slug: "pathum-kumara",
 
-  name: "Pathum Kumara",
+//   name: "Pathum Kumara",
 
-  designation: "Senior Mathematics Teacher",
+//   designation: "Senior Mathematics Teacher",
 
-  profileImage:
-    "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600",
+//   profileImage:
+//     "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600",
 
-  experience: 8,
+//   experience: 8,
 
-  qualification:
-    "BSc (Hons) Mathematics • University of Colombo",
-};
+//   qualification:
+//     "BSc (Hons) Mathematics • University of Colombo",
+// };
 
-export const dummyPublicClass: PublicClass = {
-  id: "class-001",
+// export const dummyPublicClass: PublicClass = {
+//   id: "class-001",
 
-  slug: "grade-10-mathematics",
+//   slug: "grade-10-mathematics",
 
-  className: "Grade 10 Mathematics",
+//   className: "Grade 10 Mathematics",
 
-  shortDescription:
-    "Master Grade 10 Mathematics through structured live classes, HD video recordings, downloadable lecture notes, revision papers, quizzes, and continuous teacher support designed to help students achieve outstanding examination results.",
+//   shortDescription:
+//     "Master Grade 10 Mathematics through structured live classes, HD video recordings, downloadable lecture notes, revision papers, quizzes, and continuous teacher support designed to help students achieve outstanding examination results.",
 
-  medium: "Sinhala Medium",
+//   medium: "Sinhala Medium",
 
-  monthlyFee: 3000,
+//   monthlyFee: 3000,
 
-  studentCount: 528,
+//   studentCount: 528,
 
-  totalSessions: 24,
+//   totalSessions: 24,
 
-  duration: "12 Months",
+//   duration: "12 Months",
 
-  nextClassDate: "Saturday, 12 July 2026",
+//   nextClassDate: "Saturday, 12 July 2026",
 
-  schedule: "Every Saturday • 8:00 AM - 10:00 AM",
+//   schedule: "Every Saturday • 8:00 AM - 10:00 AM",
 
-  heroImage:
-    "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200",
+//   heroImage:
+//     "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200",
 
-  introVideoUrl:
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+//   introVideoUrl:
+//     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 
-  teacher: {
-    id: "teacher-001",
+//   //teacher: {
+//     //id: "teacher-001",
 
-    slug: "pathum-kumara",
+//     //slug: "pathum-kumara",
 
-    name: "Pathum Kumara",
+//     //name: "Pathum Kumara",
 
-    designation: "Senior Mathematics Teacher",
+//     //designation: "Senior Mathematics Teacher",
 
-    profileImage:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600",
+//     //profileImage:
+//       //"https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600",
 
-    qualification:
-      "BSc (Hons) Mathematics • University of Colombo",
+//     //qualification:
+//       //"BSc (Hons) Mathematics • University of Colombo",
 
-    experience: 8,
+//     //experience: 8,
 
-    //district: 0,
+//     //district: 0,
 
-    //city: "Maharagama",
+//     //city: "Maharagama",
 
-    //totalStudents: 1528,
+//     //totalStudents: 1528,
 
-    //totalClasses: 12,
+//     //totalClasses: 12,
 
-    //isVerified: true,
+//     //isVerified: true,
 
-    //rating: 4.9,
+//     //rating: 4.9,
 
-    //reviewCount: 348,
-  },
-};
+//     //reviewCount: 348,
+//   //},
+// };
 
 
 export const dummySessions: ClassSession[] = [

@@ -120,6 +120,37 @@ export async function listClassesByTeacher(params: ListClassesParams) {
   };
 }
 
+export async function getClassByIdForTeacher(
+  classId: string,
+  teacherId: string
+) {
+  const classInfo = await prisma.class.findFirst({
+    where: {
+      id: classId,
+      teacherId,
+      status: 0,
+    },
+    include: {
+      schedules: true,
+      students: {
+        include: {
+          student: true,
+        },
+      },
+    },
+  });
+
+  if (!classInfo) {
+    throw new AppError(
+      "Class not found.",
+      404,
+      "NOT_FOUND"
+    );
+  }
+
+  return classInfo;
+}
+
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {
   const scheduleSummary = input.schedule?.trim() || buildScheduleSummary(input.schedules);
 

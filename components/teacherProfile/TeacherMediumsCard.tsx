@@ -1,19 +1,132 @@
 "use client";
 
-import { Edit, Languages } from "lucide-react";
 
-interface Props {
-  onEdit?: () => void;
-}
+import { Edit, Languages } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Medium, TeacherMedium } from "./Medium/medium-types";
+import TeacherMediumDrawer from "./Medium/TeacherMediumDrawer";
+
 
 export default function TeacherMediumsCard({
-  onEdit,
-}: Props) {
-  const mediums = [
-    "Sinhala",
-    "English",
-    "Tamil",
-  ];
+  
+}) {
+  
+
+const [drawerOpen, setDrawerOpen] =
+  useState(false);
+
+const [teacherMediums, setTeacherMediums] =
+  useState<Medium[]>([]);
+
+const [allMediums, setAllMediums] =
+  useState<Medium[]>([]);
+
+const [selectedMediumIds, setSelectedMediumIds] =
+  useState<number[]>([]);
+
+const [saving, setSaving] =
+  useState(false);
+
+const [loading, setLoading] =
+  useState(true);
+
+  useEffect(() => {
+    loadMediums();
+  }, []);
+
+  async function loadMediums() {
+    try {
+      setLoading(true);
+
+      const response = await fetch(
+        "/api/teacher/profile/mediums"
+      );
+
+      if (!response.ok)
+        throw new Error("Failed to load mediums.");
+
+      const data: TeacherMedium[] =
+        await response.json();
+
+      setTeacherMediums(
+        data.map((x) => x.medium)
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openDrawer() {
+
+  const [allResponse, selectedResponse] =
+      await Promise.all([
+
+        fetch(
+          "/api/teacher/profile/mediums/all"
+        ),
+
+        fetch(
+          "/api/teacher/profile/mediums"
+        ),
+
+      ]);
+
+    const allMediums: Medium[] =
+      await allResponse.json();
+
+    const selected: TeacherMedium[] =
+      await selectedResponse.json();
+
+    setAllMediums(allMediums);
+
+    setSelectedMediumIds(
+      selected.map(x => x.medium.id)
+    );
+
+    setDrawerOpen(true);
+
+  }
+
+  function toggleMedium(id: number) {
+    setSelectedMediumIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
+      }
+
+      return [...prev, id];
+    });
+  }
+
+  async function saveMediums() {
+    try {
+      setSaving(true);
+
+      const response = await fetch(
+        "/api/teacher/profile/mediums",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            mediumIds: selectedMediumIds,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to save mediums.");
+      }
+
+      setDrawerOpen(false);
+
+      await loadMediums();
+
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -30,7 +143,7 @@ export default function TeacherMediumsCard({
         </div>
 
         <button
-          onClick={onEdit}
+          onClick={openDrawer}
           className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
           <Edit className="h-4 w-4" />
@@ -51,18 +164,18 @@ export default function TeacherMediumsCard({
             </p>
 
             <p className="font-semibold text-slate-900">
-              {mediums.length} Mediums
+              {teacherMediums.length} Mediums
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {mediums.map((medium) => (
+          {teacherMediums.map((medium) => (
             <div
-              key={medium}
+              key={medium.id}
               className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700"
             >
-              {medium}
+              {medium.name}
             </div>
           ))}
         </div>
@@ -76,6 +189,15 @@ export default function TeacherMediumsCard({
           </p>
         </div>
       </div>
+      <TeacherMediumDrawer
+        open={drawerOpen}
+        saving={saving}
+        mediums={allMediums}
+        selectedMediumIds={selectedMediumIds}
+        onToggle={toggleMedium}
+        onSave={saveMediums}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
   );
 }

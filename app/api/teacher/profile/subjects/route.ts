@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   getTeacherSubjects,
-  updateTeacherSubjects,
+  addTeacherSubject,
 } from "@/services/teacher-profile-service";
+
 import { requireAppSession } from "@/lib/auth-session";
 
 export async function GET() {
@@ -17,55 +18,69 @@ export async function GET() {
       );
     }
 
-    const subjects =
-      await getTeacherSubjects(
-        session.userId
-      );
+    const subjects = await getTeacherSubjects(
+      session.userId
+    );
 
     return NextResponse.json(subjects);
+
   } catch (error: any) {
+
     return NextResponse.json(
       {
         message:
           error.message ??
-          "Failed to load subjects",
+          "Failed to load teacher subjects.",
       },
-      { status: 400 }
+      {
+        status: 400,
+      }
     );
+
   }
 }
 
-export async function PUT(
+export async function POST(
   request: NextRequest
 ) {
   try {
+
     const session = await requireAppSession();
 
     if (!session?.userId || session.role !== "TEACHER") {
       return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
+        {
+          message: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
     const body =
       await request.json();
 
-    const result =
-      await updateTeacherSubjects(
+    const subject =
+      await addTeacherSubject(
         session.userId,
-        body.subjects
+        body
       );
 
-    return NextResponse.json(result);
+    return NextResponse.json(subject);
+
   } catch (error: any) {
+
     return NextResponse.json(
       {
         message:
           error.message ??
-          "Failed to save subjects",
+          "Failed to add subject.",
       },
-      { status: 400 }
+      {
+        status: 400,
+      }
     );
+
   }
 }

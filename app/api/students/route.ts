@@ -4,6 +4,7 @@ import { handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createStudentSchema } from "@/lib/student-validation";
 import { createStudent, listStudentsByTeacher } from "@/services/student-service";
+import { RegisterStudentType } from "@/types/Student/RegisterStudent";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,9 @@ export async function GET(request: Request) {
     const sortBy = searchParams.get("sortBy") ?? "registrationNumber";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
 
-    
+      console.log("STUDENT SERVICE");
+
+       console.log(request);
 
     const { students, totalItems } = await listStudentsByTeacher({
       teacherId: session.teacherId,
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
   try {
     const session = await requireTeacherSession();
 
-    const body = (await request.json()) as {
+    const body:RegisterStudentType = (await request.json()) as {
       registrationNumber?: string;
       name?: string;
       grade?: string;

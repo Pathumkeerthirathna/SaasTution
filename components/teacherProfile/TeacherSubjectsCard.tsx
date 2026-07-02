@@ -1,11 +1,15 @@
 "use client";
 
+import { SubjectForm, TeacherSubject } from "@/types/teacherProfileTypes/teacherSubjects/teacherSubjectTypes";
+import { TeacherProfileSubject } from "@prisma/client";
 import {
   BookOpen,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import SubjectDrawer from "./subjects/SubjectDrawer";
 
 interface Props {
   onEdit?: () => void;
@@ -14,29 +18,123 @@ interface Props {
 export default function TeacherSubjectsCard({
   onEdit,
 }: Props) {
-  const subjects = [
-    {
-      id: 1,
-      subject: "Mathematics",
-      gradeFrom: 6,
-      gradeTo: 11,
-      mediums: ["Sinhala", "English"],
-    },
-    {
-      id: 2,
-      subject: "Combined Mathematics",
-      gradeFrom: 12,
-      gradeTo: 13,
-      mediums: ["English"],
-    },
-    {
-      id: 3,
-      subject: "Physics",
-      gradeFrom: 12,
-      gradeTo: 13,
-      mediums: ["Sinhala"],
-    },
-  ];
+  // const subjects = [
+  //   {
+  //     id: 1,
+  //     subject: "Mathematics",
+  //     gradeFrom: 6,
+  //     gradeTo: 11,
+  //     mediums: ["Sinhala", "English"],
+  //   },
+  //   {
+  //     id: 2,
+  //     subject: "Combined Mathematics",
+  //     gradeFrom: 12,
+  //     gradeTo: 13,
+  //     mediums: ["English"],
+  //   },
+  //   {
+  //     id: 3,
+  //     subject: "Physics",
+  //     gradeFrom: 12,
+  //     gradeTo: 13,
+  //     mediums: ["Sinhala"],
+  //   },
+  // ];
+
+  useEffect(() => {
+      loadSubjects();
+  }, []);
+
+  const [subjects, setSubjects] =
+    useState<TeacherSubject[]>([]);
+
+  const [drawerOpen, setDrawerOpen] =
+      useState(false);
+
+  const [editingSubject,
+  setEditingSubject] =
+  useState<TeacherSubject | null>(null);
+
+  const [saving, setSaving] =
+  useState(false);
+
+  const [loading, setLoading] =
+  useState(true);
+
+  async function loadSubjects() {
+      const res = await fetch(
+          "/api/teacher/profile/subjects"
+      );
+
+      const data = await res.json();
+
+      setSubjects(data);
+  }
+
+  function openAddDrawer() {
+
+      setEditingSubject(null);
+
+      setDrawerOpen(true);
+
+  }
+
+  function openEditDrawer(
+      subject: TeacherSubject
+  ) {
+
+      setEditingSubject(subject);
+
+      setDrawerOpen(true);
+
+  }
+
+  async function saveSubject(
+      form: SubjectForm
+  ) {
+
+      const editing =
+          editingSubject != null;
+
+      const url = editing
+          ? `/api/teacher/profile/subjects/${editingSubject.id}`
+          : "/api/teacher/profile/subjects";
+
+      const method =
+          editing ? "PUT" : "POST";
+
+      await fetch(url,{
+          method,
+          headers:{
+              "Content-Type":"application/json"
+          },
+          body:JSON.stringify(form)
+      });
+
+      setDrawerOpen(false);
+
+      await loadSubjects();
+
+  }
+
+  async function deleteSubject(
+      id:string
+  ){
+
+      if(!confirm("Delete subject?"))
+          return;
+
+      await fetch(
+          `/api/teacher/profile/subjects/${id}`,
+          {
+              method:"DELETE"
+          }
+      );
+
+      await loadSubjects();
+
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -54,7 +152,7 @@ export default function TeacherSubjectsCard({
         </div>
 
         <button
-          onClick={onEdit}
+          onClick={openAddDrawer}
           className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
@@ -79,6 +177,9 @@ export default function TeacherSubjectsCard({
                   <button
                     className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
                     title="Edit Subject"
+                      onClick={() =>
+                          openEditDrawer(subject)
+                      }
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
@@ -86,6 +187,7 @@ export default function TeacherSubjectsCard({
                   <button
                     className="rounded-lg border border-red-200 p-2 text-red-500 transition hover:bg-red-50"
                     title="Delete Subject"
+                    onClick={()=>deleteSubject(subject.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -93,7 +195,7 @@ export default function TeacherSubjectsCard({
               </div>
 
               <h4 className="mt-4 text-lg font-bold text-slate-900">
-                {subject.subject}
+                {subject.subject.name}
               </h4>
 
               <div className="mt-3 inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
@@ -102,14 +204,14 @@ export default function TeacherSubjectsCard({
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                {subject.mediums.map((medium) => (
+                {/* {subject.mediums.map((medium) => (
                   <span
                     key={medium}
                     className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
                   >
                     {medium}
                   </span>
-                ))}
+                ))} */}
               </div>
             </div>
           ))}
@@ -140,6 +242,19 @@ export default function TeacherSubjectsCard({
           </p>
         </div>
       </div>
+
+        <SubjectDrawer
+            open={drawerOpen}
+            saving={saving}
+            editingSubject={editingSubject}
+            onClose={()=>{
+                setDrawerOpen(false);
+                setEditingSubject(null);
+            }}
+            onSave={saveSubject}
+        />
+
     </div>
   );
 }
+

@@ -1,10 +1,6 @@
 "use client";
 
 import {
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  CreditCard,
   GraduationCap,
   Phone,
   ShieldCheck,
@@ -12,14 +8,151 @@ import {
 } from "lucide-react";
 
 import { RegisterClassInfo } from "../../../types/teacherProfileTypes/RegisterClassInfo";
+import { Grade } from "@/types/grade";
+import { useEffect, useState } from "react";
 
 interface Props {
-  classInfo: RegisterClassInfo;
+  classId: string;
 }
 
+
+
 export default function ClassRegisterCard({
-  classInfo,
+  classId,
 }: Props) {
+
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [selectedGrade, setSelectedGrade] = useState("");
+  const [loadingGrades, setLoadingGrades] = useState(true);
+
+  const [studentName, setStudentName] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [parentMobileNumber, setParentMobileNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [school, setSchool] = useState("");
+
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  useEffect(() => {
+  
+    void loadGrades();
+  }, []);
+
+  const [errors, setErrors] = useState({
+    studentName: "",
+    mobileNumber: "",
+    parentMobileNumber: "",
+    email: "",
+    grade: "",
+  });
+
+  async function loadGrades() {
+    try {
+      setLoadingGrades(true);
+
+      const response = await fetch("/api/Grade");
+
+      if (!response.ok) {
+        throw new Error("Failed to load grades");
+      }
+
+      const data: Grade[] = await response.json();
+      setGrades(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingGrades(false);
+    }
+  }
+
+  async function registerStudent() {
+    const validationErrors = {
+      studentName: "",
+      mobileNumber: "",
+      parentMobileNumber: "",
+      email: "",
+      grade: "",
+    };
+
+    let hasError = false;
+
+    if (!studentName.trim()) {
+      validationErrors.studentName = "Student name is required.";
+      hasError = true;
+    }
+
+    if (!mobileNumber.trim()) {
+      validationErrors.mobileNumber = "Mobile number is required.";
+      hasError = true;
+    }
+
+    if (!email.trim()) {
+      validationErrors.email = "Email address is required.";
+      hasError = true;
+    } else if (
+      !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email)
+    ) {
+      validationErrors.email = "Please enter a valid email address.";
+      hasError = true;
+    }
+
+    if (!selectedGrade) {
+      validationErrors.grade = "Please select a grade.";
+      hasError = true;
+    }
+
+    setErrors(validationErrors);
+
+    if (hasError) return;
+
+    // Call API
+
+    setIsRegistering(true);
+
+    console.log(email);
+
+
+    try {
+      const response = await fetch("/api/students/public/Register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          classId,
+          studentName,
+          mobileNumber,
+          parentMobileNumber,
+          school,
+          gradeId: parseInt(selectedGrade, 10),
+          email,
+        }),
+      });
+
+      const result = await response.json();
+
+      console.log(result);
+
+      if (!response.ok) {
+        alert(result.message ?? "Registration failed.");
+        return;
+      }
+
+      alert("Student registered successfully!");
+
+      // Optional: clear form
+      setStudentName("");
+      setMobileNumber("");
+      setEmail("");
+      setSelectedGrade("");
+    } catch (error) {
+      console.error(error);
+      alert("Something went wrong. Please try again.");
+    }
+
+    setIsRegistering(false);
+  }
+
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
 
@@ -56,32 +189,124 @@ export default function ClassRegisterCard({
 
       {/* Form */}
 
-      <div className="space-y-4 p-6">
+      <div className="space-y-3 p-5">
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
+          <label className="mb-1 block text-xs font-semibold text-slate-700">
             Student Name
           </label>
 
           <input
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
-            placeholder="Enter your name"
-          />
+            value={studentName}
+            onChange={(e) => {
+              setStudentName(e.target.value);
+
+              setErrors((prev) => ({
+                ...prev,
+                studentName: "",
+              }));
+            }}
+           className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+                        ${
+                          errors.studentName
+                            ? "border border-red-500 focus:border-red-500"
+                            : "border border-slate-300 focus:border-emerald-500"
+                        }`}
+                      placeholder="Enter student name"
+                    />
+
         </div>
 
+        {errors.studentName && (
+          <p className="mt-1 text-[11px] text-red-600">
+            {errors.studentName}
+          </p>
+        )}
+
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
+          <label className="mb-1 block text-xs font-semibold text-slate-700">
             Mobile Number
           </label>
 
           <input
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+            value={mobileNumber}
+            onChange={(e) => {
+              setMobileNumber(e.target.value);
+
+              setErrors((prev) => ({
+                ...prev,
+                mobileNumber: "",
+              }));
+            }}
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+                        ${
+                          errors.mobileNumber
+                            ? "border border-red-500 focus:border-red-500"
+                            : "border border-slate-300 focus:border-emerald-500"
+                        }`}
+            placeholder="07XXXXXXXX"
+            required
+          />
+        </div>
+
+        {errors.mobileNumber && (
+          <p className="mt-1 text-[11px] text-red-600">
+            {errors.mobileNumber}
+          </p>
+        )}
+
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">
+            Parent / Guardian Mobile Number
+          </label>
+
+          <input
+            value={parentMobileNumber}
+            onChange={(e) => setParentMobileNumber(e.target.value)}
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+                      ${
+                        errors.parentMobileNumber
+                          ? "border border-red-500 focus:border-red-500"
+                          : "border border-slate-300 focus:border-emerald-500"
+                      }`}
             placeholder="07XXXXXXXX"
           />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
+          <label className="mb-1 block text-xs font-semibold text-slate-700">
+            Email Address
+          </label>
+
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+
+              setErrors((prev) => ({
+                ...prev,
+                email: "",
+              }));
+            }}
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+                      ${
+                        errors.email
+                          ? "border border-red-500 focus:border-red-500"
+                          : "border border-slate-300 focus:border-emerald-500"
+                      }`}
+            placeholder="example@email.com"
+          />
+        </div>
+
+        {errors.email && (
+          <p className="mt-1 text-[11px] text-red-600">
+            {errors.email}
+          </p>
+        )}
+
+        {/* <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">
             School
           </label>
 
@@ -89,42 +314,81 @@ export default function ClassRegisterCard({
             className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
             placeholder="Your School"
           />
-        </div>
+        </div> */}
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Grade
-          </label>
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-sm font-medium text-slate-700">
+              Grade
+            </label>
 
-          <select className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-500">
-            <option>Select Grade</option>
-            <option>Grade 6</option>
-            <option>Grade 7</option>
-            <option>Grade 8</option>
-            <option>Grade 9</option>
-            <option>Grade 10</option>
-            <option>Grade 11</option>
-            <option>Grade 12</option>
-            <option>Grade 13</option>
+            {loadingGrades && (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-600" />
+            )}
+          </div>
+
+          <select
+            required
+            disabled={loadingGrades}
+            value={selectedGrade}
+            onChange={(e) => {
+              setSelectedGrade(e.target.value);
+
+              setErrors((prev) => ({
+                ...prev,
+                grade: "",
+              }));
+            }}
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+                      ${
+                        errors.grade
+                          ? "border border-red-500 focus:border-red-500"
+                          : "border border-slate-300 focus:border-emerald-500"
+                      }`}
+          >
+            <option value="">
+              {loadingGrades ? "Loading grades..." : "Select Grade"}
+            </option>
+
+            {!loadingGrades &&
+              grades.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.GradeDesc}
+                </option>
+              ))}
           </select>
         </div>
+
+        {errors.grade && (
+          <p className="mt-1 text-[11px] text-red-600">
+            {errors.grade}
+          </p>
+        )}
 
         {/* Buttons */}
 
         <button
-          className="
-            w-full
-            rounded-xl
-            bg-emerald-600
-            py-3.5
-            text-sm
-            font-semibold
-            text-white
-            transition
-            hover:bg-emerald-700
-          "
+          type="button"
+          disabled={isRegistering}
+          onClick={registerStudent}
+          className={`
+            flex w-full items-center justify-center gap-2
+            rounded-xl py-3.5 text-sm font-semibold text-white transition
+            ${
+              isRegistering
+                ? "cursor-not-allowed bg-emerald-400"
+                : "bg-emerald-600 hover:bg-emerald-700"
+            }
+          `}
         >
-          Register Now
+          {isRegistering ? (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Registering...
+            </>
+          ) : (
+            "Register Now"
+          )}
         </button>
 
         <button

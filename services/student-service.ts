@@ -5,6 +5,7 @@ import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
+import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 
 const HASH_ROUNDS = 12;
 
@@ -48,16 +49,17 @@ function buildShortCode(value: string, maxLength: number) {
   return normalizedWords.join("").slice(0, maxLength);
 }
 
-export async function generateStudentRegistrationNumber(teacherName: string) {
+export async function generateStudentRegistrationNumber(teacherName: string,teacherId:string) {
   const year = new Date().getFullYear();
   const teacherCode = buildShortCode(teacherName, 3);
   const prefix = `${teacherCode}-${year}`;
 
   const currentCount = await prisma.student.count({
     where: {
-      registrationNumber: {
-        startsWith: `${prefix}-`,
-      },
+      // registrationNumber: {
+      //   startsWith: `${prefix}-`,
+      // },
+      teacherId:teacherId
     },
   });
 
@@ -120,7 +122,7 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
+    const registrationNumber = await generateStudentRegistrationNumber(teacher.name,teacher.id);
     const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
 
     try {
@@ -266,7 +268,9 @@ export async function listStudentsByTeacher(params: {
   sortOrder?: string;
 
 }) {
+
   const where = {
+    teacherId: params.teacherId,
     status: {
       not: 2,
     },
@@ -306,14 +310,14 @@ export async function listStudentsByTeacher(params: {
   };
 
   const sortOrder: Prisma.SortOrder =
-  params.sortOrder === "desc"
-    ? "desc"
-    : "asc";
+  params.sortOrder === "asc" ? "asc" : "desc";
 
-  const orderBy: Prisma.StudentOrderByWithRelationInput =
-    params.sortBy === "name"
-      ? { name: sortOrder }
-      : { registrationNumber: sortOrder };
+const orderBy: Prisma.StudentOrderByWithRelationInput =
+  params.sortBy === "name"
+    ? { name: sortOrder }
+    : params.sortBy === "registrationNumber"
+    ? { registrationNumber: sortOrder }
+    : { createdAt: "desc" };
 
   const [students, totalItems] = await Promise.all([
     
@@ -1515,4 +1519,83 @@ export async function getStudentClassQuizResults(
         null,
     };
   });
+}
+
+
+export async function RegisterStudentViaPublicClasses(request:RegisterStudentRequest){
+
+  // Find class
+  const cls = await prisma.class.findUnique({
+      where: { id: request.classId }
+  });
+
+  if (!cls) {
+      throw new Error("Class not found");
+  }
+
+  const teacher = await prisma.teacher.findUnique({
+      where: { id: cls.teacherId }
+  });
+
+  const regNo = await generateStudentRegistrationNumber(
+      teacher?.name ?? "",teacher?.id??""
+  );
+
+  await prisma.$transaction(async (tx) => {
+
+      // find class
+      // const cls = await tx.class.findUnique({
+      //     where: { id: request.classId }
+      // });
+
+      // if (!cls)
+      //     throw new Error("Class not found");
+
+      // const teacher = await tx.teacher.findUnique({
+      //   where:{id:cls.teacherId}
+      // })
+
+      // //generate registration number
+
+      //  const regNoRes = await generateStudentRegistrationNumber(teacher?.name??"");
+
+      //  const regNo = await regNoRes;
+
+      // create student
+      
+      const student = await tx.student.create({
+          data: {
+              name: request.studentName,
+              registrationNumber:regNo,
+              teacherId: cls.teacherId,
+              contact: request.mobileNumber,
+              contact01: request.mobileNumber,
+              contact02:request.parentMobileNumber,
+              gradeId: request.gradeId,
+              email:request.email??""
+          }
+      });
+
+      // assign class
+
+      await tx.classStudent.create({
+          data: {
+              classId: cls.id,
+              studentId: student.id
+          }
+      });
+
+      // history
+
+      await tx.classStudentHistory.create({
+          data: {
+              classId: cls.id,
+              studentId: student.id,
+              action: "ASSIGNED"
+          }
+      });
+
+      return student;
+  });
+
 }

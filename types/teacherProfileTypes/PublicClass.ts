@@ -1,4 +1,4 @@
-import { ClassTeacher } from "./ClassTeacher";
+import { Teacher } from "./ClassTeacher";
 
 export interface PublicClass {
   id: string;
@@ -27,5 +27,5 @@ export interface PublicClass {
 
   schedule: string;
 
-  teacher: ClassTeacher;
+  teacher: Teacher;
 }

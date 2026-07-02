@@ -56,7 +56,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     return [
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={16} /> },
        {
-        href: "/teacher/profile",
+        href: "/dashboard/teacher/profile",
         label: "Teacher Profile",
         icon: <BadgeInfo size={16} />
       },

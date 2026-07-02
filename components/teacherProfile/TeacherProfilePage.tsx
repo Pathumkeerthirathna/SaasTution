@@ -20,6 +20,7 @@ import TeacherClassesCard from "./TeacherClassesCard";
 import TeacherProfileDrawer from "./TeacherProfileDrawer";
 
 export default function TeacherProfilePage() {
+
   const [isDrawerOpen, setIsDrawerOpen] =
     useState(false);
 
@@ -49,7 +50,7 @@ export default function TeacherProfilePage() {
           </div> */}
 
           {/* Main Content */}
-          <div className="mt-6 grid gap-4 lg:grid-cols-[320px_1fr]">
+          <div className="mt-3 grid gap-2 lg:grid-cols-[320px_1fr]">
 
             {/* Left Column */}
             <div className="space-y-6">
@@ -66,14 +67,11 @@ export default function TeacherProfilePage() {
                 }
               />
 
-              <TeacherProfileCompletionCard />
+              {/* <TeacherProfileCompletionCard /> */}
 
               
 
               <TeacherMediumsCard
-                onEdit={() =>
-                  openDrawer("mediums")
-                }
               />
 
               
@@ -92,15 +90,10 @@ export default function TeacherProfilePage() {
               />
 
               <TeacherQualificationCard
-                onAdd={() =>
-                  openDrawer("qualification")
-                }
+                
               />
 
               <TeacherAchievementCard
-                onAdd={() =>
-                  openDrawer("achievement")
-                }
               />
 
 

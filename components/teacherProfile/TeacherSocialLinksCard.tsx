@@ -1,5 +1,6 @@
 "use client";
 
+import { SocialLinks } from "@/types/teacherProfileTypes/SocialLink/types";
 import {
   Edit,
   ScanFace,
@@ -7,6 +8,8 @@ import {
   ImageMinus,
   AArrowDown,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import SocialLinksDrawer from "./SocialLinks/SocialLinksDrawer";
 
 interface Props {
   onEdit?: () => void;
@@ -15,31 +18,120 @@ interface Props {
 export default function TeacherSocialLinksCard({
   onEdit,
 }: Props) {
-  const socialLinks = [
+  
+  const [socialLinks, setSocialLinks] =
+  useState<SocialLinks>({
+      facebookUrl:"",
+      youtubeUrl:"",
+      tiktokUrl:"",
+      instagramUrl:"",
+      websiteUrl:"",
+  });
+
+  const [loading,setLoading]=
+  useState(true);
+
+  const [saving,setSaving]=
+  useState(false);
+
+  const [drawerOpen,setDrawerOpen]=
+  useState(false);
+
+  useEffect(()=>{
+      loadSocialLinks();
+  },[]);
+
+  async function loadSocialLinks(){
+
+      try{
+
+          setLoading(true);
+
+          const response=
+          await fetch(
+              "/api/teacher/profile/social-links"
+          );
+
+          const data=
+          await response.json();
+
+          setSocialLinks(data);
+
+      }
+      finally{
+
+          setLoading(false);
+
+      }
+
+  }
+
+  async function saveSocialLinks(
+  form:SocialLinks
+  ){
+
+      try{
+
+          setSaving(true);
+
+          await fetch(
+              "/api/teacher/profile/social-links",
+              {
+                  method:"PUT",
+
+                  headers:{
+                      "Content-Type":"application/json"
+                  },
+
+                  body:JSON.stringify(form)
+              }
+          );
+
+          setDrawerOpen(false);
+
+          await loadSocialLinks();
+
+      }
+      finally{
+
+          setSaving(false);
+
+      }
+
+  }
+
+  const items = [
     {
       name: "Facebook",
-      value: "facebook.com/pathummaths",
+      value: socialLinks.facebookUrl,
       icon: ScanFace,
       bg: "bg-blue-100",
       text: "text-blue-600",
     },
     {
       name: "YouTube",
-      value: "youtube.com/@pathummaths",
+      value: socialLinks.youtubeUrl,
       icon: ImageMinus,
       bg: "bg-red-100",
       text: "text-red-600",
     },
     {
       name: "Instagram",
-      value: "instagram.com/pathummaths",
+      value: socialLinks.instagramUrl,
       icon: AArrowDown,
       bg: "bg-pink-100",
       text: "text-pink-600",
     },
     {
+      name: "TikTok",
+      value: socialLinks.tiktokUrl,
+      icon: ImageMinus,
+      bg: "bg-slate-200",
+      text: "text-slate-700",
+    },
+    {
       name: "Website",
-      value: "www.pathummaths.com",
+      value: socialLinks.websiteUrl,
       icon: Globe,
       bg: "bg-emerald-100",
       text: "text-emerald-600",
@@ -62,7 +154,7 @@ export default function TeacherSocialLinksCard({
         </div>
 
         <button
-          onClick={onEdit}
+          onClick={() => setDrawerOpen(true)}
           className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
           <Edit className="h-4 w-4" />
@@ -73,20 +165,28 @@ export default function TeacherSocialLinksCard({
       {/* Body */}
       <div className="p-6">
         <div className="space-y-3">
-          {socialLinks.map((social) => {
+          {items.map((social) => {
             const Icon = social.icon;
 
             return (
               <div
                 key={social.name}
-                className="flex items-center gap-4 rounded-xl border border-slate-100 p-4 transition hover:bg-slate-50"
+                onClick={() => {
+                  if (social.value) {
+                    window.open(social.value, "_blank", "noopener,noreferrer");
+                  }
+                }}
+                className={`flex items-center gap-4 rounded-xl border border-slate-100 p-4 transition
+                  ${
+                    social.value
+                      ? "cursor-pointer hover:bg-slate-50"
+                      : "cursor-not-allowed opacity-60"
+                  }`}
               >
                 <div
                   className={`flex h-11 w-11 items-center justify-center rounded-xl ${social.bg}`}
                 >
-                  <Icon
-                    className={`h-5 w-5 ${social.text}`}
-                  />
+                  <Icon className={`h-5 w-5 ${social.text}`} />
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -95,7 +195,7 @@ export default function TeacherSocialLinksCard({
                   </p>
 
                   <p className="truncate text-sm text-slate-500">
-                    {social.value}
+                    {social.value || "Not Added"}
                   </p>
                 </div>
               </div>
@@ -113,6 +213,15 @@ export default function TeacherSocialLinksCard({
           </p>
         </div>
       </div>
+
+      <SocialLinksDrawer
+          open={drawerOpen}
+          saving={saving}
+          initialValue={socialLinks}
+          onSave={saveSocialLinks}
+          onClose={() => setDrawerOpen(false)}
+      />
+
     </div>
   );
 }

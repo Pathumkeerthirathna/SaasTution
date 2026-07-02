@@ -1,11 +1,14 @@
 "use client";
 
+import { profile } from "console";
 import {
   Edit,
   Briefcase,
   GraduationCap,
   MapPin,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import AboutMeDrawer from "./About/AboutMeDrawer";
 
 interface Props {
   onEdit?: () => void;
@@ -14,18 +17,89 @@ interface Props {
 export default function TeacherAboutCard({
   onEdit,
 }: Props) {
-  const profile = {
-    aboutMe:
-      "I am a passionate Mathematics teacher with over 8 years of experience helping students achieve excellent results in Ordinary Level and Advanced Level examinations. My teaching approach focuses on concept mastery, confidence building, and exam-oriented preparation.",
+  
+  const [aboutMe, setAboutMe] =
+    useState("");
 
-    experience: 8,
+  const [loading, setLoading] =
+      useState(true);
 
-    qualification:
-      "BSc (Hons) Mathematics, University of Colombo",
+  const [saving, setSaving] =
+      useState(false);
 
-    location:
-      "Maharagama, Colombo",
-  };
+  const [drawerOpen, setDrawerOpen] =
+      useState(false);
+
+  useEffect(() => {
+      loadAbout();
+  }, []);
+
+  async function loadAbout() {
+
+      try{
+
+          setLoading(true);
+
+          const response =
+              await fetch(
+                  "/api/teacher/profile/about"
+              );
+
+          const data =
+              await response.json();
+
+          setAboutMe(
+              data.aboutMe ?? ""
+          );
+
+      }
+      finally{
+
+          setLoading(false);
+
+      }
+
+  }
+
+  async function saveAbout(
+    text:string
+  ){
+
+      try{
+
+          setSaving(true);
+
+          await fetch(
+              "/api/teacher/profile/about",
+              {
+                  method:"PUT",
+
+                  headers:{
+                      "Content-Type":
+                      "application/json"
+                  },
+
+                  body:JSON.stringify({
+                      aboutMe:text
+                  })
+              }
+          );
+
+          setDrawerOpen(false);
+
+          await loadAbout();
+
+      }
+      finally{
+
+          setSaving(false);
+
+      }
+
+  }
+
+
+
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -43,7 +117,7 @@ export default function TeacherAboutCard({
         </div>
 
         <button
-          onClick={onEdit}
+          onClick={() => setDrawerOpen(true)}
           className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
           <Edit className="h-4 w-4" />
@@ -53,60 +127,30 @@ export default function TeacherAboutCard({
 
       {/* Body */}
       <div className="p-6">
-        <p className="leading-8 text-slate-600">
-          {profile.aboutMe}
-        </p>
+        {loading ? (
+            <p className="text-slate-400">
+                Loading...
+            </p>
+        ) : aboutMe ? (
+            <p className="leading-8 text-slate-600">
+                {aboutMe}
+            </p>
+        ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center">
 
-        {/* Highlights */}
-        <div className="mt-6 grid gap-4">
-          <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-100">
-              <Briefcase className="h-5 w-5 text-orange-600" />
+                <p className="text-slate-500">
+                    Tell students about yourself, your teaching style and your experience.
+                </p>
+
+                <button
+                    onClick={() => setDrawerOpen(true)}
+                    className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700"
+                >
+                    Add About Me
+                </button>
+
             </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Experience
-              </p>
-
-              <p className="font-semibold text-slate-900">
-                {profile.experience} Years
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100">
-              <GraduationCap className="h-5 w-5 text-emerald-600" />
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Highest Qualification
-              </p>
-
-              <p className="font-semibold text-slate-900">
-                {profile.qualification}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-100">
-              <MapPin className="h-5 w-5 text-sky-600" />
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Location
-              </p>
-
-              <p className="font-semibold text-slate-900">
-                {profile.location}
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Quote */}
         <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-5">
@@ -118,6 +162,15 @@ export default function TeacherAboutCard({
           </p>
         </div>
       </div>
+
+      <AboutMeDrawer
+          open={drawerOpen}
+          saving={saving}
+          initialValue={aboutMe}
+          onSave={saveAbout}
+          onClose={() => setDrawerOpen(false)}
+      />
+      
     </div>
   );
 }

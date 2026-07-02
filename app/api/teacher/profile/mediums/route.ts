@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireAppSession } from "@/lib/auth-session";
+
 import {
   getTeacherMediums,
   updateTeacherMediums,
 } from "@/services/teacher-profile-service";
-import { requireAppSession } from "@/lib/auth-session";
 
 export async function GET() {
   try {
+
     const session = await requireAppSession();
 
-    if (!session?.userId) {
+    if (!session?.userId || session.role !== "TEACHER") {
       return NextResponse.json(
-        {
-          message: "Unauthorized",
-        },
-        {
-          status: 401,
-        }
+        { message: "Unauthorized" },
+        { status: 401 }
       );
     }
 
@@ -29,17 +27,20 @@ export async function GET() {
     return NextResponse.json(
       mediums
     );
+
   } catch (error: any) {
+
     return NextResponse.json(
       {
         message:
           error.message ??
-          "Failed to load teacher mediums",
+          "Failed to load teacher mediums.",
       },
       {
         status: 400,
       }
     );
+
   }
 }
 
@@ -47,41 +48,42 @@ export async function PUT(
   request: NextRequest
 ) {
   try {
-    const session = await requireAppSession();
 
-    if (!session?.userId) {
+    const session =
+      await requireAppSession();
+
+    if (!session?.userId || session.role !== "TEACHER") {
       return NextResponse.json(
-        {
-          message: "Unauthorized",
-        },
-        {
-          status: 401,
-        }
+        { message: "Unauthorized" },
+        { status: 401 }
       );
     }
 
     const body =
       await request.json();
 
-    const result =
+    const profile =
       await updateTeacherMediums(
         session.userId,
         body.mediumIds
       );
 
     return NextResponse.json(
-      result
+      profile
     );
+
   } catch (error: any) {
+
     return NextResponse.json(
       {
         message:
           error.message ??
-          "Failed to update mediums",
+          "Failed to update mediums.",
       },
       {
         status: 400,
       }
     );
+
   }
 }
