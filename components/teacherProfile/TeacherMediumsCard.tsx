@@ -62,35 +62,73 @@ const [loading, setLoading] =
     }
   }
 
+  // async function openDrawer() {
+
+  // const [allResponse, selectedResponse] =
+  //     await Promise.all([
+
+  //       fetch(
+  //         "/api/teacher/profile/mediums/all"
+  //       ),
+
+  //       fetch(
+  //         "/api/teacher/profile/mediums"
+  //       ),
+
+  //     ]);
+
+  //   const allMediums: Medium[] =
+  //     await allResponse.json();
+
+  //   const selected: TeacherMedium[] =
+  //     await selectedResponse.json();
+
+  //   setAllMediums(allMediums);
+
+  //   setSelectedMediumIds(
+  //     selected.map(x => x.medium.id)
+  //   );
+
+  //   setDrawerOpen(true);
+
+  // }
+
   async function openDrawer() {
+    try {
+      console.log("Opening drawer...");
 
-  const [allResponse, selectedResponse] =
-      await Promise.all([
-
-        fetch(
-          "/api/teacher/profile/mediums/all"
-        ),
-
-        fetch(
-          "/api/teacher/profile/mediums"
-        ),
-
+      const [allResponse, selectedResponse] = await Promise.all([
+        fetch("/api/teacher/profile/mediums/all"),
+        fetch(`/api/teacher/profile/mediums?teacherId=${teacherId}`),
       ]);
 
-    const allMediums: Medium[] =
-      await allResponse.json();
+      console.log(allResponse.status);
+      console.log(selectedResponse.status);
 
-    const selected: TeacherMedium[] =
-      await selectedResponse.json();
+      if (!allResponse.ok) {
+        throw new Error("Failed to load all mediums");
+      }
 
-    setAllMediums(allMediums);
+      if (!selectedResponse.ok) {
+        throw new Error("Failed to load selected mediums");
+      }
 
-    setSelectedMediumIds(
-      selected.map(x => x.medium.id)
-    );
+      const allMediums: Medium[] = await allResponse.json();
+      const selected: TeacherMedium[] = await selectedResponse.json();
 
-    setDrawerOpen(true);
+      console.log(allMediums);
+      console.log(selected);
 
+      setAllMediums(allMediums);
+
+      setSelectedMediumIds(
+        selected.map((x) => x.medium.id)
+      );
+
+      setDrawerOpen(true);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   function toggleMedium(id: number) {

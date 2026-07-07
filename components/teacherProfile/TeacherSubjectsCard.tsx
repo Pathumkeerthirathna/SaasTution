@@ -40,6 +40,8 @@ export default function TeacherSubjectsCard({
   const [saving, setSaving] =
   useState(false);
 
+    const [deleting, setDeleting] = useState(false);
+
   const [loading, setLoading] =
   useState(true);
 
@@ -82,6 +84,8 @@ export default function TeacherSubjectsCard({
       form: SubjectForm
   ) {
 
+    setSaving(true);
+
       const editing =
           editingSubject != null;
 
@@ -104,6 +108,8 @@ export default function TeacherSubjectsCard({
 
       await loadSubjects();
 
+      setSaving(false);
+
   }
 
   async function deleteSubject(
@@ -113,6 +119,8 @@ export default function TeacherSubjectsCard({
       if(!confirm("Delete subject?"))
           return;
 
+      setDeleting(true);
+
       await fetch(
           `/api/teacher/profile/subjects/${id}`,
           {
@@ -121,6 +129,8 @@ export default function TeacherSubjectsCard({
       );
 
       await loadSubjects();
+
+      setDeleting(false);
 
   }
 
@@ -181,13 +191,49 @@ export default function TeacherSubjectsCard({
           </p>
         </div>
 
-        {isPublic ? null : (<button
-          onClick={openAddDrawer}
-          className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
-        >
-          <Plus className="h-4 w-4" />
-          Manage Subjects
-        </button>)}
+        {isPublic ? null : (
+          
+          <button
+            onClick={openAddDrawer}
+            disabled={saving || deleting}
+            className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+            {(saving || deleting) && (
+              <svg
+                className="h-4 w-4 animate-spin"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                />
+              </svg>
+            )}
+
+            {saving
+              ? "Saving..."
+              : deleting
+              ? "Deleting..."
+              : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  <span>Manage Subjects</span>
+                </>
+              )}
+            </button>
+      
+      )}
 
         
       </div>
