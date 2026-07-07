@@ -13,10 +13,14 @@ import SocialLinksDrawer from "./SocialLinks/SocialLinksDrawer";
 
 interface Props {
   onEdit?: () => void;
+  teacherId:string;
+  isPublic?: boolean;
 }
 
 export default function TeacherSocialLinksCard({
   onEdit,
+  teacherId,
+  isPublic
 }: Props) {
   
   const [socialLinks, setSocialLinks] =
@@ -49,7 +53,7 @@ export default function TeacherSocialLinksCard({
 
           const response=
           await fetch(
-              "/api/teacher/profile/social-links"
+              `/api/teacher/profile/social-links?teacherId=${teacherId}`
           );
 
           const data=
@@ -153,13 +157,15 @@ export default function TeacherSocialLinksCard({
           </p>
         </div>
 
-        <button
+        {isPublic ? null : (<button
           onClick={() => setDrawerOpen(true)}
           className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
           <Edit className="h-4 w-4" />
           Edit
-        </button>
+        </button>)}
+
+        
       </div>
 
       {/* Body */}

@@ -8,15 +8,29 @@ import { createClassForTeacher, listClassesByTeacher } from "@/services/class-se
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+
   try {
-    const session = await requireTeacherSession();
+    
     const { searchParams } = new URL(request.url);
     const pagination = parsePaginationParams(searchParams);
     const nameFilter = searchParams.get("name")?.trim() || undefined;
     const scheduleFilter = searchParams.get("schedule")?.trim() || undefined;
 
+    var teacherId = searchParams.get("teacherId");
+
+    if (!teacherId) {
+      const teachr = await requireTeacherSession();
+
+      teacherId = teachr.teacherId;
+
+    }
+
+    if (!teacherId) {
+      throw new Error("Teacher id is required.");
+    }
+
     const { classes, totalItems } = await listClassesByTeacher({
-      teacherId: session.teacherId,
+      teacherId: teacherId,
       skip: pagination.skip,
       take: pagination.take,
       name: nameFilter,
@@ -37,6 +51,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name?: string;
       description?: string;
+      startDate: string;
       monthlyFee?: number;
       paymentDueWeek?: number;
       schedule?: string;
@@ -54,7 +69,10 @@ export async function POST(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    const createdClass = await createClassForTeacher(session.teacherId, parsed.data);
+    const createdClass = await createClassForTeacher(session.teacherId, {
+      ...parsed.data,
+      startDate: body.startDate,
+    });
 
     return apiSuccess(
       {

@@ -20,6 +20,7 @@ type ClassWriteInput = {
     startTime: string;
     endTime: string;
   }[];
+  startDate: string;
 };
 
 function getDayLabel(dayOfWeek: ClassWriteInput["schedules"][number]["dayOfWeek"]) {
@@ -79,6 +80,7 @@ export async function listClassesByTeacher(params: ListClassesParams) {
         description: true,
         monthlyFee: true,
         paymentDueWeek: true,
+        startDate: true,
         schedule: true,
         schedules: {
           select: {
@@ -152,6 +154,7 @@ export async function getClassByIdForTeacher(
 }
 
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {
+
   const scheduleSummary = input.schedule?.trim() || buildScheduleSummary(input.schedules);
 
   return prisma.class.create({
@@ -165,6 +168,7 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       schedules: {
         create: input.schedules,
       },
+      startDate: new Date(input.startDate),
     },
     select: {
       id: true,

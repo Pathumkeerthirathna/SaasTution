@@ -7,19 +7,18 @@ import {
 
 import { requireAppSession } from "@/lib/auth-session";
 
-export async function GET() {
+export async function GET(request:Request) {
   try {
-    const session = await requireAppSession();
+    const { searchParams } = new URL(request.url);
+        
+    const teacherId = searchParams.get("teacherId");
 
-    if (!session?.userId || session.role !== "TEACHER") {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    if (!teacherId) {
+      throw new Error("Teacher id is required.");
     }
 
     const subjects = await getTeacherSubjects(
-      session.userId
+      teacherId
     );
 
     return NextResponse.json(subjects);

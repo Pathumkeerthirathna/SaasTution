@@ -19,15 +19,19 @@ import {
 import { useState, useEffect, useRef } from "react";
 
 interface Props {
+  teacher?: TeacherProfile;
+  isPublic?: boolean;
   onEdit?: () => void;
 }
 
 export default function TeacherProfileHeader({
+  teacher,
+  isPublic = false,
   onEdit,
 }: Props) {
 
-  const [teacher, setTeacher] =
-    useState<TeacherProfile | null>(null);
+  // const [teacher, setTeacher] =
+  //   useState<TeacherProfile | null>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -57,20 +61,20 @@ export default function TeacherProfileHeader({
     useState("/images/avatar.png");
 
   const [form, setForm] =
-  useState<UpdateTeacherProfile>({
-      name: teacher?.teacher?.name??"",
-      slug: teacher?.slug ?? "",
-      designation:
-          teacher?.designation ?? "",
-      yearsOfExperience:
-          teacher?.yearsOfExperience ??
-          null,
-      phone: teacher?.phone ?? "",
-      whatsapp:
-          teacher?.whatsapp ?? "",
-      isPublic:
-          teacher?.isPublic ?? true,
-  });
+    useState<UpdateTeacherProfile>({
+        name: teacher?.teacher?.name??"",
+        slug: teacher?.slug ?? "",
+        designation:
+            teacher?.designation ?? "",
+        yearsOfExperience:
+            teacher?.yearsOfExperience ??
+            null,
+        phone: teacher?.phone ?? "",
+        whatsapp:
+            teacher?.whatsapp ?? "",
+        isPublic:
+            teacher?.isPublic ?? true,
+    });
 
 
   const slugify = (text: string) =>
@@ -90,7 +94,7 @@ export default function TeacherProfileHeader({
 
   useEffect(() => {
     loadDistricts();
-    loadProfile();
+   // loadProfile();
   }, []);
 
   useEffect(() => {
@@ -143,7 +147,7 @@ export default function TeacherProfileHeader({
 
       const updated: TeacherProfile = await response.json();
 
-      setTeacher(updated);
+      //setTeacher(updated);
       setIsEditDrawerOpen(false);
     } catch (err) {
       console.error(err);
@@ -151,35 +155,35 @@ export default function TeacherProfileHeader({
     }
   }
 
-  async function loadProfile() {
-    try {
-      const response = await fetch("/api/teacher/profile");
+  // async function loadProfile() {
+  //   try {
+  //     const response = await fetch("/api/teacher/profile");
 
-      if (!response.ok) {
-        throw new Error("Failed to load teacher profile.");
-      }
+  //     if (!response.ok) {
+  //       throw new Error("Failed to load teacher profile.");
+  //     }
 
-      const data: TeacherProfile = await response.json();
+  //     const data: TeacherProfile = await response.json();
 
-      console.log(data);
+  //     console.log(data);
 
-      setTeacher(data);
+  //     setTeacher(data);
 
-      setDistrictId(data.districtId ?? undefined);
-      setCityId(data.cityId ?? undefined);
+  //     setDistrictId(data.districtId ?? undefined);
+  //     setCityId(data.cityId ?? undefined);
 
-      await loadDistricts();
+  //     await loadDistricts();
 
-      if (data.districtId) {
-        await loadCities(data.districtId);
-      }
+  //     if (data.districtId) {
+  //       await loadCities(data.districtId);
+  //     }
 
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  //   } catch (error) {
+  //     console.error(error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }
 
   async function loadDistricts() {
     const res = await fetch("/api/teacher/master/districts");
@@ -250,7 +254,7 @@ export default function TeacherProfileHeader({
       const updated: TeacherProfile =
         await response.json();
 
-      setTeacher(updated);
+      //setTeacher(updated);
 
       setPreviewOpen(false);
 
@@ -307,6 +311,48 @@ export default function TeacherProfileHeader({
       }
   }
 
+  if (!teacher) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
+
+        {/* Left */}
+        <div className="flex gap-5">
+
+          {/* Avatar */}
+          <div className="h-28 w-28 rounded-full bg-slate-200" />
+
+          {/* Details */}
+          <div className="space-y-4">
+            <div className="h-8 w-64 rounded bg-slate-200" />
+            <div className="h-5 w-48 rounded bg-slate-200" />
+            <div className="h-4 w-72 rounded bg-slate-200" />
+            <div className="h-4 w-56 rounded bg-slate-200" />
+
+            <div className="flex gap-4">
+              <div className="h-4 w-32 rounded bg-slate-200" />
+              <div className="h-4 w-32 rounded bg-slate-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Right */}
+        <div className="space-y-4">
+          <div className="h-11 w-40 rounded-xl bg-slate-200" />
+          <div className="h-4 w-24 rounded bg-slate-200" />
+
+          <div className="flex gap-2">
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
   return (
     <div className="relative
                 overflow-hidden
@@ -355,7 +401,12 @@ export default function TeacherProfileHeader({
                 <img
                   src={profilePhoto}
                   alt={teacher?.teacher.name}
-                  onClick={() => fileInputRef.current?.click()}
+                  
+                  onClick={
+                    !isPublic
+                      ? () => fileInputRef.current?.click()
+                      : undefined
+                  }
                   className="
                     h-24
                     w-24
@@ -373,7 +424,7 @@ export default function TeacherProfileHeader({
             </div>
 
             {/* Camera Button */}
-            <button
+            {!isPublic && (<button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="
@@ -401,7 +452,7 @@ export default function TeacherProfileHeader({
               title="Change profile photo"
             >
               <Camera className="h-4 w-4" />
-            </button>
+            </button>)}
 
           </div>
           {/* Content */}
@@ -579,48 +630,50 @@ export default function TeacherProfileHeader({
         <div className="flex shrink-0 flex-col items-start gap-4 lg:items-end">
 
           {/* Buttons */}
-          <div className="flex gap-3">
+          {!isPublic && (
+            <div className="flex gap-3">
 
-            <button
-              onClick={() => setIsEditDrawerOpen(true)}
-              className="
-                rounded-xl
-                bg-emerald-600
-                px-4
-                py-2.5
-                text-sm
-                font-semibold
-                text-white
-                transition
-                hover:bg-emerald-700
-              "
-            >
-              Edit Profile
-            </button>
+              <button
+                onClick={() => setIsEditDrawerOpen(true)}
+                className="
+                  rounded-xl
+                  bg-emerald-600
+                  px-4
+                  py-2.5
+                  text-sm
+                  font-semibold
+                  text-white
+                  transition
+                  hover:bg-emerald-700
+                "
+              >
+                Edit Profile
+              </button>
 
-            <button
-              className="
-                flex
-                items-center
-                gap-2
-                rounded-xl
-                border
-                border-orange-300
-                bg-orange-50
-                px-4
-                py-2.5
-                text-sm
-                font-semibold
-                text-orange-700
-                transition
-                hover:bg-orange-100
-              "
-            >
-              <Eye className="h-4 w-4" />
-              Public Profile
-            </button>
+              <button
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  rounded-xl
+                  border
+                  border-orange-300
+                  bg-orange-50
+                  px-4
+                  py-2.5
+                  text-sm
+                  font-semibold
+                  text-orange-700
+                  transition
+                  hover:bg-orange-100
+                "
+              >
+                <Eye className="h-4 w-4" />
+                Public Profile
+              </button>
 
-          </div>
+            </div>
+          )}
 
           <div className="space-y-2">
 

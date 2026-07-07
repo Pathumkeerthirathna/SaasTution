@@ -12,7 +12,15 @@ import {
 import { Achievement, AchievementForm } from "@/types/teacherProfileTypes/achievement/achievement-types";
 import TeacherAchievementDrawer from "./achievement/TeacherAchievementDrawer";
 
-export default function TeacherAchievementCard() {
+interface Props{
+  teacherId:string;
+  isPublic?: boolean;
+}
+
+export default function TeacherAchievementCard({
+  teacherId,
+  isPublic
+}:Props) {
 
   const [achievements, setAchievements] =
     useState<Achievement[]>([]);
@@ -41,7 +49,7 @@ export default function TeacherAchievementCard() {
       setLoading(true);
 
       const response = await fetch(
-        "/api/teacher/profile/achievements"
+        `/api/teacher/profile/achievements?teacherId=${teacherId}`
       );
 
       if (!response.ok) {
@@ -208,6 +216,48 @@ export default function TeacherAchievementCard() {
 
   }
 
+  if (loading) {
+    return (
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+        <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
+
+          {/* Left */}
+          <div className="flex gap-5">
+
+            {/* Avatar */}
+            <div className="h-28 w-28 rounded-full bg-slate-200" />
+
+            {/* Details */}
+            <div className="space-y-4">
+              <div className="h-8 w-64 rounded bg-slate-200" />
+              <div className="h-5 w-48 rounded bg-slate-200" />
+              <div className="h-4 w-72 rounded bg-slate-200" />
+              <div className="h-4 w-56 rounded bg-slate-200" />
+
+              <div className="flex gap-4">
+                <div className="h-4 w-32 rounded bg-slate-200" />
+                <div className="h-4 w-32 rounded bg-slate-200" />
+              </div>
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="space-y-4">
+            <div className="h-11 w-40 rounded-xl bg-slate-200" />
+            <div className="h-4 w-24 rounded bg-slate-200" />
+
+            <div className="flex gap-2">
+              <div className="h-8 w-20 rounded-full bg-slate-200" />
+              <div className="h-8 w-20 rounded-full bg-slate-200" />
+              <div className="h-8 w-20 rounded-full bg-slate-200" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
   return (
 
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -229,7 +279,7 @@ export default function TeacherAchievementCard() {
 
         </div>
 
-        <button
+          {isPublic ? null : (<button
           onClick={openAddDrawer}
           className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600"
         >
@@ -238,7 +288,9 @@ export default function TeacherAchievementCard() {
 
           Add Achievement
 
-        </button>
+        </button>)}
+
+        
 
       </div>
 
@@ -333,7 +385,7 @@ export default function TeacherAchievementCard() {
 
                     {/* Actions */}
 
-                    <div className="flex items-center gap-2">
+                    {isPublic? null  : (<div className="flex items-center gap-2">
 
                       <button
                         onClick={() =>
@@ -363,7 +415,9 @@ export default function TeacherAchievementCard() {
 
                       </button>
 
-                    </div>
+                    </div>)}
+
+                    
 
                   </div>
 

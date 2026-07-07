@@ -11,13 +11,15 @@ import { useEffect, useState } from "react";
 import { QualificationForm } from "./qualification/qualification-types";
 import QualificationDrawer from "./qualification/QualificationDrawer";
 
-// interface Props {
-//   onAdd?: () => void;
-// }
+interface Props {
+  teacherId:string;
+  isPublic?: boolean;
+}
 
 export default function TeacherQualificationCard({
-  
-}) {
+  teacherId,
+  isPublic
+}:Props) {
 
 
   const [qualifications, setQualifications] = useState<
@@ -43,7 +45,7 @@ export default function TeacherQualificationCard({
   async function loadQualifications() {
     try {
       const res = await fetch(
-        "/api/teacher/profile/qualifications"
+        `/api/teacher/profile/qualifications?teacherId=${teacherId}`
       );
 
       if (!res.ok)
@@ -171,6 +173,48 @@ export default function TeacherQualificationCard({
 
   }
 
+  if (loading) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
+
+        {/* Left */}
+        <div className="flex gap-5">
+
+          {/* Avatar */}
+          <div className="h-28 w-28 rounded-full bg-slate-200" />
+
+          {/* Details */}
+          <div className="space-y-4">
+            <div className="h-8 w-64 rounded bg-slate-200" />
+            <div className="h-5 w-48 rounded bg-slate-200" />
+            <div className="h-4 w-72 rounded bg-slate-200" />
+            <div className="h-4 w-56 rounded bg-slate-200" />
+
+            <div className="flex gap-4">
+              <div className="h-4 w-32 rounded bg-slate-200" />
+              <div className="h-4 w-32 rounded bg-slate-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Right */}
+        <div className="space-y-4">
+          <div className="h-11 w-40 rounded-xl bg-slate-200" />
+          <div className="h-4 w-24 rounded bg-slate-200" />
+
+          <div className="flex gap-2">
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
   
 
   return (
@@ -191,13 +235,15 @@ export default function TeacherQualificationCard({
           </p>
         </div>
 
-        <button
+        {!isPublic && (<button
           onClick={openAddDrawer}
           className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
           Add Qualification
-        </button>
+        </button>)}
+
+        
       </div>
 
       {/* Timeline */}
@@ -235,8 +281,7 @@ export default function TeacherQualificationCard({
                       </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-2">
+                    {isPublic?null:(<div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditDrawer(qualification)}
                         className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-white"
@@ -254,7 +299,10 @@ export default function TeacherQualificationCard({
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </div>
+                    </div>)}
+
+                    {/* Actions */}
+                    
                   </div>
                 </div>
               </div>

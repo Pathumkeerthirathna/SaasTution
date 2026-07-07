@@ -308,6 +308,7 @@ model Class {
   description          String?
   teacherId            String
   createdAt            DateTime              @default(now())
+  startDate            DateTime?
   status               Int                   @default(0)
   schedule             String                @default("TBD")
   monthlyFee           Int                   @default(0)

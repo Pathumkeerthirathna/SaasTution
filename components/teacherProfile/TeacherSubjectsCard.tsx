@@ -12,37 +12,18 @@ import { useEffect, useState } from "react";
 import SubjectDrawer from "./subjects/SubjectDrawer";
 
 interface Props {
-  onEdit?: () => void;
+  teacherId:string;
+  isPublic?: boolean;
 }
 
 export default function TeacherSubjectsCard({
-  onEdit,
+  teacherId,
+  isPublic
 }: Props) {
-  // const subjects = [
-  //   {
-  //     id: 1,
-  //     subject: "Mathematics",
-  //     gradeFrom: 6,
-  //     gradeTo: 11,
-  //     mediums: ["Sinhala", "English"],
-  //   },
-  //   {
-  //     id: 2,
-  //     subject: "Combined Mathematics",
-  //     gradeFrom: 12,
-  //     gradeTo: 13,
-  //     mediums: ["English"],
-  //   },
-  //   {
-  //     id: 3,
-  //     subject: "Physics",
-  //     gradeFrom: 12,
-  //     gradeTo: 13,
-  //     mediums: ["Sinhala"],
-  //   },
-  // ];
+ 
 
   useEffect(() => {
+    setLoading(true);
       loadSubjects();
   }, []);
 
@@ -63,13 +44,20 @@ export default function TeacherSubjectsCard({
   useState(true);
 
   async function loadSubjects() {
+
+    console.log(teacherId);
+
       const res = await fetch(
-          "/api/teacher/profile/subjects"
+          `/api/teacher/profile/subjects?teacherId=${teacherId}`
       );
 
       const data = await res.json();
 
+      console.log(data);
+
       setSubjects(data);
+
+      setLoading(false);
   }
 
   function openAddDrawer() {
@@ -136,6 +124,48 @@ export default function TeacherSubjectsCard({
 
   }
 
+  if (loading) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
+
+        {/* Left */}
+        <div className="flex gap-5">
+
+          {/* Avatar */}
+          <div className="h-28 w-28 rounded-full bg-slate-200" />
+
+          {/* Details */}
+          <div className="space-y-4">
+            <div className="h-8 w-64 rounded bg-slate-200" />
+            <div className="h-5 w-48 rounded bg-slate-200" />
+            <div className="h-4 w-72 rounded bg-slate-200" />
+            <div className="h-4 w-56 rounded bg-slate-200" />
+
+            <div className="flex gap-4">
+              <div className="h-4 w-32 rounded bg-slate-200" />
+              <div className="h-4 w-32 rounded bg-slate-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Right */}
+        <div className="space-y-4">
+          <div className="h-11 w-40 rounded-xl bg-slate-200" />
+          <div className="h-4 w-24 rounded bg-slate-200" />
+
+          <div className="flex gap-2">
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
@@ -151,13 +181,15 @@ export default function TeacherSubjectsCard({
           </p>
         </div>
 
-        <button
+        {isPublic ? null : (<button
           onClick={openAddDrawer}
           className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
           Manage Subjects
-        </button>
+        </button>)}
+
+        
       </div>
 
       {/* Body */}
@@ -173,7 +205,7 @@ export default function TeacherSubjectsCard({
                   <BookOpen className="h-6 w-6 text-emerald-600" />
                 </div>
 
-                <div className="flex items-center gap-2">
+                {isPublic ? null : (<div className="flex items-center gap-2">
                   <button
                     className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
                     title="Edit Subject"
@@ -191,7 +223,12 @@ export default function TeacherSubjectsCard({
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </div>
+                </div>)}
+
+                
+
+
+
               </div>
 
               <h4 className="mt-4 text-lg font-bold text-slate-900">

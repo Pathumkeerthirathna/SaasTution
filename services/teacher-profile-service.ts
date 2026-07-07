@@ -189,8 +189,6 @@ export async function getTeacherProfile(
 }
 
 
-
-
 export async function updateTeacherProfile(
   teacherId: string,
   dto: UpdateTeacherProfile
@@ -1288,4 +1286,160 @@ export async function updateSocialLinks(
       websiteUrl: true,
     },
   });
+}
+
+export async function GetTeacherPublicProfileBySlug(
+  slug: string
+): Promise<TeacherProfile> {
+  const teacherProfileSelect = {
+    id: true,
+    teacherId: true,
+    slug: true,
+
+    profileImageUrl: true,
+    coverImageUrl: true,
+
+    designation: true,
+    headline: true,
+    aboutMe: true,
+    qualificationSummary: true,
+
+    yearsOfExperience: true,
+
+    phone: true,
+    whatsapp: true,
+
+    districtId: true,
+    cityId: true,
+
+    facebookUrl: true,
+    youtubeUrl: true,
+    instagramUrl: true,
+    tiktokUrl: true,
+    websiteUrl: true,
+
+    seoTitle: true,
+    seoDescription: true,
+
+    isVerified: true,
+    isPublic: true,
+
+    profileViewCount: true,
+
+    createdAt: true,
+    updatedAt: true,
+
+    qualifications: {
+      select: {
+        id: true,
+        displayOrder: true,
+        title: true,
+        institute: true,
+        profile: true,
+      },
+      orderBy: {
+        displayOrder: "asc",
+      },
+    },
+
+    teacher: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    },
+
+    district: {
+      select: {
+        name: true,
+      },
+    },
+
+    city: {
+      select: {
+        name: true,
+      },
+    },
+
+    mediums: {
+      select: {
+        medium: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    },
+  } satisfies Prisma.TeacherProfileSelect;
+
+  const profile = await prisma.teacherProfile.findUnique({
+    where: { slug },
+    select: teacherProfileSelect,
+  });
+
+  if (!profile) {
+    throw new Error("Teacher not found.");
+  }
+
+  if (!profile.isPublic) {
+    throw new Error("This profile is private.");
+  }
+
+  const result: TeacherProfile = {
+    profileId: profile.id,
+    teacherId: profile.teacherId,
+    slug: profile.slug,
+
+    profileImageUrl: profile.profileImageUrl,
+    coverImageUrl: profile.coverImageUrl,
+
+    designation: profile.designation,
+    headline: profile.headline,
+    aboutMe: profile.aboutMe,
+    qualificationSummary:
+      profile.qualifications[0]?.title ?? null,
+
+    yearsOfExperience: profile.yearsOfExperience,
+
+    phone: profile.phone,
+    whatsapp: profile.whatsapp,
+
+    districtId: profile.districtId,
+    cityId: profile.cityId,
+
+    district: profile.district?.name ?? null,
+    city: profile.city?.name ?? null,
+
+    facebookUrl: profile.facebookUrl,
+    youtubeUrl: profile.youtubeUrl,
+    instagramUrl: profile.instagramUrl,
+    tiktokUrl: profile.tiktokUrl,
+    websiteUrl: profile.websiteUrl,
+
+    seoTitle: profile.seoTitle,
+    seoDescription: profile.seoDescription,
+
+    isVerified: profile.isVerified,
+    isPublic: profile.isPublic,
+
+    profileViewCount: profile.profileViewCount,
+
+    createdAt: profile.createdAt.toISOString(),
+    updatedAt: profile.updatedAt.toISOString(),
+
+    teacher: {
+      id: profile.teacher.id,
+      name: profile.teacher.name,
+      email: profile.teacher.email,
+    },
+
+    mediums: profile.mediums.map((m) => ({
+      id: m.medium.id,
+      name: m.medium.name,
+    })),
+  };
+
+  return result;
 }

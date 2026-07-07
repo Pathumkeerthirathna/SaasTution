@@ -7,25 +7,20 @@ import {
   updateSocialLinks,
 } from "@/services/teacher-profile-service";
 
-export async function GET() {
+export async function GET(request:Request) {
   try {
 
-    const session =
-      await requireAppSession();
+    const { searchParams } = new URL(request.url);
 
-    if (
-      !session?.userId ||
-      session.role !== "TEACHER"
-    ) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    const teacherId = searchParams.get("teacherId");
+
+    if (!teacherId) {
+      throw new Error("Teacher id is required.");
     }
 
     const data =
       await getSocialLinks(
-        session.userId
+        teacherId
       );
 
     return NextResponse.json(data);

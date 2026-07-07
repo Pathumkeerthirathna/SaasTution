@@ -12,11 +12,18 @@ import AboutMeDrawer from "./About/AboutMeDrawer";
 
 interface Props {
   onEdit?: () => void;
+  teacherId:string;
+  isPublic?: boolean;
 }
 
 export default function TeacherAboutCard({
   onEdit,
+  teacherId,
+  isPublic
+  
 }: Props) {
+
+  console.log("teacherId", teacherId);
   
   const [aboutMe, setAboutMe] =
     useState("");
@@ -39,18 +46,19 @@ export default function TeacherAboutCard({
       try{
 
           setLoading(true);
+          
 
           const response =
               await fetch(
-                  "/api/teacher/profile/about"
+                `/api/public/teacher/about?teacherId=${teacherId}`
               );
 
-          const data =
-              await response.json();
+              
+      const responseData = await response.json();
 
-          setAboutMe(
-              data.aboutMe ?? ""
-          );
+      console.log(responseData);
+
+      setAboutMe(responseData.data.aboutMe ?? "");
 
       }
       finally{
@@ -98,7 +106,47 @@ export default function TeacherAboutCard({
 
   }
 
+if (loading) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
 
+        {/* Left */}
+        <div className="flex gap-5">
+
+          {/* Avatar */}
+          <div className="h-28 w-28 rounded-full bg-slate-200" />
+
+          {/* Details */}
+          <div className="space-y-4">
+            <div className="h-8 w-64 rounded bg-slate-200" />
+            <div className="h-5 w-48 rounded bg-slate-200" />
+            <div className="h-4 w-72 rounded bg-slate-200" />
+            <div className="h-4 w-56 rounded bg-slate-200" />
+
+            <div className="flex gap-4">
+              <div className="h-4 w-32 rounded bg-slate-200" />
+              <div className="h-4 w-32 rounded bg-slate-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Right */}
+        <div className="space-y-4">
+          <div className="h-11 w-40 rounded-xl bg-slate-200" />
+          <div className="h-4 w-24 rounded bg-slate-200" />
+
+          <div className="flex gap-2">
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+            <div className="h-8 w-20 rounded-full bg-slate-200" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 
   return (
@@ -116,13 +164,15 @@ export default function TeacherAboutCard({
           </p>
         </div>
 
-        <button
+        {!isPublic && (<button
           onClick={() => setDrawerOpen(true)}
           className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
           <Edit className="h-4 w-4" />
           Edit
-        </button>
+        </button>)}
+
+        
       </div>
 
       {/* Body */}

@@ -33,6 +33,7 @@ export type ClassItem = {
   description: string | null;
   monthlyFee: number;
   paymentDueWeek: number;
+  startDate: string;
   schedule: string;
   schedules: {
     id: string;
@@ -78,6 +79,7 @@ type FormState = {
   description: string;
   monthlyFee: string;
   paymentDueWeek: string;
+  startDate: string;
   schedules: {
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
     startTime: string;
@@ -166,6 +168,7 @@ export function ClassManagementPanel() {
     description: "",
     monthlyFee: "0",
     paymentDueWeek: "1",
+    startDate: "",
     schedules: [getDefaultScheduleRow()],
   });
   const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
@@ -176,6 +179,7 @@ export function ClassManagementPanel() {
     name: "",
     description: "",
     monthlyFee: "0",
+    startDate: "",
     paymentDueWeek: "1",
     schedules: [getDefaultScheduleRow()],
   });
@@ -299,6 +303,11 @@ export function ClassManagementPanel() {
     setSuccessMessage(null);
 
     try {
+
+      console.log("createForm", createForm);
+
+      //return;
+
       const response = await fetch("/api/classes", {
         method: "POST",
         headers: {
@@ -326,6 +335,7 @@ export function ClassManagementPanel() {
         description: "",
         monthlyFee: "0",
         paymentDueWeek: "1",
+        startDate: "",
         schedules: [getDefaultScheduleRow()],
       });
       setIsCreatePanelOpen(false);
@@ -347,6 +357,7 @@ export function ClassManagementPanel() {
       description: item.description ?? "",
       monthlyFee: String(item.monthlyFee),
       paymentDueWeek: String(item.paymentDueWeek),
+      startDate: item.startDate,
       schedules:
         item.schedules.length > 0
           ? item.schedules.map((schedule) => ({
@@ -538,7 +549,7 @@ export function ClassManagementPanel() {
         </div> */}
 
           {/* Premium Compact SaaS Header */}
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
             {/* Background */}
             <div className="pointer-events-none absolute inset-0">
@@ -546,61 +557,25 @@ export function ClassManagementPanel() {
               <div className="absolute -left-16 bottom-0 h-36 w-36 rounded-full bg-emerald-100/70 blur-3xl" />
             </div>
 
-            <div className="relative px-6 py-6">
+            <div className="relative px-4 py-3">
 
               <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
 
                 {/* Left */}
-                <div className="flex items-start gap-4">
-
-                  <div
-                    className="
-                      flex h-18 w-18 shrink-0 items-center justify-center
-                      rounded-2xl
-                      bg-gradient-to-br
-                      from-emerald-500
-                      via-green-500
-                      to-orange-500
-                      text-white
-                      shadow-md
-                      shadow-emerald-200
-                    "
-                  >
-                    <GraduationCap size={24} />
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 via-green-500 to-orange-500 text-white shadow-sm">
+                    <GraduationCap size={22} />
                   </div>
 
                   <div>
-
-                    {/* <span
-                      className="
-                        inline-flex
-                        items-center
-                        rounded-full
-                        border
-                        border-emerald-200
-                        bg-emerald-50
-                        px-2.5
-                        py-1
-                        text-[10px]
-                        font-semibold
-                        uppercase
-                        tracking-[0.15em]
-                        text-emerald-700
-                      "
-                    >
-                      Teaching Workspace
-                    </span> */}
-
-                    <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                    <h1 className="text-2xl font-bold text-slate-900">
                       Class Management
                     </h1>
 
-                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                      Manage classes, schedules, student enrolments and payments from one workspace.
+                    <p className="mt-1 text-sm text-slate-500">
+                      Manage classes, schedules and student enrolments.
                     </p>
-
                   </div>
-
                 </div>
 
                 {/* Right */}
@@ -609,20 +584,18 @@ export function ClassManagementPanel() {
                   <div className="flex flex-wrap justify-end gap-2">
 
                     {/* Classes */}
-                    <div className="min-w-[105px] rounded-xl border border-slate-200 bg-white px-4 py-3">
-
-                      <div className="flex items-center gap-1.5 text-emerald-600">
-                        <Layers3 size={13} />
-                        <span className="text-[10px] font-semibold uppercase tracking-wide">
-                          Classes
-                        </span>
+                    <div className="min-w-[95px] rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+                      <div className="flex items-center gap-2 text-emerald-600">
+                          <Layers3 size={14}/>
+                          <span className="text-[11px] font-semibold uppercase">
+                              Classes
+                          </span>
                       </div>
 
-                      <p className="mt-1 text-xl font-bold text-slate-900">
-                        {overview.totalClasses}
-                      </p>
-
-                    </div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">
+                          {overview.totalClasses}
+                      </div>
+                  </div>
 
                     {/* Students */}
                     <div className="min-w-[105px] rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -800,140 +773,121 @@ export function ClassManagementPanel() {
           {items.map((item) => {
             return (
              <div
-              key={item.id}
-              className="
-                group
-                overflow-hidden
-                rounded-3xl
-                border
-                border-slate-200
-                bg-gradient-to-b
-                from-white
-                to-slate-50/60
-                shadow-sm
-                transition-all
-                duration-300
-                hover:-translate-y-1
-                hover:border-orange-200
-                hover:shadow-2xl
-                hover:-translate-y-1
-              "
-            >
-              {/* Accent Bar */}
-              <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-green-500 to-orange-500" />
-
-                <div className="p-5">
-                  {/* Header */}
+                key={item.id}
+                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl"
+              >
+                {/* Header */}
+                <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-5 text-white">
                   <div className="flex items-start justify-between">
-                    <div className="flex gap-4">
-                      <div
-                        className="
-                          flex h-14 w-14 items-center justify-center
-                          rounded-2xl
-                          bg-gradient-to-br
-                          from-emerald-500
-                          via-green-500
-                          to-orange-500
-                          text-white
-                          shadow-md
-                        "
-                      >
-                        <BookOpen size={24} />
+                    {/* Left */}
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
+                        <BookOpen className="h-7 w-7" />
                       </div>
 
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-slate-900">
+                          <h3 className="text-xl font-bold">
                             {item.name}
                           </h3>
 
-                          <span
-                            className="
-                              inline-flex items-center gap-1
-                              rounded-full
-                              border
-                              border-emerald-200
-                              bg-emerald-50
-                              text-emerald-700
-                            "
-                          >
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            Active
+                          <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-semibold">
+                            ● Active
                           </span>
                         </div>
 
-                        <p className="mt-1 text-sm text-slate-500">
-                          {"General"}
+                        <p className="mt-1 text-sm text-emerald-100">
+                          General
                         </p>
                       </div>
                     </div>
 
-                    <span className="text-xs text-slate-400">
-                      {new Date(item.createdAt).toLocaleDateString()}
-                    </span>
+                    {/* Right */}
+                    <div className="flex flex-col items-end justify-between text-right">
+                      <span className="text-xs text-emerald-100">
+                        Created {new Date(item.createdAt).toLocaleDateString()}
+                      </span>
+
+                      {item.startDate && (
+                        <div className="mt-6 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                          📅 Upcoming:{" "}
+                          {new Date(item.startDate).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                </div>
+
+                {/* Body */}
+                <div className="space-y-5 p-5">
 
                   {/* Stats */}
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    <div className="rounded-2xl bg-blue-50 p-3">
-                      <div className="flex items-center gap-2">
-                        <Users size={14} className="text-blue-600" />
-                        <span className="text-xs font-medium text-blue-600">
+                  <div className="grid grid-cols-3 gap-3">
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 text-emerald-600">
+                        <Users size={15} />
+                        <span className="text-xs font-semibold">
                           Students
                         </span>
                       </div>
 
-                      <p className="mt-2 text-2xl font-bold text-blue-700">
+                      <p className="mt-2 text-xl font-bold text-slate-900">
                         {overview.activeStudents}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-emerald-50 p-3">
-                      <div className="flex items-center gap-2">
-                        <Wallet size={14} className="text-emerald-600" />
-                        <span className="text-xs font-medium text-emerald-600">
-                          Fee
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 text-orange-600">
+                        <Wallet size={15} />
+                        <span className="text-xs font-semibold">
+                          Monthly Fee
                         </span>
                       </div>
 
-                      <p className="mt-2 text-lg font-bold text-emerald-700">
-                        Rs.{item.monthlyFee.toLocaleString()}
+                      <p className="mt-2 text-lg font-bold text-orange-600">
+                        Rs. {item.monthlyFee.toLocaleString()}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-amber-50 p-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar size={14} className="text-amber-600" />
-                        <span className="text-xs font-medium text-amber-600">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 text-indigo-600">
+                        <Calendar size={15} />
+                        <span className="text-xs font-semibold">
                           Due Week
                         </span>
                       </div>
 
-                      <p className="mt-2 text-lg font-bold text-amber-700">
+                      <p className="mt-2 text-lg font-bold text-indigo-700">
                         Week {item.paymentDueWeek}
                       </p>
                     </div>
+
                   </div>
 
                   {/* Schedule */}
-                  {item.schedules?.length > 0 && (
-                    <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
-                      <div className="flex items-center gap-2">
-                        <CalendarDays
-                          size={15}
-                          className="text-indigo-600"
-                        />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
 
-                        <span className="font-semibold text-indigo-900">
-                          Weekly Schedule
-                        </span>
-                      </div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <CalendarDays
+                        className="h-4 w-4 text-orange-500"
+                      />
 
-                      <div className="mt-3 space-y-2">
+                      <span className="font-semibold text-slate-800">
+                        Weekly Schedule
+                      </span>
+                    </div>
+
+                    {item.schedules?.length > 0 ? (
+                      <div className="space-y-2">
                         {item.schedules.slice(0, 2).map((schedule) => (
                           <div
                             key={`${schedule.dayOfWeek}-${schedule.startTime}`}
-                            className="flex items-center justify-between rounded-xl bg-white px-3 py-2"
+                            className="flex items-center justify-between rounded-lg bg-white px-3 py-2"
                           >
                             <span className="text-sm font-medium text-slate-700">
                               {schedule.dayOfWeek}
@@ -941,95 +895,58 @@ export function ClassManagementPanel() {
 
                             <span className="text-sm text-slate-500">
                               {formatTime12h(schedule.startTime)}
-                              {" → "}
+                              {" - "}
                               {formatTime12h(schedule.endTime)}
                             </span>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-sm text-slate-500">
+                        Schedule not available
+                      </p>
+                    )}
 
-                  {/* Description */}
-                  <div className="mt-5">
-                    <p className="line-clamp-2 text-sm leading-6 text-slate-600">
-                      {item.description ||
-                        "No class description provided."}
-                    </p>
                   </div>
 
+                  {/* Description */}
+                  <p className="line-clamp-2 text-sm leading-6 text-slate-600">
+                    {item.description ||
+                      "No class description provided."}
+                  </p>
+
                   {/* Footer */}
-                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
+
                     <button
-                      className="
-                        inline-flex items-center gap-2
-                        rounded-xl
-                        bg-brand-600
-                        px-4 py-2
-                        text-sm font-medium
-                        text-white
-                        transition
-                        hover:bg-brand-700
-                      "
                       onClick={() => setStudentsPanelClassId(item.id)}
+                      className="rounded-xl bg-emerald-600 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
                     >
-                      <Users size={14} />
                       Students
                     </button>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="
-                          inline-flex items-center gap-2
-                          rounded-xl
-                          border
-                          border-slate-200
-                          px-4 py-2
-                          text-sm
-                          transition
-                          hover:bg-slate-50
-                        "
-                      >
-                        <CalendarDays size={14} />
-                        Schedule
-                      </button>
+                    <button
+                      className="rounded-xl border border-slate-200 py-2 text-sm font-medium hover:bg-slate-50"
+                    >
+                      Schedule
+                    </button>
 
-                      <button
-                        className="
-                          inline-flex items-center gap-2
-                          rounded-xl
-                          border
-                          border-slate-200
-                          px-4 py-2
-                          text-sm
-                          transition
-                          hover:bg-slate-50
-                        "
+                    <button
+                      onClick={() => beginEdit(item)}
+                      className="rounded-xl border border-slate-200 py-2 text-sm font-medium hover:bg-slate-50"
+                    >
+                      Edit
+                    </button>
 
-                        onClick={() => beginEdit(item)}
-                      >
-                        <Pencil size={14} />
-                        Edit
-                      </button>
+                    <button
+                      onClick={() => void deleteClass(item.id)}
+                      className="rounded-xl border border-rose-200 bg-rose-50 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100"
+                    >
+                      Delete
+                    </button>
 
-                      <button
-                        className="
-                          inline-flex items-center gap-2
-                          rounded-xl
-                          bg-rose-50
-                          px-4 py-2
-                          text-sm
-                          text-rose-700
-                          transition
-                          hover:bg-rose-100
-                        "
-                        onClick={() => void deleteClass(item.id)}
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </button>
-                    </div>
                   </div>
+
                 </div>
               </div>
 
@@ -1241,6 +1158,7 @@ export function ClassManagementPanel() {
 
           {/* Schedule Section */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-semibold text-foreground">
@@ -1263,6 +1181,54 @@ export function ClassManagementPanel() {
               >
                 Add Schedule
               </button>
+
+            </div>
+
+            {/* Batch Start Date */}
+            <div className="mb-6 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="form-label">
+                  Batch Start Date
+                </label>
+
+                <input
+                  type="date"
+                  value={createForm.startDate}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      startDate: e.target.value,
+                    }))
+                  }
+                  className="control-input"
+                />
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Date when this batch begins.
+                </p>
+              </div>
+
+              <div>
+                <label className="form-label">
+                  Preview
+                </label>
+
+                <div className="flex h-[42px] items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      createForm.startDate &&
+                      new Date(createForm.startDate) > new Date()
+                        ? "bg-orange-100 text-orange-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    {createForm.startDate &&
+                    new Date(createForm.startDate) > new Date()
+                      ? "Upcoming Batch"
+                      : "Running Batch"}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -1299,6 +1265,7 @@ export function ClassManagementPanel() {
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-3">
+
                     <div>
                       <label className="form-label">
                         Day of week
