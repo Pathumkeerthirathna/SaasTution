@@ -12,11 +12,16 @@ import {
   MessageCircle,
   Pencil,
   Phone,
+  Share2,
   UserCheck,
   Users,
   X,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+
+import {  Copy, Send, Mail } from "lucide-react";
+import { BsLink45Deg } from "react-icons/bs";
+import { FaWhatsapp, FaFacebookMessenger, FaTelegramPlane, FaFacebookF, FaLinkedinIn } from "react-icons/fa";
 
 interface Props {
   teacher?: TeacherProfile;
@@ -92,10 +97,40 @@ export default function TeacherProfileHeader({
   const [slugMessage, setSlugMessage] =
     useState("");
 
+  const [showShareModal, setShowShareModal] = useState(false);
+
   useEffect(() => {
     loadDistricts();
    // loadProfile();
   }, []);
+
+  const handleShare = async () => {
+    console.log("Share clicked");
+
+    const url = `https://slclassroom.live/${teacher?.slug}`;
+
+    // Desktop always shows custom modal
+    if (window.innerWidth > 768) {
+      setShowShareModal(true);
+      return;
+    }
+
+    // Mobile
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${teacher?.teacher.name} - Teacher Profile`,
+          text: "Check out this teacher profile",
+          url,
+        });
+        return;
+      } catch (e) {
+        console.log(e);
+      }
+    }
+
+    setShowShareModal(true);
+  };
 
   useEffect(() => {
       if (!teacher) return;
@@ -627,106 +662,167 @@ export default function TeacherProfileHeader({
         </div>
 
         {/* Actions */}
-        <div className="flex shrink-0 flex-col items-start gap-4 lg:items-end">
+        <div className="w-full max-w-sm">
 
-          {/* Buttons */}
-          {!isPublic && (
-            <div className="flex gap-3">
+  {/* Action Buttons */}
 
-              <button
-                onClick={() => setIsEditDrawerOpen(true)}
-                className="
-                  rounded-xl
-                  bg-emerald-600
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-semibold
-                  text-white
-                  transition
-                  hover:bg-emerald-700
-                "
-              >
-                Edit Profile
-              </button>
+  <div className="flex items-center justify-end gap-3 whitespace-nowrap">
 
-              <button
-                className="
-                  flex
-                  items-center
-                  gap-2
-                  rounded-xl
-                  border
-                  border-orange-300
-                  bg-orange-50
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-semibold
-                  text-orange-700
-                  transition
-                  hover:bg-orange-100
-                "
-              >
-                <Eye className="h-4 w-4" />
-                Public Profile
-              </button>
+        <button
+          type="button"
+          onClick={handleShare}
+          className="
+            inline-flex
+            items-center
+            justify-center
+            gap-2
+            rounded-xl
+            bg-gradient-to-r
+            from-emerald-600
+            to-orange-500
+            px-5
+            py-3
+            text-sm
+            font-semibold
+            text-white
+            shadow-md
+            transition
+            hover:scale-[1.02]
+            hover:shadow-lg
+          "
+        >
+            <Share2
+                className="h-4 w-4 pointer-events-none"
+            />
 
-            </div>
-          )}
+            <span className="pointer-events-none">
+                Share
+            </span>
+        </button>
 
-          <div className="space-y-2">
+    {!isPublic && (
+      <>
+        <button
+          onClick={() => setIsEditDrawerOpen(true)}
+          className="
+            rounded-xl
+            bg-emerald-600
+            px-5
+            py-3
+            text-sm
+            font-semibold
+            text-white
+            shadow-sm
+            transition
+            hover:bg-emerald-700
+        "
+        >
+          Edit Profile
+        </button>
 
-            {/* First Line */}
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 pl-6">
-              <Languages className="h-4 w-4" />
-              <span>Mediums:</span>
-            </div>
+        <button
+          className="
+            rounded-xl
+            border
+            border-orange-300
+            bg-white
+            px-5
+            py-3
+            text-sm
+            font-semibold
+            text-orange-600
+            transition
+            hover:bg-orange-50
+        "
+        >
+          <Eye className="mr-2 inline h-4 w-4" />
+          Public Profile
+        </button>
+      </>
+    )}
 
-            {teacher?.mediums?.length ? (
+    {/* Always Visible */}
 
-              <div className="flex flex-wrap gap-2 pl-6">
-                {teacher.mediums.map((medium) => (
+
+
+  </div>
+
+  {/* Medium Card */}
+
+  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+
+      <div className="mb-3 flex items-center gap-2">
+
+          <Languages className="h-4 w-4 text-emerald-600" />
+
+          <span className="text-sm font-semibold text-slate-700">
+              Teaching Mediums
+          </span>
+
+      </div>
+
+      {teacher?.mediums?.length ? (
+
+          <div className="flex flex-wrap gap-2">
+
+              {teacher.mediums.map((medium) => (
+
                   <span
-                    key={medium.id}
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                      key={medium.id}
+                      className="
+                          rounded-full
+                          border
+                          border-emerald-200
+                          bg-white
+                          px-3
+                          py-1
+                          text-xs
+                          font-medium
+                          text-emerald-700
+                      "
                   >
-                    {medium.name}
+                      {medium.name}
                   </span>
-                ))}
-              </div>
 
-            ) : (
-
-              <div className="space-y-1 pl-6">
-
-                {/* Second Line */}
-                <p className="text-xs italic text-slate-400">
-                  No teaching mediums added.
-                </p>
-
-                {/* Third Line */}
-                <button
-                  type="button"
-                  // onClick={() => openDrawer("mediums")}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 transition hover:text-emerald-700"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Configure Mediums
-                </button>
-
-                {/* Fourth Line */}
-                <p className="text-xs text-slate-400">
-                  They will then appear here and on your public profile.
-                </p>
-
-              </div>
-
-            )}
+              ))}
 
           </div>
 
-        </div>
+      ) : (
+
+          <div>
+
+              <p className="text-sm text-slate-400">
+                  No teaching mediums added.
+              </p>
+
+              {!isPublic && (
+
+                  <button
+                      className="
+                          mt-3
+                          rounded-lg
+                          bg-emerald-50
+                          px-3
+                          py-2
+                          text-xs
+                          font-medium
+                          text-emerald-700
+                          hover:bg-emerald-100
+                      "
+                  >
+                      Configure Mediums
+                  </button>
+
+              )}
+
+          </div>
+
+      )}
+
+  </div>
+
+</div>
 
       </div>
 
@@ -1066,6 +1162,326 @@ export default function TeacherProfileHeader({
 
         </div>
       )}
+
+     {showShareModal && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+
+        <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+
+          {/* Teacher */}
+
+          <div className="border-b border-slate-100 px-6 py-5">
+
+             <button
+              onClick={() => setShowShareModal(false)}
+              className="rounded-xl p-2 hover:bg-slate-100"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-4">
+
+              <img
+                src={profilePhoto}
+                className="h-16 w-16 rounded-full border object-cover"
+              />
+
+              <div>
+
+                <h3 className="text-lg font-bold text-slate-900">
+                  {teacher?.teacher.name}
+                </h3>
+
+                <p className="text-orange-600 font-medium">
+                  {teacher?.designation}
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Share this profile with your students and parents.
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Share Apps */}
+
+          <div className="px-6 py-6">
+
+            <h4 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Share Via
+            </h4>
+
+            <div className="grid grid-cols-4 gap-5">
+
+              {/* WhatsApp */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://wa.me/?text=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#25D366]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <FaWhatsapp
+                    size={30}
+                    className="text-[#25D366]"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs font-medium">
+                  WhatsApp
+                </span>
+
+              </button>
+
+              {/* Messenger */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://www.facebook.com/dialog/send?link=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0084FF]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <FaFacebookMessenger
+                    size={28}
+                    className="text-[#0084FF]"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  Messenger
+                </span>
+
+              </button>
+
+              {/* Telegram */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://t.me/share/url?url=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#229ED9]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <FaTelegramPlane
+                    size={28}
+                    className="text-[#229ED9]"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  Telegram
+                </span>
+
+              </button>
+
+              {/* Facebook */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1877F2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <FaFacebookF
+                    size={25}
+                    className="text-[#1877F2]"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  Facebook
+                </span>
+
+              </button>
+
+              {/* LinkedIn */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0A66C2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <FaLinkedinIn
+                    size={26}
+                    className="text-[#0A66C2]"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  LinkedIn
+                </span>
+
+              </button>
+
+              {/* Email */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `mailto:?subject=${encodeURIComponent(
+                      `${teacher?.teacher.name} - Teacher Profile`
+                    )}&body=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <Mail
+                    size={26}
+                    className="text-orange-600"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  Email
+                </span>
+
+              </button>
+
+              {/* X */}
+
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://twitter.com/intent/tweet?url=${encodeURIComponent(
+                      `https://slclassroom.live/${teacher?.slug}`
+                    )}`,
+                    "_blank"
+                  )
+                }
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <span className="text-xl font-bold">
+                    X
+                  </span>
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  X
+                </span>
+
+              </button>
+
+              {/* Copy */}
+
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(
+                    `https://slclassroom.live/${teacher?.slug}`
+                  );
+
+                  alert("Profile link copied.");
+
+                  setShowShareModal(false);
+                }}
+                className="group flex flex-col items-center"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+
+                  <BsLink45Deg
+                    size={30}
+                    className="text-slate-700"
+                  />
+
+                </div>
+
+                <span className="mt-2 text-xs">
+                  Copy Link
+                </span>
+
+              </button>
+
+            </div>
+
+          </div>
+
+          {/* Profile URL */}
+
+          <div className="border-t border-slate-200 bg-slate-50 px-6 py-5">
+
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
+              Profile Link
+            </label>
+
+            <div className="flex overflow-hidden rounded-xl border border-slate-300 bg-white">
+
+              <input
+                readOnly
+                value={`https://slclassroom.live/${teacher?.slug}`}
+                className="flex-1 px-4 py-3 text-sm outline-none"
+              />
+
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(
+                    `https://slclassroom.live/${teacher?.slug}`
+                  );
+
+                  alert("Copied");
+                }}
+                className="bg-gradient-to-r from-emerald-600 to-orange-500 px-6 font-semibold text-white transition hover:opacity-90"
+              >
+                Copy
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    )}
 
       {previewOpen && (
         <div className="fixed inset-0 z-[60]">
