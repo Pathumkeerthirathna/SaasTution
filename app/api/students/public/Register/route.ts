@@ -1,4 +1,4 @@
-import { apiError, apiSuccess } from "@/lib/api-response";
+import { apiSuccess } from "@/lib/api-response";
 import { handleRouteError } from "@/lib/error-handler";
 import { RegisterStudentViaPublicClasses } from "@/services/student-service";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";

@@ -36,10 +36,36 @@ const [loading, setLoading] =
   useState(true);
 
   useEffect(() => {
+
+    async function loadMediums() {
+      try {
+        setLoading(true);
+
+        const response = await fetch(
+          `/api/teacher/profile/mediums?teacherId=${teacherId}`
+        );
+
+        if (!response.ok)
+          throw new Error("Failed to load mediums.");
+
+        const data: TeacherMedium[] =
+          await response.json();
+
+        setTeacherMediums(
+          data.map((x) => x.medium)
+        );
+
+      } finally {
+        setLoading(false);
+      }
+    }
+
     loadMediums();
+
   }, []);
 
-  async function loadMediums() {
+
+  async function RefreshMediums() {
     try {
       setLoading(true);
 
@@ -61,6 +87,8 @@ const [loading, setLoading] =
       setLoading(false);
     }
   }
+
+  
 
   // async function openDrawer() {
 
@@ -164,7 +192,7 @@ const [loading, setLoading] =
 
       setDrawerOpen(false);
 
-      await loadMediums();
+      await RefreshMediums();
 
     } finally {
       setSaving(false);

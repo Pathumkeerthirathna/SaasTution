@@ -25,19 +25,16 @@ export async function GET(request:Request) {
 
     return NextResponse.json(data);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load social links";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load social links.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }
 
@@ -70,18 +67,15 @@ export async function PUT(
 
     return NextResponse.json(result);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update social links";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update social links.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }

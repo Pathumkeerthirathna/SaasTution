@@ -24,13 +24,14 @@ export async function GET(request:Request) {
     return NextResponse.json(
       qualifications
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load qualifications";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load qualifications",
-      },
+      { message },
       { status: 400 }
     );
   }
@@ -61,13 +62,14 @@ export async function POST(
     return NextResponse.json(
       qualification
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to add qualifications";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to add qualification",
-      },
+      { message },
       { status: 400 }
     );
   }

@@ -19,7 +19,6 @@ import {
   KeyRound,
   ChevronDown,
   ChevronRight,
-  UserCircle2,
   BadgeInfo,
 } from "lucide-react";
 

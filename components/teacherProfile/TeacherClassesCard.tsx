@@ -4,11 +4,10 @@ import {
   BookOpen,
   CalendarDays,
   Eye,
-  Users,
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect,useState } from "react";
 
 interface Props {
   teacherId: string;
@@ -44,34 +43,25 @@ const [loading, setLoading] = useState(true);
 const router = useRouter();
 
 useEffect(() => {
+  async function loadClasses() {
+    try {
+      setLoading(true);
+
+      const response = await fetch(`/api/classes?page=1&pageSize=100&teacherId=${teacherId}`);
+      const payload = await response.json();
+
+      if (payload.success) {
+        setClasses(payload.data ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
   loadClasses();
 }, []);
 
-async function loadClasses() {
-  try {
-    setLoading(true);
-
-    const response = await fetch(`/api/classes?page=1&pageSize=100&teacherId=${teacherId}`);
-    const payload = await response.json();
-
-    if (payload.success) {
-      setClasses(payload.data ?? []);
-    }
-  } finally {
-    setLoading(false);
-  }
-}
 
 
-
-const totalStudents = useMemo(
-  () =>
-    classes.reduce(
-      (sum, c) => sum + c.students.filter(s => s.isActive).length,
-      0
-    ),
-  [classes]
-);
 
 // if (loading) {
 //   return (

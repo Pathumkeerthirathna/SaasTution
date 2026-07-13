@@ -54,28 +54,7 @@ export default function SubjectDrawer({
   useEffect(() => {
     if (!open) return;
 
-    loadSubjects();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    if (editingSubject) {
-      setForm({
-        subjectId: editingSubject.subjectId,
-        gradeFrom: editingSubject.gradeFrom,
-        gradeTo: editingSubject.gradeTo,
-      });
-    } else {
-      setForm({
-        subjectId: 0,
-        gradeFrom: 6,
-        gradeTo: 11,
-      });
-    }
-  }, [editingSubject, open]);
-
-  async function loadSubjects() {
+    async function loadSubjects() {
     try {
       setLoading(true);
 
@@ -107,6 +86,30 @@ export default function SubjectDrawer({
       setLoading(false);
     }
   }
+
+    loadSubjects();
+    
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (editingSubject) {
+      setForm({
+        subjectId: editingSubject.subjectId,
+        gradeFrom: editingSubject.gradeFrom,
+        gradeTo: editingSubject.gradeTo,
+      });
+    } else {
+      setForm({
+        subjectId: 0,
+        gradeFrom: 6,
+        gradeTo: 11,
+      });
+    }
+  }, [editingSubject, open]);
+
+  
 
   if (!open) return null;
 

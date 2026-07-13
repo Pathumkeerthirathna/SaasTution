@@ -39,41 +39,78 @@ export default function TeacherAchievementCard({
     useState<Achievement | null>(null);
 
   useEffect(() => {
-    loadAchievements();
-  }, []);
 
-  async function loadAchievements() {
+    async function loadAchievements() {
 
-    try {
+      try {
 
-      setLoading(true);
+        setLoading(true);
 
-      const response = await fetch(
-        `/api/teacher/profile/achievements?teacherId=${teacherId}`
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          "Failed to load achievements."
+        const response = await fetch(
+          `/api/teacher/profile/achievements?teacherId=${teacherId}`
         );
+
+        if (!response.ok) {
+          throw new Error(
+            "Failed to load achievements."
+          );
+        }
+
+        const data: Achievement[] =
+          await response.json();
+
+        setAchievements(data);
+
+      } catch (error) {
+
+        console.error(error);
+
+      } finally {
+
+        setLoading(false);
+
       }
-
-      const data: Achievement[] =
-        await response.json();
-
-      setAchievements(data);
-
-    } catch (error) {
-
-      console.error(error);
-
-    } finally {
-
-      setLoading(false);
 
     }
 
-  }
+    loadAchievements();
+
+  }, []);
+
+  async function RefreshAchievements() {
+
+      try {
+
+        setLoading(true);
+
+        const response = await fetch(
+          `/api/teacher/profile/achievements?teacherId=${teacherId}`
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Failed to load achievements."
+          );
+        }
+
+        const data: Achievement[] =
+          await response.json();
+
+        setAchievements(data);
+
+      } catch (error) {
+
+        console.error(error);
+
+      } finally {
+
+        setLoading(false);
+
+      }
+
+    }
+
+  
 
   function openAddDrawer() {
 
@@ -144,7 +181,7 @@ export default function TeacherAchievementCard({
         null
       );
 
-      await loadAchievements();
+      await RefreshAchievements();
 
     }
     catch (error) {
@@ -199,7 +236,7 @@ export default function TeacherAchievementCard({
 
       }
 
-      await loadAchievements();
+      await RefreshAchievements();
 
     }
     catch (error) {

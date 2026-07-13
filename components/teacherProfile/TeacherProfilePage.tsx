@@ -5,8 +5,6 @@
 import { useState } from "react";
 
 import TeacherProfileHeader from "../../components/teacherProfile/TeacherProfileHeader";
-import TeacherProfileStats from "./TeacherProfileStats";
-import TeacherProfileCompletionCard from "./TeacherProfileCompletionCard";
 
 import TeacherAboutCard from "./TeacherAboutCard";
 import TeacherMediumsCard from "./TeacherMediumsCard";

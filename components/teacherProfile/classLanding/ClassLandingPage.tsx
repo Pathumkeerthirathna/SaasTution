@@ -1,7 +1,6 @@
 "use client";
 
 import ClassHero from "./ClassHero";
-import ClassTeacherCard from "./ClassTeacherCard";
 import ClassSessionsPreview from "./ClassSessionsPreview";
 import ClassNotesPreview from "./ClassNotesPreview";
 import ClassLearningOutcomes from "./ClassLearningOutcomes";
@@ -10,11 +9,9 @@ import ClassTestimonials from "./ClassTestimonials";
 import ClassRegisterCard from "./ClassRegisterCard";
 import ClassTrustCard from "./ClassTrustCard";
 
-import {dummySessions,dummyNotes,dummyLearningOutcomes,dummyTestimonials,dummyRegisterInfo,dummyBenefits } from "./dummyData";
+import {dummySessions,dummyNotes,dummyLearningOutcomes,dummyTestimonials,dummyBenefits } from "./dummyData";
 import { useEffect, useState } from "react";
-import { PublicClass } from "@/types/teacherProfileTypes/PublicClass";
 import { ClassItem } from "@/components/class-management-panel";
-import { Grade } from "@/types/grade";
 
 interface Props {
   classId: string;
@@ -30,51 +27,35 @@ export default function ClassLandingPage({
   const [loading, setLoading] =
     useState(true);
 
-  const [grades, setGrades] = useState<Grade[]>([]);
-  const [selectedGrade, setSelectedGrade] = useState("");
-
   useEffect(() => {
-    void loadClass();
-    void loadGrades();
+
+    async function loadClass() {
+      try {
+        setLoading(true);
+
+
+        console.log(classId);
+
+        const response = await fetch(`/api/classes/${classId}`);
+        const payload = await response.json();
+
+        console.log(payload);
+
+        if (payload.success) {
+          setClassInfo(payload.data);
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadClass(); 
+
   }, [classId]);
 
-  async function loadGrades() {
-    try {
-      const response = await fetch("/api/master/grades");
-
-      if (!response.ok) {
-        throw new Error("Failed to load grades");
-      }
-
-      const data: Grade[] = await response.json();
-      setGrades(data);
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-
-  async function loadClass() {
-    try {
-      setLoading(true);
-
-
-      console.log(classId);
-
-      const response = await fetch(`/api/classes/${classId}`);
-      const payload = await response.json();
-
-      console.log(payload);
-
-      if (payload.success) {
-        setClassInfo(payload.data);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  
 
   if (loading) {
     return (

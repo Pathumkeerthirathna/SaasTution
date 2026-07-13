@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
-    getDistricts,
-  getMediums,
+    getDistricts
 } from "@/services/teacher-profile-service";
 
 export async function GET() {
@@ -13,14 +12,10 @@ export async function GET() {
     return NextResponse.json(
       mediums
     );
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load mediums",
-      },
-      { status: 400 }
-    );
-  }
+  }catch {
+  return NextResponse.json(
+    { message: "Failed to load districts" },
+    { status: 400 }
+  );
+}
 }

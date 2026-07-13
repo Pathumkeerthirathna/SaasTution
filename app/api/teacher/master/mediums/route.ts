@@ -12,13 +12,14 @@ export async function GET() {
     return NextResponse.json(
       mediums
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load mediums";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load mediums",
-      },
+      { message },
       { status: 400 }
     );
   }

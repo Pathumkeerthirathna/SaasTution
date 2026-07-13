@@ -1,16 +1,9 @@
 import { apiSuccess } from "@/lib/api-response";
 import { handleRouteError } from "@/lib/error-handler";
-import { getAboutMe, getPublicTeacherProfile } from "@/services/teacher-profile-service";
-
-interface RouteParams {
-  params: Promise<{
-    slug: string;
-  }>;
-}
+import { getAboutMe } from "@/services/teacher-profile-service";
 
 export async function GET(
-  request: Request,
-  { params }: RouteParams
+  request: Request
 ) {
   try {
     const { searchParams } = new URL(request.url);

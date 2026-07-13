@@ -9,6 +9,8 @@ import {
 
 import { useState } from "react";
 
+import Image from "next/image";
+
 import { ClassTestimonial } from "../../../types/teacherProfileTypes/ClassTestimonial";
 
 interface Props {
@@ -75,9 +77,11 @@ export default function ClassTestimonials({
 
           <div className="shrink-0">
 
-            <img
+            <Image
               src={testimonial.image}
               alt={testimonial.studentName}
+              width={112}
+              height={112}
               className="h-28 w-28 rounded-2xl object-cover shadow-md"
             />
 
@@ -101,7 +105,7 @@ export default function ClassTestimonials({
             </div>
 
             <p className="mt-5 text-lg leading-9 text-slate-700 italic">
-              "{testimonial.comment}"
+              &ldquo;{testimonial.comment}&rdquo;
             </p>
 
             <div className="mt-6">

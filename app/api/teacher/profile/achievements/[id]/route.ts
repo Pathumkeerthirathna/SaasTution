@@ -39,13 +39,14 @@ export async function PUT(
     return NextResponse.json(
       achievement
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update achievement";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update achievement",
-      },
+      { message },
       { status: 400 }
     );
   }
@@ -74,13 +75,14 @@ export async function DELETE(
     return NextResponse.json(
       result
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to delete achievement";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to delete achievement",
-      },
+      { message },
       { status: 400 }
     );
   }

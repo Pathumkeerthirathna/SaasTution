@@ -57,13 +57,14 @@ export async function PUT(
       );
 
     return NextResponse.json(profile);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update profile";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update profile",
-      },
+      { message },
       { status: 400 }
     );
   }

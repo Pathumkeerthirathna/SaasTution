@@ -1,7 +1,6 @@
 "use client";
 
 import { SubjectForm, TeacherSubject } from "@/types/teacherProfileTypes/teacherSubjects/teacherSubjectTypes";
-import { TeacherProfileSubject } from "@prisma/client";
 import {
   BookOpen,
   Pencil,
@@ -24,8 +23,41 @@ export default function TeacherSubjectsCard({
 
   useEffect(() => {
     setLoading(true);
+    async function loadSubjects() {
+
+      console.log(teacherId);
+
+        const res = await fetch(
+            `/api/teacher/profile/subjects?teacherId=${teacherId}`
+        );
+
+        const data = await res.json();
+
+        console.log(data);
+
+        setSubjects(data);
+
+        setLoading(false);
+    }
       loadSubjects();
   }, []);
+
+  async function RefreshSubjects() {
+
+    console.log(teacherId);
+
+      const res = await fetch(
+          `/api/teacher/profile/subjects?teacherId=${teacherId}`
+      );
+
+      const data = await res.json();
+
+      console.log(data);
+
+      setSubjects(data);
+
+      setLoading(false);
+  }
 
   const [subjects, setSubjects] =
     useState<TeacherSubject[]>([]);
@@ -45,22 +77,7 @@ export default function TeacherSubjectsCard({
   const [loading, setLoading] =
   useState(true);
 
-  async function loadSubjects() {
-
-    console.log(teacherId);
-
-      const res = await fetch(
-          `/api/teacher/profile/subjects?teacherId=${teacherId}`
-      );
-
-      const data = await res.json();
-
-      console.log(data);
-
-      setSubjects(data);
-
-      setLoading(false);
-  }
+  
 
   function openAddDrawer() {
 
@@ -106,7 +123,7 @@ export default function TeacherSubjectsCard({
 
       setDrawerOpen(false);
 
-      await loadSubjects();
+      await RefreshSubjects();
 
       setSaving(false);
 
@@ -128,7 +145,7 @@ export default function TeacherSubjectsCard({
           }
       );
 
-      await loadSubjects();
+      await RefreshSubjects();
 
       setDeleting(false);
 

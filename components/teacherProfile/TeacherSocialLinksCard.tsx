@@ -18,7 +18,6 @@ interface Props {
 }
 
 export default function TeacherSocialLinksCard({
-  onEdit,
   teacherId,
   isPublic
 }: Props) {
@@ -32,8 +31,8 @@ export default function TeacherSocialLinksCard({
       websiteUrl:"",
   });
 
-  const [loading,setLoading]=
-  useState(true);
+  // const [loading,setLoading]=
+  // useState(true);
 
   const [saving,setSaving]=
   useState(false);
@@ -42,14 +41,41 @@ export default function TeacherSocialLinksCard({
   useState(false);
 
   useEffect(()=>{
+
+    async function loadSocialLinks(){
+
+        try{
+
+            // setLoading(true);
+
+            const response=
+            await fetch(
+                `/api/teacher/profile/social-links?teacherId=${teacherId}`
+            );
+
+            const data=
+            await response.json();
+
+            setSocialLinks(data);
+
+        }
+        finally{
+
+            // setLoading(false);
+
+        }
+
+    }
+
       loadSocialLinks();
+
   },[]);
 
-  async function loadSocialLinks(){
+  async function RefreshSocialLinks(){
 
       try{
 
-          setLoading(true);
+          // setLoading(true);
 
           const response=
           await fetch(
@@ -64,11 +90,13 @@ export default function TeacherSocialLinksCard({
       }
       finally{
 
-          setLoading(false);
+          // setLoading(false);
 
       }
 
   }
+
+  
 
   async function saveSocialLinks(
   form:SocialLinks
@@ -93,7 +121,7 @@ export default function TeacherSocialLinksCard({
 
           setDrawerOpen(false);
 
-          await loadSocialLinks();
+          await RefreshSocialLinks();
 
       }
       finally{

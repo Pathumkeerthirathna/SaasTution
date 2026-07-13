@@ -19,7 +19,6 @@ import {
   RotateCcw,
   Search,
   Square,
-  Trash2,
   UserMinus,
   UserPlus,
   Users,
@@ -158,7 +157,7 @@ export function ClassManagementPanel() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterState>({
+  const [filters] = useState<FilterState>({
     name: "",
     schedule: "",
   });

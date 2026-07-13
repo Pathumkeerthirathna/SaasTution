@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const nameFilter = searchParams.get("name")?.trim() || undefined;
     const scheduleFilter = searchParams.get("schedule")?.trim() || undefined;
 
-    var teacherId = searchParams.get("teacherId");
+    let teacherId = searchParams.get("teacherId");
 
     if (!teacherId) {
       const teachr = await requireTeacherSession();

@@ -1,11 +1,7 @@
 "use client";
 
-import { profile } from "console";
 import {
   Edit,
-  Briefcase,
-  GraduationCap,
-  MapPin,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import AboutMeDrawer from "./About/AboutMeDrawer";
@@ -17,7 +13,6 @@ interface Props {
 }
 
 export default function TeacherAboutCard({
-  onEdit,
   teacherId,
   isPublic
   
@@ -38,35 +33,54 @@ export default function TeacherAboutCard({
       useState(false);
 
   useEffect(() => {
+
+      async function loadAbout() {
+
+          try{
+
+              setLoading(true);
+              
+
+              const response =
+                  await fetch(
+                    `/api/public/teacher/about?teacherId=${teacherId}`
+                  );
+
+                  
+          const responseData = await response.json();
+
+          console.log(responseData);
+
+          setAboutMe(responseData.data.aboutMe ?? "");
+
+          }
+          finally{
+
+              setLoading(false);
+
+          }
+
+      }
+
       loadAbout();
   }, []);
 
-  async function loadAbout() {
+  
 
-      try{
-
+  async function refreshAbout() {
+      try {
           setLoading(true);
-          
 
-          const response =
-              await fetch(
-                `/api/public/teacher/about?teacherId=${teacherId}`
-              );
+          const response = await fetch(
+              `/api/public/teacher/about?teacherId=${teacherId}`
+          );
 
-              
-      const responseData = await response.json();
+          const responseData = await response.json();
 
-      console.log(responseData);
-
-      setAboutMe(responseData.data.aboutMe ?? "");
-
-      }
-      finally{
-
+          setAboutMe(responseData.data.aboutMe ?? "");
+      } finally {
           setLoading(false);
-
       }
-
   }
 
   async function saveAbout(
@@ -95,7 +109,7 @@ export default function TeacherAboutCard({
 
           setDrawerOpen(false);
 
-          await loadAbout();
+          await refreshAbout();
 
       }
       finally{
@@ -205,10 +219,10 @@ if (loading) {
         {/* Quote */}
         <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-5">
           <p className="text-sm italic leading-7 text-slate-700">
-            "Education is not about memorizing facts.
-            It is about understanding concepts and
-            developing the confidence to solve
-            problems independently."
+              &#34;Education is not about memorizing facts.
+              It is about understanding concepts and
+              developing the confidence to solve
+              problems independently.&#34;
           </p>
         </div>
       </div>

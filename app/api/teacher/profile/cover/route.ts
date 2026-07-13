@@ -30,13 +30,14 @@ export async function PUT(
       );
 
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update cover photo";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update cover photo",
-      },
+      { message },
       { status: 400 }
     );
   }

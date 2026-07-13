@@ -27,19 +27,16 @@ export async function GET(request:Request) {
       mediums
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load teacher mediums.";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load teacher mediums.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }
 
@@ -71,18 +68,15 @@ export async function PUT(
       profile
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update teacher mediums.";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update mediums.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }

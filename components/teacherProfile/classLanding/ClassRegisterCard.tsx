@@ -4,10 +4,8 @@ import {
   GraduationCap,
   Phone,
   ShieldCheck,
-  Users,
 } from "lucide-react";
 
-import { RegisterClassInfo } from "../../../types/teacherProfileTypes/RegisterClassInfo";
 import { Grade } from "@/types/grade";
 import { useEffect, useState } from "react";
 
@@ -29,7 +27,6 @@ export default function ClassRegisterCard({
   const [mobileNumber, setMobileNumber] = useState("");
   const [parentMobileNumber, setParentMobileNumber] = useState("");
   const [email, setEmail] = useState("");
-  const [school, setSchool] = useState("");
 
   const [isRegistering, setIsRegistering] = useState(false);
 
@@ -123,7 +120,6 @@ export default function ClassRegisterCard({
           studentName,
           mobileNumber,
           parentMobileNumber,
-          school,
           gradeId: parseInt(selectedGrade, 10),
           email,
         }),

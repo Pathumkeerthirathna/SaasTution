@@ -45,19 +45,16 @@ export async function PUT(
 
     return NextResponse.json(subject);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update subject";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update subject.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }
 
@@ -89,18 +86,15 @@ export async function DELETE(
 
     return NextResponse.json(result);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to delete subject";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to delete subject.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }

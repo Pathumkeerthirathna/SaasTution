@@ -23,19 +23,16 @@ export async function GET(request:Request) {
 
     return NextResponse.json(subjects);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load teacher subjects";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load teacher subjects.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }
 
@@ -68,18 +65,15 @@ export async function POST(
 
     return NextResponse.json(subject);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to add subject";
 
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to add subject.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
-
   }
 }

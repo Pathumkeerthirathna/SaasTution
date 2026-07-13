@@ -24,13 +24,14 @@ export async function GET(request:Request) {
     return NextResponse.json(
       achievements
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load achievements";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load achievements",
-      },
+      { message },
       { status: 400 }
     );
   }
@@ -61,13 +62,14 @@ export async function POST(
     return NextResponse.json(
       achievement
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to add achievement";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to add achievement",
-      },
+      { message },
       { status: 400 }
     );
   }

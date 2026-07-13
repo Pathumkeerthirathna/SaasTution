@@ -10,13 +10,14 @@ export async function GET() {
       await getSubjects();
 
     return NextResponse.json(subjects);
-  } catch (error: any) {
+  }catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load mediums";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load subjects",
-      },
+      { message },
       { status: 400 }
     );
   }

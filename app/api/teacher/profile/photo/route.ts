@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-
 import {
   updateProfilePhoto,
 } from "@/services/teacher-profile-service";
-import { requireAppSession, requireTeacherSession } from "@/lib/auth-session";
+import { requireTeacherSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {

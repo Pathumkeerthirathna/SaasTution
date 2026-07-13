@@ -39,25 +39,46 @@ export default function TeacherQualificationCard({
   useState(false);
 
   useEffect(() => {
+
+    async function loadQualifications() {
+      try {
+        const res = await fetch(
+          `/api/teacher/profile/qualifications?teacherId=${teacherId}`
+        );
+
+        if (!res.ok)
+          throw new Error("Failed to load qualifications");
+
+        const data = await res.json();
+
+        setQualifications(data);
+      } finally {
+        setLoading(false);
+      }
+    }
+
     loadQualifications();
+
   }, []);
 
-  async function loadQualifications() {
-    try {
-      const res = await fetch(
-        `/api/teacher/profile/qualifications?teacherId=${teacherId}`
-      );
 
-      if (!res.ok)
-        throw new Error("Failed to load qualifications");
+  async function RefreshQualifications() {
+      try {
+        const res = await fetch(
+          `/api/teacher/profile/qualifications?teacherId=${teacherId}`
+        );
 
-      const data = await res.json();
+        if (!res.ok)
+          throw new Error("Failed to load qualifications");
 
-      setQualifications(data);
-    } finally {
-      setLoading(false);
+        const data = await res.json();
+
+        setQualifications(data);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
+  
 
   function openAddDrawer() {
 
@@ -134,7 +155,7 @@ export default function TeacherQualificationCard({
               null
           );
 
-          await loadQualifications();
+          await RefreshQualifications();
 
       }
       finally{
@@ -169,7 +190,7 @@ export default function TeacherQualificationCard({
         return;
     }
 
-    await loadQualifications();
+    await RefreshQualifications();
 
   }
 

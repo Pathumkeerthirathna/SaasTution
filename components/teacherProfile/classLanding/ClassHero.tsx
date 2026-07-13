@@ -1,15 +1,10 @@
 "use client";
 
 import {
-  BookOpen,
   CalendarDays,
-  CirclePlay,
   Clock3,
   GraduationCap,
-  Users,
 } from "lucide-react";
-
-import { PublicClass } from "../../../types/teacherProfileTypes/PublicClass";
 import { ClassItem } from "@/components/class-management-panel";
 
 interface Props {

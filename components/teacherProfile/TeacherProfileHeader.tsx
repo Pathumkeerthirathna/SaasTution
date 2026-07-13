@@ -8,18 +8,18 @@ import {
   Eye,
   GraduationCap,
   Languages,
-  MapPin,
   MessageCircle,
   Pencil,
   Phone,
   Share2,
   UserCheck,
-  Users,
   X,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
-import {  Copy, Send, Mail } from "lucide-react";
+import Image from "next/image";
+
+import { Mail } from "lucide-react";
 import { BsLink45Deg } from "react-icons/bs";
 import { FaWhatsapp, FaFacebookMessenger, FaTelegramPlane, FaFacebookF, FaLinkedinIn } from "react-icons/fa";
 
@@ -35,19 +35,9 @@ export default function TeacherProfileHeader({
   onEdit,
 }: Props) {
 
-  // const [teacher, setTeacher] =
-  //   useState<TeacherProfile | null>(null);
-
-  const [loading, setLoading] =
-    useState(true);
-
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
 
-  const [districts, setDistricts] = useState<District[]>([]);
-  const [cities, setCities] = useState<City[]>([]);
 
-  const [districtId, setDistrictId] = useState<number | undefined>();
-  const [cityId, setCityId] = useState<number | undefined>();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,7 +90,6 @@ export default function TeacherProfileHeader({
   const [showShareModal, setShowShareModal] = useState(false);
 
   useEffect(() => {
-    loadDistricts();
    // loadProfile();
   }, []);
 
@@ -180,8 +169,6 @@ export default function TeacherProfileHeader({
         return;
       }
 
-      const updated: TeacherProfile = await response.json();
-
       //setTeacher(updated);
       setIsEditDrawerOpen(false);
     } catch (err) {
@@ -220,28 +207,9 @@ export default function TeacherProfileHeader({
   //   }
   // }
 
-  async function loadDistricts() {
-    const res = await fetch("/api/teacher/master/districts");
-
-    console.log(res);
-
-    const data: District[] = await res.json();
-
-    console.log(data);
-
-    setDistricts(data);
-  }
+ 
 
 
-  async function loadCities(id: number) {
-    const res = await fetch(
-      `/api/teacher/master/cities?districtId=${id}`
-    );
-
-    const data: City[] = await res.json();
-
-    setCities(data);
-  }
 
   function handleImageSelected(
     e: React.ChangeEvent<HTMLInputElement>
@@ -285,9 +253,6 @@ export default function TeacherProfileHeader({
       }
 
       loadProfilePhoto();
-
-      const updated: TeacherProfile =
-        await response.json();
 
       //setTeacher(updated);
 
@@ -433,26 +398,27 @@ export default function TeacherProfileHeader({
               {/* White Ring */}
               <div className="rounded-full bg-white p-[4px]">
 
-                <img
-                  src={profilePhoto}
-                  alt={teacher?.teacher.name}
-                  
-                  onClick={
-                    !isPublic
-                      ? () => fileInputRef.current?.click()
-                      : undefined
-                  }
-                  className="
-                    h-24
-                    w-24
-                    cursor-pointer
-                    rounded-full
-                    object-cover
-                    transition
-                    duration-300
-                    hover:scale-[1.03]
-                  "
-                />
+                <Image
+                    src={profilePhoto}
+                    alt={teacher?.teacher.name ?? "Teacher profile"}
+                    width={96}
+                    height={96}
+                    onClick={
+                      !isPublic
+                        ? () => fileInputRef.current?.click()
+                        : undefined
+                    }
+                    className="
+                      h-24
+                      w-24
+                      cursor-pointer
+                      rounded-full
+                      object-cover
+                      transition
+                      duration-300
+                      hover:scale-[1.03]
+                    "
+                  />
 
               </div>
 
@@ -1181,8 +1147,11 @@ export default function TeacherProfileHeader({
 
             <div className="flex items-center gap-4">
 
-              <img
+              <Image
                 src={profilePhoto}
+                alt={teacher?.teacher.name ?? "Teacher profile"}
+                width={64}
+                height={64}
                 className="h-16 w-16 rounded-full border object-cover"
               />
 
@@ -1503,6 +1472,7 @@ export default function TeacherProfileHeader({
 
             <img
               src={previewUrl!}
+              alt="Profile photo preview"
               onDoubleClick={uploadProfilePhoto}
               className="mt-6 h-80 w-full cursor-pointer rounded-2xl object-cover"
             />

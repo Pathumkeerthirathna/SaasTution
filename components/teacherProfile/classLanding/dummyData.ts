@@ -1,8 +1,5 @@
 
-import {
-  PublicClassLandingPage,
-} from "../../../types/teacherProfileTypes/PublicClassLandingPage";
-import { PublicClass } from "@/types/teacherProfileTypes/PublicClass";
+
 import { ClassSession } from "@/types/teacherProfileTypes/ClassSession";
 import { ClassNote } from "@/types/teacherProfileTypes/ClassNote";
 import { LearningOutcome } from "@/types/teacherProfileTypes/LearningOutcome";

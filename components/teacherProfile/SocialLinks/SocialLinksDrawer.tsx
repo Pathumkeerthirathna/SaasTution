@@ -88,7 +88,7 @@ export default function SocialLinksDrawer({
               <input
                 value={form.facebookUrl}
                 onChange={(e) =>
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     facebookUrl: e.target.value,
                   }))
@@ -108,7 +108,7 @@ export default function SocialLinksDrawer({
               <input
                 value={form.youtubeUrl}
                 onChange={(e) =>
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     youtubeUrl: e.target.value,
                   }))
@@ -128,7 +128,7 @@ export default function SocialLinksDrawer({
               <input
                 value={form.instagramUrl}
                 onChange={(e) =>
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     instagramUrl: e.target.value,
                   }))
@@ -148,7 +148,7 @@ export default function SocialLinksDrawer({
               <input
                 value={form.tiktokUrl}
                 onChange={(e) =>
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     tiktokUrl: e.target.value,
                   }))
@@ -168,7 +168,7 @@ export default function SocialLinksDrawer({
               <input
                 value={form.websiteUrl}
                 onChange={(e) =>
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     websiteUrl: e.target.value,
                   }))

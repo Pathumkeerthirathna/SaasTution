@@ -21,16 +21,15 @@ export async function GET(request: Request) {
     const profile = await getAboutMe(teacherId);
 
     return NextResponse.json(profile);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load About Me";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to load About Me.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
   }
 }
@@ -56,16 +55,15 @@ export async function PUT(
     );
 
     return NextResponse.json(profile);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update About Me";
+
     return NextResponse.json(
-      {
-        message:
-          error.message ??
-          "Failed to update About Me.",
-      },
-      {
-        status: 400,
-      }
+      { message },
+      { status: 400 }
     );
   }
 }
