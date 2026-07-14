@@ -1,5 +1,6 @@
 "use client";
 
+import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import {
   BookOpen,
   CalendarDays,
@@ -10,16 +11,17 @@ import { useRouter } from "next/navigation";
 import { useEffect,useState } from "react";
 
 interface Props {
-  teacherId: string;
   isPublic?: boolean;
+  classes:TeacherClass[]
 }
 
 
 
 export default function TeacherClassesCard({
- teacherId,
+ classes,
  isPublic
 }:Props) {
+
   type ClassItem = {
   id: string;
   name: string;
@@ -37,49 +39,52 @@ export default function TeacherClassesCard({
   }[];
 };
 
-const [classes, setClasses] = useState<ClassItem[]>([]);
-const [loading, setLoading] = useState(true);
+
+// const [classes, setClasses] = useState<ClassItem[]>([]);
+const [loading, setLoading] = useState(false);
 
 const router = useRouter();
 
-useEffect(() => {
-  if (!teacherId) return;
+// useEffect(() => {
+//   if (!classes) return;
 
-  let cancelled = false;
+//   let cancelled = false;
 
-  async function loadClasses() {
-    try {
-      setLoading(true);
+//   async function loadClasses() {
+//     try {
+//       setLoading(true);
 
-      const response = await fetch(
-        `/api/classes?page=1&pageSize=100&teacherId=${teacherId}`,
-        {
-          cache: "no-store",
-        }
-      );
+//       const response = await fetch(
+//         `/api/classes?page=1&pageSize=100&teacherId=${teacherId}`,
+//         {
+//           cache: "no-store",
+//         }
+//       );
 
-      if (!response.ok) return;
+//       if (!response.ok) {
+//         throw new Error(`HTTP ${response.status}`);
+//       }
 
-      const payload = await response.json();
+//       const payload = await response.json();
 
-      if (!cancelled) {
-        setClasses(payload.data ?? []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (!cancelled) {
-        setLoading(false);
-      }
-    }
-  }
+//       if (!cancelled) {
+//         setClasses(payload.data ?? []);
+//       }
+//     } catch (err) {
+//       console.error(err);
+//     } finally {
+//       if (!cancelled) {
+//         setLoading(false);
+//       }
+//     }
+//   }
 
-  loadClasses();
+//   loadClasses();
 
-  return () => {
-    cancelled = true;
-  };
-}, [teacherId]);
+//   return () => {
+//     cancelled = true;
+//   };
+// }, [teacherId]);
 
 
 

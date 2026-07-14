@@ -15,6 +15,9 @@ export default async function PublicTeacherPage({
 
   const teacher = await GetTeacherPublicProfileBySlug(params.slug);
 
+  console.log("teacher", teacher);
+
+
   if (!teacher) {
     notFound();
   }

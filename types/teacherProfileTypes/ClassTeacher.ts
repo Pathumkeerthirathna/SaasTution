@@ -4,6 +4,7 @@ export interface TeacherProfile {
   profileId: string;
   teacherId: string;
   slug: string;
+  classes: TeacherClass[];
 
   profileImageUrl?: string | null;
   coverImageUrl?: string | null;
@@ -43,6 +44,31 @@ export interface TeacherProfile {
   teacher: Teacher;
   mediums: TeacherMedium[];
   
+}
+
+export interface TeacherClassSchedule {
+  id: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface TeacherClassStudent {
+  id: string;
+  isActive: boolean;
+}
+
+export interface TeacherClass {
+  id: string;
+  name: string;
+  description: string | null;
+  monthlyFee: number;
+  paymentDueWeek: number;
+  startDate: string;
+  schedule: string;
+
+  schedules: TeacherClassSchedule[];
+  students: TeacherClassStudent[];
 }
 
 export interface Teacher {

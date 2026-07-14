@@ -205,40 +205,6 @@ export default function TeacherProfileHeader({
     }
   }
 
-  // async function loadProfile() {
-  //   try {
-  //     const response = await fetch("/api/teacher/profile");
-
-  //     if (!response.ok) {
-  //       throw new Error("Failed to load teacher profile.");
-  //     }
-
-  //     const data: TeacherProfile = await response.json();
-
-  //     console.log(data);
-
-  //     setTeacher(data);
-
-  //     setDistrictId(data.districtId ?? undefined);
-  //     setCityId(data.cityId ?? undefined);
-
-  //     await loadDistricts();
-
-  //     if (data.districtId) {
-  //       await loadCities(data.districtId);
-  //     }
-
-  //   } catch (error) {
-  //     console.error(error);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // }
-
- 
-
-
-
   function handleImageSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {

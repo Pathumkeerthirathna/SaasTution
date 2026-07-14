@@ -39,6 +39,7 @@ export default function TeacherProfilePage({
     setIsDrawerOpen(true);
   };
 
+  console.log("TeacherProfilePage", teacher);
   
 
   return (
@@ -99,7 +100,7 @@ export default function TeacherProfilePage({
             <div className="space-y-6">
 
               <TeacherClassesCard
-                teacherId={teacher?.teacherId??""}
+                classes={teacher?.classes ?? []}
                 isPublic={isPublic}
               />
 
