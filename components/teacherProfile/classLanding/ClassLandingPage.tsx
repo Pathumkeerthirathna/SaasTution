@@ -45,59 +45,52 @@ export default function ClassLandingPage({
       <div className="mx-auto max-w-[1500px] px-3 py-4 lg:px-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
 
-          {/* LEFT SIDE */}
-          <div className="space-y-6">
+  {/* LEFT */}
+  <div className="space-y-6">
 
-            <ClassHero
-              classInfo={classInfo}
-            />
+    <ClassHero classInfo={classInfo} />
 
-            {/* <ClassTeacherCard
-              teacher={dummyTeacher}
-            /> */}
+    {/* Mobile only */}
+    <div className="lg:hidden">
+      <ClassRegisterCard
+        classId={classInfo.id}
+      />
+    </div>
 
-            <ClassSessionsPreview
-              sessions={dummySessions}
-            />
+    <ClassSessionsPreview sessions={dummySessions} />
 
-            <ClassNotesPreview
-              notes={dummyNotes}
-            />
+    <ClassNotesPreview notes={dummyNotes} />
 
-            <ClassLearningOutcomes
-              outcomes={dummyLearningOutcomes}
-            />
+    <ClassLearningOutcomes
+      outcomes={dummyLearningOutcomes}
+    />
 
-            <ClassTestimonials
-              testimonials={
-                dummyTestimonials
-              }
-            />
+    <ClassTestimonials
+      testimonials={dummyTestimonials}
+    />
 
-          </div>
+  </div>
 
-          {/* RIGHT SIDE */}
-          <div className="space-y-6">
+  {/* RIGHT */}
+  <div className="hidden lg:block">
 
-            <div className="sticky top-6 space-y-6">
+    <div className="sticky top-6 space-y-6">
 
-              <ClassRegisterCard
-                classId={classInfo.id}
-              />
+      <ClassRegisterCard
+        classId={classInfo.id}
+      />
 
-              <ClassBenefits
-                benefits={
-                  dummyBenefits
-                }
-              />
+      <ClassBenefits
+        benefits={dummyBenefits}
+      />
 
-              <ClassTrustCard />
+      <ClassTrustCard />
 
-            </div>
+    </div>
 
-          </div>
+  </div>
 
-        </div>
+</div>
       </div>
     </div>
   );

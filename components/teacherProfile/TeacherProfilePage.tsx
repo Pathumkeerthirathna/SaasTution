@@ -62,65 +62,44 @@ export default function TeacherProfilePage({
           </div> */}
 
           {/* Main Content */}
-          <div className="mt-3 grid gap-2 lg:grid-cols-[320px_1fr]">
+          <div className="space-y-6">
 
-            {/* Left Column */}
-            <div className="space-y-6">
-
-              <TeacherAboutCard
-                onEdit={() =>
-                  openDrawer("about")
-                }
-                teacherId={teacher?.teacherId??""}
-                isPublic={isPublic}
-              />
-
-              <TeacherSocialLinksCard
-                onEdit={() =>
-                  openDrawer("social")
-                }
-                teacherId={teacher?.teacherId??""}
-                isPublic={isPublic}
-              />
-
-              {/* <TeacherProfileCompletionCard /> */}
-
-              
-
-              <TeacherMediumsCard
-              teacherId={teacher?.teacherId??""}
+            <TeacherClassesCard
+              classes={teacher?.classes ?? []}
               isPublic={isPublic}
-              />
+            />
 
-              
+            <TeacherAboutCard
+              onEdit={() => openDrawer("about")}
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
-            </div>
+            <TeacherSubjectsCard
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
-            {/* Right Column */}
-            <div className="space-y-6">
+            <TeacherQualificationCard
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
-              <TeacherClassesCard
-                classes={teacher?.classes ?? []}
-                isPublic={isPublic}
-              />
+            <TeacherAchievementCard
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
-               <TeacherSubjectsCard
-                teacherId={teacher?.teacherId??""}
-                isPublic={isPublic}
-              />
+            <TeacherMediumsCard
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
-              <TeacherQualificationCard
-                teacherId={teacher?.teacherId??""}
-                isPublic={isPublic}
-              />
-
-              <TeacherAchievementCard
-                teacherId={teacher?.teacherId??""}
-                isPublic={isPublic}
-              />
-
-
-            </div>
+            <TeacherSocialLinksCard
+              onEdit={() => openDrawer("social")}
+              teacherId={teacher?.teacherId ?? ""}
+              isPublic={isPublic}
+            />
 
           </div>
         </div>
