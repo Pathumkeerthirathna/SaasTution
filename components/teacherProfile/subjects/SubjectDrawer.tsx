@@ -52,9 +52,9 @@ export default function SubjectDrawer({
     useState(false);
 
   useEffect(() => {
-    if (!open) return;
+  if (!open) return;
 
-    async function loadSubjects() {
+  async function loadSubjects() {
     try {
       setLoading(true);
 
@@ -66,17 +66,11 @@ export default function SubjectDrawer({
         throw new Error();
       }
 
-      const data =
-        await response.json();
-
-        console.log(data);
+      const data = await response.json();
 
       setSubjects(data);
 
-      if (
-        !editingSubject &&
-        data.length > 0
-      ) {
+      if (!editingSubject && data.length > 0) {
         setForm((prev) => ({
           ...prev,
           subjectId: data[0].id,
@@ -87,9 +81,8 @@ export default function SubjectDrawer({
     }
   }
 
-    loadSubjects();
-    
-  }, [open]);
+  loadSubjects();
+}, [open, editingSubject]);
 
   useEffect(() => {
     if (!open) return;

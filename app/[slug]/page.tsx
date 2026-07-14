@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import TeacherProfilePage from "@/components/teacherProfile/TeacherProfilePage";
-import { getTeacherProfile, GetTeacherPublicProfileBySlug } from "@/services/teacher-profile-service";
+import {  GetTeacherPublicProfileBySlug } from "@/services/teacher-profile-service";
 
 interface Props {
   params: {

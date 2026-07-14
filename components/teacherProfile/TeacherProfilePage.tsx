@@ -39,14 +39,6 @@ export default function TeacherProfilePage({
     setIsDrawerOpen(true);
   };
 
-  if (!teacher) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        Loading profile...
-      </div>
-    );
-  }
-
   
 
   return (
