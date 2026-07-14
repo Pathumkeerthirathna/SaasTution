@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 interface Props {
   isPublic?: boolean;
