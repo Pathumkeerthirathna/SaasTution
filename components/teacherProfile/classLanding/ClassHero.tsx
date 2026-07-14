@@ -6,9 +6,10 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { ClassItem } from "@/components/class-management-panel";
+import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 
 interface Props {
-  classInfo: ClassItem;
+  classInfo: TeacherClass;
 }
 
 function getNextClassDate(
@@ -59,6 +60,11 @@ function getNextClassDate(
 export default function ClassHero({
   classInfo,
 }: Props) {
+
+  if(!classInfo){
+    alert("NULL");
+    return;
+  }
 
   const nextClass = getNextClassDate(
     classInfo.schedules[0].dayOfWeek,

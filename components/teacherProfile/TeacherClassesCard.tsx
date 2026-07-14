@@ -22,51 +22,7 @@ export default function TeacherClassesCard({
 }:Props) {
 
 
-
 const router = useRouter();
-
-// useEffect(() => {
-//   if (!classes) return;
-
-//   let cancelled = false;
-
-//   async function loadClasses() {
-//     try {
-//       setLoading(true);
-
-//       const response = await fetch(
-//         `/api/classes?page=1&pageSize=100&teacherId=${teacherId}`,
-//         {
-//           cache: "no-store",
-//         }
-//       );
-
-//       if (!response.ok) {
-//         throw new Error(`HTTP ${response.status}`);
-//       }
-
-//       const payload = await response.json();
-
-//       if (!cancelled) {
-//         setClasses(payload.data ?? []);
-//       }
-//     } catch (err) {
-//       console.error(err);
-//     } finally {
-//       if (!cancelled) {
-//         setLoading(false);
-//       }
-//     }
-//   }
-
-//   loadClasses();
-
-//   return () => {
-//     cancelled = true;
-//   };
-// }, [teacherId]);
-
-
 
 
 // if (loading) {

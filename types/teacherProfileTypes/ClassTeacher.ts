@@ -64,7 +64,7 @@ export interface TeacherClass {
   description: string | null;
   monthlyFee: number;
   paymentDueWeek: number;
-  startDate: string;
+  startDate: string | null;
   schedule: string;
 
   schedules: TeacherClassSchedule[];

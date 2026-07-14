@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 
 type ListClassesParams = {
   teacherId: string;
@@ -151,6 +152,60 @@ export async function getClassByIdForTeacher(
   }
 
   return classInfo;
+}
+
+export async function getPublicClass(
+  classId: string
+): Promise<TeacherClass> {
+  const classInfo = await prisma.class.findFirst({
+    where: {
+      id: classId,
+      status: 0,
+    },
+    include: {
+      schedules: true,
+      students: {
+        select: {
+          id: true,
+          isActive: true,
+        },
+      },
+    },
+  });
+
+  if (!classInfo) {
+    throw new AppError(
+      "Class not found.",
+      404,
+      "NOT_FOUND"
+    );
+  }
+
+  const result: TeacherClass = {
+    id: classInfo.id,
+    name: classInfo.name,
+    description: classInfo.description,
+    monthlyFee: classInfo.monthlyFee,
+    paymentDueWeek: classInfo.paymentDueWeek,
+    startDate: classInfo.startDate
+  ? classInfo.startDate.toISOString()
+  : null,
+    schedule: classInfo.schedule,
+
+    schedules: classInfo.schedules.map(schedule => ({
+      id: schedule.id,
+      dayOfWeek: schedule.dayOfWeek,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+    })),
+
+    students: classInfo.students.map(student => ({
+      id: student.id,
+      isActive: student.isActive,
+    })),
+  };
+
+  return result;
 }
 
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {

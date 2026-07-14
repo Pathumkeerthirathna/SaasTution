@@ -12,100 +12,101 @@ import ClassTrustCard from "./ClassTrustCard";
 import {dummySessions,dummyNotes,dummyLearningOutcomes,dummyTestimonials,dummyBenefits } from "./dummyData";
 import { useEffect, useState } from "react";
 import { ClassItem } from "@/components/class-management-panel";
+import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 
 interface Props {
-  classId: string;
+  classInfo: TeacherClass;
 }
 
 export default function ClassLandingPage({
-  classId,
+  classInfo,
 }: Props) {
 
-  const [classInfo, setClassInfo] =
-    useState<ClassItem | null>(null);
+  // const [classInfo, setClassInfo] =
+  //   useState<ClassItem | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  // const [loading, setLoading] =
+  //   useState(true);
 
-  useEffect(() => {
+  // useEffect(() => {
 
-    async function loadClass() {
-      try {
-        setLoading(true);
+  //   async function loadClass() {
+  //     try {
+  //       setLoading(true);
 
 
-        console.log(classId);
+  //       console.log(classId);
 
-        const response = await fetch(`/api/classes/${classId}`);
-        const payload = await response.json();
+  //       const response = await fetch(`/api/classes/${classId}`);
+  //       const payload = await response.json();
 
-        console.log(payload);
+  //       console.log(payload);
 
-        if (payload.success) {
-          setClassInfo(payload.data);
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  //       if (payload.success) {
+  //         setClassInfo(payload.data);
+  //       }
+  //     } catch (error) {
+  //       console.error(error);
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   }
 
-    loadClass(); 
+  //   loadClass(); 
 
-  }, [classId]);
+  // }, [classId]);
 
   
 
-  if (loading) {
-    return (
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-        <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
+  // if (loading) {
+  //   return (
+  //     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
+  //       <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
 
-          {/* Left */}
-          <div className="flex gap-5">
+  //         {/* Left */}
+  //         <div className="flex gap-5">
 
-            {/* Avatar */}
-            <div className="h-28 w-28 rounded-full bg-slate-200" />
+  //           {/* Avatar */}
+  //           <div className="h-28 w-28 rounded-full bg-slate-200" />
 
-            {/* Details */}
-            <div className="space-y-4">
-              <div className="h-8 w-64 rounded bg-slate-200" />
-              <div className="h-5 w-48 rounded bg-slate-200" />
-              <div className="h-4 w-72 rounded bg-slate-200" />
-              <div className="h-4 w-56 rounded bg-slate-200" />
+  //           {/* Details */}
+  //           <div className="space-y-4">
+  //             <div className="h-8 w-64 rounded bg-slate-200" />
+  //             <div className="h-5 w-48 rounded bg-slate-200" />
+  //             <div className="h-4 w-72 rounded bg-slate-200" />
+  //             <div className="h-4 w-56 rounded bg-slate-200" />
 
-              <div className="flex gap-4">
-                <div className="h-4 w-32 rounded bg-slate-200" />
-                <div className="h-4 w-32 rounded bg-slate-200" />
-              </div>
-            </div>
-          </div>
+  //             <div className="flex gap-4">
+  //               <div className="h-4 w-32 rounded bg-slate-200" />
+  //               <div className="h-4 w-32 rounded bg-slate-200" />
+  //             </div>
+  //           </div>
+  //         </div>
 
-          {/* Right */}
-          <div className="space-y-4">
-            <div className="h-11 w-40 rounded-xl bg-slate-200" />
-            <div className="h-4 w-24 rounded bg-slate-200" />
+  //         {/* Right */}
+  //         <div className="space-y-4">
+  //           <div className="h-11 w-40 rounded-xl bg-slate-200" />
+  //           <div className="h-4 w-24 rounded bg-slate-200" />
 
-            <div className="flex gap-2">
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-            </div>
-          </div>
+  //           <div className="flex gap-2">
+  //             <div className="h-8 w-20 rounded-full bg-slate-200" />
+  //             <div className="h-8 w-20 rounded-full bg-slate-200" />
+  //             <div className="h-8 w-20 rounded-full bg-slate-200" />
+  //           </div>
+  //         </div>
 
-        </div>
-      </div>
-    );
-  }
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
-  if (!classInfo) {
-    return (
-      <div className="p-10 text-center">
-        Class not found.
-      </div>
-    );
-  }
+  // if (!classInfo) {
+  //   return (
+  //     <div className="p-10 text-center">
+  //       Class not found.
+  //     </div>
+  //   );
+  // }
 
    
 
@@ -169,7 +170,7 @@ export default function ClassLandingPage({
             <div className="sticky top-6 space-y-6">
 
               <ClassRegisterCard
-                classId={classId}
+                classId={classInfo.id}
               />
 
               <ClassBenefits
