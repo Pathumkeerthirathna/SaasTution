@@ -1095,8 +1095,7 @@ export async function updateProfilePhoto(
   // Ensure upload folder exists
   const uploadDir = path.join(
     process.cwd(),
-    "public",
-    "uploads",
+    "storage",
     "teachers"
   );
 
@@ -1109,8 +1108,9 @@ export async function updateProfilePhoto(
     try {
       const oldFile = path.join(
         process.cwd(),
-        "public",
-        profile.profileImageUrl.replace(/^\/+/, "")
+        "storage",
+        "teachers",
+        path.basename(profile.profileImageUrl)
       );
 
       await fs.unlink(oldFile);
@@ -1139,7 +1139,8 @@ export async function updateProfilePhoto(
     Buffer.from(bytes)
   );
 
-  const imageUrl = `/uploads/teachers/${fileName}`;
+  const imageUrl =
+`/uploads/teachers/${fileName}`;
 
   await prisma.teacherProfile.upsert({
     where: {
