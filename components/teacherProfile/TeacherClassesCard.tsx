@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
-import { useEffect,useState } from "react";
+import { useState } from "react";
 
 interface Props {
   isPublic?: boolean;
@@ -22,26 +22,7 @@ export default function TeacherClassesCard({
  isPublic
 }:Props) {
 
-  type ClassItem = {
-  id: string;
-  name: string;
-  monthlyFee: number;
-  startDate: string;
-  schedule: string;
-  schedules: {
-    dayOfWeek: string;
-    startTime: string;
-    endTime: string;
-  }[];
-  students: {
-    id: string;
-    isActive: boolean;
-  }[];
-};
 
-
-// const [classes, setClasses] = useState<ClassItem[]>([]);
-const [loading, setLoading] = useState(false);
 
 const router = useRouter();
 
@@ -97,47 +78,6 @@ const router = useRouter();
 //   );
 // }
 
-if (loading) {
-  return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
-
-        {/* Left */}
-        <div className="flex gap-5">
-
-          {/* Avatar */}
-          <div className="h-28 w-28 rounded-full bg-slate-200" />
-
-          {/* Details */}
-          <div className="space-y-4">
-            <div className="h-8 w-64 rounded bg-slate-200" />
-            <div className="h-5 w-48 rounded bg-slate-200" />
-            <div className="h-4 w-72 rounded bg-slate-200" />
-            <div className="h-4 w-56 rounded bg-slate-200" />
-
-            <div className="flex gap-4">
-              <div className="h-4 w-32 rounded bg-slate-200" />
-              <div className="h-4 w-32 rounded bg-slate-200" />
-            </div>
-          </div>
-        </div>
-
-        {/* Right */}
-        <div className="space-y-4">
-          <div className="h-11 w-40 rounded-xl bg-slate-200" />
-          <div className="h-4 w-24 rounded bg-slate-200" />
-
-          <div className="flex gap-2">
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-}
 
   return (
 
