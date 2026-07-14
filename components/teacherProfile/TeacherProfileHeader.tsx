@@ -89,6 +89,8 @@ export default function TeacherProfileHeader({
 
   const [showShareModal, setShowShareModal] = useState(false);
 
+  const [imageLoading, setImageLoading] = useState(true);
+
   useEffect(() => {
    // loadProfile();
   }, []);
@@ -140,19 +142,43 @@ export default function TeacherProfileHeader({
   }, [teacher]);
 
   useEffect(() => {
-      loadProfilePhoto();
-  }, []);
+    if (isPublic) {
+        if (teacher?.profileImageUrl) {
+            setProfilePhoto(
+                `${teacher.profileImageUrl}?v=${Date.now()}`
+            );
+            setImageLoading(true);
+        } else {
+            setProfilePhoto("/images/avatar.png");
+            setImageLoading(true);
+        }
+        return;
+    }
+
+    loadProfilePhoto();
+}, [teacher, isPublic]);
 
   async function loadProfilePhoto() {
-      const res = await fetch(
-          "/api/teacher/profile/photo"
-      );
+    try {
+      const res = await fetch("/api/teacher/profile/photo", {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        console.log("Photo API failed", res.status);
+        return;
+      }
 
       const data = await res.json();
 
       setProfilePhoto(
-    `${data.profileImageUrl}?v=${Date.now()}`
-);
+          `${data.profileImageUrl}?v=${Date.now()}`
+      );
+
+      setPreviewOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function saveProfile() {
@@ -254,15 +280,17 @@ export default function TeacherProfileHeader({
         throw new Error();
       }
 
-      loadProfilePhoto();
+      const data = await response.json();
+
+      setProfilePhoto(
+        `${data.profileImageUrl}?v=${Date.now()}`
+      );
 
       //setTeacher(updated);
 
       setPreviewOpen(false);
 
       setSelectedImage(null);
-
-      setPreviewUrl(null);
 
       setPreviewUrl(null);
 
@@ -400,28 +428,27 @@ export default function TeacherProfileHeader({
               {/* White Ring */}
               <div className="rounded-full bg-white p-[4px]">
 
-                <Image
-                    unoptimized
-                    src={profilePhoto}
-                    alt={teacher?.teacher.name ?? "Teacher profile"}
-                    width={96}
-                    height={96}
-                    onClick={
-                      !isPublic
-                        ? () => fileInputRef.current?.click()
-                        : undefined
-                    }
-                    className="
-                      h-24
-                      w-24
-                      cursor-pointer
-                      rounded-full
-                      object-cover
-                      transition
-                      duration-300
-                      hover:scale-[1.03]
-                    "
+                <div className="relative h-24 w-24">
+
+                  {imageLoading && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-white">
+                          <div className="h-7 w-7 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
+                      </div>
+                  )}
+
+                  <Image
+                      unoptimized
+                      src={profilePhoto}
+                      alt={teacher?.teacher.name ?? "Teacher"}
+                      width={96}
+                      height={96}
+                      onLoad={() => setImageLoading(false)}
+                      onLoadingComplete={() => setImageLoading(false)}
+                      onError={() => setImageLoading(false)}
+                      className="h-24 w-24 rounded-full object-cover"
                   />
+
+              </div>
 
               </div>
 
