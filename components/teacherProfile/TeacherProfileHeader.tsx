@@ -150,7 +150,9 @@ export default function TeacherProfileHeader({
 
       const data = await res.json();
 
-      setProfilePhoto(data.profileImageUrl);
+      setProfilePhoto(
+    `${data.profileImageUrl}?v=${Date.now()}`
+);
   }
 
   async function saveProfile() {
@@ -399,6 +401,7 @@ export default function TeacherProfileHeader({
               <div className="rounded-full bg-white p-[4px]">
 
                 <Image
+                    unoptimized
                     src={profilePhoto}
                     alt={teacher?.teacher.name ?? "Teacher profile"}
                     width={96}
@@ -1148,6 +1151,7 @@ export default function TeacherProfileHeader({
             <div className="flex items-center gap-4">
 
               <Image
+                unoptimized
                 src={profilePhoto}
                 alt={teacher?.teacher.name ?? "Teacher profile"}
                 width={64}

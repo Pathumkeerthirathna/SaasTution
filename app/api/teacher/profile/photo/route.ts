@@ -44,5 +44,7 @@ export async function PUT(request: Request) {
     file
   );
 
-  return Response.json(teacher);
+  return Response.json({
+    profileImageUrl: teacher.profileImageUrl
+});
 }
