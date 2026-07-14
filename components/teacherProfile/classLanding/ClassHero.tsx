@@ -5,7 +5,6 @@ import {
   Clock3,
   GraduationCap,
 } from "lucide-react";
-import { ClassItem } from "@/components/class-management-panel";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 
 interface Props {
