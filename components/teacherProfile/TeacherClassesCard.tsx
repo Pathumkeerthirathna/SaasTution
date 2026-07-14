@@ -43,22 +43,43 @@ const [loading, setLoading] = useState(true);
 const router = useRouter();
 
 useEffect(() => {
+  if (!teacherId) return;
+
+  let cancelled = false;
+
   async function loadClasses() {
     try {
       setLoading(true);
 
-      const response = await fetch(`/api/classes?page=1&pageSize=100&teacherId=${teacherId}`);
+      const response = await fetch(
+        `/api/classes?page=1&pageSize=100&teacherId=${teacherId}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) return;
+
       const payload = await response.json();
 
-      if (payload.success) {
+      if (!cancelled) {
         setClasses(payload.data ?? []);
       }
+    } catch (err) {
+      console.error(err);
     } finally {
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     }
   }
+
   loadClasses();
-}, []);
+
+  return () => {
+    cancelled = true;
+  };
+}, [teacherId]);
 
 
 
@@ -114,42 +135,18 @@ if (loading) {
 }
 
   return (
+
+    
+
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-        {/* Left */}
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">
-            Active Classes
-          </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Classes currently conducted by the teacher.
-          </p>
+      {classes.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center text-slate-500">
+          No active classes available.
         </div>
-
-        {/* Right */}
-        {!isPublic ? (
-          <button
-            onClick={() => router.push("/dashboard/classes")}
-            className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:from-emerald-700 hover:to-emerald-800"
-          >
-            Manage Classes
-          </button>
-        ) : (
-          <div className="rounded-xl bg-emerald-50 px-4 py-2">
-            <span className="text-sm font-semibold text-emerald-700">
-              {classes.length} Active Classes
-            </span>
-          </div>
-        )}
-
-        
-      </div>
-
-      {/* Body */}
-      <div className="p-6">
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 p-6">
           {classes.map((item) => (
             <div
               key={item.id}
@@ -248,6 +245,43 @@ if (loading) {
             </div>
           ))}
         </div>
+      )}
+      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+        {/* Left */}
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">
+            Active Classes
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Classes currently conducted by the teacher.
+          </p>
+        </div>
+
+        {/* Right */}
+        {!isPublic ? (
+          <button
+            onClick={() => router.push("/dashboard/classes")}
+            className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:from-emerald-700 hover:to-emerald-800"
+          >
+            Manage Classes
+          </button>
+        ) : (
+          <div className="rounded-xl bg-emerald-50 px-4 py-2">
+            <span className="text-sm font-semibold text-emerald-700">
+              {classes.length} Active Classes
+            </span>
+          </div>
+        )}
+
+        
+      </div>
+
+      {/* Body */}
+      <div className="p-6">
+        {/* <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          
+        </div> */}
 
         {/* Summary Section */}
         <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-5">
