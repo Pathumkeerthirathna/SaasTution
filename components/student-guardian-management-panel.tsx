@@ -40,6 +40,7 @@ import { Grade } from "@prisma/client";
 
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import toast from "react-hot-toast";
 
 type StudentListItem = {
   id: string;
@@ -192,21 +193,35 @@ export function StudentGuardianManagementPanel() {
           return;
         }
 
-        setSuccessMessage(
-          "Student updated successfully."
+        toast.success("Student updated successfully.");
+        
+        setStudents((prev) =>
+          prev.map((student) =>
+            student.id === editStudentForm.id
+              ? {
+                  ...student,
+                  registrationNumber: editStudentForm.registrationNumber,
+                  name: editStudentForm.name,
+                  contact01: editStudentForm.contact01,
+                  contact02: editStudentForm.contact02,
+                  email: editStudentForm.email,
+                  grade: grades.find(
+                    (g) => g.id === editStudentForm.gradeId
+                  ) ?? student.grade,
+                }
+              : student
+          )
         );
-
-        await loadStudentList(page, filters);
 
         setTimeout(() => {
           setIsEditPanelOpen(false);
           setSuccessMessage(null);
-        }, 1000);
+        }, 800);
 
       } catch {
-        setErrorMessage(
-          "Unable to update student right now."
-        );
+
+        toast.error("Unable to update student right now.");
+
       } finally {
         setIsSubmitting(false);
       }
@@ -230,7 +245,7 @@ export function StudentGuardianManagementPanel() {
           return;
         }
 
-        setSuccessMessage("Student activated successfully.");
+        toast.success("Student activated successfully.",{duration:5000});
 
         setOpenActionMenu(null);
 
@@ -260,7 +275,7 @@ export function StudentGuardianManagementPanel() {
           return;
         }
 
-        setSuccessMessage("Student deactivated successfully.");
+        toast.success("Student deactivated successfully.");
 
         setOpenActionMenu(null);
 
@@ -1420,6 +1435,59 @@ async function handleConfirmImport() {
                   </div>
                 </div>
 
+              </div>
+
+              {/* Actions */}
+              <div className="border-t border-slate-100 bg-slate-50 p-4">
+                <div className="grid grid-cols-2 gap-2">
+
+                  <Link
+                    href={`/dashboard/students/${student.id}`}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Eye size={16} />
+                    View
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleEditStudent(student)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    <Pencil size={16} />
+                    Edit
+                  </button>
+
+                  {student.status === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDeactivateStudent(student.id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                    >
+                      <Ban size={16} />
+                      Deactivate
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleActivateStudent(student.id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <CheckCircle size={16} />
+                      Activate
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteStudent(student.id)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-100"
+                  >
+                    <Trash2 size={16} />
+                    Delete
+                  </button>
+
+                </div>
               </div>
             </div>
           ))}
