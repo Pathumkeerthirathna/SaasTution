@@ -103,11 +103,19 @@ function formatGradeLabel(value: string | null) {
     return "Grade not provided";
   }
 
-  if (value.startsWith("GRADE_")) {
-    return `Grade ${value.slice(6)}`;
+  // if (value.startsWith("GRADE_")) {
+  //   return `Grade ${value.slice(6)}`;
+  // }
+
+  // return `Grade ${value}`;
+
+  console.log("GRADE value:", value, typeof value);
+
+  if (typeof value === "string" && value.startsWith("GRADE_")) {
+      return `Grade ${value.slice(6)}`;
   }
 
-  return `Grade ${value}`;
+  return String(value);
 }
 
 export function TeacherSessionPanel() {
