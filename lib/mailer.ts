@@ -89,13 +89,46 @@ export function buildLiveSessionInviteLoginLink(inviteToken: string, appBaseUrl?
   return url.toString();
 }
 
-export async function sendPasswordResetEmail(input: PasswordResetEmailInput) {
-  const from = process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
+// export async function sendPasswordResetEmail(input: PasswordResetEmailInput) {
+//   const from = process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
+//   const transporter = createTransport();
+
+//   if (!transporter) {
+//     if (process.env.NODE_ENV === "production") {
+//       throw new AppError("Password reset email service is not configured.", 500, "EMAIL_NOT_CONFIGURED");
+//     }
+
+//     console.info("[DEV ONLY] Password reset link", {
+//       to: input.to,
+//       resetLink: input.resetLink,
+//     });
+//     return;
+//   }
+
+//   await transporter.sendMail({
+//     from,
+//     to: input.to,
+//     subject: "Reset your SaasTution password",
+//     text: `Use this link to reset your password: ${input.resetLink}\n\nIf you did not request this, please ignore this email.`,
+//     html: `<p>Use this link to reset your password:</p><p><a href="${input.resetLink}">${input.resetLink}</a></p><p>If you did not request this, please ignore this email.</p>`,
+//   });
+// }
+
+export async function sendPasswordResetEmail(
+  input: PasswordResetEmailInput
+) {
+  const from =
+    process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
+
   const transporter = createTransport();
 
   if (!transporter) {
     if (process.env.NODE_ENV === "production") {
-      throw new AppError("Password reset email service is not configured.", 500, "EMAIL_NOT_CONFIGURED");
+      throw new AppError(
+        "Password reset email service is not configured.",
+        500,
+        "EMAIL_NOT_CONFIGURED"
+      );
     }
 
     console.info("[DEV ONLY] Password reset link", {
@@ -105,13 +138,27 @@ export async function sendPasswordResetEmail(input: PasswordResetEmailInput) {
     return;
   }
 
-  await transporter.sendMail({
-    from,
-    to: input.to,
-    subject: "Reset your SaasTution password",
-    text: `Use this link to reset your password: ${input.resetLink}\n\nIf you did not request this, please ignore this email.`,
-    html: `<p>Use this link to reset your password:</p><p><a href="${input.resetLink}">${input.resetLink}</a></p><p>If you did not request this, please ignore this email.</p>`,
-  });
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: "Reset your SaasTution password",
+      text: `Use this link to reset your password: ${input.resetLink}\n\nIf you did not request this, please ignore this email.`,
+      html: `
+        <p>Use this link to reset your password:</p>
+        <p><a href="${input.resetLink}">${input.resetLink}</a></p>
+        <p>If you did not request this, please ignore this email.</p>
+      `,
+    });
+
+    console.log("✅ Email sent successfully");
+    console.log(info);
+  } catch (error) {
+    console.error("❌ Failed to send password reset email");
+    console.error(error);
+
+    throw error;
+  }
 }
 
 export async function sendLiveSessionInviteEmail(input: LiveSessionInviteEmailInput) {

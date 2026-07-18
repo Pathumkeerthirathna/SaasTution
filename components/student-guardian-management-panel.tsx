@@ -989,298 +989,222 @@ async function handleConfirmImport() {
         ) : null}
 
         {/* ── Table ── */}
-        <div className="max-lg:hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th
-                    onClick={() => handleSort("registrationNumber")}
-                    className="
-                      cursor-pointer
-                      px-5
-                      py-3
-                      text-left
-                      text-[11px]
-                      font-semibold
-                      uppercase
-                      tracking-[0.1em]
-                      text-muted
-                    "
-                  >
-                    <div className="flex items-center gap-1">
-                      Reg No
+        <div className="max-lg:hidden overflow-x-auto bg-white shadow-sm">
+          <div className="max-lg:hidden space-y-4">
 
-                      {sortBy === "registrationNumber" &&
-                        (sortOrder === "asc" ? (
-                          <ArrowUp size={12} />
-                        ) : (
-                          <ArrowDown size={12} />
-                        ))}
-                    </div>
-                  </th>
-                <th
-                  onClick={() => handleSort("name")}
-                  className="
-                    cursor-pointer
-                    px-5
-                    py-3
-                    text-left
-                    text-[11px]
-                    font-semibold
-                    uppercase
-                    tracking-[0.1em]
-                    text-muted
-                  "
-                >
-                  <div className="flex items-center gap-1">
-                    Student
-
-                    {sortBy === "name" &&
-                      (sortOrder === "asc" ? (
-                        <ArrowUp size={12} />
-                      ) : (
-                        <ArrowDown size={12} />
-                      ))}
-                  </div>
-                </th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Grade</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Contact 01</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Contact 02</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Email</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Classes</th>
-                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
               {students.map((student) => (
-                <tr key={student.id} className="bg-white transition-colors hover:bg-gray-50/60">
-                  {/* Reg No */}
-                  <td className="px-5 py-4">
-                    <span className="rounded-md border border-brand-100 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                      {student.registrationNumber ?? "—"}
-                    </span>
-                  </td>
+                <div
+                  key={student.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-green-200 hover:shadow-md"
+                >
 
-                  {/* Student */}
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-700">
-                        {student.name.slice(0, 1).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="font-semibold text-foreground">{student.name}</p>
-                        {student.status === 0 && (
-                          <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                            Active
-                          </span>
-                        )}
+                  {/* ===================== TOP ===================== */}
 
-                        {student.status === 1 && (
-                          <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                            Inactive
-                          </span>
-                        )}
+                  <div className="grid grid-cols-[80px_280px_180px_180px_minmax(260px,1fr)_180px] gap-6 items-center">
 
-                        {student.status === 2 && (
-                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-                            Deleted
-                          </span>
-                        )}
+                    {/* Avatar */}
+                    <div className="flex justify-center">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-violet-100 to-violet-50 text-violet-600">
+                        <UserCircle2 size={36} strokeWidth={1.6} />
                       </div>
                     </div>
-                  </td>
 
-                  {/* Grade */}
-                  <td className="px-5 py-4">
-                    <span className="rounded-lg bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">
-                      {formatGradeLabel(student.grade?.GradeDesc??"")}
-                    </span>
-                  </td>
+                    {/* Student */}
+                    <div className="border-r border-slate-100 pr-6">
 
-                  {/* Contacts */}
-                  <td className="px-5 py-4 text-sm text-gray-600">{student.contact01 || "—"}</td>
-                  <td className="px-5 py-4 text-sm text-gray-600">{student.contact02 || "—"}</td>
+                      <span className="inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                        {student.registrationNumber}
+                      </span>
 
-                  {/* Email */}
-                  <td className="px-5 py-4 text-sm text-gray-600">{student.email || "—"}</td>
+                      <h3 className="mt-2 text-xl font-semibold text-slate-900">
+                        {student.name}
+                      </h3>
 
-                  {/* Classes */}
-                  <td className="px-5 py-4">
-                    {student.classes.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {student.classes.map((cls) => (
-                          <span
-                            key={cls.id}
-                            className="
-                              inline-flex
-                              items-center
-                              gap-1
-                              rounded-md
-                              border
-                              border-brand-100
-                              bg-brand-50
-                              px-2
-                              py-0.5
-                              text-[11px]
-                              font-medium
-                              text-brand-700"
-                          >
-                            <BookOpen size={10} />
-                            {cls.name}
-                          </span>
-                        ))}
+                      <div className="mt-3 flex gap-2">
+
+                        <span
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                            student.status === 0
+                              ? "bg-emerald-50 text-emerald-700"
+                              : student.status === 1
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {student.status === 0
+                            ? "Active"
+                            : student.status === 1
+                            ? "Inactive"
+                            : "Deleted"}
+                        </span>
+
+                        <span className="rounded-md bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700">
+                          {formatGradeLabel(student.grade?.GradeDesc ?? "")}
+                        </span>
+
                       </div>
-                    ) : (
-                      <span className="text-sm text-muted">—</span>
-                    )}
-                  </td>
 
-                  {/* Actions */}
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-1">
+                    </div>
+
+                    {/* Contact 01 */}
+                    <div className="flex gap-3">
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <Phone size={17} />
+                      </div>
+
+                      <div>
+
+                        <p className="text-sm font-medium text-slate-900">
+                          {student.contact01 || "—"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          Contact 01
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                    {/* Contact 02 */}
+
+                    <div className="flex gap-3">
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <PhoneCall size={17} />
+                      </div>
+
+                      <div>
+
+                        <p className="text-sm font-medium text-slate-900">
+                          {student.contact02 || "—"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          Contact 02
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                    {/* Email */}
+
+                    <div className="flex gap-3 min-w-0">
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <Mail size={17} />
+                      </div>
+
+                      <div className="min-w-0">
+
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {student.email || "—"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          Email
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                    {/* Classes */}
+
+                    <div className="flex gap-3">
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                        <BookOpen size={17} />
+                      </div>
+
+                      <div>
+
+                        {student.classes.length > 0 ? (
+                          <>
+                            <p className="text-sm font-medium text-slate-900">
+                              {student.classes[0].name}
+                            </p>
+
+                            {student.classes.length > 1 && (
+                              <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                                +{student.classes.length - 1} more
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            No Classes
+                          </p>
+                        )}
+
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                  {/* ===================== BOTTOM ===================== */}
+
+                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+
+                    <div className="text-xs text-slate-400">
+                      Student Information
+                    </div>
+
+                    <div className="flex gap-3">
+
                       <Link
                         href={`/dashboard/students/${student.id}`}
-                        className="
-                                inline-flex
-                                items-center
-                                gap-1.5
-                                rounded-md
-                                border
-                                border-slate-200
-                                bg-white
-                                px-3
-                                py-1.5
-                                text-xs
-                                font-medium
-                                text-slate-700
-                                hover:bg-slate-50
-                                "
+                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
-                        <Eye size={13} />
+                        <Eye size={15} />
                         View
                       </Link>
-                      
-                      <div data-action-menu className="relative">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpenActionMenu(
-                                openActionMenu === student.id
-                                  ? null
-                                  : student.id
-                              )
-                            }
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                          >
-                            <MoreVertical size={15} />
-                          </button>
 
-                          {openActionMenu === student.id && (
-                            <div
-                              className="
-                                absolute
-                                right-0
-                                top-9
-                                z-20
-                                w-48
-                                overflow-hidden
-                                rounded-xl
-                                border
-                                border-slate-200
-                                bg-white
-                                shadow-xl
-                              "
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleEditStudent(student)}
-                                className="
-                                  flex
-                                  w-full
-                                  items-center
-                                  gap-3
-                                  px-4
-                                  py-3
-                                  text-left
-                                  text-sm
-                                  text-slate-700
-                                  hover:bg-slate-50
-                                "
-                              >
-                                <Pencil size={15} />
-                                Edit Student
-                              </button>
+                      <button
+                        onClick={() => handleEditStudent(student)}
+                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                      >
+                        <Pencil size={15} />
+                        Edit
+                      </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handleActivateStudent(student.id)}
-                                className="
-                                  flex
-                                  w-full
-                                  items-center
-                                  gap-3
-                                  px-4
-                                  py-3
-                                  text-left
-                                  text-sm
-                                  text-emerald-700
-                                  hover:bg-emerald-50
-                                "
-                              >
-                                <CheckCircle size={15} />
-                                Activate
-                              </button>
+                      <button
+                        onClick={() => handleDeleteStudent(student.id)}
+                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 size={15} />
+                        Delete
+                      </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handleDeactivateStudent(student.id)}
-                                className="
-                                  flex
-                                  w-full
-                                  items-center
-                                  gap-3
-                                  px-4
-                                  py-3
-                                  text-left
-                                  text-sm
-                                  text-amber-700
-                                  hover:bg-amber-50
-                                "
-                              >
-                                <Ban size={15} />
-                                Deactivate
-                              </button>
+                      {student.status === 0 ? (
+                        <button
+                          onClick={() => handleDeactivateStudent(student.id)}
+                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                        >
+                          <Ban size={15} />
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleActivateStudent(student.id)}
+                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                        >
+                          <CheckCircle size={15} />
+                          Activate
+                        </button>
+                      )}
 
-                              <div className="border-t border-slate-100" />
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteStudent(student.id)}
-                                className="
-                                  flex
-                                  w-full
-                                  items-center
-                                  gap-3
-                                  px-4
-                                  py-3
-                                  text-left
-                                  text-sm
-                                  text-red-600
-                                  hover:bg-red-50
-                                "
-                              >
-                                <Trash2 size={15} />
-                                Delete Student
-                              </button>
-                            </div>
-                          )}
-                        </div>
                     </div>
-                  </td>
-                </tr>
+
+                  </div>
+
+                </div>
               ))}
-            </tbody>
-          </table>
+
+            </div>
         </div>
 
         <div className="space-y-4 hidden max-lg:block">
@@ -1435,59 +1359,6 @@ async function handleConfirmImport() {
                   </div>
                 </div>
 
-              </div>
-
-              {/* Actions */}
-              <div className="border-t border-slate-100 bg-slate-50 p-4">
-                <div className="grid grid-cols-2 gap-2">
-
-                  <Link
-                    href={`/dashboard/students/${student.id}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <Eye size={16} />
-                    View
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => handleEditStudent(student)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
-                  >
-                    <Pencil size={16} />
-                    Edit
-                  </button>
-
-                  {student.status === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => handleDeactivateStudent(student.id)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 hover:bg-amber-100"
-                    >
-                      <Ban size={16} />
-                      Deactivate
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleActivateStudent(student.id)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
-                    >
-                      <CheckCircle size={16} />
-                      Activate
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteStudent(student.id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-100"
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </button>
-
-                </div>
               </div>
             </div>
           ))}
