@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
+import { requireTeacherSession } from "@/lib/auth-session";
 
 const HASH_ROUNDS = 12;
 
@@ -1598,4 +1599,31 @@ export async function RegisterStudentViaPublicClasses(request:RegisterStudentReq
       return student;
   });
 
+}
+
+export async function checkIfRegNoExists(
+  registrationNumber: string,
+  studentId: string | undefined,
+  teacherId: string
+) {
+  const student = await prisma.student.findFirst({
+    where: {
+      teacherId,
+      registrationNumber,
+      ...(studentId
+        ? {
+            NOT: {
+              id: studentId,
+            },
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return {
+    exists: !!student,
+  };
 }

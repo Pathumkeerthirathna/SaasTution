@@ -11,9 +11,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleHelp,
+  Download,
   Eye,
+  FileSpreadsheet,
   GraduationCap,
+  Loader2,
   Mail,
   MoreVertical,
   Pencil,
@@ -21,8 +26,11 @@ import {
   PhoneCall,
   Plus,
   Search,
+  SlidersHorizontal,
   Trash2,
+  Upload,
   User,
+  UserCircle2,
   Users,
 } from "lucide-react";
 
@@ -32,6 +40,7 @@ import { Grade } from "@prisma/client";
 
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import { checkIfRegNoExists } from "@/services/student-service";
 
 type StudentListItem = {
   id: string;
@@ -88,6 +97,11 @@ function formatGradeLabel(value: string | null) {
 }
 
 export function StudentGuardianManagementPanel() {
+
+  const [isCheckingRegistrationNumber, setIsCheckingRegistrationNumber] =
+  useState(false);
+
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
 
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
 
@@ -312,45 +326,6 @@ export function StudentGuardianManagementPanel() {
 
   const hasStudents = useMemo(() => students.length > 0, [students]);
 
-  // const loadStudentList = useCallback(async (nextPage = 1, appliedFilters = filters) => {
-  //   setIsLoadingList(true);
-  //   setErrorMessage(null);
-
-  //   try {
-  //     const query = new URLSearchParams({
-  //       page: String(nextPage),
-  //       pageSize: String(PAGE_SIZE),
-  //     });
-
-  //     if (appliedFilters.name.trim()) {
-  //       query.set("name", appliedFilters.name.trim());
-  //     }
-
-  //     if (appliedFilters.grade) {
-  //       query.set("grade", appliedFilters.grade);
-  //     }
-
-  //     const response = await fetch(`/api/students?${query.toString()}`);
-  //     const payload = (await response.json()) as PaginatedStudentsResponse;
-
-  //     if (!response.ok || !payload.success) {
-  //       setErrorMessage(payload.error?.message ?? "Failed to load students.");
-  //       return;
-  //     }
-
-  //     console.log("Loaded students:", payload.data);
-
-  //     setStudents(payload.data ?? []);
-  //     setPage(payload.pagination?.page ?? nextPage);
-  //     setTotalPages(payload.pagination?.totalPages ?? 1);
-  //     setTotalItems(payload.pagination?.totalItems ?? 0);
-  //   } catch {
-  //     setErrorMessage("Unable to load students right now.");
-  //   } finally {
-  //     setIsLoadingList(false);
-  //   }
-  // }, [filters]);
-
   function handleSort(column: string) {
       const nextOrder =
         sortBy === column && sortOrder === "asc"
@@ -515,48 +490,7 @@ export function StudentGuardianManagementPanel() {
 
   }, [loadStudentList,loadGrades,loadRegistrationNumber]);
 
-  // async function downloadTemplate() {
-  
-  //   const data = [
-  //     {
-  //       StudentName: "Nethmi Perera",
-  //       Grade: "GRADE_07",
-  //       PrimaryContact: "0771234567",
-  //       SecondaryContact: "0711234567",
-  //       Email: "nethmi@gmail.com",
-  //     },
-  //   ];
-
-  //   const gradeSheetData = grades.map(g => ({
-  //     GradeId: g.id,
-  //     GradeName: g.GradeDesc,
-  //   }));
-    
-
-  //   const worksheet = XLSX.utils.json_to_sheet(data);
-  //   const workbook = XLSX.utils.book_new();
-
-  //   XLSX.utils.book_append_sheet(
-  //     workbook,
-  //     worksheet,
-  //     "Students"
-  //   );
-
-  //   const excelBuffer = XLSX.write(workbook, {
-  //     bookType: "xlsx",
-  //     type: "array",
-  //   });
-
-  //   const file = new Blob(
-  //     [excelBuffer],
-  //     {
-  //       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  //     }
-  //   );
-
-  //   saveAs(file, "StudentTemplate.xlsx");
-  // }
-
+ 
  async function downloadTemplate() {
     const workbook = new ExcelJS.Workbook();
 
@@ -887,6 +821,41 @@ async function handleConfirmImport() {
     }
   }
 
+  const [registrationNumberError, setRegistrationNumberError] = useState("");
+
+  const checkRegistrationNumber = async (
+    registrationNumber: string,
+    selectedStudentId: string
+  ) => {
+    const regNo = registrationNumber.trim();
+
+    if (!regNo) {
+      setRegistrationNumberError("");
+      return;
+    }
+
+    try {
+
+      setIsCheckingRegistrationNumber(true);
+
+      const response = await fetch(`/api/students/check-registration-number?registrationNumber=${encodeURIComponent(regNo)}&studentId=${selectedStudentId}`
+      );
+
+      const result = await response.json();
+
+      if (result.exists) {
+        setRegistrationNumberError("Registration number already exists.");
+      } else {
+        setRegistrationNumberError("");
+      }
+
+      setIsCheckingRegistrationNumber(false);
+
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   return (
     <section className="relative overflow-hidden">
       <div className="pointer-events-none absolute -left-28 -top-24 h-72 w-72 rounded-md bg-brand-100 blur-3xl" />
@@ -905,15 +874,24 @@ async function handleConfirmImport() {
         "
       >
         {/* ── Header ── */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4">
-            <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+
+          <div className="flex items-start gap-4 rounded-2xl border border-green-100 bg-gradient-to-r from-green-50 via-white to-white px-5 py-4 shadow-sm">
+
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-600 text-white shadow-sm">
               <GraduationCap size={22} />
             </span>
+
             <div>
-              <h2 className="page-title mt-0">Students</h2>
-              <p className="page-subtitle">View and manage all students in your institution.</p>
+              <h2 className="page-title mt-0 text-slate-900">
+                Students
+              </h2>
+
+              <p className="page-subtitle text-slate-600">
+                View and manage all students in your institution.
+              </p>
             </div>
+
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -921,174 +899,74 @@ async function handleConfirmImport() {
             <button
               type="button"
               onClick={downloadStudents}
-              className="btn-secondary"
+              className="btn-secondary border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
+              <FileSpreadsheet size={16} />
               Export Excel
             </button>
 
             <button
               type="button"
               onClick={() => setIsHelpOpen(true)}
-              className="btn-secondary gap-2"
+              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <CircleHelp size={15} />
+              <CircleHelp size={16} />
               Help
             </button>
 
             <button
               type="button"
               onClick={downloadTemplate}
-              className="btn-secondary gap-2"
+              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
+              <Download size={16} />
               Download Template
             </button>
 
-          <label
-            className="btn-secondary cursor-pointer gap-2"
-          >
-            Upload Student List
+            <label
+              className="btn-secondary cursor-pointer gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+            >
+              <Upload size={16} />
+              Upload Student List
 
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleExcelUpload}
-            />
-          </label>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleExcelUpload}
+              />
+            </label>
 
             <button
               type="button"
               onClick={() => setIsAddPanelOpen(true)}
-              className="btn-primary gap-2"
+              className="btn-primary gap-2 bg-orange-500 text-white hover:bg-orange-600 border-orange-500 shadow-sm hover:shadow-md"
             >
-              <Plus size={15} />
+              <Plus size={16} />
               Add Student
             </button>
-          </div>
-
-          
-
-        </div>
-
-        <div className="filter-shell">
-          <div className="flex flex-wrap items-center gap-3">
-            
-            {/* Search */}
-            <div className="relative min-w-[280px] flex-1 max-w-md">
-              
-              <Search
-                size={14}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-
-              <input
-                value={filters.name}
-                onChange={(event) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    name: event.target.value,
-                  }))
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-
-                    void loadStudentList(1, filters);
-                  }
-                }}
-                placeholder="Search students..."
-                className="control-input pl-9"
-              />
-
-            </div>
-
-            {/* Grade */}
-           <div className="relative w-[180px]">
-              <BookOpen
-                size={14}
-                className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-gray-400"
-              />
-
-              <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-gray-400"
-              />
-
-              <select
-                value={filters.grade}
-                onChange={(event) => {
-                  const selectedGrade = event.target.value;
-
-                  const updatedFilters = {
-                    ...filters,
-                    grade: selectedGrade,
-                  };
-
-                  setFilters(updatedFilters);
-
-                  void loadStudentList(1, updatedFilters);
-                }}
-                className="
-                  w-full
-                  appearance-none
-                  rounded-lg
-                  border
-                  border-slate-300
-                  bg-white
-                  py-2
-                  pl-9
-                  pr-9
-                  text-sm
-                "
-              >
-                <option value="">All Grades</option>
-
-                {grades.map((grade) => (
-                  <option
-                    key={grade.id}
-                    value={grade.id}
-                  >
-                    {grade.GradeDesc}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Actions */}
-            {/* <button
-              type="button"
-              onClick={() => void loadStudentList(1, filters)}
-              className="btn-primary"
-            >
-              Apply
-            </button> */}
 
             <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => {
-              const clearedFilters = {
-                name: "",
-                grade: "",
-              };
+              type="button"
+              onClick={() => setIsFilterPanelOpen(true)}
+              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+            >
+              <SlidersHorizontal size={16} />
+              Filters
+            </button>
 
-              setFilters(clearedFilters);
-
-              void loadStudentList(1, clearedFilters);
-            }}
-          >
-            Clear
-          </button>
-
-            {/* Count */}
-            <div className="ml-auto">
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                <Users size={12} />
-                {totalItems} Students
-              </span>
-            </div>
           </div>
+
         </div>
+
+       
+
+        <div className="mb-4 flex justify-end">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+              <Users size={12}/>
+              {totalItems} Students
+          </span>
+      </div>
 
        
         {isLoadingList ? <p className="text-sm text-muted">Loading students...</p> : null}
@@ -1097,7 +975,7 @@ async function handleConfirmImport() {
         ) : null}
 
         {/* ── Table ── */}
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="max-lg:hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
@@ -1391,46 +1269,247 @@ async function handleConfirmImport() {
           </table>
         </div>
 
-        {/* ── Pagination ── */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" className="btn-ghost w-fit gap-2 text-sm" disabled>
-            {PAGE_SIZE} per page
-            <ChevronDown size={13} />
-          </button>
+        <div className="space-y-4 hidden max-lg:block">
+          {students.map((student) => (
+            <div
+              key={student.id}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+            >
+              {/* Header */}
+              <div className="border-b border-slate-100 bg-gradient-to-r from-green-50 via-white to-white p-4">
+                <div className="flex items-start justify-between">
 
-          <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
+
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-green-600 text-white shadow-sm">
+                      <UserCircle2 size={28} />
+                    </div>
+
+                    <div>
+
+                      <span className="inline-flex rounded-md bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                        {student.registrationNumber ?? "—"}
+                      </span>
+
+                      <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                        {student.name}
+                      </h3>
+
+                      <span
+                        className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          student.status === 0
+                            ? "bg-emerald-100 text-emerald-700"
+                            : student.status === 1
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {student.status === 0
+                          ? "Active"
+                          : student.status === 1
+                          ? "Inactive"
+                          : "Deleted"}
+                      </span>
+
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/dashboard/students/${student.id}`}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+                  >
+                    <Eye size={16} />
+                    View
+                  </Link>
+
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-4 p-4">
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                    <GraduationCap size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Grade
+                    </p>
+
+                    <p className="font-medium text-slate-800">
+                      {formatGradeLabel(student.grade?.GradeDesc ?? "")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-green-700">
+                    <Phone size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Primary Contact
+                    </p>
+
+                    <p className="font-medium text-slate-800">
+                      {student.contact01 || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700">
+                    <PhoneCall size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Secondary Contact
+                    </p>
+
+                    <p className="font-medium text-slate-800">
+                      {student.contact02 || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                    <Mail size={18} />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Email
+                    </p>
+
+                    <p className="break-all font-medium text-slate-800">
+                      {student.email || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                    <BookOpen size={18} />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                      Classes
+                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+                      {student.classes.length > 0 ? (
+                        student.classes.map((cls) => (
+                          <span
+                            key={cls.id}
+                            className="rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
+                          >
+                            {cls.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-sm text-slate-400">
+                          No classes assigned
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Pagination ── */}
+        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+
+          {/* Left */}
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              disabled={isLoadingList || page <= 1}
-              onClick={() => void loadStudentList(page - 1, filters)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40"
+              disabled
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600"
             >
-              <ChevronLeft size={15} />
+              {PAGE_SIZE} / Page
+              <ChevronDown size={14} />
             </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                type="button"
-                disabled={isLoadingList}
-                onClick={() => void loadStudentList(p, filters)}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold transition-colors ${
-                  p === page
-                    ? "bg-brand-700 text-white"
-                    : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-            <button
-              type="button"
-              disabled={isLoadingList || page >= totalPages}
-              onClick={() => void loadStudentList(page + 1, filters)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40"
-            >
-              <ChevronRight size={15} />
-            </button>
+
+            <span className="hidden text-sm text-slate-500 sm:block">
+              Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+            </span>
           </div>
+
+          {/* Right */}
+          <div className="flex items-center gap-2">
+
+            {/* First */}
+            <button
+              disabled={page === 1 || isLoadingList}
+              onClick={() => void loadStudentList(1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+
+            {/* Previous */}
+            <button
+              disabled={page === 1 || isLoadingList}
+              onClick={() => void loadStudentList(page - 1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Scrollable Pages */}
+            <div className="max-w-[280px] overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+
+              <div className="flex gap-2 px-1">
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => void loadStudentList(p, filters)}
+                    disabled={isLoadingList}
+                    className={`flex h-9 min-w-[36px] items-center justify-center rounded-lg border text-sm font-semibold transition-all duration-200 ${
+                      p === page
+                        ? "border-brand-700 bg-brand-700 text-white shadow"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+
+              </div>
+
+            </div>
+
+            {/* Next */}
+            <button
+              disabled={page === totalPages || isLoadingList}
+              onClick={() => void loadStudentList(page + 1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight size={16} />
+            </button>
+
+            {/* Last */}
+            <button
+              disabled={page === totalPages || isLoadingList}
+              onClick={() => void loadStudentList(totalPages, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronsRight size={16} />
+            </button>
+
+          </div>
+
         </div>
 
         {/* ── Count ── */}
@@ -1711,6 +1790,196 @@ async function handleConfirmImport() {
 
       </aside>
 
+      {/* Overlay */}
+      <button
+        type="button"
+        aria-label="Close filter panel"
+        onClick={() => setIsFilterPanelOpen(false)}
+        className={`fixed inset-0 z-40 bg-black/40 transition ${
+          isFilterPanelOpen
+            ? "visible opacity-100"
+            : "invisible opacity-0"
+        }`}
+      />
+
+      {/* Drawer */}
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-50 shadow-2xl transition-transform duration-300 ${
+          isFilterPanelOpen
+            ? "translate-x-0"
+            : "translate-x-full"
+        }`}
+      >
+        <div className="flex h-full flex-col">
+
+          {/* Header */}
+          <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-6 py-5">
+            <div className="flex items-center justify-between">
+
+              <div className="flex items-center gap-4">
+
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-700">
+                  <SlidersHorizontal size={22} />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Filters
+                  </h2>
+
+                  <p className="text-sm text-slate-500">
+                    Filter the student list
+                  </p>
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsFilterPanelOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Close
+              </button>
+
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 space-y-6 overflow-y-auto p-6">
+
+            {/* Student Name */}
+            <div>
+
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Student Name
+              </label>
+
+              <div className="relative">
+
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+
+                <input
+                  value={filters.name}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
+                  placeholder="Search student..."
+                  className="control-input pl-9"
+                />
+
+              </div>
+
+            </div>
+
+            {/* Grade */}
+            <div>
+
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Grade
+              </label>
+
+              <div className="relative">
+
+                <BookOpen
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400"
+                />
+
+                <ChevronDown
+                  size={15}
+                  className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-slate-400"
+                />
+
+                <select
+                  value={filters.grade}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      grade: e.target.value,
+                    }))
+                  }
+                  className="
+                    w-full
+                    appearance-none
+                    rounded-lg
+                    border
+                    border-slate-300
+                    bg-white
+                    py-2
+                    pl-9
+                    pr-9
+                    text-sm
+                  "
+                >
+                  <option value="">
+                    All Grades
+                  </option>
+
+                  {grades.map((grade) => (
+                    <option
+                      key={grade.id}
+                      value={grade.id}
+                    >
+                      {grade.GradeDesc}
+                    </option>
+                  ))}
+                </select>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white p-6">
+
+            <div className="flex gap-3">
+
+              <button
+                type="button"
+                className="btn-secondary flex-1"
+                onClick={() => {
+                  const cleared = {
+                    name: "",
+                    grade: "",
+                  };
+
+                  setFilters(cleared);
+
+                  void loadStudentList(1, cleared);
+
+                  setIsFilterPanelOpen(false);
+                }}
+              >
+                Clear
+              </button>
+
+              <button
+                type="button"
+                className="btn-primary flex-1"
+                onClick={() => {
+                  void loadStudentList(1, filters);
+
+                  setIsFilterPanelOpen(false);
+                }}
+              >
+                Apply Filters
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      </aside>
 
       <button
       type="button"
@@ -1779,21 +2048,50 @@ async function handleConfirmImport() {
             <div className="space-y-4">
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Registration Number
-                </label>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Registration Number
+              </label>
 
+              <div className="relative">
                 <input
                   value={editStudentForm.registrationNumber}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setEditStudentForm((prev) => ({
                       ...prev,
                       registrationNumber: event.target.value,
-                    }))
+                    }));
+
+                    if (registrationNumberError) {
+                      setRegistrationNumberError("");
+                    }
+                  }}
+                  onBlur={() =>
+                    void checkRegistrationNumber(
+                      editStudentForm.registrationNumber,
+                      editStudentForm.id
+                    )
                   }
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                  className={`h-9 w-full rounded-lg border bg-white px-3 pr-10 text-sm ${
+                    registrationNumberError
+                      ? "border-red-500 focus:border-red-500"
+                      : "border-slate-300"
+                  }`}
                 />
+
+                {isCheckingRegistrationNumber && (
+                  <Loader2
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400"
+                  />
+                )}
               </div>
+
+              {registrationNumberError && (
+                <p className="mt-1 text-xs text-red-600">
+                  {registrationNumberError}
+                </p>
+              )}
+            </div>
 
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
