@@ -40,7 +40,6 @@ import { Grade } from "@prisma/client";
 
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import { checkIfRegNoExists } from "@/services/student-service";
 
 type StudentListItem = {
   id: string;
