@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ChevronUp,
   CircleHelp,
   Download,
   Eye,
@@ -337,22 +338,22 @@ export function StudentGuardianManagementPanel() {
 
   const hasStudents = useMemo(() => students.length > 0, [students]);
 
-  // function handleSort(column: string) {
-  //     const nextOrder =
-  //       sortBy === column && sortOrder === "asc"
-  //         ? "desc"
-  //         : "asc";
+  function handleSort(column: string) {
+      const nextOrder =
+        sortBy === column && sortOrder === "asc"
+          ? "desc"
+          : "asc";
 
-  //     setSortBy(column);
-  //     setSortOrder(nextOrder);
+      setSortBy(column);
+      setSortOrder(nextOrder);
 
-  //     void loadStudentList(
-  //       1,
-  //       filters,
-  //       column,
-  //       nextOrder
-  //     );
-  //   }
+      void loadStudentList(
+        1,
+        filters,
+        column,
+        nextOrder
+      );
+    }
 
   const loadStudentList = useCallback(
   async (
@@ -987,6 +988,48 @@ async function handleConfirmImport() {
 
         {/* ── Table ── */}
         <div className="max-lg:hidden overflow-x-auto bg-white shadow-sm">
+
+          {/* ===================== TOP ===================== */}
+          <div className="flex items-center gap-3 mb-4">
+
+            <button
+                onClick={() => handleSort("Name")}
+                className="flex items-center gap-2"
+            >
+                Name
+                {sortBy === "Name" && (
+                    sortOrder === "asc"
+                        ? <ChevronUp size={14}/>
+                        : <ChevronDown size={14}/>
+                )}
+            </button>
+
+            <button
+                onClick={() => handleSort("RegistrationNumber")}
+                className="flex items-center gap-2"
+            >
+                Registration #
+                {sortBy === "RegistrationNumber" && (
+                    sortOrder === "asc"
+                        ? <ChevronUp size={14}/>
+                        : <ChevronDown size={14}/>
+                )}
+            </button>
+
+            <button
+                onClick={() => handleSort("CreatedAt")}
+                className="flex items-center gap-2"
+            >
+                Date Added
+                {sortBy === "CreatedAt" && (
+                    sortOrder === "asc"
+                        ? <ChevronUp size={14}/>
+                        : <ChevronDown size={14}/>
+                )}
+            </button>
+
+        </div>
+
           <div className="max-lg:hidden space-y-4">
 
               {students.map((student) => (
@@ -995,9 +1038,11 @@ async function handleConfirmImport() {
                   className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-green-200 hover:shadow-md"
                 >
 
-                  {/* ===================== TOP ===================== */}
+                  
 
                   <div className="grid grid-cols-[80px_280px_180px_180px_minmax(260px,1fr)_180px] gap-6 items-center">
+
+                    {/* <button onClick={handleSort()}></button> */}
 
                     {/* Avatar */}
                     <div className="flex justify-center">
