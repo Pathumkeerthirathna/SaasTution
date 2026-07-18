@@ -52,6 +52,29 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+// function createTransport() {
+//   const host = process.env.SMTP_HOST?.trim();
+//   const port = Number(process.env.SMTP_PORT || "587");
+//   const user = process.env.SMTP_USER?.trim();
+//   const pass = process.env.SMTP_PASS?.trim();
+//   const secureValue = process.env.SMTP_SECURE?.trim().toLowerCase();
+//   const secure = secureValue ? secureValue === "true" : port === 465;
+
+//   if (!host || !user || !pass) {
+//     return null;
+//   }
+
+//   return nodemailer.createTransport({
+//     host,
+//     port,
+//     secure,
+//     auth: {
+//       user,
+//       pass,
+//     },
+//   });
+// }
+
 function createTransport() {
   const host = process.env.SMTP_HOST?.trim();
   const port = Number(process.env.SMTP_PORT || "587");
@@ -60,7 +83,16 @@ function createTransport() {
   const secureValue = process.env.SMTP_SECURE?.trim().toLowerCase();
   const secure = secureValue ? secureValue === "true" : port === 465;
 
+  console.log("SMTP Config:", {
+    host,
+    port,
+    secure,
+    user,
+    from: process.env.SMTP_FROM,
+  });
+
   if (!host || !user || !pass) {
+    console.error("SMTP configuration is incomplete.");
     return null;
   }
 
@@ -72,6 +104,8 @@ function createTransport() {
       user,
       pass,
     },
+    logger: true,
+    debug: true,
   });
 }
 
@@ -139,6 +173,10 @@ export async function sendPasswordResetEmail(
   }
 
   try {
+    
+    await transporter.verify();
+    console.log("✅ SMTP connection verified");
+
     const info = await transporter.sendMail({
       from,
       to: input.to,

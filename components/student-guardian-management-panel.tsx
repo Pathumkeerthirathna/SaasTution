@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo,  useState } from "react";
 import {
-  ArrowDown,
-  ArrowUp,
   Ban,
   BookOpen,
   CheckCircle,
@@ -20,7 +18,6 @@ import {
   GraduationCap,
   Loader2,
   Mail,
-  MoreVertical,
   Pencil,
   Phone,
   PhoneCall,
@@ -140,7 +137,7 @@ export function StudentGuardianManagementPanel() {
     }, []);
 
     function handleEditStudent(student: StudentListItem) {
-      setOpenActionMenu(null);
+      //setOpenActionMenu(null);
 
       setEditStudentForm({
         id: student.id,
@@ -247,7 +244,7 @@ export function StudentGuardianManagementPanel() {
 
         toast.success("Student activated successfully.",{duration:5000});
 
-        setOpenActionMenu(null);
+        //setOpenActionMenu(null);
 
         await loadStudentList(page, filters);
       } catch {
@@ -277,7 +274,7 @@ export function StudentGuardianManagementPanel() {
 
         toast.success("Student deactivated successfully.");
 
-        setOpenActionMenu(null);
+        //setOpenActionMenu(null);
 
         await loadStudentList(page, filters);
       } catch {
@@ -309,7 +306,7 @@ export function StudentGuardianManagementPanel() {
 
         setSuccessMessage("Student deleted successfully.");
 
-        setOpenActionMenu(null);
+        //setOpenActionMenu(null);
 
         await loadStudentList(page, filters);
       } catch {
@@ -336,26 +333,26 @@ export function StudentGuardianManagementPanel() {
     email: "",
   });
 
-  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  //const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
 
   const hasStudents = useMemo(() => students.length > 0, [students]);
 
-  function handleSort(column: string) {
-      const nextOrder =
-        sortBy === column && sortOrder === "asc"
-          ? "desc"
-          : "asc";
+  // function handleSort(column: string) {
+  //     const nextOrder =
+  //       sortBy === column && sortOrder === "asc"
+  //         ? "desc"
+  //         : "asc";
 
-      setSortBy(column);
-      setSortOrder(nextOrder);
+  //     setSortBy(column);
+  //     setSortOrder(nextOrder);
 
-      void loadStudentList(
-        1,
-        filters,
-        column,
-        nextOrder
-      );
-    }
+  //     void loadStudentList(
+  //       1,
+  //       filters,
+  //       column,
+  //       nextOrder
+  //     );
+  //   }
 
   const loadStudentList = useCallback(
   async (
@@ -480,7 +477,7 @@ export function StudentGuardianManagementPanel() {
           const target = event.target as HTMLElement;
 
           if (!target.closest("[data-action-menu]")) {
-            setOpenActionMenu(null);
+           // setOpenActionMenu(null);
           }
         }
 
