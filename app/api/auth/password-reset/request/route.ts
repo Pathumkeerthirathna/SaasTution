@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    await requestPasswordReset(parsed.data.loginId, new URL(request.url).origin);
+    await requestPasswordReset(parsed.data.loginId,process.env.NEXT_PUBLIC_APP_URL);
 
     return apiSuccess(
       {
