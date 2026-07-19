@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkIfEmailExists, checkIfRegNoExists } from "@/services/student-service";
+import { checkIfEmailExists } from "@/services/student-service";
 import { requireTeacherSession } from "@/lib/auth-session";
 
 export async function GET(request: NextRequest) {
