@@ -2167,13 +2167,6 @@ async function handleConfirmImport() {
                   <input
                     required
                     value={editStudentForm.name}
-                    // onChange={(event) =>
-                    //   setEditStudentForm((prev) => ({
-                    //     ...prev,
-                    //     name: event.target.value,
-                    //   }))
-                      
-                    // }
                     onChange={(event) => {
                       setEditStudentForm((prev) => ({
                         ...prev,
@@ -2190,9 +2183,16 @@ async function handleConfirmImport() {
                         editStudentForm.id
                       )
                     }
-                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
+                    className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
+                      NameError
+                        ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "border border-slate-300"
+                    }`}
                     placeholder="John Doe"
                   />
+                  {NameError && (
+                    <p className="mt-1 text-xs text-red-600">{NameError}</p>
+                  )}
                    {isCheckingName && (
                   <Loader2
                     size={16}
@@ -2328,9 +2328,16 @@ async function handleConfirmImport() {
                         editStudentForm.id
                       )
                     }}
-                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
+                    className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
+                      EmailError
+                        ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "border border-slate-300"
+                    }`}
                     placeholder="student@email.com"
                   />
+                  {EmailError && (
+                    <p className="mt-1 text-xs text-red-600">{EmailError}</p>
+                  )}
                    {isCheckingEmail && (
                   <Loader2
                     size={16}
