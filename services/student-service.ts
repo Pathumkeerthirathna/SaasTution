@@ -1627,3 +1627,60 @@ export async function checkIfRegNoExists(
     exists: !!student,
   };
 }
+
+export async function checkIfEmailExists(
+  email: string,
+  studentId: string | undefined,
+  teacherId: string
+) {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const student = await prisma.student.findFirst({
+    where: {
+      teacherId,
+      email: normalizedEmail,
+      ...(studentId && {
+        NOT: {
+          id: studentId,
+        },
+      }),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return {
+    exists: !!student,
+  };
+}
+
+export async function checkIfNameExists(
+  name: string,
+  studentId: string | undefined,
+  teacherId: string
+) {
+  const normalizedName = name.trim();
+
+  const student = await prisma.student.findFirst({
+    where: {
+      teacherId,
+      Name: {
+        equals: normalizedName,
+        mode: "insensitive",
+      },
+      ...(studentId && {
+        NOT: {
+          id: studentId,
+        },
+      }),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return {
+    exists: !!student,
+  };
+}

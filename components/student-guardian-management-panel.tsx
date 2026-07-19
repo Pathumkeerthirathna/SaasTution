@@ -98,6 +98,12 @@ export function StudentGuardianManagementPanel() {
 
   const [isCheckingRegistrationNumber, setIsCheckingRegistrationNumber] =
   useState(false);
+  
+  const [isCheckingEmail, setIsCheckinEmail] =
+  useState(false);
+  
+  const [isCheckingName, setIsCheckingName] =
+  useState(false);
 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
 
@@ -636,8 +642,6 @@ export function StudentGuardianManagementPanel() {
     );
  }
 
-  
-
   async function handleExcelUpload(
   event: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -834,6 +838,8 @@ async function handleConfirmImport() {
   }
 
   const [registrationNumberError, setRegistrationNumberError] = useState("");
+  const [EmailError, setEmailError] = useState("");
+  const [NameError, setNameError] = useState("");
 
   const checkRegistrationNumber = async (
     registrationNumber: string,
@@ -867,6 +873,80 @@ async function handleConfirmImport() {
       console.error(error);
     }
   };
+
+  const checkEmail = async (
+    registrationNumber: string,
+    selectedStudentId: string
+  ) => {
+    const regNo = registrationNumber.trim();
+
+    if (!regNo) {
+      setRegistrationNumberError("");
+      return;
+    }
+
+    try {
+
+      setIsCheckinEmail(true);
+
+      const response = await fetch(`/api/students/check-email?registrationNumber=${encodeURIComponent(regNo)}&studentId=${selectedStudentId}`
+      );
+
+      const result = await response.json();
+
+      if (result.exists) {
+        setEmailError("Email already exists.");
+      } else {
+        setEmailError("");
+      }
+
+      setIsCheckinEmail(false);
+
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const checkName = async (
+    registrationNumber: string,
+    selectedStudentId: string
+  ) => {
+    const regNo = registrationNumber.trim();
+
+    if (!regNo) {
+      setRegistrationNumberError("");
+      return;
+    }
+
+    try {
+
+      setIsCheckingName(true);
+
+      const response = await fetch(`/api/students/check-name?registrationNumber=${encodeURIComponent(regNo)}&studentId=${selectedStudentId}`
+      );
+
+      const result = await response.json();
+
+      if (result.exists) {
+        setNameError("Name already exists.");
+      } else {
+        setNameError("");
+      }
+
+      setIsCheckingName(false);
+
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const hasValidationErrors =
+  !!registrationNumberError ||
+  !!EmailError ||
+  !!NameError ||
+  isCheckingRegistrationNumber ||
+  isCheckingEmail ||
+  isCheckingName;
 
   return (
     <section className="relative overflow-hidden">
@@ -2087,15 +2167,38 @@ async function handleConfirmImport() {
                   <input
                     required
                     value={editStudentForm.name}
-                    onChange={(event) =>
+                    // onChange={(event) =>
+                    //   setEditStudentForm((prev) => ({
+                    //     ...prev,
+                    //     name: event.target.value,
+                    //   }))
+                      
+                    // }
+                    onChange={(event) => {
                       setEditStudentForm((prev) => ({
                         ...prev,
                         name: event.target.value,
-                      }))
+                      }));
+
+                      if (NameError) {
+                        setNameError("");
+                      }
+                    }}
+                    onBlur={() =>
+                      void checkName(
+                        editStudentForm.name,
+                        editStudentForm.id
+                      )
                     }
                     className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
                     placeholder="John Doe"
                   />
+                   {isCheckingName && (
+                  <Loader2
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400"
+                  />
+                )}
                 </div>
               </div>
 
@@ -2210,15 +2313,30 @@ async function handleConfirmImport() {
                   <input
                     type="email"
                     value={editStudentForm.email}
-                    onChange={(event) =>
+                    onChange={(event) =>{
                       setEditStudentForm((prev) => ({
                         ...prev,
                         email: event.target.value,
-                      }))
-                    }
+                      }));
+                      if(EmailError){
+                        setEmailError("");
+                      }
+                    }}
+                    onBlur={()=>{
+                      void checkEmail(
+                        editStudentForm.email,
+                        editStudentForm.id
+                      )
+                    }}
                     className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
                     placeholder="student@email.com"
                   />
+                   {isCheckingEmail && (
+                  <Loader2
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400"
+                  />
+                )}
                 </div>
               </div>
             </div>
@@ -2247,14 +2365,12 @@ async function handleConfirmImport() {
 
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="h-8
-                    flex-1
-                    rounded-lg
-                    bg-brand-700
-                    text-sm
-                    font-medium
-                    text-white"
+                disabled={isSubmitting || hasValidationErrors}
+                className={`h-8 flex-1 rounded-lg text-sm font-medium text-white ${
+                  isSubmitting || hasValidationErrors
+                    ? "cursor-not-allowed bg-slate-400"
+                    : "bg-brand-700 hover:bg-brand-800"
+                }`}
               >
                 {isSubmitting ? "Updating..." : "Update Student"}
               </button>
