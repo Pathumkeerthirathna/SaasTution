@@ -1665,7 +1665,7 @@ export async function checkIfNameExists(
   const student = await prisma.student.findFirst({
     where: {
       teacherId,
-      Name: {
+      name: {
         equals: normalizedName,
         mode: "insensitive",
       },
