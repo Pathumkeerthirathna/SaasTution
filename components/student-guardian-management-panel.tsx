@@ -30,15 +30,17 @@ import {
   User,
   UserCircle2,
   Users,
+  XCircle,
 } from "lucide-react";
 
 // import * as XLSX from "xlsx";
 // import { saveAs } from "file-saver";
-import { Grade } from "@prisma/client";
+import { Grade, StudentConfirmationStatus } from "@prisma/client";
 
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
+import { email } from "zod";
 
 type StudentListItem = {
   id: string;
@@ -49,6 +51,8 @@ type StudentListItem = {
   contact02: string | null;
   email: string | null;
   registrationNumber: string | null;
+  StudentRegistrationSource:string;
+  StudentConfirmationStatus:string;
   classes: {
     id: string;
     name: string;
@@ -84,7 +88,6 @@ type ImportStudentRow = {
   email: string;
 };
 
-const PAGE_SIZE = 6;
 
 function formatGradeLabel(value: string | null) {
   if (!value) {
@@ -95,6 +98,8 @@ function formatGradeLabel(value: string | null) {
 }
 
 export function StudentGuardianManagementPanel() {
+
+  const [pageSize, setPageSize] = useState(6);
 
   const [isCheckingRegistrationNumber, setIsCheckingRegistrationNumber] =
   useState(false);
@@ -119,16 +124,28 @@ export function StudentGuardianManagementPanel() {
     email: "",
   });
 
+  const registrationSourceClasses = {
+  MANUAL:
+    "border-blue-200 bg-blue-50 text-blue-700",
+  EXCEL_IMPORT:
+    "border-violet-200 bg-violet-50 text-violet-700",
+  ONLINE:
+    "border-cyan-200 bg-cyan-50 text-cyan-700",
+};
+
   const [students, setStudents] = useState<StudentListItem[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({
     name: "",
     grade: "",
+    email:""
   });
 
   const [sortBy, setSortBy] = useState("CreatedAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const [isConfirmingAll, setIsConfirmingAll] = useState(false);
 
     const loadRegistrationNumber = useCallback(async () => {
       const response = await fetch(
@@ -344,6 +361,16 @@ export function StudentGuardianManagementPanel() {
 
   const hasStudents = useMemo(() => students.length > 0, [students]);
 
+  const pendingStudents = useMemo(
+  () =>
+    students.filter(
+      (s) => s.StudentConfirmationStatus === "PENDING"
+    ),
+  [students]
+);
+
+const pendingCount = pendingStudents.length;
+
   function handleSort(column: string) {
       const nextOrder =
         sortBy === column && sortOrder === "asc"
@@ -364,9 +391,10 @@ export function StudentGuardianManagementPanel() {
   const loadStudentList = useCallback(
   async (
     nextPage = 1,
-    appliedFilters = { name: "", grade: "" },
+    appliedFilters = { name: "", grade: "",email:"" },
     currentSortBy = sortBy,
-    currentSortOrder = sortOrder
+    currentSortOrder = sortOrder,
+    currentPageSize = pageSize
   ) => {
       setIsLoadingList(true);
       setErrorMessage(null);
@@ -374,7 +402,7 @@ export function StudentGuardianManagementPanel() {
       try {
         const query = new URLSearchParams({
           page: String(nextPage),
-          pageSize: String(PAGE_SIZE),
+          pageSize: String(currentPageSize),
         });
 
         query.set("sortBy", currentSortBy);
@@ -386,6 +414,10 @@ export function StudentGuardianManagementPanel() {
 
         if (appliedFilters.grade) {
           query.set("grade", appliedFilters.grade);
+        }
+
+        if (appliedFilters.email.trim()) {
+          query.set("email", appliedFilters.email.trim());
         }
 
         console.log(
@@ -406,6 +438,8 @@ export function StudentGuardianManagementPanel() {
           );
           return;
         }
+
+        console.log(payload);
 
         setStudents(payload.data ?? []);
         setPage(payload.pagination?.page ?? nextPage);
@@ -476,7 +510,7 @@ export function StudentGuardianManagementPanel() {
 
   useEffect(() => {
 
-    void loadStudentList(1, { name: "", grade: "" });
+    void loadStudentList(1, { name: "", grade: "",email:"" });
     void loadGrades();
     void loadRegistrationNumber();
 
@@ -680,6 +714,9 @@ export function StudentGuardianManagementPanel() {
         return;
       }
 
+      // console.log(row.getCell(4).result);
+      // return;
+
       rows.push({
         registrationNumber:
           row.getCell(1).value?.toString() ?? "",
@@ -691,7 +728,7 @@ export function StudentGuardianManagementPanel() {
           row.getCell(3).value?.toString() ?? "",
 
         gradeId:
-          Number(row.getCell(4).value) || null,
+          Number(row.getCell(4).result) || null,
 
         primaryContact:
           row.getCell(5).value?.toString() ?? "",
@@ -720,8 +757,9 @@ export function StudentGuardianManagementPanel() {
     }
   }
 
-async function handleConfirmImport() {
+  async function handleConfirmImport() {
     setIsImporting(true);
+    
 
     try {
       const response = await fetch(
@@ -731,7 +769,7 @@ async function handleConfirmImport() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(importStudents),
+          body: JSON.stringify({registrationSource: "IMPORT",students: importStudents}),
         }
       );
 
@@ -782,6 +820,10 @@ async function handleConfirmImport() {
       query.set("grade", filters.grade);
     }
 
+    if (filters.email.trim()) {
+      query.set("email", filters.email.trim());
+    }
+
     query.set("sortBy", sortBy);
     query.set("sortOrder", sortOrder);
 
@@ -803,7 +845,7 @@ async function handleConfirmImport() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(studentForm),
+        body: JSON.stringify({...studentForm,registrationSource: "TEACHER",}),
       });
 
       const payload = (await response.json()) as {
@@ -881,7 +923,7 @@ async function handleConfirmImport() {
     const regNo = registrationNumber.trim();
 
     if (!regNo) {
-      setRegistrationNumberError("");
+      setEmailError("");
       return;
     }
 
@@ -914,7 +956,7 @@ async function handleConfirmImport() {
     const regNo = registrationNumber.trim();
 
     if (!regNo) {
-      setRegistrationNumberError("");
+      setNameError("");
       return;
     }
 
@@ -947,6 +989,136 @@ async function handleConfirmImport() {
   isCheckingRegistrationNumber ||
   isCheckingEmail ||
   isCheckingName;
+
+ const handleConfirmStudent = async (student: StudentListItem) => {
+
+  console.log(student);
+
+  try {
+    const response = await fetch(`/api/students/${student.id}/confirm`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const result = await response.json();
+
+    console.log(result);
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to confirm student.");
+    }
+
+    toast.success("Student confirmed successfully.");
+
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === student.id
+          ? {
+              ...s,
+              StudentConfirmationStatus: StudentConfirmationStatus.APPROVED,
+            }
+          : s
+      )
+    );
+  } catch (error) {
+    console.error(error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Failed to confirm student."
+    );
+
+    if (error instanceof Error) {
+      console.error(error.message);
+      console.error(error.stack);
+    } else {
+      console.error(error);
+    }
+  }
+};
+
+ const handleDeclineStudent = async (student: StudentListItem) => {
+
+  console.log(student);
+
+  try {
+    const response = await fetch(`/api/students/${student.id}/decline`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const result = await response.json();
+
+    console.log(result);
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to confirm student.");
+    }
+
+    toast.error("Student declined successfully.");
+
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === student.id
+          ? {
+              ...s,
+              StudentConfirmationStatus: StudentConfirmationStatus.REJECTED,
+            }
+          : s
+      )
+    );
+  } catch (error) {
+    console.error(error);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Failed to confirm student."
+    );
+
+    if (error instanceof Error) {
+      console.error(error.message);
+      console.error(error.stack);
+    } else {
+      console.error(error);
+    }
+  }
+};
+
+const handleConfirmAllStudents = async () => {
+  if (!confirm(`Confirm all ${pendingCount} pending students?`)) {
+    return;
+  }
+
+  setIsConfirmingAll(true);
+
+  try {
+    const response = await fetch("/api/students/confirm-all", {
+      method: "PUT",
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message);
+    }
+
+    toast.success(`${pendingCount} students confirmed successfully.`);
+
+    await loadStudentList(page, filters);
+  } catch (error) {
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Failed to confirm students."
+    );
+  }
+};
 
   return (
     <section className="relative overflow-hidden">
@@ -1070,43 +1242,101 @@ async function handleConfirmImport() {
         <div className="max-lg:hidden overflow-x-auto bg-white shadow-sm">
 
           {/* ===================== TOP ===================== */}
-          <div className="flex items-center gap-3 mb-4">
+         <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-white p-2 shadow-sm">
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-brand-700">
+              Sort By
+            </span>
 
             <button
-                onClick={() => handleSort("Name")}
-                className="flex items-center gap-2"
+              type="button"
+              onClick={() => handleSort("Name")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "Name"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
             >
-                Name
-                {sortBy === "Name" && (
-                    sortOrder === "asc"
-                        ? <ChevronUp size={14}/>
-                        : <ChevronDown size={14}/>
-                )}
+              Name
+
+              {sortBy === "Name" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
             </button>
 
             <button
-                onClick={() => handleSort("RegistrationNumber")}
-                className="flex items-center gap-2"
+              type="button"
+              onClick={() => handleSort("RegistrationNumber")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "RegistrationNumber"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
             >
-                Registration #
-                {sortBy === "RegistrationNumber" && (
-                    sortOrder === "asc"
-                        ? <ChevronUp size={14}/>
-                        : <ChevronDown size={14}/>
-                )}
+              Registration #
+
+              {sortBy === "RegistrationNumber" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
             </button>
 
             <button
-                onClick={() => handleSort("CreatedAt")}
-                className="flex items-center gap-2"
+              type="button"
+              onClick={() => handleSort("CreatedAt")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "CreatedAt"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
             >
-                Date Added
-                {sortBy === "CreatedAt" && (
-                    sortOrder === "asc"
-                        ? <ChevronUp size={14}/>
-                        : <ChevronDown size={14}/>
-                )}
+              Date Added
+
+              {sortBy === "CreatedAt" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
             </button>
+          </div>
+
+          
+
+          <div className="hidden items-center gap-3 lg:flex">
+            {pendingCount > 0 && (
+              <button
+                onClick={handleConfirmAllStudents}
+                disabled={isConfirmingAll}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isConfirmingAll ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={16} />
+                    Confirm All Pending ({pendingCount})
+                  </>
+                )}
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+              Active Sort:
+              <span className="font-semibold text-slate-800">
+                {sortBy}
+              </span>
+            </div>
+          </div>
 
         </div>
 
@@ -1117,8 +1347,6 @@ async function handleConfirmImport() {
                   key={student.id}
                   className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-green-200 hover:shadow-md"
                 >
-
-                  
 
                   <div className="grid grid-cols-[80px_280px_180px_180px_minmax(260px,1fr)_180px] gap-6 items-center">
 
@@ -1271,8 +1499,72 @@ async function handleConfirmImport() {
 
                   <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
 
-                    <div className="text-xs text-slate-400">
-                      Student Information
+                    <div>
+                    
+
+                      <div className="flex flex-wrap items-center gap-6">
+
+                        {/* Registration Source */}
+                        <div>
+                          <p className="mb-1 text-xs text-slate-500">
+                            Registration Source
+                          </p>
+
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                              registrationSourceClasses[
+                                student.StudentRegistrationSource as keyof typeof registrationSourceClasses
+                              ] || "border-slate-200 bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {student.StudentRegistrationSource}
+                          </span>
+                        </div>
+
+                        {/* Confirmation Status */}
+                        <div>
+                          <p className="mb-1 text-xs text-slate-500">
+                            Confirmation Status
+                          </p>
+
+                          {student.StudentConfirmationStatus === "PENDING" ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleConfirmStudent(student)}
+                                className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600"
+                              >
+                                <CheckCircle size={14} />
+                                Confirm
+                              </button>
+
+                              <button
+                                onClick={() => handleDeclineStudent(student)}
+                                className="inline-flex items-center gap-2 rounded-full bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600"
+                              >
+                                <XCircle size={14} />
+                                Decline
+                              </button>
+                            </div>
+                            
+                            
+                          ) : student.StudentConfirmationStatus === StudentConfirmationStatus.APPROVED ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                <CheckCircle size={14} />
+                                Confirmed
+                              </span>
+                            ) : student.StudentConfirmationStatus === StudentConfirmationStatus.REJECTED ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                                <XCircle size={14} />
+                                Declined
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                                Unknown
+                              </span>
+                            )}
+                        </div>
+
+                      </div>
                     </div>
 
                     <div className="flex gap-3">
@@ -1330,6 +1622,79 @@ async function handleConfirmImport() {
         </div>
 
         <div className="space-y-4 hidden max-lg:block">
+          <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-white p-2 shadow-sm">
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-brand-700">
+              Sort By
+            </span>
+
+            <button
+              type="button"
+              onClick={() => handleSort("Name")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "Name"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              Name
+
+              {sortBy === "Name" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSort("RegistrationNumber")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "RegistrationNumber"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              Registration #
+
+              {sortBy === "RegistrationNumber" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSort("CreatedAt")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                sortBy === "CreatedAt"
+                  ? "bg-brand-700 text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              Date Added
+
+              {sortBy === "CreatedAt" &&
+                (sortOrder === "asc" ? (
+                  <ChevronUp size={15} />
+                ) : (
+                  <ChevronDown size={15} />
+                ))}
+            </button>
+          </div>
+
+          <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 lg:flex">
+            Active Sort:
+            <span className="font-semibold text-slate-800">
+              {sortBy}
+            </span>
+          </div>
+
+        </div>
           {students.map((student) => (
             <div
               key={student.id}
@@ -1482,6 +1847,106 @@ async function handleConfirmImport() {
                 </div>
 
               </div>
+              <div className="mt-5 flex flex-col gap-4 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
+
+                {/* Student Information */}
+                <div className="w-full lg:w-auto">
+
+                  
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6 p-4">
+
+                    {/* Registration Source */}
+                    <div>
+                      <p className="mb-1 text-xs text-slate-500">
+                        Registration Source
+                      </p>
+
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                          registrationSourceClasses[
+                            student.StudentRegistrationSource as keyof typeof registrationSourceClasses
+                          ] || "border-slate-200 bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {student.StudentRegistrationSource}
+                      </span>
+                    </div>
+
+                    {/* Confirmation Status */}
+                    <div>
+                      <p className="mb-1 text-xs text-slate-500">
+                        Confirmation Status
+                      </p>
+
+                      {student.StudentConfirmationStatus === "PENDING" ? (
+                        <button
+                          onClick={() => handleConfirmStudent(student)}
+                          className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                        >
+                          <CheckCircle size={14} />
+                          Confirm
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                          <CheckCircle size={14} />
+                          Verified
+                        </span>
+                      )}
+                    </div>
+
+                  </div>
+
+                </div>
+
+                {/* Action Buttons */}
+                <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap">
+
+                  <Link
+                    href={`/dashboard/students/${student.id}`}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Eye size={15} />
+                    View
+                  </Link>
+
+                  <button
+                    onClick={() => handleEditStudent(student)}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-medium text-blue-600 transition hover:bg-blue-50"
+                  >
+                    <Pencil size={15} />
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteStudent(student.id)}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                  >
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+
+                  {student.status === 0 ? (
+                    <button
+                      onClick={() => handleDeactivateStudent(student.id)}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      <Ban size={15} />
+                      Deactivate
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleActivateStudent(student.id)}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      <CheckCircle size={15} />
+                      Activate
+                    </button>
+                  )}
+
+                </div>
+
+              </div>
             </div>
           ))}
         </div>
@@ -1491,18 +1956,63 @@ async function handleConfirmImport() {
 
           {/* Left */}
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600"
-            >
-              {PAGE_SIZE} / Page
-              <ChevronDown size={14} />
-            </button>
+            <div className="flex items-center gap-3">
 
-            <span className="hidden text-sm text-slate-500 sm:block">
-              Page <strong>{page}</strong> of <strong>{totalPages}</strong>
-            </span>
+              <div className="relative">
+
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    const size = Number(e.target.value);
+
+                    setPageSize(size);
+
+                    void loadStudentList(
+                      1,
+                      filters,
+                      sortBy,
+                      sortOrder,
+                      size
+                    );
+                  }}
+                  className="
+                    appearance-none
+                    rounded-lg
+                    border
+                    border-slate-200
+                    bg-white
+                    py-2
+                    pl-3
+                    pr-9
+                    text-sm
+                    font-medium
+                    text-slate-700
+                    shadow-sm
+                    transition
+                    hover:border-brand-300
+                    focus:border-brand-500
+                    focus:outline-none
+                  "
+                >
+                  <option value={6}>6 / Page</option>
+                  <option value={10}>10 / Page</option>
+                  <option value={20}>20 / Page</option>
+                  <option value={50}>50 / Page</option>
+                  <option value={100}>100 / Page</option>
+                </select>
+
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+
+              </div>
+
+              <span className="hidden text-sm text-slate-500 sm:block">
+                Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+              </span>
+
+            </div>
           </div>
 
           {/* Right */}
@@ -1574,7 +2084,7 @@ async function handleConfirmImport() {
 
         {/* ── Count ── */}
         <p className="text-center text-sm text-muted">
-          Showing {students.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0} to {(page - 1) * PAGE_SIZE + students.length} of {totalItems} {totalItems === 1 ? "student" : "students"}
+          Showing {students.length > 0 ? (page - 1) * pageSize + 1 : 0} to {(page - 1) * pageSize + students.length} of {totalItems} {totalItems === 1 ? "student" : "students"}
         </p>
       </article>
 
@@ -1648,14 +2158,30 @@ async function handleConfirmImport() {
 
                 <input
                   value={studentForm.registrationNumber}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setStudentForm((prev) => ({
                       ...prev,
                       registrationNumber: event.target.value,
-                    }))
-                  }
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                    }));
+
+                    if (registrationNumberError) {
+                      setRegistrationNumberError("");
+                    }
+
+                    checkRegistrationNumber(event.target.value, "");
+                  }}
+                  className={`h-9 w-full rounded-lg bg-white px-3 text-sm ${
+                    registrationNumberError
+                      ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                      : "border border-slate-300"
+                  }`}
                 />
+
+                {registrationNumberError && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {registrationNumberError}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1672,15 +2198,31 @@ async function handleConfirmImport() {
                   <input
                     required
                     value={studentForm.name}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setStudentForm((prev) => ({
                         ...prev,
                         name: event.target.value,
-                      }))
-                    }
-                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
+                      }));
+
+                      if (NameError) {
+                        setNameError("");
+                      }
+
+                      checkName(event.target.value, "");
+                    }}
+                    className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
+                      NameError
+                        ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "border border-slate-300"
+                    }`}
                     placeholder="John Doe"
                   />
+
+                  {NameError && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {NameError}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1795,15 +2337,31 @@ async function handleConfirmImport() {
                   <input
                     type="email"
                     value={studentForm.email}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setStudentForm((prev) => ({
                         ...prev,
                         email: event.target.value,
-                      }))
-                    }
-                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm"
+                      }));
+
+                      if (EmailError) {
+                        setEmailError("");
+                      }
+
+                      checkEmail(event.target.value, "");
+                    }}
+                    className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
+                      EmailError
+                        ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "border border-slate-300"
+                    }`}
                     placeholder="student@email.com"
                   />
+
+                  {EmailError && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {EmailError}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1832,14 +2390,12 @@ async function handleConfirmImport() {
 
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="h-8
-                    flex-1
-                    rounded-lg
-                    bg-brand-700
-                    text-sm
-                    font-medium
-                    text-white"
+                disabled={isSubmitting || hasValidationErrors}
+                className={`h-8 flex-1 rounded-lg text-sm font-medium text-white transition ${
+                  isSubmitting || hasValidationErrors
+                    ? "cursor-not-allowed bg-slate-400"
+                    : "bg-brand-700 hover:bg-brand-800"
+                }`}
               >
                 {isSubmitting ? "Creating..." : "Create Student"}
               </button>
@@ -1863,21 +2419,24 @@ async function handleConfirmImport() {
       />
 
       {/* Drawer */}
+      {/* Drawer */}
       <aside
         className={`fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-50 shadow-2xl transition-transform duration-300 ${
-          isFilterPanelOpen
-            ? "translate-x-0"
-            : "translate-x-full"
+          isFilterPanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex h-full flex-col">
-
+        <form
+          className="flex h-full flex-col"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void loadStudentList(1, filters);
+            setIsFilterPanelOpen(false);
+          }}
+        >
           {/* Header */}
           <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-6 py-5">
             <div className="flex items-center justify-between">
-
               <div className="flex items-center gap-4">
-
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-700">
                   <SlidersHorizontal size={22} />
                 </div>
@@ -1891,7 +2450,6 @@ async function handleConfirmImport() {
                     Filter the student list
                   </p>
                 </div>
-
               </div>
 
               <button
@@ -1901,7 +2459,6 @@ async function handleConfirmImport() {
               >
                 Close
               </button>
-
             </div>
           </div>
 
@@ -1910,13 +2467,11 @@ async function handleConfirmImport() {
 
             {/* Student Name */}
             <div>
-
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Student Name
               </label>
 
               <div className="relative">
-
                 <Search
                   size={15}
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -1933,20 +2488,43 @@ async function handleConfirmImport() {
                   placeholder="Search student..."
                   className="control-input pl-9"
                 />
-
               </div>
+            </div>
 
+            {/* Student Email */}
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Student Email
+              </label>
+
+              <div className="relative">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+
+                <input
+                  type="text"
+                  value={filters.email}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }))
+                  }
+                  placeholder="Search by email..."
+                  className="control-input pl-9"
+                />
+              </div>
             </div>
 
             {/* Grade */}
             <div>
-
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Grade
               </label>
 
               <div className="relative">
-
                 <BookOpen
                   size={15}
                   className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400"
@@ -1978,9 +2556,7 @@ async function handleConfirmImport() {
                     text-sm
                   "
                 >
-                  <option value="">
-                    All Grades
-                  </option>
+                  <option value="">All Grades</option>
 
                   {grades.map((grade) => (
                     <option
@@ -1991,16 +2567,13 @@ async function handleConfirmImport() {
                     </option>
                   ))}
                 </select>
-
               </div>
-
             </div>
 
           </div>
 
           {/* Footer */}
           <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white p-6">
-
             <div className="flex gap-3">
 
               <button
@@ -2010,12 +2583,11 @@ async function handleConfirmImport() {
                   const cleared = {
                     name: "",
                     grade: "",
+                    email:""
                   };
 
                   setFilters(cleared);
-
                   void loadStudentList(1, cleared);
-
                   setIsFilterPanelOpen(false);
                 }}
               >
@@ -2023,22 +2595,15 @@ async function handleConfirmImport() {
               </button>
 
               <button
-                type="button"
+                type="submit"
                 className="btn-primary flex-1"
-                onClick={() => {
-                  void loadStudentList(1, filters);
-
-                  setIsFilterPanelOpen(false);
-                }}
               >
                 Apply Filters
               </button>
 
             </div>
-
           </div>
-
-        </div>
+        </form>
       </aside>
 
       <button

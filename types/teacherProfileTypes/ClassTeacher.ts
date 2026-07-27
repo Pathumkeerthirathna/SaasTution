@@ -66,7 +66,7 @@ export interface TeacherClass {
   paymentDueWeek: number;
   startDate: string | null;
   schedule: string;
-
+  teacherId:string;
   schedules: TeacherClassSchedule[];
   students: TeacherClassStudent[];
 }

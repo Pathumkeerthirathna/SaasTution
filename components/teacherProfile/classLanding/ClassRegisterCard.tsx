@@ -8,15 +8,18 @@ import {
 
 import { Grade } from "@/types/grade";
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast/headless";
 
 interface Props {
   classId: string;
+  teacherId: string;
 }
 
 
 
 export default function ClassRegisterCard({
   classId,
+  teacherId
 }: Props) {
 
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -28,7 +31,80 @@ export default function ClassRegisterCard({
   const [parentMobileNumber, setParentMobileNumber] = useState("");
   const [email, setEmail] = useState("");
 
+  const [EmailError, setEmailError] = useState("");
+  const [NameError, setNameError] = useState("");
+
   const [isRegistering, setIsRegistering] = useState(false);
+
+  const [isCheckingEmail, setIsCheckinEmail] =
+  useState(false);
+  
+  const [isCheckingName, setIsCheckingName] =
+  useState(false);
+
+  const checkEmail = async (
+    registrationNumber: string
+  ) => {
+    const regNo = registrationNumber.trim();
+
+    if (!regNo) {
+      setEmailError("");
+      return;
+    }
+
+    try {
+
+      setIsCheckinEmail(true);
+
+      const response = await fetch(`/api/students/check-email?registrationNumber=${encodeURIComponent(regNo)}&teacherId=${encodeURIComponent(teacherId)}`
+      );
+
+      const result = await response.json();
+
+      if (result.exists) {
+        setEmailError("Email already exists.");
+      } else {
+        setEmailError("");
+      }
+
+      setIsCheckinEmail(false);
+
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const checkName = async (
+    registrationNumber: string
+  ) => {
+    const regNo = registrationNumber.trim();
+
+    if (!regNo) {
+      setNameError("");
+      return;
+    }
+
+    try {
+
+      setIsCheckingName(true);
+
+      const response = await fetch(`/api/students/check-name?registrationNumber=${encodeURIComponent(regNo)}&teacherId=${encodeURIComponent(teacherId)}`
+      );
+
+      const result = await response.json();
+
+      if (result.exists) {
+        setNameError("Name already exists.");
+      } else {
+        setNameError("");
+      }
+
+      setIsCheckingName(false);
+
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   useEffect(() => {
   
@@ -131,14 +207,21 @@ export default function ClassRegisterCard({
 
       if (!response.ok) {
         alert(result.message ?? "Registration failed.");
+        // Optional: clear form
+        setStudentName("");
+        setMobileNumber("");
+        setParentMobileNumber(""),
+        setEmail("");
+        setSelectedGrade("");
         return;
       }
 
-      alert("Student registered successfully!");
+      toast.success("Student registered successfully!",{duration:50000});
 
       // Optional: clear form
       setStudentName("");
       setMobileNumber("");
+      setParentMobileNumber(""),
       setEmail("");
       setSelectedGrade("");
     } catch (error) {
@@ -201,15 +284,25 @@ export default function ClassRegisterCard({
                 ...prev,
                 studentName: "",
               }));
+              if (NameError) {
+                setNameError("");
+              }
+
+              checkName(e.target.value);
             }}
-           className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
-                        ${
-                          errors.studentName
-                            ? "border border-red-500 focus:border-red-500"
-                            : "border border-slate-300 focus:border-emerald-500"
-                        }`}
-                      placeholder="Enter student name"
-                    />
+            
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition ${
+              errors.studentName || NameError
+                ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                : "border border-slate-300 focus:border-emerald-500 focus:ring-emerald-500"
+            }`}
+            placeholder="Enter student name"
+          />
+          {NameError && (
+            <p className="mt-1 text-xs text-red-600">
+              {NameError}
+            </p>
+          )}
 
         </div>
 
@@ -284,13 +377,17 @@ export default function ClassRegisterCard({
                 ...prev,
                 email: "",
               }));
+              if (EmailError) {
+                setEmailError("");
+              }
+
+              checkEmail(e.target.value);
             }}
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
-                      ${
-                        errors.email
-                          ? "border border-red-500 focus:border-red-500"
-                          : "border border-slate-300 focus:border-emerald-500"
-                      }`}
+            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition ${
+              errors.email || EmailError
+                ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
+                : "border border-slate-300 focus:border-emerald-500 focus:ring-emerald-500"
+            }`}
             placeholder="example@email.com"
           />
         </div>
@@ -365,7 +462,13 @@ export default function ClassRegisterCard({
 
         <button
           type="button"
-          disabled={isRegistering}
+          disabled={
+            isRegistering ||
+            isCheckingEmail ||
+            isCheckingName ||
+            !!EmailError ||
+            !!NameError
+          }
           onClick={registerStudent}
           className={`
             flex w-full items-center justify-center gap-2

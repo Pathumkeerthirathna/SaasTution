@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 
 type ImportStudentRow = {
     registrationNumber?: string;
@@ -11,13 +12,20 @@ type ImportStudentRow = {
     email?: string;
 };
 
+type ImportStudentRequest = {
+  registrationSource: StudentRegistrationSource;
+  students: ImportStudentRow[];
+};
+
 export async function POST(request: Request) {
     
     try {
     
     const session = await requireTeacherSession();
     
-    const students = (await request.json()) as ImportStudentRow[];
+    const body = (await request.json()) as ImportStudentRequest;
+
+    const { registrationSource, students } = body;
 
 
     if (!Array.isArray(students)) {
@@ -393,6 +401,8 @@ export async function POST(request: Request) {
         email:
         student.email?.trim() ||
         null,
+        registrationSource:registrationSource,
+        confirmationStatus:StudentConfirmationStatus.APPROVED,
 
         status: 0,
         });

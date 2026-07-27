@@ -1,4 +1,4 @@
-import { Prisma, StudentClassAction } from "@prisma/client";
+import { Prisma, StudentClassAction, StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
@@ -7,6 +7,15 @@ import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-va
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 import { requireTeacherSession } from "@/lib/auth-session";
+
+import {
+  sendEmail,
+  sendStudentRegistrationEmail,
+} from "@/lib/mailer";
+
+import {
+  getStudentRegistrationEmail,
+} from "@/emails/StudentRegistrationEmail";
 
 const HASH_ROUNDS = 12;
 
@@ -127,7 +136,7 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
 
     try {
-      return await prisma.student.create({
+      const student = await prisma.student.create({
         data: {
           registrationNumber:input.registrationNumber??registrationNumber,
           name: input.name,
@@ -138,6 +147,8 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
           contact02: input.contact02,
           email: input.email,
           teacherId:teacher.id,
+          registrationSource:StudentRegistrationSource.TEACHER,
+          confirmationStatus:StudentConfirmationStatus.APPROVED
         },
         select: {
           id: true,
@@ -150,6 +161,24 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
           createdAt: true,
         },
       });
+
+       if (student.email) {
+        try {
+          await sendStudentRegistrationEmail({
+            to: student.email,
+            studentName: student.name,
+            registrationNumber: student.registrationNumber??"",
+            teacherName: teacher.name,
+            className: "No classes assigned yet", // or another value if you want
+            registrationDate: new Date().toLocaleDateString(),
+          });
+        } catch (err) {
+          console.error("Email sending failed:", err);
+        }
+      }
+
+      return student;
+
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         const target = Array.isArray(error.meta?.target)
@@ -167,6 +196,8 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
 
   throw new AppError("Failed to generate registration number. Please retry.", 500, "REGISTRATION_NUMBER_GENERATION_FAILED");
 }
+
+
 
 export async function assignStudentToClass(teacherId: string, classId: string, studentId: string) {
   await assertTeacherOwnsClass(classId, teacherId);
@@ -264,6 +295,7 @@ export async function listStudentsByTeacher(params: {
   skip: number;
   take: number;
   name?: string;
+  email?: string;
   gradeId?: number;
   sortBy?: string;
   sortOrder?: string;
@@ -283,6 +315,14 @@ export async function listStudentsByTeacher(params: {
           },
         }
       : {}),
+    ...(params.email
+    ? {
+        email: {
+          contains: params.email,
+          mode: "insensitive" as const,
+        },
+      }
+    : {}),
 
     ...(params.gradeId
       ? {
@@ -310,15 +350,25 @@ export async function listStudentsByTeacher(params: {
     ],
   };
 
-  const sortOrder: Prisma.SortOrder =
+
+const sortOrder: Prisma.SortOrder =
   params.sortOrder === "asc" ? "asc" : "desc";
 
-const orderBy: Prisma.StudentOrderByWithRelationInput =
-  params.sortBy === "name"
+const secondaryOrderBy: Prisma.StudentOrderByWithRelationInput =
+  params.sortBy === "Name"
     ? { name: sortOrder }
-    : params.sortBy === "registrationNumber"
+    : params.sortBy === "RegistrationNumber"
     ? { registrationNumber: sortOrder }
+    : params.sortBy === "CreatedAt"
+    ? { createdAt: sortOrder }
     : { createdAt: "desc" };
+
+const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
+  {
+    confirmationStatus: "asc", // PENDING → APPROVED → REJECTED
+  },
+  secondaryOrderBy,
+];
 
   const [students, totalItems] = await Promise.all([
     
@@ -343,6 +393,10 @@ const orderBy: Prisma.StudentOrderByWithRelationInput =
         contact02: true,
         email: true,
         registrationNumber: true,
+        registrationSource:true,
+        confirmationStatus:true,
+        confirmedAt:true,
+        registeredAt:true,
         createdAt: true,
 
         classes: {
@@ -383,7 +437,10 @@ const orderBy: Prisma.StudentOrderByWithRelationInput =
 
       createdAt: student.createdAt,
       registrationNumber: student.registrationNumber ?? null,
-
+      StudentRegistrationSource:student.registrationSource,
+      StudentConfirmationStatus:student.confirmationStatus,
+      confirmedAt:student.confirmedAt,
+      registeredAt:student.registeredAt,
       classes: student.classes.map((entry) => ({
         id: entry.id,
         name: entry.class.name,
@@ -1523,82 +1580,152 @@ export async function getStudentClassQuizResults(
 }
 
 
-export async function RegisterStudentViaPublicClasses(request:RegisterStudentRequest){
+// export async function RegisterStudentViaPublicClasses(request:RegisterStudentRequest){
 
-  // Find class
+//   // Find class
+//   const cls = await prisma.class.findUnique({
+//       where: { id: request.classId }
+//   });
+
+//   if (!cls) {
+//       throw new Error("Class not found");
+//   }
+
+//   const teacher = await prisma.teacher.findUnique({
+//       where: { id: cls.teacherId }
+//   });
+
+//   const regNo = await generateStudentRegistrationNumber(
+//       teacher?.name ?? "",teacher?.id??""
+//   );
+
+//   await prisma.$transaction(async (tx) => {
+      
+//       const student = await tx.student.create({
+//           data: {
+//               name: request.studentName,
+//               registrationNumber:regNo,
+//               teacherId: cls.teacherId,
+//               contact: request.mobileNumber,
+//               contact01: request.mobileNumber,
+//               contact02:request.parentMobileNumber,
+//               gradeId: request.gradeId,
+//               email:request.email??""
+//           }
+//       });
+
+//       // assign class
+
+//       await tx.classStudent.create({
+//           data: {
+//               classId: cls.id,
+//               studentId: student.id
+//           }
+//       });
+
+//       // history
+
+//       await tx.classStudentHistory.create({
+//           data: {
+//               classId: cls.id,
+//               studentId: student.id,
+//               action: "ASSIGNED"
+//           }
+//       });
+
+//       return student;
+//   });
+
+//   return {
+//     registrationNumber: regNo,
+//   };
+
+// }
+
+export async function RegisterStudentViaPublicClasses(
+  request: RegisterStudentRequest
+) {
   const cls = await prisma.class.findUnique({
-      where: { id: request.classId }
+    where: { id: request.classId },
   });
 
   if (!cls) {
-      throw new Error("Class not found");
+    throw new Error("Class not found");
   }
 
   const teacher = await prisma.teacher.findUnique({
-      where: { id: cls.teacherId }
+    where: { id: cls.teacherId },
   });
 
   const regNo = await generateStudentRegistrationNumber(
-      teacher?.name ?? "",teacher?.id??""
+    teacher?.name ?? "",
+    teacher?.id ?? ""
   );
 
-  await prisma.$transaction(async (tx) => {
+  const student = await prisma.$transaction(async (tx) => {
+    const student = await tx.student.create({
+      data: {
+        name: request.studentName,
+        registrationNumber: regNo,
+        teacherId: cls.teacherId,
+        contact: request.mobileNumber,
+        contact01: request.mobileNumber,
+        contact02: request.parentMobileNumber,
+        gradeId: request.gradeId,
+        email: request.email ?? "",
 
-      // find class
-      // const cls = await tx.class.findUnique({
-      //     where: { id: request.classId }
-      // });
+        registrationSource: "PUBLIC_CLASS",
+        publicClassId: cls.id,
 
-      // if (!cls)
-      //     throw new Error("Class not found");
+        confirmationStatus: "PENDING",
 
-      // const teacher = await tx.teacher.findUnique({
-      //   where:{id:cls.teacherId}
-      // })
+      },
+    });
 
-      // //generate registration number
+    await tx.classStudent.create({
+      data: {
+        classId: cls.id,
+        studentId: student.id,
+      },
+    });
 
-      //  const regNoRes = await generateStudentRegistrationNumber(teacher?.name??"");
+    await tx.classStudentHistory.create({
+      data: {
+        classId: cls.id,
+        studentId: student.id,
+        action: "ASSIGNED",
+      },
+    });
 
-      //  const regNo = await regNoRes;
+    // await sendStudentRegistrationEmail({
+    //   to: request.email!,
+    //   studentName: student.name,
+    //   registrationNumber: regNo,
+    //   teacherName: teacher?.name ?? "",
+    //   className: cls.name,
+    //   registrationDate: new Date().toLocaleDateString(),
+    // });
 
-      // create student
-      
-      const student = await tx.student.create({
-          data: {
-              name: request.studentName,
-              registrationNumber:regNo,
-              teacherId: cls.teacherId,
-              contact: request.mobileNumber,
-              contact01: request.mobileNumber,
-              contact02:request.parentMobileNumber,
-              gradeId: request.gradeId,
-              email:request.email??""
-          }
-      });
-
-      // assign class
-
-      await tx.classStudent.create({
-          data: {
-              classId: cls.id,
-              studentId: student.id
-          }
-      });
-
-      // history
-
-      await tx.classStudentHistory.create({
-          data: {
-              classId: cls.id,
-              studentId: student.id,
-              action: "ASSIGNED"
-          }
-      });
-
-      return student;
+    return student;
   });
 
+  try {
+    await sendStudentRegistrationEmail({
+        to: request.email!,
+        studentName: student.name,
+        registrationNumber: regNo,
+        teacherName: teacher?.name ?? "",
+        className: cls.name,
+        registrationDate: new Date().toLocaleDateString(),
+    });
+    } catch (err) {
+        console.error("Email sending failed:", err);
+    }
+
+  return {
+    student,
+    registrationNumber: regNo,
+  };
 }
 
 export async function checkIfRegNoExists(
@@ -1683,4 +1810,80 @@ export async function checkIfNameExists(
   return {
     exists: !!student,
   };
+}
+
+
+export async function confirmStudent(studentId: string) {
+  const student = await prisma.student.findUnique({
+    where: {
+      id: studentId,
+    },
+    select: {
+      id: true,
+      confirmationStatus: true,
+    },
+  });
+
+  if (!student) {
+    throw new Error("Student not found.");
+  }
+
+  if (student.confirmationStatus === StudentConfirmationStatus.APPROVED) {
+    throw new Error("Student is already confirmed.");
+  }
+
+  await prisma.student.update({
+    where: {
+      id: studentId,
+    },
+    data: {
+      confirmationStatus: StudentConfirmationStatus.APPROVED,
+      confirmedAt: new Date(),
+    },
+  });
+}
+
+export async function confirmAllPendingStudents() {
+  const result = await prisma.student.updateMany({
+    where: {
+      confirmationStatus: StudentConfirmationStatus.PENDING,
+    },
+    data: {
+      confirmationStatus: StudentConfirmationStatus.APPROVED,
+      confirmedAt: new Date(),
+    },
+  });
+
+  return result.count;
+}
+
+
+export async function declineStudent(studentId: string) {
+  const student = await prisma.student.findUnique({
+    where: {
+      id: studentId,
+    },
+    select: {
+      id: true,
+      confirmationStatus: true,
+    },
+  });
+
+  if (!student) {
+    throw new Error("Student not found.");
+  }
+
+  if (student.confirmationStatus === StudentConfirmationStatus.REJECTED) {
+    throw new Error("Student is already confirmed.");
+  }
+
+  await prisma.student.update({
+    where: {
+      id: studentId,
+    },
+    data: {
+      confirmationStatus: StudentConfirmationStatus.REJECTED,
+      confirmedAt: new Date(),
+    },
+  });
 }

@@ -1,3 +1,4 @@
+import { DeviceApprovalException } from "@/app/exceptions/DeviceApprovalException";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { buildSessionCookieConfig, signAuthToken, AUTH_COOKIE_NAME } from "@/lib/auth";
 import { loginSchema } from "@/lib/auth-validation";
@@ -5,6 +6,7 @@ import { handleRouteError } from "@/lib/error-handler";
 import { markTeacherLoggedIn } from "@/lib/login-tracker";
 import { verifySessionInviteToken } from "@/lib/session-invite";
 import { loginByLoginId } from "@/services/auth-service";
+import { validateStudentDevice } from "@/services/student-device.service";
 
 const ADMIN_LOGIN_ID = "pathum";
 const ADMIN_PASSWORD = "abcD@1234";
@@ -16,12 +18,33 @@ const ADMIN_USER = {
 };
 
 export async function POST(request: Request) {
+  
   try {
+       
     const body = (await request.json()) as {
       loginId?: string;
       email?: string;
       password?: string;
       inviteToken?: string;
+       device?: {
+        deviceId: string;
+        fingerprint?: string;
+
+        browser?: string;
+        browserVersion?: string;
+
+        os?: string;
+        osVersion?: string;
+
+        deviceModel?: string;
+        deviceName?: string;
+
+        platform?: string;
+        userAgent?: string;
+
+        language?: string;
+        timezone?: string;
+      };
     };
 
     const normalizedBody = {
@@ -62,16 +85,69 @@ export async function POST(request: Request) {
     }
 
     const loginResult = await loginByLoginId(loginId, parsed.data.password);
+
+
+    if (loginResult.role === "STUDENT") {
+      if (!loginResult.studentStatus.isConfirmed) {
+        return apiError(
+          "Your account is awaiting teacher approval. Please wait until your teacher confirms your account before signing in.",
+          403,
+          "ACCOUNT_NOT_CONFIRMED"
+        );
+      }
+
+      if (!loginResult.studentStatus.isActive) {
+        return apiError(
+          "Your account has been deactivated. Please contact your teacher if you believe this is a mistake.",
+          403,
+          "ACCOUNT_DEACTIVATED"
+        );
+      }
+
+      try {
+        await validateStudentDevice({
+          studentId: loginResult.user.id,
+          device: body.device,
+          request,
+        });
+      } catch (error) {
+
+        if (error instanceof DeviceApprovalException) {
+          return apiError(
+            error.message,
+            error.statusCode,
+            error.code,
+            error.data
+          );
+        }
+
+        throw error;
+      }
+
+    }
+
     let redirectTo: string = loginResult.redirectTo;
 
     const inviteToken = body.inviteToken?.trim();
 
     if (inviteToken && loginResult.role === "STUDENT") {
+      
       const invitePayload = await verifySessionInviteToken(inviteToken);
 
       if (invitePayload && invitePayload.studentId === loginResult.user.id) {
+          
         redirectTo = `/student/dashboard?invite=${encodeURIComponent(inviteToken)}`;
+
       }
+
+      if(loginResult.studentStatus.isActive == false){
+
+      }
+
+      if(loginResult.studentStatus.isConfirmed==false){
+
+      }
+      
     }
 
     if (loginResult.role === "TEACHER") {
@@ -99,6 +175,7 @@ export async function POST(request: Request) {
     );
 
     response.cookies.set(AUTH_COOKIE_NAME, token, buildSessionCookieConfig());
+
     return response;
   } catch (error) {
     return handleRouteError(error);

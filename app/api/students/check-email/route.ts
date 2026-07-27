@@ -7,22 +7,28 @@ export async function GET(request: NextRequest) {
 
   const registrationNumber = searchParams.get("registrationNumber");
 
-if (!registrationNumber) {
-  return NextResponse.json(
-    { message: "Registration number is required" },
-    { status: 400 }
+  if (!registrationNumber) {
+    return NextResponse.json(
+      { message: "Registration number is required" },
+      { status: 400 }
+    );
+  }
+
+  const studentId = searchParams.get("studentId") ?? undefined;
+
+  // Optional teacherId
+  let teacherId = searchParams.get("teacherId");
+
+  if (!teacherId) {
+    const teacher = await requireTeacherSession();
+    teacherId = teacher.teacherId;
+  }
+
+  const result = await checkIfEmailExists(
+    registrationNumber,
+    studentId,
+    teacherId
   );
-}
-
-const teacher = await requireTeacherSession();
-
-const studentId = searchParams.get("studentId") ?? undefined;
-
-const result = await checkIfEmailExists(
-  registrationNumber,
-  studentId,
-  teacher.teacherId
-);
 
   return NextResponse.json(result);
 }

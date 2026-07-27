@@ -187,6 +187,7 @@ export async function getPublicClass(
     description: classInfo.description,
     monthlyFee: classInfo.monthlyFee,
     paymentDueWeek: classInfo.paymentDueWeek,
+    teacherId:classInfo.teacherId,
     startDate: classInfo.startDate
   ? classInfo.startDate.toISOString()
   : null,

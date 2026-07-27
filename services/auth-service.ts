@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import type { Role } from "@prisma/client";
+import { StudentConfirmationStatus, type Role } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
 import { buildPasswordResetLink, sendPasswordResetEmail } from "@/lib/mailer";
@@ -25,6 +25,10 @@ export type LoginResult =
       user: LoginUser;
       role: "STUDENT";
       redirectTo: "/student/dashboard";
+      studentStatus: {
+        isActive: boolean;
+        isConfirmed: boolean;
+      };
     };
 
 type PasswordOwnerRole = "TEACHER" | "STUDENT" | "GUARDIAN";
@@ -144,6 +148,8 @@ export async function loginStudent(registrationNumber: string, password: string)
     name: student.name,
     email: student.email,
     createdAt: student.createdAt,
+    confirmationStatus:student.confirmationStatus,
+    status:student.status
   };
 }
 
@@ -175,6 +181,10 @@ export async function loginByLoginId(loginId: string, password: string): Promise
       name: authenticatedStudent.name,
       email: authenticatedStudent.email,
     },
+    studentStatus:{
+      isActive:authenticatedStudent.status==0?true:false,
+      isConfirmed:authenticatedStudent.confirmationStatus==StudentConfirmationStatus.APPROVED?true:false
+    }
   };
 }
 

@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   FileText,
   History,
+  Smartphone,
 } from "lucide-react";
 // import { StudentOverview } from "./StudentOverview";
 import { StudentAttendance } from "./StudentAttendance";
@@ -17,13 +18,14 @@ import { StudentHistory } from "./StudentHistory";
 import { StudentPapers } from "./studentPapers";
 import { StudentPayments } from "./StudentPayments";
 import { StudentQuizzes } from "./StudentQuizzes";
+import { StudentDevices } from "./studentdevice";
 
 export function StudentProfileTabs({
   studentId,
 }: {
   studentId: string;
 }) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("classes");
 
   const tabs = [
     {
@@ -35,6 +37,11 @@ export function StudentProfileTabs({
       id: "classes",
       label: "Classes",
       icon: BookOpen,
+    },
+    {
+      id: "devices",
+      label: "Devices",
+      icon: Smartphone,
     },
     {
       id: "attendance",
@@ -96,6 +103,10 @@ export function StudentProfileTabs({
 
         {activeTab === "classes" && (
           <StudentClasses studentId={studentId} />
+        )}
+
+        {activeTab === "devices" && (
+          <StudentDevices studentId={studentId} />
         )}
 
         {activeTab === "attendance" && (

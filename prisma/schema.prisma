@@ -8,14 +8,14 @@ datasource db {
 }
 
 model Teacher {
-  id                     String                @id @default(uuid())
-  name                   String
-  email                  String                @unique
-  password               String
-  createdAt              DateTime              @default(now())
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
 
-  profile                TeacherProfile?
-  
+  profile TeacherProfile?
+
   classes                Class[]
   students               Student[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
@@ -23,13 +23,16 @@ model Teacher {
   paymentMessages        PaymentMessage[]
   paperConfig            TeacherPaperConfig?
 
-  @@index([createdAt])
+  approvedStudents Student[] @relation("ConfirmedStudents")
 
+  approvedDevices StudentDevice[] @relation("ApprovedDevices")
+
+  @@index([createdAt])
 }
 
 model District {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
 
   cities City[]
 
@@ -37,12 +40,12 @@ model District {
 }
 
 model City {
-  id         Int      @id @default(autoincrement())
+  id         Int @id @default(autoincrement())
   districtId Int
 
-  name       String
+  name String
 
-  district   District @relation(fields:[districtId], references:[id])
+  district District @relation(fields: [districtId], references: [id])
 
   teacherProfiles TeacherProfile[]
 
@@ -50,21 +53,21 @@ model City {
 }
 
 model TeacherProfile {
-  id                    String   @id @default(uuid())
+  id String @id @default(uuid())
 
   // Owner teacher account
-  teacherId             String   @unique
-  teacher               Teacher  @relation(fields:[teacherId], references:[id])
+  teacherId String  @unique
+  teacher   Teacher @relation(fields: [teacherId], references: [id])
 
   // Public profile URL
   // Example:
   // slclassroom.live/pathum-kumara
   // slclassroom.live/sarah-wickramasinghe
-  slug                  String   @unique
+  slug String @unique
 
   // Profile images
-  profileImageUrl       String?
-  coverImageUrl         String?
+  profileImageUrl String?
+  coverImageUrl   String?
 
   // Professional title shown under teacher name
   // Examples:
@@ -72,32 +75,32 @@ model TeacherProfile {
   // Physics Lecturer
   // Combined Maths Instructor
   // ICT Tutor
-  designation           String?
+  designation String?
 
   // Short marketing headline
   // Examples:
   // Helping students achieve A passes in Mathematics
   // Building strong foundations for O/L Science
   // 8+ years guiding students to exam success
-  headline              String?
+  headline String?
 
   // Detailed teacher introduction
   // Appears in "About Me" section
-  aboutMe               String? @db.Text
+  aboutMe String? @db.Text
 
   // Short qualification summary
   // Examples:
   // BSc (Hons) Mathematics, PGDE
   // BSc Engineering, MSc Data Science
-  qualificationSummary  String? @db.Text
+  qualificationSummary String? @db.Text
 
   // Total teaching experience in years
   // Example: 8
-  yearsOfExperience     Int?
+  yearsOfExperience Int?
 
   // Contact information
-  phone                 String?
-  whatsapp              String?
+  phone    String?
+  whatsapp String?
 
   // Location
   // Example:
@@ -106,159 +109,204 @@ model TeacherProfile {
   districtId Int?
   cityId     Int?
 
-  district District? @relation(fields:[districtId], references:[id])
-  city     City?     @relation(fields:[cityId], references:[id])
+  district District? @relation(fields: [districtId], references: [id])
+  city     City?     @relation(fields: [cityId], references: [id])
 
   // Social media & website links
-  facebookUrl           String?
-  youtubeUrl            String?
-  tiktokUrl             String?
-  instagramUrl          String?
-  websiteUrl            String?
+  facebookUrl  String?
+  youtubeUrl   String?
+  tiktokUrl    String?
+  instagramUrl String?
+  websiteUrl   String?
 
   // SEO metadata for public profile page
   // Example:
   // Best Mathematics Teacher in Colombo
-  seoTitle              String?
+  seoTitle String?
 
   // Example:
   // Experienced Mathematics Teacher conducting
   // Grade 6-11 classes in Sinhala and English mediums.
-  seoDescription        String?
+  seoDescription String?
 
   // Platform verification badge
   // Shows:
   // ✓ Verified Teacher
-  isVerified            Boolean @default(false)
+  isVerified Boolean @default(false)
 
   // Controls public visibility
   // true  = profile visible
   // false = profile hidden
-  isPublic              Boolean @default(true)
+  isPublic Boolean @default(true)
 
   // Number of visits to public profile page
-  profileViewCount      Int @default(0)
+  profileViewCount Int @default(0)
 
   // Qualifications
   // Examples:
   // BSc (Hons) Mathematics
   // PG Diploma in Education
-  qualifications        TeacherQualification[]
+  qualifications TeacherQualification[]
 
   // Achievements
   // Examples:
   // Best Teacher Award 2025
   // 100% A Pass Rate
-  achievements          TeacherAchievement[]
-
+  achievements TeacherAchievement[]
 
   // Teaching mediums
   // Examples:
   // Sinhala
   // English
   // Tamil
-  mediums               TeacherProfileMedium[]
+  mediums TeacherProfileMedium[]
 
   subjects TeacherProfileSubject[]
 
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([districtId])
   @@index([cityId])
 }
 
 model Medium {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
 
-  teachers    TeacherProfileMedium[]
+  teachers TeacherProfileMedium[]
 }
 
 model TeacherProfileMedium {
-  id         String @id @default(uuid())
+  id String @id @default(uuid())
 
-  profileId  String
-  mediumId   Int
+  profileId String
+  mediumId  Int
 
-  profile    TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  medium     Medium         @relation(fields: [mediumId], references: [id])
+  profile TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  medium  Medium         @relation(fields: [mediumId], references: [id])
 
   @@unique([profileId, mediumId])
 }
 
 model TeacherQualification {
-  id          String @id @default(uuid())
+  id String @id @default(uuid())
 
-  profileId   String
+  profileId String
 
-  title       String
-  institute   String
+  title     String
+  institute String
 
-  startYear   Int?
-  endYear     Int?
+  startYear Int?
+  endYear   Int?
 
   displayOrder Int @default(0)
 
-  profile TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
+  profile TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
 model TeacherAchievement {
-  id          String @id @default(uuid())
+  id String @id @default(uuid())
 
-  profileId   String
+  profileId String
 
   title       String
   description String?
 
   displayOrder Int @default(0)
 
-  year        Int?
+  year Int?
 
-  profile TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
+  profile TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
 model Subject {
-  id       Int    @id @default(autoincrement())
-  name     String @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
 
   teachers TeacherProfileSubject[]
 }
 
 model TeacherProfileSubject {
-  id         String @id @default(uuid())
+  id String @id @default(uuid())
 
-  profileId  String
-  subjectId  Int
+  profileId String
+  subjectId Int
 
-  gradeFrom  Int?
-  gradeTo    Int?
+  gradeFrom Int?
+  gradeTo   Int?
 
-  profile    TeacherProfile @relation(fields:[profileId], references:[id], onDelete: Cascade)
-  subject    Subject        @relation(fields:[subjectId], references:[id])
+  profile TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  subject Subject        @relation(fields: [subjectId], references: [id])
 
   @@unique([profileId, subjectId])
 }
 
+//
+enum StudentRegistrationSource {
+  TEACHER
+  PUBLIC_CLASS
+  IMPORT
+  ADMIN
+}
+
+enum StudentConfirmationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum StudentDeviceStatus {
+  PENDING
+  APPROVED
+  BLOCKED
+}
+
+enum LoginResult {
+  SUCCESS
+  FAILED
+  BLOCKED_DEVICE
+  PENDING_DEVICE
+  INVALID_PASSWORD
+}
+
+//
 
 model Student {
-  id                            String                         @id @default(uuid())
-  name                          String
-  teacherId                     String
-  createdAt                     DateTime                       @default(now())
-  contact                       String
-  registrationNumber            String?  
+  id                 String   @id @default(uuid())
+  name               String
+  teacherId          String
+  createdAt          DateTime @default(now())
+  contact            String
+  registrationNumber String?
 
-  status                        Int      @default(0) // 0=Active, 1=Inactive, 2=Deleted
-  actionTakenDate               DateTime?
+  status          Int       @default(0) // 0=Active, 1=Inactive, 2=Deleted
+  actionTakenDate DateTime?
 
-  gradeId                       Int? @default(6)
-  grade                         Grade? @relation(fields: [gradeId], references: [id])
+  gradeId Int?   @default(6)
+  grade   Grade? @relation(fields: [gradeId], references: [id])
 
-  contact01                     String?
-  contact02                     String?
-  email                         String?
-  password                      String?
+  contact01 String?
+  contact02 String?
+  email     String?
+  password  String?
+
+  publicClassId String?
+  publicClass   Class?  @relation("PublicClassRegistration", fields: [publicClassId], references: [id])
+
+  registrationSource StudentRegistrationSource @default(TEACHER)
+
+  confirmationStatus StudentConfirmationStatus @default(PENDING)
+
+  confirmedAt   DateTime?
+  confirmedById String?
+  confirmedBy   Teacher?  @relation("ConfirmedStudents", fields: [confirmedById], references: [id])
+
+  registeredAt DateTime @default(now())
+
+  devices      StudentDevice[]
+  loginHistory StudentLoginHistory[]
+
   submissions                   AssignmentSubmission[]
   attendance                    Attendance[]
   classPayments                 ClassPayment[]
@@ -271,7 +319,98 @@ model Student {
   paperSupportMessages          PaperSupportMessage[]
   paymentMessages               PaymentMessage[]
   quizSubmissions               QuizSubmission[]
-  teacher                       Teacher @relation(fields: [teacherId], references: [id])
+  teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
+
+  @@index([teacherId])
+  @@index([registrationSource])
+  @@index([confirmationStatus])
+  @@index([publicClassId])
+}
+
+model StudentDevice {
+
+  id String @id @default(uuid())
+
+  studentId String
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  deviceId String
+
+  deviceModel String?
+  deviceName String?
+
+  browser String?
+  browserVersion String?
+
+  fingerprint String?
+
+  os String?
+  osVersion String?
+
+  platform String?
+
+  userAgent String?
+
+  lastIpAddress String?
+
+  country String?
+  city String?
+
+  status StudentDeviceStatus @default(PENDING)
+
+  firstLoginAt DateTime @default(now())
+  lastLoginAt DateTime?
+
+  approvalRequestedAt DateTime @default(now())
+  approvedAt DateTime?
+  rejectedAt DateTime?
+
+  approvedReason String?
+  rejectedReason String?
+
+  approvalRequestMessage String?
+
+  approvalRequestedByStudentAt DateTime?
+
+  approvedByTeacherId String?
+  approvedByTeacher Teacher?@relation("ApprovedDevices", fields: [approvedByTeacherId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loginHistory StudentLoginHistory[]
+
+  @@index([studentId])
+  @@index([status])
+  @@index([approvedByTeacherId])
+  @@index([approvalRequestedAt])
+  @@unique([studentId, deviceId])
+
+}
+
+model StudentLoginHistory {
+  id String @id @default(uuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  deviceId String?
+  device   StudentDevice? @relation(fields: [deviceId], references: [id])
+
+  ipAddress String?
+
+  userAgent String?
+
+  result LoginResult
+
+  loggedAt DateTime @default(now())
+
+  country String?
+
+  city String?
+
+  @@index([studentId])
+  @@index([loggedAt])
 }
 
 model PasswordResetToken {
@@ -318,11 +457,13 @@ model Class {
   schedules            ClassSchedule[]
   sessions             ClassSession[]
   students             ClassStudent[]
-  studentHistory  ClassStudentHistory[]
+  studentHistory       ClassStudentHistory[]
   lectures             Lecture[]
   materialBundles      MaterialBundle[]
   messages             Message[]
   paperSupportMessages PaperSupportMessage[]
+
+  publicRegistrations Student[] @relation("PublicClassRegistration")
 
   @@index([teacherId, createdAt])
 }
@@ -477,15 +618,15 @@ model ClassStudent {
 }
 
 model ClassStudentHistory {
-  id          String   @id @default(uuid())
-  classId     String
-  studentId   String
-  action      StudentClassAction
-  actionDate  DateTime @default(now())
-  reason      String?
+  id         String             @id @default(uuid())
+  classId    String
+  studentId  String
+  action     StudentClassAction
+  actionDate DateTime           @default(now())
+  reason     String?
 
-  class       Class    @relation(fields:[classId], references:[id])
-  student     Student  @relation(fields:[studentId], references:[id])
+  class   Class   @relation(fields: [classId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
 
   @@index([classId])
   @@index([studentId])
@@ -713,13 +854,11 @@ model PaymentMessage {
 }
 
 model Grade {
-
   id        Int    @id @default(autoincrement())
   GradeDesc String
   Status    Int    @default(0)
 
-  students  Student[]
-
+  students Student[]
 }
 
 enum Role {
@@ -749,7 +888,6 @@ enum Weekday {
   FRIDAY
   SATURDAY
 }
-
 
 enum QuizAnswerType {
   SINGLE
@@ -781,4 +919,3 @@ enum StudentClassAction {
   ASSIGNED
   UNASSIGNED
 }
-

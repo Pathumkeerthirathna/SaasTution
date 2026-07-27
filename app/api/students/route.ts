@@ -5,6 +5,7 @@ import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createStudentSchema } from "@/lib/student-validation";
 import { createStudent, listStudentsByTeacher } from "@/services/student-service";
 import { RegisterStudentType } from "@/types/Student/RegisterStudent";
+import { StudentRegistrationSource } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export async function GET(request: Request) {
     const pagination = parsePaginationParams(searchParams);
     const name = searchParams.get("name")?.trim() ?? "";
     const gradeId = Number(searchParams.get("grade") ?? 0);
+
+    const email = searchParams.get("email")?.trim() || undefined;
 
     const sortBy = searchParams.get("sortBy") ?? "registrationNumber";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
@@ -28,6 +31,7 @@ export async function GET(request: Request) {
       skip: pagination.skip,
       take: pagination.take,
       name,
+      email,
       gradeId: gradeId || undefined,
       sortBy,
       sortOrder,
@@ -52,6 +56,7 @@ export async function POST(request: Request) {
       contact01?: string;
       contact02?: string;
       email?: string;
+      registrationSource?: StudentRegistrationSource;
     };
 
     const parsed = createStudentSchema.safeParse(body);
