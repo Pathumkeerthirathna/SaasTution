@@ -3,6 +3,7 @@ import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/l
 import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
+import { StudentSession } from "@/lib/auth-session";
 
 type NotifyChannels = {
   email: boolean;
@@ -434,7 +435,7 @@ export async function notifyStudentsForSession(params: {
   };
 }
 
-export async function getSessionJoinInfo(sessionId: string, studentId: string) {
+export async function getSessionJoinInfo(sessionId: string, studentS: StudentSession) {
   const session = await prisma.classSession.findUnique({
     where: {
       id: sessionId,
@@ -469,7 +470,7 @@ export async function getSessionJoinInfo(sessionId: string, studentId: string) {
 
   const student = await prisma.student.findFirst({
     where: {
-      id: studentId,
+      id: studentS.studentId,
       classes: {
         some: {
           classId: session.classId,
@@ -489,18 +490,33 @@ export async function getSessionJoinInfo(sessionId: string, studentId: string) {
     throw new AppError("Student is not enrolled in this class.", 403, "STUDENT_NOT_IN_CLASS");
   }
 
-  return {
-    session: {
-      id: session.id,
-      classId: session.classId,
-      lectureId: session.lectureId,
-      roomName: session.roomName,
-      jitsiDomain: session.jitsiDomain,
-    },
-    lecture: session.lecture,
-    class: session.class,
-    student,
-  };
+  const jitsiToken =
+  shouldUseJitsiJwtAuth(session.jitsiDomain)
+    ? await generateJitsiToken({
+        name: student.name,
+        room: session.roomName,
+        moderator: false,
+        jitsiDomain: session.jitsiDomain,
+      })
+    : null;
+
+    return {
+      session: {
+          id: session.id,
+          classId: session.classId,
+          lectureId: session.lectureId,
+          roomName: session.roomName,
+          jitsiDomain: session.jitsiDomain,
+      },
+      lecture: session.lecture,
+      class: session.class,
+      student: {
+          id: student.id,
+          name: student.name,
+          
+      },
+      token: jitsiToken || undefined,
+  }
 }
 
 export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?: string) {
@@ -559,14 +575,14 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
   };
 }
 
-export async function markStudentJoinedSession(sessionId: string, studentId: string) {
-  const joinInfo = await getSessionJoinInfo(sessionId, studentId);
+export async function markStudentJoinedSession(sessionId: string, student: StudentSession) {
+  const joinInfo = await getSessionJoinInfo(sessionId, student);
 
   const attendance = await prisma.attendance.create({
     data: {
       classSessionId: sessionId,
       classId: joinInfo.session.classId,
-      studentId,
+      studentId:student.studentId,
       joinedAt: new Date(),
       leftAt: null,
     },
@@ -586,10 +602,10 @@ export async function markStudentJoinedSession(sessionId: string, studentId: str
 
 export async function markAttendanceOnJoin(params: {
   sessionId: string;
-  studentId: string;
+  student: StudentSession;
   classId?: string;
 }) {
-  const joinInfo = await getSessionJoinInfo(params.sessionId, params.studentId);
+  const joinInfo = await getSessionJoinInfo(params.sessionId, params.student);
 
   if (params.classId && params.classId !== joinInfo.session.classId) {
     throw new AppError("classId does not match the session class.", 400, "CLASS_SESSION_MISMATCH");
@@ -599,7 +615,7 @@ export async function markAttendanceOnJoin(params: {
     data: {
       classSessionId: params.sessionId,
       classId: joinInfo.session.classId,
-      studentId: params.studentId,
+      studentId: params.student.studentId,
       joinedAt: new Date(),
     },
     select: {
@@ -618,14 +634,14 @@ export async function markAttendanceOnJoin(params: {
   };
 }
 
-export async function markStudentLeftSession(sessionId: string, studentId: string) {
-  const joinInfo = await getSessionJoinInfo(sessionId, studentId);
+export async function markStudentLeftSession(sessionId: string, student: StudentSession) {
+  const joinInfo = await getSessionJoinInfo(sessionId, student);
 
   const openAttendance = await prisma.attendance.findFirst({
     where: {
       classSessionId: sessionId,
-      studentId,
-      leftAt: null,
+      studentId:student.studentId,
+      leftAt: null, 
     },
     orderBy: {
       joinedAt: "desc",

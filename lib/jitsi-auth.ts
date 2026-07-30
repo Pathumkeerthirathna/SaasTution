@@ -30,11 +30,12 @@ export async function generateJitsiToken(payload: JitsiTokenPayload): Promise<st
     sub: subject,
     room: payload.room,
     context: {
-      user: {
-        name: payload.name,
-        moderator: payload.moderator ? "true" : "false",
-      },
+    user: {
+      name: payload.name,
+      moderator: payload.moderator ? "true" : "false",
+      affiliation: payload.moderator ? "owner" : "member",
     },
+  },
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt(nowSeconds)

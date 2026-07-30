@@ -1,5 +1,5 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
-import { requireTeacherSession } from "@/lib/auth-session";
+import { requireStudentSession, requireTeacherSession } from "@/lib/auth-session";
 import { attendanceCreateSchema, attendanceListQuerySchema } from "@/lib/attendance-validation";
 import { handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
@@ -23,27 +23,30 @@ export async function POST(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
+    const student = await requireStudentSession();
+
     const result = await markAttendanceOnJoin({
       sessionId: parsed.data.sessionId,
+      student:student,
       classId: parsed.data.classId,
-      studentId: parsed.data.studentId,
+      
     });
 
-    emitSessionAttendanceEvent({
-      sessionId: parsed.data.sessionId,
-      attendanceId: result.attendance.id,
-      studentId: result.attendance.studentId,
-      joinedAt: result.attendance.joinedAt.toISOString(),
-      leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
-      event: "joined",
-      occurredAt: new Date().toISOString(),
-    });
+    // emitSessionAttendanceEvent({
+    //   sessionId: parsed.data.sessionId,
+    //   attendanceId: result.attendance.id,
+    //   studentId: result.attendance.studentId,
+    //   joinedAt: result.attendance.joinedAt.toISOString(),
+    //   leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
+    //   event: "joined",
+    //   occurredAt: new Date().toISOString(),
+    // });
 
-    return apiSuccess(result, {
-      message: result.duplicate
-        ? "Attendance already existed for this session; duplicate prevented."
-        : "Attendance marked successfully.",
-    });
+    // return apiSuccess(result, {
+    //   message: result.duplicate
+    //     ? "Attendance already existed for this session; duplicate prevented."
+    //     : "Attendance marked successfully.",
+    // });
   } catch (error) {
     return handleRouteError(error);
   }

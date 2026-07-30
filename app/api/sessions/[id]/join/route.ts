@@ -1,4 +1,5 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
+import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { emitSessionAttendanceEvent } from "@/lib/session-events";
 import { studentSessionActionSchema } from "@/lib/session-validation";
@@ -30,7 +31,9 @@ export async function POST(
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    const result = await markStudentJoinedSession(sessionId, parsed.data.studentId);
+    const studentSession = await requireStudentSession();
+
+    const result = await markStudentJoinedSession(sessionId,studentSession);
 
     emitSessionAttendanceEvent({
       sessionId,

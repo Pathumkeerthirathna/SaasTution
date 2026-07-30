@@ -9,7 +9,7 @@ export type SessionInvitePayload = {
   role: InviteRole;
 };
 
-const INVITE_TOKEN_TTL_SECONDS = 60 * 60 * 6;
+const INVITE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -35,9 +35,38 @@ export async function signSessionInviteToken(payload: SessionInvitePayload): Pro
     .sign(getJwtSecret());
 }
 
-export async function verifySessionInviteToken(token: string): Promise<SessionInvitePayload | null> {
+// export async function verifySessionInviteToken(token: string): Promise<SessionInvitePayload | null> {
+//   try {
+//     const { payload } = await jwtVerify(token, getJwtSecret());
+
+//     if (
+//       payload.type !== "LIVE_SESSION_INVITE" ||
+//       typeof payload.sessionId !== "string" ||
+//       typeof payload.classId !== "string" ||
+//       typeof payload.studentId !== "string" ||
+//       payload.role !== "STUDENT"
+//     ) {
+//       return null;
+//     }
+
+//     return {
+//       sessionId: payload.sessionId,
+//       classId: payload.classId,
+//       studentId: payload.studentId,
+//       role: "STUDENT",
+//     };
+//   } catch {
+//     return null;
+//   }
+// }
+
+export async function verifySessionInviteToken(
+  token: string
+): Promise<SessionInvitePayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
+
+    console.log("JWT payload:", payload);
 
     if (
       payload.type !== "LIVE_SESSION_INVITE" ||
@@ -46,6 +75,7 @@ export async function verifySessionInviteToken(token: string): Promise<SessionIn
       typeof payload.studentId !== "string" ||
       payload.role !== "STUDENT"
     ) {
+      console.log("Payload validation failed");
       return null;
     }
 
@@ -55,7 +85,9 @@ export async function verifySessionInviteToken(token: string): Promise<SessionIn
       studentId: payload.studentId,
       role: "STUDENT",
     };
-  } catch {
+  } catch (error) {
+    console.error("JWT verification failed:");
+    console.error(error);
     return null;
   }
 }

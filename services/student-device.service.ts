@@ -195,6 +195,7 @@ export async function validateStudentDevice({
             status: existingDevice.status,
             rejectedReason: existingDevice.rejectedReason,
             rejectedAt: existingDevice.rejectedAt,
+            approvalRequestMessage: existingDevice.approvalRequestMessage,
           },
           approvedDevices,
           allowRequestAgain: true,
@@ -220,6 +221,7 @@ export async function validateStudentDevice({
             status: existingDevice.status,
             rejectedReason: existingDevice.rejectedReason,
             rejectedAt: existingDevice.rejectedAt,
+            approvalRequestMessage: existingDevice.approvalRequestMessage,
           },
           approvedDevices,
           allowRequestAgain: true,
@@ -311,19 +313,17 @@ export async function requestApprovalAgain(
 
         data: {
 
-            status: StudentDeviceStatus.PENDING,
+            // status: StudentDeviceStatus.PENDING,
 
             approvalRequestMessage: message,
 
-            rejectedReason: null,
+            // rejectedAt: null,
 
-            rejectedAt: null,
+            // approvedAt: null,
 
-            approvedAt: null,
+            // approvedReason: null,
 
-            approvedReason: null,
-
-            approvedByTeacherId: null,
+            // approvedByTeacherId: null,
 
             approvalRequestedAt: new Date(),
 

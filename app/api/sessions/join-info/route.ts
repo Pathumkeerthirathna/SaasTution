@@ -26,10 +26,17 @@ export async function GET(request: Request) {
       return apiError("Invite link does not match the logged in student.", 403, "INVITE_STUDENT_MISMATCH");
     }
 
-    const joinInfo = await getSessionJoinInfo(invitePayload.sessionId, invitePayload.studentId);
+    const joinInfo = await getSessionJoinInfo(
+        invitePayload.sessionId,
+        studentSession
+    );
 
     if (joinInfo.session.classId !== invitePayload.classId) {
-      return apiError("Invite link is invalid for this session.", 400, "INVALID_INVITE");
+        return apiError(
+            "Invite link is invalid for this session.",
+            400,
+            "INVALID_INVITE"
+        );
     }
 
     return apiSuccess(joinInfo);

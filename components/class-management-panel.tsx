@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import Link from "next/link";
-import { ExternalLink, Eye } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ExternalLink, Eye } from "lucide-react";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -25,6 +25,12 @@ import {
   Wallet,
   X
 } from "lucide-react";
+import { PaginatedStudentsResponse, StudentListItem } from "./student-guardian-management-panel";
+
+type GradeItem = {
+  id: number;
+  GradeDesc: string;
+};
 
 export type ClassItem = {
   id: string;
@@ -42,6 +48,7 @@ export type ClassItem = {
   }[];
   students: {
     id: string;
+    studentId:string;
     isActive: boolean;
     assignedAt: string;
     removedAt: string | null;
@@ -87,8 +94,10 @@ type FormState = {
 };
 
 type FilterState = {
+  registrationNumber: string;
   name: string;
-  schedule: string;
+  email: string;
+  grade: string;
 };
 
 type TeacherStudent = {
@@ -157,11 +166,30 @@ export function ClassManagementPanel() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [filters] = useState<FilterState>({
+  const [filters, setFilters] = useState<FilterState>({
+    registrationNumber: "",
     name: "",
-    schedule: "",
+    email: "",
+    grade: "",
   });
 
+  const [grades, setGrades] = useState<GradeItem[]>([]);
+
+  const loadGrades = useCallback(async () => {
+    try {
+      const response = await fetch("/api/Grade");
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      setGrades(data);
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
+
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [createForm, setCreateForm] = useState<FormState>({
     name: "",
     description: "",
@@ -188,11 +216,14 @@ export function ClassManagementPanel() {
 
   // Add-students modal
   const [isAddStudentsOpen, setIsAddStudentsOpen] = useState(false);
-  const [availableStudents, setAvailableStudents] = useState<TeacherStudent[]>([]);
+  const [availableStudents, setAvailableStudents] = useState<StudentListItem[]>([]);
   const [isLoadingAvailableStudents, setIsLoadingAvailableStudents] = useState(false);
-  const [studentSearchQuery, setStudentSearchQuery] = useState("");
+  
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isLoadingList, setIsLoadingList] = useState(false);
+  const [pageSize, setPageSize] = useState(6);
+  const [students, setStudents] = useState<StudentListItem[]>([]);
 
   // Remove-student confirmation
   const [removingEntry, setRemovingEntry] = useState<{ studentId: string; name: string } | null>(null);
@@ -212,19 +243,40 @@ export function ClassManagementPanel() {
     [studentsPanelClass]
   );
   const activeStudentIdSet = useMemo(
-    () => new Set(studentsPanelActiveStudents.map((e) => e.student.id)),
-    [studentsPanelActiveStudents]
+  () => new Set(studentsPanelActiveStudents.map((e) => e.student.id)),
+  [studentsPanelActiveStudents]
+);
+
+const selectableStudents = useMemo(
+  () =>
+    availableStudents.filter(
+      (student) =>
+        !activeStudentIdSet.has(student.id) &&
+        student.status === 0
+    ),
+  [availableStudents, activeStudentIdSet]
+);
+
+useEffect(() => {
+  void loadGrades();
+}, [loadGrades]);
+
+const isAllSelected =
+  selectableStudents.length > 0 &&
+  selectableStudents.every((student) =>
+    selectedStudentIds.has(student.id)
   );
-  const filteredAvailableStudents = useMemo(() => {
-    if (!studentSearchQuery.trim()) return availableStudents;
-    const q = studentSearchQuery.toLowerCase();
-    return availableStudents.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.registrationNumber?.toLowerCase().includes(q) ?? false) ||
-        (s.grade?.GradeDesc.toLowerCase().replace("grade_0", "grade ").replace("grade_", "grade ").includes(q) ?? false)
-    );
-  }, [availableStudents, studentSearchQuery]);
+  // const filteredAvailableStudents = useMemo(() => {
+  //   if (!studentSearchQuery.trim()) return availableStudents;
+  //   const q = studentSearchQuery.toLowerCase();
+  //   return availableStudents.filter(
+  //     (s) =>
+  //       s.name.toLowerCase().includes(q) ||
+  //       (s.registrationNumber?.toLowerCase().includes(q) ?? false) ||
+  //       (s.grade?.GradeDesc.toLowerCase().replace("grade_0", "grade ").replace("grade_", "grade ").includes(q) ?? false)
+  //   );
+  // }, [availableStudents, studentSearchQuery]);
+
   const overview = useMemo(() => {
     const totalClasses = items.length;
     const activeStudents = items.reduce(
@@ -261,9 +313,9 @@ export function ClassManagementPanel() {
         query.set("name", appliedFilters.name.trim());
       }
 
-      if (appliedFilters.schedule.trim()) {
-        query.set("schedule", appliedFilters.schedule.trim());
-      }
+      // if (appliedFilters.schedule.trim()) {
+      //   query.set("schedule", appliedFilters.schedule.trim());
+      // }
 
       const response = await fetch(`/api/classes?${query.toString()}`);
       const payload = (await response.json()) as PaginatedResponse;
@@ -274,6 +326,9 @@ export function ClassManagementPanel() {
       }
 
       setItems(payload.data ?? []);
+
+      console.log(payload.data);
+
       setPage(payload.pagination?.page ?? nextPage);
       setTotalPages(payload.pagination?.totalPages ?? 1);
       setTotalItems(payload.pagination?.totalItems ?? 0);
@@ -285,8 +340,13 @@ export function ClassManagementPanel() {
   }, []);
 
   useEffect(() => {
-    void loadClasses(1, { name: "", schedule: "" });
-  }, [loadClasses]);
+  void loadClasses(1, {
+    registrationNumber: "",
+    name: "",
+    email: "",
+    grade: "",
+  });
+}, [loadClasses]);
 
   useEffect(() => {
     if (!studentsPanelClassId) return;
@@ -455,26 +515,140 @@ export function ClassManagementPanel() {
     }
   }
 
-  const loadAvailableStudents = useCallback(async () => {
-    setIsLoadingAvailableStudents(true);
-    try {
-      const res = await fetch("/api/students?pageSize=200&page=1");
-      const payload = (await res.json()) as { success: boolean; data?: TeacherStudent[] };
-      if (payload.success && payload.data) {
-        setAvailableStudents(payload.data);
-      }
-    } catch {
-      // silently fail — error visible via empty list
-    } finally {
-      setIsLoadingAvailableStudents(false);
-    }
-  }, []);
+
+  const [sortBy, setSortBy] = useState("CreatedAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  function handleSort(column: string) {
+    const nextOrder =
+      sortBy === column && sortOrder === "asc"
+        ? "desc"
+        : "asc";
+
+    setSortBy(column);
+    setSortOrder(nextOrder);
+
+    void loadStudentList(
+      1,
+      filters,
+      column,
+      nextOrder
+    );
+  }
+
+  const loadStudentList = useCallback(
+      async (
+        nextPage = 1,
+        appliedFilters: FilterState = {
+          registrationNumber: "",
+          name: "",
+          email: "",
+          grade: "",
+        },
+        currentSortBy = sortBy,
+        currentSortOrder = sortOrder,
+        currentPageSize = pageSize
+      ) => {
+          setIsLoadingAvailableStudents(true);
+          setErrorMessage(null);
+  
+          try {
+            const query = new URLSearchParams({
+              page: String(nextPage),
+              pageSize: String(currentPageSize),
+            });
+  
+            query.set("sortBy", currentSortBy);
+            query.set("sortOrder", currentSortOrder);
+  
+            if (appliedFilters.registrationNumber.trim()) {
+              query.set(
+                "registrationNumber",
+                appliedFilters.registrationNumber.trim()
+              );
+            }
+
+            if (appliedFilters.name.trim()) {
+              query.set("name", appliedFilters.name.trim());
+            }
+
+            if (appliedFilters.email.trim()) {
+              query.set("email", appliedFilters.email.trim());
+            }
+
+            if (appliedFilters.grade) {
+              query.set("grade", appliedFilters.grade);
+            }
+  
+            console.log(
+              `/api/students?${query.toString()}`
+            );
+  
+            const response = await fetch(
+              `/api/students?${query.toString()}`
+            );
+  
+            const payload =
+            (await response.json()) as PaginatedStudentsResponse;
+  
+            // if (!response.ok || !payload.success) {
+            //   setErrorMessage(
+            //     payload.error?.message ??
+            //       "Failed to load students."
+            //   );
+            //   return;
+            // }
+  
+            console.log(payload);
+
+            if (payload.success && payload.data) {
+              setAvailableStudents(payload.data);
+            }
+  
+            setStudents(payload.data ?? []);
+            setPage(payload.pagination?.page ?? nextPage);
+            setTotalPages(
+              payload.pagination?.totalPages ?? 1
+            );
+            setTotalItems(
+              payload.pagination?.totalItems ?? 0
+            );
+          } catch {
+            setErrorMessage(
+              "Unable to load students right now."
+            );
+          } finally {
+            setIsLoadingAvailableStudents(false);
+          }
+        },
+        [sortBy, sortOrder]
+      );
+
+  // const loadAvailableStudents = useCallback(async () => {
+  //   setIsLoadingAvailableStudents(true);
+  //   try {
+  //     const res = await fetch("/api/students?pageSize=200&page=1");
+      
+  //     const payload = (await res.json()) as { success: boolean; data?: TeacherStudent[] };
+
+  //     console.log(payload);
+
+  //     if (payload.success && payload.data) {
+  //       setAvailableStudents(payload.data);
+  //     }
+
+  //   } catch {
+  //     // silently fail — error visible via empty list
+  //   } finally {
+  //     setIsLoadingAvailableStudents(false);
+  //   }
+  // }, []);
 
   function openAddStudents() {
     setSelectedStudentIds(new Set());
-    setStudentSearchQuery("");
+   
     setIsAddStudentsOpen(true);
-    void loadAvailableStudents();
+    void loadStudentList();
   }
 
   async function handleAssignStudents() {
@@ -492,7 +666,7 @@ export function ClassManagementPanel() {
       );
       setIsAddStudentsOpen(false);
       setSelectedStudentIds(new Set());
-      setStudentSearchQuery("");
+  
       await loadClasses(page, filters);
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
     } catch {
@@ -562,9 +736,9 @@ export function ClassManagementPanel() {
 
                 {/* Left */}
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 via-green-500 to-orange-500 text-white shadow-sm">
-                    <GraduationCap size={22} />
-                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-blue-900 bg-slate-800 text-blue-500 shadow-sm">
+  <GraduationCap size={22} />
+</div>
 
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">
@@ -682,21 +856,21 @@ export function ClassManagementPanel() {
                         items-center
                         gap-2
                         rounded-lg
-                        bg-gradient-to-r
-                        from-emerald-500
-                        via-green-500
-                        to-orange-500
+                        bg-slate-900
                         px-5
                         text-xs
                         font-semibold
                         text-white
                         shadow-md
-                        shadow-emerald-200
-                        transition
+                        shadow-slate-300/30
+                        transition-all
+                        duration-200
+                        hover:bg-blue-600
+                        hover:shadow-blue-300/40
                         hover:scale-[1.02]
                       "
                     >
-                      <BookOpen size={14} />
+                      <BookOpen size={14} className="text-blue-400 group-hover:text-white" />
                       New Class
                     </button>
 
@@ -1940,22 +2114,225 @@ export function ClassManagementPanel() {
             </button>
           </div>
 
-          {/* Search */}
-          <div className="mt-4">
+         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-4 flex items-center justify-between">
+
             <div className="relative">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input
-                value={studentSearchQuery}
-                onChange={(e) => setStudentSearchQuery(e.target.value)}
-                placeholder="Search by name or registration number..."
-                className="control-input pl-9"
-              />
+
+                <button
+                    type="button"
+                    onClick={() => setIsFilterOpen(prev => !prev)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                    <Search size={16} />
+                    Filters
+                </button>
+
+                {isFilterOpen && (
+                    <>
+                        {/* click outside */}
+                        <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setIsFilterOpen(false)}
+                        />
+
+                        {/* Popover */}
+                        <div className="absolute left-0 top-12 z-50 w-[420px] rounded-2xl border border-slate-200 bg-white shadow-2xl">
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+
+                                <div>
+                                    <h3 className="text-base font-semibold">
+                                        Filter Students
+                                    </h3>
+
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Search students for this class
+                                    </p>
+                                </div>
+
+                                <button
+                                    onClick={() => setIsFilterOpen(false)}
+                                    className="rounded-lg p-2 hover:bg-slate-100"
+                                >
+                                    ✕
+                                </button>
+
+                            </div>
+
+                            {/* Body */}
+                            <div className="space-y-4 p-5">
+
+                                {/* Registration */}
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                                        Registration Number
+                                    </label>
+
+                                    <input
+                                        className="control-input w-full"
+                                        placeholder="Registration Number"
+                                        value={filters.registrationNumber}
+                                        onChange={(e) =>
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                registrationNumber: e.target.value
+                                            }))
+                                        }
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                              e.preventDefault();
+                                              loadStudentList(1, filters);
+                                              setIsFilterOpen(false); // optional: close the popover
+                                          }
+                                      }}
+                                    />
+                                </div>
+
+                                {/* Name */}
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                                        Student Name
+                                    </label>
+
+                                    <input
+                                        className="control-input w-full"
+                                        placeholder="Student Name"
+                                        value={filters.name}
+                                        onChange={(e) =>
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                name: e.target.value
+                                            }))
+                                        }
+
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                              e.preventDefault();
+                                              loadStudentList(1, filters);
+                                              setIsFilterOpen(false); // optional: close the popover
+                                          }
+                                      }}
+                                    />
+                                </div>
+
+                                {/* Email */}
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                                        Email
+                                    </label>
+
+                                    <input
+                                        className="control-input w-full"
+                                        placeholder="Email"
+                                        value={filters.email}
+                                        onChange={(e) =>
+                                            setFilters(prev => ({
+                                                ...prev,
+                                                email: e.target.value
+                                            }))
+                                        }
+                                    />
+                                </div>
+
+                                {/* Grade */}
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                                        Grade
+                                    </label>
+
+                                    <select
+                                      value={filters.grade}
+                                      onChange={(e) =>
+                                          setFilters((prev) => ({
+                                              ...prev,
+                                              grade: e.target.value,
+                                          }))
+                                      }
+                                      className="control-select w-full"
+                                  >
+                                      <option value="">All Grades</option>
+
+                                      {grades.map((grade) => (
+                                          <option
+                                              key={grade.id}
+                                              value={grade.id}
+                                          >
+                                              {grade.GradeDesc
+                                                  .replace("GRADE_0", "Grade ")
+                                                  .replace("GRADE_", "Grade ")}
+                                          </option>
+                                      ))}
+                                  </select>
+                                </div>
+
+                            </div>
+
+                            {/* Footer */}
+
+                            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => {
+
+                                        const reset = {
+                                            registrationNumber: "",
+                                            name: "",
+                                            email: "",
+                                            grade: filters.grade
+                                        };
+
+                                        setFilters(reset);
+                                        loadStudentList(1, reset);
+
+                                        setIsFilterOpen(false);
+
+                                    }}
+                                >
+                                    Reset
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="btn-primary"
+                                    onClick={() => {
+
+                                        loadStudentList(1, filters);
+
+                                        setIsFilterOpen(false);
+
+                                    }}
+                                >
+                                    Search
+                                </button>
+
+                            </div>
+
+                        </div>
+                    </>
+                )}
+
             </div>
+
             {selectedStudentIds.size > 0 && (
-              <p className="mt-2 text-xs font-semibold text-brand-700">
-                {selectedStudentIds.size} student{selectedStudentIds.size !== 1 ? "s" : ""} selected
-              </p>
+                <p className="text-sm font-semibold text-brand-700">
+                    {selectedStudentIds.size} student
+                    {selectedStudentIds.size !== 1 ? "s" : ""} selected
+                </p>
             )}
+
+        </div>
+
+       
+
+            
           </div>
         </div>
 
@@ -1965,7 +2342,7 @@ export function ClassManagementPanel() {
             <div className="flex items-center justify-center py-16">
               <p className="text-sm text-muted">Loading students...</p>
             </div>
-          ) : filteredAvailableStudents.length === 0 ? (
+          ) : availableStudents.length === 0 ? (
             
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
@@ -2005,12 +2382,55 @@ export function ClassManagementPanel() {
               </div>
             </div>
 
-
-
-
           ) : (
+
+            
             <ul className="divide-y divide-gray-100">
-              {filteredAvailableStudents.map((student) => {
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+
+                <label className="flex cursor-pointer items-center gap-2">
+
+                    <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={(e) => {
+
+                            const checked = e.target.checked;
+
+                            setSelectedStudentIds(prev => {
+
+                                const next = new Set(prev);
+
+                                if (checked) {
+                                    selectableStudents.forEach(student => {
+                                        next.add(student.id);
+                                    });
+                                } else {
+                                    selectableStudents.forEach(student => {
+                                        next.delete(student.id);
+                                    });
+                                }
+
+                                return next;
+                            });
+
+                        }}
+                    />
+
+                    <span className="text-sm font-medium">
+                        Select All
+                    </span>
+
+                </label>
+
+                <span className="text-xs text-slate-500">
+                    {selectableStudents.length} students
+                </span>
+
+            </div>
+              {availableStudents.map((student) => {
+
+
                 const isEnrolled = activeStudentIdSet.has(student.id);
                 const isSelected = selectedStudentIds.has(student.id);
                 return (
@@ -2089,6 +2509,136 @@ export function ClassManagementPanel() {
             </ul>
           )}
         </div>
+
+        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        
+          {/* Left */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
+
+              <div className="relative">
+
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    const size = Number(e.target.value);
+
+                    setPageSize(size);
+
+                    void loadStudentList(
+                      1,
+                      filters,
+                      sortBy,
+                      sortOrder,
+                      size
+                    );
+                  }}
+                  className="
+                    appearance-none
+                    rounded-lg
+                    border
+                    border-slate-200
+                    bg-white
+                    py-2
+                    pl-3
+                    pr-9
+                    text-sm
+                    font-medium
+                    text-slate-700
+                    shadow-sm
+                    transition
+                    hover:border-brand-300
+                    focus:border-brand-500
+                    focus:outline-none
+                  "
+                >
+                  <option value={6}>6 / Page</option>
+                  <option value={10}>10 / Page</option>
+                  <option value={20}>20 / Page</option>
+                  <option value={50}>50 / Page</option>
+                  <option value={100}>100 / Page</option>
+                </select>
+
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+
+              </div>
+
+              <span className="hidden text-sm text-slate-500 sm:block">
+                Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+              </span>
+
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="flex items-center gap-2">
+
+            {/* First */}
+            <button
+              disabled={page === 1 || isLoadingList}
+              onClick={() => void loadStudentList(1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+
+            {/* Previous */}
+            <button
+              disabled={page === 1 || isLoadingList}
+              onClick={() => void loadStudentList(page - 1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Scrollable Pages */}
+            <div className="max-w-[280px] overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+
+              <div className="flex gap-2 px-1">
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => void loadStudentList(p, filters)}
+                    disabled={isLoadingList}
+                    className={`flex h-9 min-w-[36px] items-center justify-center rounded-lg border text-sm font-semibold transition-all duration-200 ${
+                      p === page
+                        ? "border-brand-700 bg-brand-700 text-white shadow"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+
+              </div>
+
+            </div>
+
+            {/* Next */}
+            <button
+              disabled={page === totalPages || isLoadingList}
+              onClick={() => void loadStudentList(page + 1, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight size={16} />
+            </button>
+
+            {/* Last */}
+            <button
+              disabled={page === totalPages || isLoadingList}
+              onClick={() => void loadStudentList(totalPages, filters)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronsRight size={16} />
+            </button>
+
+          </div>
+
+                </div>
 
         {/* Footer actions */}
         <div className="-mx-6 shrink-0 border-t border-brand-200 bg-white px-6 py-4">

@@ -16,15 +16,13 @@ export async function GET(request: Request) {
     const pagination = parsePaginationParams(searchParams);
     const name = searchParams.get("name")?.trim() ?? "";
     const gradeId = Number(searchParams.get("grade") ?? 0);
+    const registrationNumber =
+    searchParams.get("registrationNumber") ?? undefined;
 
     const email = searchParams.get("email")?.trim() || undefined;
 
     const sortBy = searchParams.get("sortBy") ?? "registrationNumber";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
-
-      console.log("STUDENT SERVICE");
-
-       console.log(request);
 
     const { students, totalItems } = await listStudentsByTeacher({
       teacherId: session.teacherId,
@@ -35,6 +33,7 @@ export async function GET(request: Request) {
       gradeId: gradeId || undefined,
       sortBy,
       sortOrder,
+      registrationNumber,
     });
 
     return apiSuccess(students, {

@@ -5,10 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
 import { AuthShell } from "@/components/auth-shell";
-import { getDeviceFingerprint } from "@/lib/fingerprint";
-import { getDeviceInfo } from "@/lib/device";
 import { getCurrentDevice } from "@/lib/current-device";
 import { RejectedDeviceCard } from "./RejectedDeviceCard";
+import toast from "react-hot-toast";
 
 type LoginFormState = {
   loginId: string;
@@ -35,6 +34,7 @@ export function LoginForm() {
       browser?: string;
       os?: string;
       rejectedReason?: string;
+      approvalRequestMessage?: string;
       status:string
     };
     approvedDevices?: {
@@ -121,7 +121,7 @@ export function LoginForm() {
   }
 
   const handleRequestAgain = async () => {
-    if (!deviceApproval?.currentDevice?.id) return;
+    if (!deviceApproval?.currentDevice?.id) return false;
 
     try {
       const response = await fetch(
@@ -140,26 +140,28 @@ export function LoginForm() {
       const result = await response.json();
 
       if (!response.ok) {
-        alert(result.message);
-        return;
+
+        toast.error(result.message);
+        return false;
       }
 
-      alert(
-        "Your request has been sent to your teacher."
-      );
+      toast.success("Your request has been sent to your teacher.");
 
-      setRequestMessage("");
+      setRequestMessage(requestMessage);
 
-      setDeviceApproval({
-        ...deviceApproval,
-        currentDevice: {
-          ...deviceApproval.currentDevice,
-          status: "PENDING",
-        },
-      });
+        return true;
+
+      // setDeviceApproval({
+      //   ...deviceApproval,
+      //   currentDevice: {
+      //     ...deviceApproval.currentDevice,
+      //     status: "PENDING",
+      //   },
+      // });
 
     } catch {
-      alert("Unable to send request.");
+      toast.error("Unable to send request.");
+        return false;
     }
   };
 
@@ -552,6 +554,7 @@ export function LoginForm() {
             requestMessage={requestMessage}
             setRequestMessage={setRequestMessage}
             onRequestAgain={handleRequestAgain}
+            setDeviceApproval={setDeviceApproval}
           />
         )}
 

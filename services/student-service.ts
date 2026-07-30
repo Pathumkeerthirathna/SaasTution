@@ -299,6 +299,7 @@ export async function listStudentsByTeacher(params: {
   gradeId?: number;
   sortBy?: string;
   sortOrder?: string;
+  registrationNumber?: string; // <-- Add this
 
 }) {
 
@@ -307,6 +308,14 @@ export async function listStudentsByTeacher(params: {
     status: {
       not: 2,
     },
+    ...(params.registrationNumber
+    ? {
+        registrationNumber: {
+          contains: params.registrationNumber,
+          mode: "insensitive" as const,
+        },
+      }
+    : {}),
     ...(params.name
       ? {
           name: {

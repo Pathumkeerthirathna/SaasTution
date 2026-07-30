@@ -31,10 +31,17 @@ export async function GET(
     const studentSession = await requireStudentSession();
 
     if (studentId && studentId !== studentSession.studentId) {
-      return apiError("studentId does not match the logged in student.", 403, "FORBIDDEN");
+      return apiError(
+        "studentId does not match the logged in student.",
+        403,
+        "FORBIDDEN"
+      );
     }
 
-    const joinInfo = await getSessionJoinInfo(sessionId, studentSession.studentId);
+    const joinInfo = await getSessionJoinInfo(
+        sessionId,
+        studentSession
+    );
 
     return apiSuccess(joinInfo);
   } catch (error) {

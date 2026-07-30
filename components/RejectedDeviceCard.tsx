@@ -1,3 +1,4 @@
+import { useState } from "react";
 
   type DeviceApprovalData = {
     currentDevice?: {
@@ -6,6 +7,7 @@
       browser?: string;
       os?: string;
       rejectedReason?: string;
+      approvalRequestMessage?: string;
       status:string
     };
     approvedDevices?: {
@@ -22,7 +24,10 @@ type RejectedDeviceCardProps = {
   deviceApproval: DeviceApprovalData;
   requestMessage: string;
   setRequestMessage: React.Dispatch<React.SetStateAction<string>>;
-  onRequestAgain: () => void;
+  onRequestAgain: () => Promise<boolean>;
+  setDeviceApproval: React.Dispatch<
+  React.SetStateAction<DeviceApprovalData | null>
+>;
 };
 
 export function RejectedDeviceCard({
@@ -30,7 +35,13 @@ export function RejectedDeviceCard({
   requestMessage,
   setRequestMessage,
   onRequestAgain,
+  setDeviceApproval,
 }: RejectedDeviceCardProps) {
+
+  const [editingRequest, setEditingRequest] = useState(false);
+
+
+
   return (
     <div className="mt-6 overflow-hidden rounded-3xl border border-red-200 bg-white shadow-lg">
 
@@ -80,6 +91,102 @@ export function RejectedDeviceCard({
 
         </div>
 
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+
+          <div className="mb-3 flex items-center justify-between">
+
+            <h3 className="font-semibold text-slate-900">
+              📝 Your Request
+            </h3>
+
+            {!editingRequest && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRequestMessage(
+                    deviceApproval.currentDevice?.approvalRequestMessage ?? ""
+                  );
+                  setEditingRequest(true);
+                }}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                ✏️ Edit
+              </button>
+            )}
+
+          </div>
+
+          {editingRequest ? (
+
+            <>
+              <textarea
+                rows={5}
+                value={requestMessage}
+                onChange={(e) => setRequestMessage(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white p-4 text-sm focus:border-emerald-500 focus:outline-none"
+              />
+
+              <div className="mt-4 flex justify-end gap-3">
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingRequest(false);
+                    setRequestMessage(
+                      deviceApproval.currentDevice?.approvalRequestMessage ?? ""
+                    );
+                  }}
+                  className="rounded-xl border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const success = await onRequestAgain();
+
+                    if (!success) return;
+
+                    setDeviceApproval((prev) => {
+                      if (!prev) return prev;
+
+                      return {
+                        ...prev,
+                        currentDevice: {
+                          ...prev.currentDevice!,
+                          approvalRequestMessage: requestMessage,
+                          status: "BLOCKED",
+                        },
+                      };
+                    });
+
+                    setEditingRequest(false);
+                  }}
+                  disabled={!requestMessage.trim()}
+                  className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                >
+                  Update & Send Request
+                </button>
+
+              </div>
+            </>
+
+          ) : (
+
+            <div className="rounded-xl border border-blue-100 bg-white p-4">
+
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                {deviceApproval.currentDevice?.approvalRequestMessage ??
+                  "You haven't submitted a request yet."}
+              </p>
+
+            </div>
+
+          )}
+
+        </div>
+
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
 
           <h3 className="font-semibold">
@@ -93,29 +200,6 @@ export function RejectedDeviceCard({
 
         </div>
 
-        <div>
-
-          <label className="mb-2 block font-medium">
-            Request Approval Again
-          </label>
-
-          <textarea
-            rows={5}
-            value={requestMessage}
-            onChange={(e) => setRequestMessage(e.target.value)}
-            className="w-full rounded-2xl border p-4"
-          />
-
-          <button
-            type="button"
-            onClick={onRequestAgain}
-            disabled={!requestMessage.trim()}
-            className="mt-4 w-full rounded-2xl bg-emerald-600 py-3 font-semibold text-white disabled:bg-slate-300"
-          >
-            Request Approval Again
-          </button>
-
-        </div>
 
       </div>
 

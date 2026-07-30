@@ -96,6 +96,7 @@ export async function listClassesByTeacher(params: ListClassesParams) {
         students: {
           select: {
             id: true,
+            studentId:true,
             isActive: true,
             assignedAt: true,
             removedAt: true,

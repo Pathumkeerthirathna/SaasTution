@@ -7,8 +7,12 @@ import {
   CheckCircle2,
   XCircle,
   Clock3,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { StudentDeviceStatus } from "@prisma/client";
 
 interface StudentDevice {
   id: string;
@@ -64,6 +68,9 @@ export function StudentDevices({
   const [devices, setDevices] = useState<StudentDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [teacherResponse, setTeacherResponse] = useState("");
 
   const loadDevices = useCallback(async () => {
     if (!studentId) return;
@@ -186,6 +193,52 @@ export function StudentDevices({
             Pending
           </span>
         );
+    }
+  }
+
+  function startEdit(device: StudentDevice) {
+    setEditingDeviceId(device.id);
+    setTeacherResponse(device.rejectedReason ?? "");
+  }
+
+  function cancelEdit() {
+    setEditingDeviceId(null);
+    setTeacherResponse("");
+  }
+
+  async function saveTeacherResponse(deviceId: string) {
+    try {
+      setProcessingId(deviceId);
+
+      const response = await fetch(
+        `/api/student/devices/${deviceId}/teacher-response`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            rejectedReason: teacherResponse,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message);
+      }
+
+      toast.success("Teacher response updated.");
+
+      setEditingDeviceId(null);
+
+      await loadDevices();
+    } catch (error) {
+      console.error(error);
+      toast.error("Unable to update response.");
+    } finally {
+      setProcessingId(null);
     }
   }
 
@@ -410,6 +463,82 @@ export function StudentDevices({
 
               </div>
             )}
+
+            {device.status === StudentDeviceStatus.BLOCKED && (
+              <div className="border-t border-slate-100 px-6 py-5">
+
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+
+                  <div className="mb-4 flex items-center justify-between">
+
+                    <div className="flex items-center gap-2">
+
+                      <span className="text-lg">💬</span>
+
+                      <h4 className="font-semibold text-slate-900">
+                        Teacher Response
+                      </h4>
+
+                    </div>
+
+                    {editingDeviceId !== device.id && (
+                      <button
+                        onClick={() => startEdit(device)}
+                        className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-blue-600"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+
+                  </div>
+
+                  {editingDeviceId === device.id ? (
+
+                    <>
+                      <textarea
+                        rows={4}
+                        value={teacherResponse}
+                        onChange={(e) => setTeacherResponse(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm focus:border-blue-500 focus:outline-none"
+                      />
+
+                      <div className="mt-4 flex justify-end gap-3">
+
+                        <button
+                          onClick={cancelEdit}
+                          className="rounded-lg border border-slate-300 px-4 py-2 text-sm"
+                        >
+                          <X className="mr-1 inline h-4 w-4" />
+                          Cancel
+                        </button>
+
+                        <button
+                          onClick={() => saveTeacherResponse(device.id)}
+                          disabled={processingId === device.id}
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                        >
+                          <Save className="mr-1 inline h-4 w-4" />
+                          Save
+                        </button>
+
+                      </div>
+
+                    </>
+
+                  ) : (
+
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                      {device.rejectedReason ?? "No response provided."}
+                    </p>
+
+                  )}
+
+                </div>
+
+              </div>
+            )}
+
+            
 
             {/* Approval Information */}
             {(device.status === "APPROVED" ||

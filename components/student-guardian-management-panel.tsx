@@ -42,7 +42,7 @@ import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import { email } from "zod";
 
-type StudentListItem = {
+export type StudentListItem = {
   id: string;
   name: string;
   status: number;
@@ -64,7 +64,7 @@ type ApiError = {
   message?: string;
 };
 
-type PaginatedStudentsResponse = {
+export type PaginatedStudentsResponse = {
   success: boolean;
   data?: StudentListItem[];
   error?: ApiError;
@@ -389,76 +389,76 @@ const pendingCount = pendingStudents.length;
     }
 
   const loadStudentList = useCallback(
-  async (
-    nextPage = 1,
-    appliedFilters = { name: "", grade: "",email:"" },
-    currentSortBy = sortBy,
-    currentSortOrder = sortOrder,
-    currentPageSize = pageSize
-  ) => {
-      setIsLoadingList(true);
-      setErrorMessage(null);
+    async (
+      nextPage = 1,
+      appliedFilters = { name: "", grade: "",email:"" },
+      currentSortBy = sortBy,
+      currentSortOrder = sortOrder,
+      currentPageSize = pageSize
+    ) => {
+        setIsLoadingList(true);
+        setErrorMessage(null);
 
-      try {
-        const query = new URLSearchParams({
-          page: String(nextPage),
-          pageSize: String(currentPageSize),
-        });
+        try {
+          const query = new URLSearchParams({
+            page: String(nextPage),
+            pageSize: String(currentPageSize),
+          });
 
-        query.set("sortBy", currentSortBy);
-        query.set("sortOrder", currentSortOrder);
+          query.set("sortBy", currentSortBy);
+          query.set("sortOrder", currentSortOrder);
 
-        if (appliedFilters.name.trim()) {
-          query.set("name", appliedFilters.name.trim());
-        }
+          if (appliedFilters.name.trim()) {
+            query.set("name", appliedFilters.name.trim());
+          }
 
-        if (appliedFilters.grade) {
-          query.set("grade", appliedFilters.grade);
-        }
+          if (appliedFilters.grade) {
+            query.set("grade", appliedFilters.grade);
+          }
 
-        if (appliedFilters.email.trim()) {
-          query.set("email", appliedFilters.email.trim());
-        }
+          if (appliedFilters.email.trim()) {
+            query.set("email", appliedFilters.email.trim());
+          }
 
-        console.log(
-          `/api/students?${query.toString()}`
-        );
-
-        const response = await fetch(
-          `/api/students?${query.toString()}`
-        );
-
-        const payload =
-          (await response.json()) as PaginatedStudentsResponse;
-
-        if (!response.ok || !payload.success) {
-          setErrorMessage(
-            payload.error?.message ??
-              "Failed to load students."
+          console.log(
+            `/api/students?${query.toString()}`
           );
-          return;
+
+          const response = await fetch(
+            `/api/students?${query.toString()}`
+          );
+
+          const payload =
+            (await response.json()) as PaginatedStudentsResponse;
+
+          if (!response.ok || !payload.success) {
+            setErrorMessage(
+              payload.error?.message ??
+                "Failed to load students."
+            );
+            return;
+          }
+
+          console.log(payload);
+
+          setStudents(payload.data ?? []);
+          setPage(payload.pagination?.page ?? nextPage);
+          setTotalPages(
+            payload.pagination?.totalPages ?? 1
+          );
+          setTotalItems(
+            payload.pagination?.totalItems ?? 0
+          );
+        } catch {
+          setErrorMessage(
+            "Unable to load students right now."
+          );
+        } finally {
+          setIsLoadingList(false);
         }
-
-        console.log(payload);
-
-        setStudents(payload.data ?? []);
-        setPage(payload.pagination?.page ?? nextPage);
-        setTotalPages(
-          payload.pagination?.totalPages ?? 1
-        );
-        setTotalItems(
-          payload.pagination?.totalItems ?? 0
-        );
-      } catch {
-        setErrorMessage(
-          "Unable to load students right now."
-        );
-      } finally {
-        setIsLoadingList(false);
-      }
-    },
-    [sortBy, sortOrder]
-  );
+      },
+      [sortBy, sortOrder]
+    );
 
   const [grades, setGrades] = useState<Grade[]>([]);
 
