@@ -105,48 +105,48 @@ export function JitsiClassroom() {
 
 
 
-  // async function handleTeacherEndSession() {
-  //   if (!joinInfo || role !== "teacher") {
-  //     return;
-  //   }
+  async function handleTeacherEndSession() {
+    if (!joinInfo || role !== "teacher") {
+      return;
+    }
 
-  //   const confirmed = window.confirm("End this live session now?");
+    const confirmed = window.confirm("End this live session now?");
 
-  //   if (!confirmed) {
-  //     return;
-  //   }
+    if (!confirmed) {
+      return;
+    }
 
-  //   setIsEndingSession(true);
-  //   setErrorMessage(null);
+    setIsEndingSession(true);
+    setErrorMessage(null);
 
-  //   try {
-  //     const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
-  //       method: "POST",
-  //     });
+    try {
+      const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
+        method: "POST",
+      });
 
-  //     const payload = (await response.json()) as {
-  //       success: boolean;
-  //       error?: {
-  //         message?: string;
-  //       };
-  //     };
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: {
+          message?: string;
+        };
+      };
 
-  //     if (!response.ok || !payload.success) {
-  //       throw new Error(payload.error?.message ?? "Failed to end session.");
-  //     }
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error?.message ?? "Failed to end session.");
+      }
 
-  //     apiRef.current?.dispose();
-  //     apiRef.current = null;
-  //     setIsTeacherControlsReady(false);
-  //     setHasSessionEnded(true);
-  //     setIsJitsiReady(false);
-  //     setTeacherFlowStage("ended-await-restart");
-  //   } catch (error) {
-  //     setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
-  //   } finally {
-  //     setIsEndingSession(false);
-  //   }
-  // }
+      apiRef.current?.dispose();
+      apiRef.current = null;
+      setIsTeacherControlsReady(false);
+      setHasSessionEnded(true);
+      setIsJitsiReady(false);
+      setTeacherFlowStage("ended-await-restart");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to end session right now.");
+    } finally {
+      setIsEndingSession(false);
+    }
+  }
 
   async function handleTeacherRestartSession() {
     if (!joinInfo || role !== "teacher") {
@@ -709,3 +709,11 @@ export function JitsiClassroom() {
     </main>
   );
 }
+function setIsEndingSession(arg0: boolean) {
+  throw new Error("Function not implemented.");
+}
+
+function setIsTeacherControlsReady(arg0: boolean) {
+  throw new Error("Function not implemented.");
+}
+

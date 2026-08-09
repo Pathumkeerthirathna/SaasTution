@@ -16,6 +16,7 @@ import {
 import {
   getStudentRegistrationEmail,
 } from "@/emails/StudentRegistrationEmail";
+import { ClassroomStudent } from "@/components/Jitsi/types";
 
 const HASH_ROUNDS = 12;
 
@@ -1895,4 +1896,40 @@ export async function declineStudent(studentId: string) {
       confirmedAt: new Date(),
     },
   });
+}
+
+
+export async function listStudentsForClassroom(params: {
+  teacherId: string;
+  classId: string;
+}): Promise<ClassroomStudent[]> {
+  await assertTeacherOwnsClass(
+    params.classId,
+    params.teacherId
+  );
+
+  const classStudents = await prisma.classStudent.findMany({
+    where: {
+      classId: params.classId,
+      isActive: true,
+    },
+    orderBy: {
+      assignedAt: "asc",
+    },
+    select: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  return classStudents.map(({ student }) => ({
+    studentId: student.id,
+    displayName: student.name,
+    email: student.email,
+  }));
 }

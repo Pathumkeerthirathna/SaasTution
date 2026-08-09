@@ -2,8 +2,9 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { JitsiClassroom } from "@/components/jitsi-classroom";
+
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
+import JitsiClassroom from "@/components/Jitsi/JitsiClassroom";
 
 type SessionJoinPageProps = {
   searchParams?: {
@@ -28,8 +29,16 @@ export default async function SessionJoinPage({ searchParams }: SessionJoinPageP
     }
   }
 
-  return (
-    <Suspense fallback={<div className="p-6 text-sm text-muted">Loading classroom...</div>}>
+ return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex w-full max-w-7xl flex-1 items-center justify-center py-20">
+          <p className="text-sm text-slate-500">
+            Loading classroom...
+          </p>
+        </main>
+      }
+    >
       <JitsiClassroom />
     </Suspense>
   );
