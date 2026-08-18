@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  Dispatch,
-  SetStateAction,
   useEffect,
+  useRef,
+  useImperativeHandle,
 } from "react";
 
 import type {
@@ -17,8 +17,21 @@ import {
   teacherToolbar,
 } from "../constants/toolbar";
 
+export type JitsiControls = {
+  startRecording: () => void;
+  stopRecording: () => void;
+  startYouTubeLive: (
+    streamKey: string,
+    broadcastId: string
+  ) => void;
+  stopYouTubeLive: () => void;
+};
+
+
 type UseJitsiProps = {
+  
   containerRef: React.RefObject<HTMLDivElement | null>;
+  controlsRef: React.RefObject<JitsiControls | null>;
   joinInfo: JoinInfo;
   role: UserRole;
   teacherName: string;
@@ -36,10 +49,20 @@ type UseJitsiProps = {
       videoMuted?: boolean;
     }
   ) => void;
+
+  onRecordingStatusChanged?: (
+    isRecording: boolean
+  ) => void;
+
+  onLiveStatusChanged?: (
+    isLive: boolean
+  ) => void;
+
 };
 
 export default function useJitsi({
   containerRef,
+  controlsRef,
   joinInfo,
   role,
   teacherName,
@@ -48,8 +71,100 @@ export default function useJitsi({
   markLeft,
   onParticipantsChanged,
   onParticipantStatusChanged,
+  onRecordingStatusChanged,
+  onLiveStatusChanged
   
 }: UseJitsiProps) {
+
+  const apiRef = useRef<any>(null);
+
+  useImperativeHandle(
+    controlsRef,
+    () => ({
+      startRecording: () => {
+        if (!apiRef.current) {
+          console.warn(
+            "Jitsi API is not ready"
+          );
+          return;
+        }
+
+        console.log(
+          "🎥 Starting Jitsi recording..."
+        );
+
+        apiRef.current.executeCommand(
+          "startRecording",
+          {
+            mode: "file",
+          }
+        );
+      },
+
+      stopRecording: () => {
+        if (!apiRef.current) {
+          console.warn(
+            "Jitsi API is not ready"
+          );
+          return;
+        }
+
+        console.log(
+          "🛑 Stopping Jitsi recording..."
+        );
+
+        apiRef.current.executeCommand(
+          "stopRecording",
+          "file"
+        );
+      },
+
+      startYouTubeLive: (  streamKey,
+            broadcastId) => {
+        if (!apiRef.current) {
+          console.warn(
+            "Jitsi API is not ready"
+          );
+          return;
+        }
+
+        console.log(
+          "🔴 Starting YouTube Live..."
+        );
+
+        apiRef.current.executeCommand(
+          "startRecording",
+          {
+            mode: "stream",
+
+            youtubeStreamKey:
+              streamKey,
+
+            youtubeBroadcastID:
+              broadcastId,
+          }
+        );
+      },
+
+      stopYouTubeLive: () => {
+        if (!apiRef.current) {
+          console.warn(
+            "Jitsi API is not ready"
+          );
+          return;
+        }
+
+        console.log(
+          "🛑 Stopping YouTube Live..."
+        );
+
+        apiRef.current.executeCommand(
+          "stopRecording"
+        );
+      },
+    }),
+    []
+  );
 
   /*
    * ============================================================
@@ -96,6 +211,7 @@ export default function useJitsi({
     };
 
   }, []);
+
 
 
   /*
@@ -219,6 +335,8 @@ export default function useJitsi({
           },
         }
       );
+
+      apiRef.current = api;
 
 
     /*
@@ -426,6 +544,43 @@ export default function useJitsi({
         }
     };
 
+    const handleRecordingStatusChanged = (
+      event: unknown
+    ) => {
+      const data = event as {
+        on?: boolean;
+        mode?: string;
+        transcription?: boolean;
+      };
+
+      console.log(
+        "🎥 JITSI RECORDING STATUS:",
+        data
+      );
+
+      const isOn = data.on ?? false;
+
+      // Normal Jitsi/Jibri file recording
+      if (data.mode === "file") {
+        onRecordingStatusChanged?.(isOn);
+
+        // Make sure YouTube Live is not marked active
+        onLiveStatusChanged?.(false);
+
+        return;
+      }
+
+      // YouTube streaming through Jibri
+      if (data.mode === "stream") {
+        onLiveStatusChanged?.(isOn);
+
+        // This is NOT a normal file recording
+        onRecordingStatusChanged?.(false);
+
+        return;
+      }
+    };
+
     /*
      * ============================================================
      * REGISTER ONLY REQUIRED LISTENERS
@@ -455,6 +610,11 @@ export default function useJitsi({
     api.addListener(
       "participantMuted",
       handleParticipantMuted
+    );
+
+    api.addListener(
+      "recordingStatusChanged",
+      handleRecordingStatusChanged
     );
 
     /*
@@ -509,9 +669,16 @@ export default function useJitsi({
       api.removeListener(
         "participantMuted",
         handleParticipantMuted
-        );
+      );
+
+      api.removeListener(
+        "recordingStatusChanged",
+        handleRecordingStatusChanged
+      );
       
       api.dispose();
+
+      apiRef.current = null;
 
       void markLeft();
     };

@@ -13,12 +13,16 @@ import {
   CalendarDays,
   CheckSquare2,
   CircleHelp,
+  Clock,
+  FileText,
   GraduationCap,
   Layers3,
   Pencil,
+  Plus,
   RotateCcw,
   Search,
   Square,
+  Trash2,
   UserMinus,
   UserPlus,
   Users,
@@ -947,110 +951,118 @@ const isAllSelected =
             return (
              <div
                 key={item.id}
-                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl"
+                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:ring-teal-100"
               >
                 {/* Header */}
-                <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-5 text-white">
-                  <div className="flex items-start justify-between">
+                <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-teal-600 px-5 py-4 text-white">
+
+                  {/* Ambient glow */}
+                  <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-teal-300/20 blur-2xl" />
+                  <div className="pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full bg-sky-400/10 blur-2xl" />
+
+                  <div className="relative flex items-start justify-between gap-3">
                     {/* Left */}
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-                        <BookOpen className="h-7 w-7" />
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10 shadow-inner backdrop-blur">
+                        <BookOpen className="h-5 w-5 text-teal-200" />
                       </div>
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-xl font-bold">
-                            {item.name}
-                          </h3>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-lg font-bold leading-tight tracking-tight text-white">
+                          {item.name}
+                        </h3>
 
-                          <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-semibold">
-                            ● Active
-                          </span>
-                        </div>
-
-                        <p className="mt-1 text-sm text-emerald-100">
+                        <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-sky-200/80">
+                          <Layers3 size={11} />
                           General
-                        </p>
+                        </div>
                       </div>
                     </div>
 
                     {/* Right */}
-                    <div className="flex flex-col items-end justify-between text-right">
-                      <span className="text-xs text-emerald-100">
-                        Created {new Date(item.createdAt).toLocaleDateString()}
-                      </span>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-teal-300/30 bg-teal-400/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-teal-50">
+                      <span className="h-1.5 w-1.5 rounded-full bg-teal-300" />
+                      Active
+                    </span>
+                  </div>
 
-                      {item.startDate && (
-                        <div className="mt-6 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
-                          📅 Upcoming:{" "}
-                          {new Date(item.startDate).toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </div>
-                      )}
-                    </div>
+                  <div className="relative mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+                    <span className="text-[11px] text-sky-200/70">
+                      Created {new Date(item.createdAt).toLocaleDateString()}
+                    </span>
+
+                    {item.startDate && (
+                      <div className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-teal-50 backdrop-blur">
+                        <CalendarDays size={12} />
+                        {new Date(item.startDate).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Body */}
-                <div className="space-y-5 p-5">
+                <div className="space-y-4 p-5">
 
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-3">
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center gap-2 text-emerald-600">
+                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition-colors group-hover:border-sky-200">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600">
                         <Users size={15} />
-                        <span className="text-xs font-semibold">
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                           Students
-                        </span>
+                        </p>
+                        <p className="truncate text-base font-bold text-slate-900">
+                          {overview.activeStudents}
+                        </p>
                       </div>
-
-                      <p className="mt-2 text-xl font-bold text-slate-900">
-                        {overview.activeStudents}
-                      </p>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center gap-2 text-orange-600">
+                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition-colors group-hover:border-teal-200">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
                         <Wallet size={15} />
-                        <span className="text-xs font-semibold">
-                          Monthly Fee
-                        </span>
                       </div>
-
-                      <p className="mt-2 text-lg font-bold text-orange-600">
-                        Rs. {item.monthlyFee.toLocaleString()}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          Fee
+                        </p>
+                        <p className="truncate text-base font-bold text-slate-900">
+                          Rs. {item.monthlyFee.toLocaleString()}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center gap-2 text-indigo-600">
+                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition-colors group-hover:border-blue-200">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
                         <Calendar size={15} />
-                        <span className="text-xs font-semibold">
-                          Due Week
-                        </span>
                       </div>
-
-                      <p className="mt-2 text-lg font-bold text-indigo-700">
-                        Week {item.paymentDueWeek}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          Due Week
+                        </p>
+                        <p className="truncate text-base font-bold text-slate-900">
+                          Week {item.paymentDueWeek}
+                        </p>
+                      </div>
                     </div>
 
                   </div>
 
                   {/* Schedule */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
 
                     <div className="mb-3 flex items-center gap-2">
-                      <CalendarDays
-                        className="h-4 w-4 text-orange-500"
-                      />
+                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-900/10">
+                        <CalendarDays className="h-3.5 w-3.5 text-blue-900" />
+                      </div>
 
-                      <span className="font-semibold text-slate-800">
+                      <span className="text-sm font-semibold text-slate-800">
                         Weekly Schedule
                       </span>
                     </div>
@@ -1060,13 +1072,14 @@ const isAllSelected =
                         {item.schedules.slice(0, 2).map((schedule) => (
                           <div
                             key={`${schedule.dayOfWeek}-${schedule.startTime}`}
-                            className="flex items-center justify-between rounded-lg bg-white px-3 py-2"
+                            className="flex items-center justify-between rounded-lg border border-slate-100 bg-white px-3 py-2 shadow-sm"
                           >
-                            <span className="text-sm font-medium text-slate-700">
+                            <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
                               {schedule.dayOfWeek}
                             </span>
 
-                            <span className="text-sm text-slate-500">
+                            <span className="flex items-center gap-1 text-xs font-medium text-slate-500">
+                              <Clock size={12} className="text-teal-600" />
                               {formatTime12h(schedule.startTime)}
                               {" - "}
                               {formatTime12h(schedule.endTime)}
@@ -1083,38 +1096,45 @@ const isAllSelected =
                   </div>
 
                   {/* Description */}
-                  <p className="line-clamp-2 text-sm leading-6 text-slate-600">
-                    {item.description ||
-                      "No class description provided."}
-                  </p>
+                  <div className="flex items-start gap-2">
+                    <FileText size={14} className="mt-0.5 shrink-0 text-slate-400" />
+                    <p className="line-clamp-2 text-sm leading-6 text-slate-600">
+                      {item.description ||
+                        "No class description provided."}
+                    </p>
+                  </div>
 
                   {/* Footer */}
                   <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
 
                     <button
                       onClick={() => setStudentsPanelClassId(item.id)}
-                      className="rounded-xl bg-emerald-600 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                      className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-900 to-teal-600 py-2 text-xs font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110"
                     >
+                      <Users size={13} />
                       Students
                     </button>
 
                     <button
-                      className="rounded-xl border border-slate-200 py-2 text-sm font-medium hover:bg-slate-50"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 py-2 text-xs font-medium text-blue-800 transition hover:bg-blue-50"
                     >
+                      <CalendarDays size={13} />
                       Schedule
                     </button>
 
                     <button
                       onClick={() => beginEdit(item)}
-                      className="rounded-xl border border-slate-200 py-2 text-sm font-medium hover:bg-slate-50"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                     >
+                      <Pencil size={13} />
                       Edit
                     </button>
 
                     <button
                       onClick={() => void deleteClass(item.id)}
-                      className="rounded-xl border border-rose-200 bg-rose-50 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-100"
                     >
+                      <Trash2 size={13} />
                       Delete
                     </button>
 
@@ -1184,7 +1204,7 @@ const isAllSelected =
         <div className="sticky top-0 z-10 -mx-6 mb-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-sm">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-900 to-teal-600 text-white shadow-md">
                 <GraduationCap size={22} />
               </div>
 
@@ -1194,7 +1214,7 @@ const isAllSelected =
                     Create New Class
                   </h3>
 
-                  <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-700">
+                  <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
                     Setup
                   </span>
                 </div>
@@ -1252,78 +1272,92 @@ const isAllSelected =
 
           {/* Basic Information */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-base font-semibold text-foreground">
-                Basic Information
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Configure the core details of your class.
-              </p>
+            <div className="mb-5 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                <BookOpen size={15} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Basic Information
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure the core details of your class.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="className" className="form-label">
+                <label htmlFor="className" className="form-label mb-1.5 block">
                   Class name
                 </label>
-                <input
-                  id="className"
-                  required
-                  value={createForm.name}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  className="control-input"
-                  placeholder="Math - Grade 7"
-                />
+                <div className="relative">
+                  <BookOpen size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="className"
+                    required
+                    value={createForm.name}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
+                    className="control-input h-10 pl-9 text-sm"
+                    placeholder="Math - Grade 7"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label htmlFor="classMonthlyFee" className="form-label">
+                  <label htmlFor="classMonthlyFee" className="form-label mb-1.5 block">
                     Monthly fee (LKR)
                   </label>
-                  <input
-                    id="classMonthlyFee"
-                    type="number"
-                    min="0"
-                    required
-                    value={createForm.monthlyFee}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({
-                        ...prev,
-                        monthlyFee: event.target.value,
-                      }))
-                    }
-                    className="control-input"
-                    placeholder="2500"
-                  />
+                  <div className="relative">
+                    <Wallet size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="classMonthlyFee"
+                      type="number"
+                      min="0"
+                      required
+                      value={createForm.monthlyFee}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          monthlyFee: event.target.value,
+                        }))
+                      }
+                      className="control-input h-10 pl-9 text-sm"
+                      placeholder="2500"
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label htmlFor="classPaymentDueWeek" className="form-label">
+                  <label htmlFor="classPaymentDueWeek" className="form-label mb-1.5 block">
                     Payment due week
                   </label>
-                  <select
-                    id="classPaymentDueWeek"
-                    required
-                    value={createForm.paymentDueWeek}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({
-                        ...prev,
-                        paymentDueWeek: event.target.value,
-                      }))
-                    }
-                    className="control-select"
-                  >
-                    <option value="1">First week</option>
-                    <option value="2">Second week</option>
-                    <option value="3">Third week</option>
-                    <option value="4">Fourth week</option>
-                  </select>
+                  <div className="relative">
+                    <Calendar size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <select
+                      id="classPaymentDueWeek"
+                      required
+                      value={createForm.paymentDueWeek}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          paymentDueWeek: event.target.value,
+                        }))
+                      }
+                      className="control-select h-10 pl-9 text-sm"
+                    >
+                      <option value="1">First week</option>
+                      <option value="2">Second week</option>
+                      <option value="3">Third week</option>
+                      <option value="4">Fourth week</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1331,15 +1365,20 @@ const isAllSelected =
 
           {/* Schedule Section */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            
+
             <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  Class Schedules
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Configure weekly class sessions.
-                </p>
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                  <CalendarDays size={15} />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    Class Schedules
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Configure weekly class sessions.
+                  </p>
+                </div>
               </div>
 
               <button
@@ -1350,8 +1389,9 @@ const isAllSelected =
                     schedules: [...prev.schedules, getDefaultScheduleRow()],
                   }));
                 }}
-                className="btn-secondary"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
               >
+                <Plus size={14} />
                 Add Schedule
               </button>
 
@@ -1360,21 +1400,24 @@ const isAllSelected =
             {/* Batch Start Date */}
             <div className="mb-6 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="form-label">
+                <label className="form-label mb-1.5 block">
                   Batch Start Date
                 </label>
 
-                <input
-                  type="date"
-                  value={createForm.startDate}
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      startDate: e.target.value,
-                    }))
-                  }
-                  className="control-input"
-                />
+                <div className="relative">
+                  <CalendarDays size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="date"
+                    value={createForm.startDate}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        startDate: e.target.value,
+                      }))
+                    }
+                    className="control-input h-10 pl-9 text-sm"
+                  />
+                </div>
 
                 <p className="mt-1 text-xs text-slate-500">
                   Date when this batch begins.
@@ -1382,19 +1425,20 @@ const isAllSelected =
               </div>
 
               <div>
-                <label className="form-label">
+                <label className="form-label mb-1.5 block">
                   Preview
                 </label>
 
-                <div className="flex h-[42px] items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
+                <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
                       createForm.startDate &&
                       new Date(createForm.startDate) > new Date()
-                        ? "bg-orange-100 text-orange-700"
-                        : "bg-emerald-100 text-emerald-700"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-teal-100 text-teal-700"
                     }`}
                   >
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
                     {createForm.startDate &&
                     new Date(createForm.startDate) > new Date()
                       ? "Upcoming Batch"
@@ -1408,7 +1452,7 @@ const isAllSelected =
               {createForm.schedules.map((schedule, index) => (
                 <div
                   key={`${schedule.dayOfWeek}-${index}`}
-                  className="rounded-xl border border-border/70 bg-muted/20 p-4 transition-all hover:border-primary/30"
+                  className="rounded-xl border border-border/70 bg-muted/20 p-4 transition-all hover:border-teal-200"
                 >
                   <div className="mb-4 flex items-center justify-between">
                     <div>
@@ -1433,6 +1477,7 @@ const isAllSelected =
                       }}
                       className="btn-danger"
                     >
+                      <Trash2 size={13} />
                       Remove
                     </button>
                   </div>
@@ -1440,81 +1485,90 @@ const isAllSelected =
                   <div className="grid gap-4 md:grid-cols-3">
 
                     <div>
-                      <label className="form-label">
+                      <label className="form-label mb-1.5 block">
                         Day of week
                       </label>
 
-                      <select
-                        value={schedule.dayOfWeek}
-                        onChange={(event) => {
-                          const day =
-                            event.target.value as FormState["schedules"][number]["dayOfWeek"];
+                      <div className="relative">
+                        <Calendar size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={schedule.dayOfWeek}
+                          onChange={(event) => {
+                            const day =
+                              event.target.value as FormState["schedules"][number]["dayOfWeek"];
 
-                          setCreateForm((prev) => ({
-                            ...prev,
-                            schedules: prev.schedules.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, dayOfWeek: day }
-                                : item
-                            ),
-                          }));
-                        }}
-                        className="control-select"
-                      >
-                        {WEEK_DAYS.map((day) => (
-                          <option key={day} value={day}>
-                            {day}
-                          </option>
-                        ))}
-                      </select>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              schedules: prev.schedules.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, dayOfWeek: day }
+                                  : item
+                              ),
+                            }));
+                          }}
+                          className="control-select h-10 pl-9 text-sm"
+                        >
+                          {WEEK_DAYS.map((day) => (
+                            <option key={day} value={day}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <div>
-                      <label className="form-label">
+                      <label className="form-label mb-1.5 block">
                         Start time
                       </label>
 
-                      <input
-                        type="time"
-                        value={schedule.startTime}
-                        onChange={(event) => {
-                          const value = event.target.value;
+                      <div className="relative">
+                        <Clock size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="time"
+                          value={schedule.startTime}
+                          onChange={(event) => {
+                            const value = event.target.value;
 
-                          setCreateForm((prev) => ({
-                            ...prev,
-                            schedules: prev.schedules.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, startTime: value }
-                                : item
-                            ),
-                          }));
-                        }}
-                        className="control-input"
-                      />
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              schedules: prev.schedules.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, startTime: value }
+                                  : item
+                              ),
+                            }));
+                          }}
+                          className="control-input h-10 pl-9 text-sm"
+                        />
+                      </div>
                     </div>
 
                     <div>
-                      <label className="form-label">
+                      <label className="form-label mb-1.5 block">
                         End time
                       </label>
 
-                      <input
-                        type="time"
-                        value={schedule.endTime}
-                        onChange={(event) => {
-                          const value = event.target.value;
+                      <div className="relative">
+                        <Clock size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="time"
+                          value={schedule.endTime}
+                          onChange={(event) => {
+                            const value = event.target.value;
 
-                          setCreateForm((prev) => ({
-                            ...prev,
-                            schedules: prev.schedules.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, endTime: value }
-                                : item
-                            ),
-                          }));
-                        }}
-                        className="control-input"
-                      />
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              schedules: prev.schedules.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, endTime: value }
+                                  : item
+                              ),
+                            }));
+                          }}
+                          className="control-input h-10 pl-9 text-sm"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1524,53 +1578,64 @@ const isAllSelected =
 
           {/* Additional Information */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-base font-semibold text-foreground">
-                Additional Information
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Optional details about the class.
-              </p>
+            <div className="mb-5 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+                <FileText size={15} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Additional Information
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Optional details about the class.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="classScheduleSummary" className="form-label">
+                <label htmlFor="classScheduleSummary" className="form-label mb-1.5 block">
                   Schedule summary
                 </label>
 
-                <input
-                  id="classScheduleSummary"
-                  value={createForm.schedules
-                    .map(
-                      (row) =>
-                        `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`
-                    )
-                    .join(" | ")}
-                  readOnly
-                  className="control-input"
-                  placeholder="Auto-generated from schedule rows"
-                />
+                <div className="relative">
+                  <CalendarDays size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="classScheduleSummary"
+                    value={createForm.schedules
+                      .map(
+                        (row) =>
+                          `${getDayShortLabel(row.dayOfWeek)} ${row.startTime}-${row.endTime}`
+                      )
+                      .join(" | ")}
+                    readOnly
+                    className="control-input h-10 cursor-not-allowed bg-slate-50 pl-9 text-sm text-slate-500"
+                    placeholder="Auto-generated from schedule rows"
+                  />
+                </div>
               </div>
 
               <div>
-                <label htmlFor="classDescription" className="form-label">
+                <label htmlFor="classDescription" className="form-label mb-1.5 block">
                   Description
                 </label>
 
-                <textarea
-                  id="classDescription"
-                  rows={4}
-                  value={createForm.description}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      description: event.target.value,
-                    }))
-                  }
-                  className="control-textarea"
-                  placeholder="Weekly class focus and outcomes"
-                />
+                <div className="relative">
+                  <FileText size={16} className="pointer-events-none absolute left-3 top-3 text-slate-400" />
+                  <textarea
+                    id="classDescription"
+                    rows={4}
+                    value={createForm.description}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                    className="control-textarea pl-9 text-sm"
+                    placeholder="Weekly class focus and outcomes"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1578,8 +1643,9 @@ const isAllSelected =
           <button
             type="submit"
             disabled={isSaving}
-            className="btn-primary w-full"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-900 to-teal-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
           >
+            <GraduationCap size={16} />
             {isSaving ? "Saving..." : "Create Class"}
           </button>
         </form>

@@ -8,10 +8,12 @@ import MeetingCard from "./classroom/meeting/MeetingCard";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback,useRef, useEffect, useState } from "react";
 import { ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "../class-management-panel";
+
+import type { JitsiControls } from "./hooks/useJitsi";
 
 
 
@@ -41,6 +43,19 @@ export default function JitsiClassroom() {
 
 const [classStudents, setClassStudents] =
   useState<ClassroomStudent[]>([]);
+
+  const [isRecording, setIsRecording] =
+  useState(false);
+
+  const [isLive, setIsLive] =
+  useState(false);
+
+  const jitsiMeetingRef =
+  useRef<JitsiControls | null>(null);
+
+  // const testRecordingControl = () => {
+  //   jitsiMeetingRef.current?.startRecording();
+  // };
 
 
   const handleParticipantsChanged = useCallback(
@@ -153,10 +168,91 @@ const [classStudents, setClassStudents] =
     );
   }
 
+  const handleStartYouTubeLive = async () => {
+    console.log("🔴 START LIVE BUTTON CLICKED");
+
+    const lectureId =
+      joinInfo.lecture?.id;
+
+    if (!lectureId) {
+      console.error(
+        "❌ No lecture ID available."
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/youtube/lecture/start",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            lectureId,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      console.log(
+        "🎥 YOUTUBE START RESPONSE:",
+        data
+      );
+
+      if (!data.success) {
+        console.error(
+          "❌ YouTube broadcast could not be prepared."
+        );
+        return;
+      }
+
+      if (!data.streamName) {
+        console.error(
+          "❌ YouTube stream key is missing."
+        );
+        return;
+      }
+
+      if (!data.broadcastId) {
+        console.error(
+          "❌ YouTube broadcast ID is missing."
+        );
+        return;
+      }
+
+      console.log(
+        "🚀 Starting Jitsi → YouTube stream..."
+      );
+
+      jitsiMeetingRef.current?.startYouTubeLive(
+        data.streamName,
+        data.broadcastId
+      );
+
+    } catch (error) {
+      console.error(
+        "❌ Failed to start YouTube:",
+        error
+      );
+    }
+  };
+
   return (
   <main className="h-screen w-full overflow-hidden bg-[#0F172A]">
 
     <div className="grid h-full min-h-0 w-full grid-cols-[minmax(0,1fr)_72px]">
+
+      {/* <button
+        type="button"
+        onClick={testRecordingControl}
+        className="rounded-lg bg-red-600 px-4 py-2 text-white"
+      >
+        Test Recording Control
+      </button> */}
 
       {/* MAIN CLASSROOM */}
       <MeetingCard
@@ -164,9 +260,50 @@ const [classStudents, setClassStudents] =
         lectureTitle={joinInfo.lecture?.title}
         teacherName={teacherName}
         role={role}
+        isRecording={isRecording}
+        isLive={isLive}
+        onStartRecording={() => {
+          console.log("🎥 RECORD BUTTON CLICKED");
+
+          jitsiMeetingRef.current?.startRecording();
+
+          setIsRecording(true);
+        }}
+        onStopRecording={() => {
+          console.log("🛑 STOP RECORDING BUTTON CLICKED");
+
+          jitsiMeetingRef.current?.stopRecording();
+
+           setIsRecording(false);
+        }}
+
+        onStartLive={handleStartYouTubeLive}
+
+        onStopLive={() => {
+          console.log("🛑 STOP LIVE BUTTON CLICKED");
+
+          jitsiMeetingRef.current?.stopYouTubeLive();
+        }}
       >
         <PermissionGate>
           <JitsiMeeting
+            ref={jitsiMeetingRef}
+            onRecordingStatusChanged={(recording) => {
+              console.log(
+                "🎥 CLASSROOM RECORDING STATUS:",
+                recording
+              );
+
+              setIsRecording(recording);
+            }}
+            onLiveStatusChanged={(live) => {
+              console.log(
+                "🔴 CLASSROOM LIVE STATUS:",
+                live
+              );
+
+              setIsLive(live);
+            }}
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}

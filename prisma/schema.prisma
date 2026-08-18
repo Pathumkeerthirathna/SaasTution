@@ -16,6 +16,8 @@ model Teacher {
 
   profile TeacherProfile?
 
+  youtubeConnection YouTubeConnection?
+
   classes                Class[]
   students               Student[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
@@ -28,6 +30,30 @@ model Teacher {
   approvedDevices StudentDevice[] @relation("ApprovedDevices")
 
   @@index([createdAt])
+}
+
+model YouTubeConnection {
+  id       String @id @default(uuid())
+
+  teacherId String  @unique
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  // YouTube channel information
+  channelId    String
+  channelTitle String?
+
+  // OAuth credential
+  // Store the encrypted refresh token here.
+  refreshTokenEncrypted String @db.Text
+
+  // Reusable YouTube Live Stream resource
+  // One stream per teacher, reused for future classes.
+  liveStreamId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([channelId])
 }
 
 model District {
@@ -638,6 +664,14 @@ model Lecture {
   date        DateTime
   classId     String
   createdAt   DateTime       @default(now())
+
+  // YouTube Live
+  youtubeBroadcastId String?
+  youtubeVideoId     String?
+  youtubeUrl         String?
+  youtubePrivacy     YouTubePrivacy?
+  youtubeStatus      YouTubeBroadcastStatus?
+
   assignments Assignment[]
   sessions    ClassSession[]
   class       Class          @relation(fields: [classId], references: [id])
@@ -645,6 +679,22 @@ model Lecture {
   quizzes     Quiz[]
 
   @@index([classId, date])
+}
+
+enum YouTubePrivacy {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum YouTubeBroadcastStatus {
+  CREATED
+  READY
+  TESTING
+  LIVE
+  COMPLETE
+  REVOKED
+  UNKNOWN
 }
 
 model Note {

@@ -8,6 +8,8 @@ import {
   ShieldCheck,
   Clock3,
   Radio,
+  CircleStop,
+  Video,
 } from "lucide-react";
 
 type MeetingCardProps = {
@@ -16,6 +18,14 @@ type MeetingCardProps = {
   lectureTitle?: string;
   teacherName: string;
   role: "teacher" | "student";
+
+  isRecording?: boolean;
+  isLive?: boolean;
+
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
+  onStartLive?: () => void;
+  onStopLive?: () => void;
 };
 
 export default function MeetingCard({
@@ -24,6 +34,12 @@ export default function MeetingCard({
   lectureTitle,
   teacherName,
   role,
+  isRecording = false,
+  isLive = false,
+  onStartRecording,
+  onStopRecording,
+  onStartLive,
+  onStopLive,
 }: MeetingCardProps) {
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0f172a]">
@@ -49,6 +65,54 @@ export default function MeetingCard({
         </div>
 
         <div className="flex items-center gap-5">
+
+          {role === "teacher" && (
+            <div className="flex items-center gap-2">
+
+              {!isRecording && !isLive && (
+                <button
+                  type="button"
+                  onClick={onStartRecording}
+                  className="flex items-center gap-2 rounded-full bg-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-600"
+                >
+                  <Video size={16} />
+                  Record
+                </button>
+              )}
+
+              {isRecording && (
+                <button
+                  type="button"
+                  onClick={onStopRecording}
+                  className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-400 transition hover:bg-red-500/30"
+                >
+                  <CircleStop size={16} />
+                  Stop Recording
+                </button>
+              )}
+
+              {!isLive ? (
+                <button
+                  type="button"
+                  onClick={onStartLive}
+                  className="flex items-center gap-2 rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                >
+                  <Radio size={16} />
+                  Start Live
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onStopLive}
+                  className="flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <Radio size={16} className="animate-pulse" />
+                  Stop Live
+                </button>
+              )}
+
+            </div>
+          )}
 
           {/* LIVE */}
           <div className="flex items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5">
