@@ -50,10 +50,17 @@ model YouTubeConnection {
   // One stream per teacher, reused for future classes.
   liveStreamId String?
 
+  status YouTubeConnectionStatus @default(CONNECTED)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([channelId])
+}
+
+enum YouTubeConnectionStatus {
+  CONNECTED
+  REAUTH_REQUIRED
 }
 
 model District {
@@ -665,20 +672,59 @@ model Lecture {
   classId     String
   createdAt   DateTime       @default(now())
 
-  // YouTube Live
-  youtubeBroadcastId String?
-  youtubeVideoId     String?
-  youtubeUrl         String?
-  youtubePrivacy     YouTubePrivacy?
-  youtubeStatus      YouTubeBroadcastStatus?
-
   assignments Assignment[]
   sessions    ClassSession[]
   class       Class          @relation(fields: [classId], references: [id])
   notes       Note[]
   quizzes     Quiz[]
 
+  youtubeRecordings YouTubeRecording[]
+  youtubeLives      YouTubeLiveBroadcast[]
+
   @@index([classId, date])
+}
+model YouTubeRecording {
+  id String @id @default(uuid())
+
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  broadcastId String @unique
+  videoId     String
+  youtubeUrl  String
+
+  privacy YouTubePrivacy @default(UNLISTED)
+  status  YouTubeBroadcastStatus @default(READY)
+
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lectureId])
+}
+
+model YouTubeLiveBroadcast {
+  id String @id @default(uuid())
+
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  broadcastId String @unique
+  videoId     String
+  youtubeUrl  String
+
+  privacy YouTubePrivacy @default(UNLISTED)
+  status  YouTubeBroadcastStatus @default(READY)
+
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lectureId])
 }
 
 enum YouTubePrivacy {

@@ -46,10 +46,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify OAuth state
-    const storedState =
-        request.cookies.get("youtube_oauth_state")?.value;
+    // const storedState =
+    //     request.cookies.get("youtube_oauth_state")?.value;
 
-    if (!storedState || storedState !== returnedState) {
+    // if (!storedState || storedState !== returnedState) {
+    //     return NextResponse.json(
+    //         {
+    //             error: "Invalid OAuth state.",
+    //         },
+    //         { status: 400 }
+    //     );
+    // }
+
+    const storedStateCookie =
+    request.cookies.get("youtube_oauth_state")?.value;
+
+    if (!storedStateCookie) {
         return NextResponse.json(
             {
                 error: "Invalid OAuth state.",
@@ -57,6 +69,36 @@ export async function GET(request: NextRequest) {
             { status: 400 }
         );
     }
+
+    let oauthState: {
+        state: string;
+        returnTo: string;
+    };
+
+    try {
+        oauthState = JSON.parse(storedStateCookie);
+    } catch {
+        return NextResponse.json(
+            {
+                error: "Invalid OAuth state.",
+            },
+            { status: 400 }
+        );
+    }
+
+    if (
+        !oauthState.state ||
+        oauthState.state !== returnedState
+    ) {
+        return NextResponse.json(
+            {
+                error: "Invalid OAuth state.",
+            },
+            { status: 400 }
+        );
+    }
+
+    const returnTo = oauthState.returnTo || "/";
 
     // Exchange authorization code for Google tokens
     const tokenResponse = await fetch(
@@ -216,16 +258,29 @@ export async function GET(request: NextRequest) {
     });
 
     // OAuth state is no longer needed.
-    const response = NextResponse.json({
-        success: true,
-        message:
-            "YouTube channel connected successfully.",
-        teacherId: teacherSession.teacherId,
-        channelId,
-        channelTitle,
-    });
+     /*
+     * Only allow redirects to internal application paths.
+     */
+    const safeReturnTo =
+        returnTo.startsWith("/") &&
+        !returnTo.startsWith("//")
+            ? returnTo
+            : "/";
 
-    response.cookies.delete("youtube_oauth_state");
+    /*
+     * Redirect teacher back to where
+     * they started the YouTube connection.
+     */
+    const response = NextResponse.redirect(
+        new URL(
+            safeReturnTo,
+            request.url
+        )
+    );
+
+    response.cookies.delete(
+        "youtube_oauth_state"
+    );
 
     return response;
 }

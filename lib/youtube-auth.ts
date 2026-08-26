@@ -1,10 +1,25 @@
 import { decryptYouTubeToken } from "@/lib/youtube-crypto";
 
+export class YouTubeReauthorizationRequiredError extends Error {
+    constructor() {
+        super(
+            "YouTube authorization has expired or been revoked."
+        );
+
+        this.name =
+            "YouTubeReauthorizationRequiredError";
+    }
+}
+
 export async function getYouTubeAccessToken(
     encryptedRefreshToken: string
 ): Promise<string> {
-    const clientId = process.env.GOOGLE_YOUTUBE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_YOUTUBE_CLIENT_SECRET;
+
+    const clientId =
+        process.env.GOOGLE_YOUTUBE_CLIENT_ID;
+
+    const clientSecret =
+        process.env.GOOGLE_YOUTUBE_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
         throw new Error(
@@ -13,16 +28,20 @@ export async function getYouTubeAccessToken(
     }
 
     const refreshToken =
-        decryptYouTubeToken(encryptedRefreshToken);
+        decryptYouTubeToken(
+            encryptedRefreshToken
+        );
 
     const response = await fetch(
         "https://oauth2.googleapis.com/token",
         {
             method: "POST",
+
             headers: {
                 "Content-Type":
                     "application/x-www-form-urlencoded",
             },
+
             body: new URLSearchParams({
                 client_id: clientId,
                 client_secret: clientSecret,
@@ -33,19 +52,29 @@ export async function getYouTubeAccessToken(
     );
 
     if (!response.ok) {
-        const errorDetails = await response.text();
+        const errorDetails =
+            await response.text();
 
         console.error(
             "YouTube access token refresh failed:",
             errorDetails
         );
 
+        if (
+            errorDetails.includes(
+                '"invalid_grant"'
+            )
+        ) {
+            throw new YouTubeReauthorizationRequiredError();
+        }
+
         throw new Error(
             "Unable to refresh YouTube access token."
         );
     }
 
-    const tokenData = await response.json();
+    const tokenData =
+        await response.json();
 
     if (!tokenData.access_token) {
         throw new Error(

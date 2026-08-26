@@ -22,11 +22,15 @@ export type JitsiControls = {
   stopRecording: () => void;
   startYouTubeLive: (
     streamKey: string,
-    broadcastId: string
+    broadcastId: string,
+    purpose:YouTubeStreamPurpose
   ) => void;
   stopYouTubeLive: () => void;
 };
 
+type YouTubeStreamPurpose =
+  | "recording"
+  | "live";
 
 type UseJitsiProps = {
   
@@ -78,6 +82,9 @@ export default function useJitsi({
 
   const apiRef = useRef<any>(null);
 
+  const youtubeStreamPurposeRef =
+  useRef<YouTubeStreamPurpose | null>(null);
+
   useImperativeHandle(
     controlsRef,
     () => ({
@@ -120,13 +127,15 @@ export default function useJitsi({
       },
 
       startYouTubeLive: (  streamKey,
-            broadcastId) => {
+            broadcastId,purpose) => {
         if (!apiRef.current) {
           console.warn(
             "Jitsi API is not ready"
           );
           return;
         }
+
+        youtubeStreamPurposeRef.current = purpose;
 
         console.log(
           "🔴 Starting YouTube Live..."
@@ -159,7 +168,8 @@ export default function useJitsi({
         );
 
         apiRef.current.executeCommand(
-          "stopRecording"
+          "stopRecording",
+          "stream"
         );
       },
     }),
@@ -551,6 +561,7 @@ export default function useJitsi({
         on?: boolean;
         mode?: string;
         transcription?: boolean;
+        error?: string;
       };
 
       console.log(
@@ -558,26 +569,81 @@ export default function useJitsi({
         data
       );
 
+      console.log(
+        "🎥 JITSI RECORDING STATUS JSON:",
+        JSON.stringify(data, null, 2)
+      );
+
       const isOn = data.on ?? false;
 
-      // Normal Jitsi/Jibri file recording
-      if (data.mode === "file") {
-        onRecordingStatusChanged?.(isOn);
+      /*
+     * Our YouTube Recording and YouTube Live
+     * both use Jitsi mode: "stream".
+     *
+     * The purpose ref tells us which one
+     * started this stream.
+     */
+      if (data.mode === "stream") {
 
-        // Make sure YouTube Live is not marked active
-        onLiveStatusChanged?.(false);
+          const purpose =
+              youtubeStreamPurposeRef.current;
 
-        return;
+          console.log(
+              "🎥 YOUTUBE STREAM PURPOSE:",
+              purpose
+          );
+
+          if (purpose === "recording") {
+
+              console.log(
+                  "⏺ YouTube Recording status:",
+                  isOn
+              );
+
+              onRecordingStatusChanged?.(
+                  isOn
+              );
+
+              return;
+          }
+
+          if (purpose === "live") {
+
+              console.log(
+                  "🔴 YouTube Live status:",
+                  isOn
+              );
+
+              onLiveStatusChanged?.(
+                  isOn
+              );
+
+              return;
+          }
+
+          console.warn(
+              "⚠️ YouTube stream status received without a purpose."
+          );
+
+          return;
       }
 
-      // YouTube streaming through Jibri
-      if (data.mode === "stream") {
-        onLiveStatusChanged?.(isOn);
+      /*
+      * File mode is a separate Jitsi recording
+      * feature. Your YouTube flow does not use it.
+      */
+      if (data.mode === "file") {
 
-        // This is NOT a normal file recording
-        onRecordingStatusChanged?.(false);
+          console.log(
+              "📁 Jitsi file recording status:",
+              isOn
+          );
 
-        return;
+          onRecordingStatusChanged?.(
+              isOn
+          );
+
+          return;
       }
     };
 

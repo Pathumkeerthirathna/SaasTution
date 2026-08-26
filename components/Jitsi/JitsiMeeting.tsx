@@ -110,11 +110,13 @@ const JitsiMeeting = forwardRef<
 
       startYouTubeLive: (
         streamKey: string,
-        broadcastId: string
+        broadcastId: string,
+        purpose: "recording" | "live"
       ) => {
         controlsRef.current?.startYouTubeLive(
           streamKey,
-          broadcastId
+          broadcastId,
+          purpose
         );
       },
 

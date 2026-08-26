@@ -543,6 +543,17 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
           id: true,
           name: true,
           schedule: true,
+
+          teacher: {
+            select: {
+              youtubeConnection: {
+                select: {
+                  channelTitle: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -571,6 +582,13 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
     },
     lecture: session.lecture,
     class: session.class,
+      youtube: {
+      channelTitle:
+        session.class.teacher.youtubeConnection?.channelTitle ?? null,
+
+      status:
+        session.class.teacher.youtubeConnection?.status ?? null,
+    },
     token: jitsiToken || undefined,
   };
 }

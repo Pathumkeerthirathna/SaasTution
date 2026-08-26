@@ -2,7 +2,12 @@ import { requireTeacherSession } from "@/lib/auth-session";
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
+
+    const { searchParams } = new URL(request.url);
+
+    const returnTo =
+        searchParams.get("returnTo") || "/";
 
     const teacherSession = await requireTeacherSession();
 
@@ -36,13 +41,28 @@ export async function GET() {
     const response = NextResponse.redirect(googleAuthorizationUrl);
 
     // Store state temporarily in an HttpOnly cookie.
-    response.cookies.set("youtube_oauth_state", state, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 10 * 60, // 10 minutes
-    });
+    // response.cookies.set("youtube_oauth_state", state, {
+    //     httpOnly: true,
+    //     secure: process.env.NODE_ENV === "production",
+    //     sameSite: "lax",
+    //     path: "/",
+    //     maxAge: 10 * 60, // 10 minutes
+    // });
+
+    response.cookies.set(
+        "youtube_oauth_state",
+        JSON.stringify({
+            state,
+            returnTo,
+        }),
+        {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: 10 * 60,
+        }
+    );
 
     return response;
 }

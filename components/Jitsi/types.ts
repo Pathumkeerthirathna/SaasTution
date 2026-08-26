@@ -21,6 +21,11 @@ export type JoinInfo = {
     schedule: string;
   };
 
+  youtube?: {
+    channelTitle: string | null;
+    status: "CONNECTED" | "REAUTH_REQUIRED" | null;
+  };
+
   student?: {
     id: string;
     name: string;
