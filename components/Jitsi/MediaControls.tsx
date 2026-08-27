@@ -1,5 +1,7 @@
 "use client";
 
+import { Video, VideoOff, Mic, MicOff } from "lucide-react";
+
 type MediaControlsProps = {
   cameraEnabled: boolean;
   microphoneEnabled: boolean;
@@ -15,30 +17,30 @@ export default function MediaControls({
   onToggleMicrophone,
 }: MediaControlsProps) {
   return (
-    <div className="mt-6 flex items-center justify-center gap-5">
+    <div className="mt-4 flex items-center justify-center gap-3">
 
       <button
         type="button"
         onClick={onToggleCamera}
-        className={`flex h-14 w-14 items-center justify-center rounded-full text-2xl transition ${
+        className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
           cameraEnabled
-            ? "bg-slate-200 hover:bg-slate-300"
+            ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
             : "bg-red-500 text-white hover:bg-red-600"
         }`}
       >
-        {cameraEnabled ? "📷" : "🚫📷"}
+        {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
       </button>
 
       <button
         type="button"
         onClick={onToggleMicrophone}
-        className={`flex h-14 w-14 items-center justify-center rounded-full text-2xl transition ${
+        className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
           microphoneEnabled
-            ? "bg-slate-200 hover:bg-slate-300"
+            ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
             : "bg-red-500 text-white hover:bg-red-600"
         }`}
       >
-        {microphoneEnabled ? "🎤" : "🔇"}
+        {microphoneEnabled ? <Mic size={18} /> : <MicOff size={18} />}
       </button>
 
     </div>

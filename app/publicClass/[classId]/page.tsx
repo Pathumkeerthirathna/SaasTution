@@ -1,11 +1,5 @@
-
-
-// export default function Page() {
-//   return <ClassLandingPage />;
-// }
-
 import ClassLandingPage from "@/components/teacherProfile/classLanding/ClassLandingPage";
-import { getPublicClass } from "@/services/class-service";
+import { getPublicClass, getPublicClassSessions } from "@/services/class-service";
 import { notFound } from "next/navigation";
 
 interface Props {
@@ -21,5 +15,7 @@ export default async function Page({ params }: Props) {
     notFound();
   }
 
-  return <ClassLandingPage classInfo={classInfo} />;
+  const sessions = await getPublicClassSessions(params.classId);
+
+  return <ClassLandingPage classInfo={classInfo} sessions={sessions} />;
 }

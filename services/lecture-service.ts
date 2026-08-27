@@ -185,6 +185,7 @@ export async function createLectureForTeacher(teacherId: string, input: CreateLe
       id: true,
       title: true,
       date: true,
+      classStatus: true,
       createdAt: true,
       class: {
         select: {
@@ -212,6 +213,38 @@ export async function updateLectureForTeacher(teacherId: string, lectureId: stri
       id: true,
       title: true,
       date: true,
+      classStatus: true,
+      createdAt: true,
+      class: {
+        select: {
+          id: true,
+          name: true,
+          schedule: true,
+        },
+      },
+    },
+  });
+}
+
+export async function updateLectureClassStatusForTeacher(
+  teacherId: string,
+  lectureId: string,
+  classStatus: "COMPLETED" | "CANCELLED"
+) {
+  await assertTeacherOwnsLecture(teacherId, lectureId);
+
+  return prisma.lecture.update({
+    where: {
+      id: lectureId,
+    },
+    data: {
+      classStatus,
+    },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+      classStatus: true,
       createdAt: true,
       class: {
         select: {
@@ -237,6 +270,10 @@ export async function deleteLectureForTeacher(teacherId: string, lectureId: stri
 export async function listLecturesForTeacher(params: {
   teacherId: string;
   classId?: string;
+  title?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  sortOrder?: "asc" | "desc";
   skip: number;
   take: number;
 }) {
@@ -253,6 +290,22 @@ export async function listLecturesForTeacher(params: {
           classId: params.classId,
         }
       : {}),
+    ...(params.title
+      ? {
+          title: {
+            contains: params.title,
+            mode: "insensitive" as const,
+          },
+        }
+      : {}),
+    ...(params.dateFrom || params.dateTo
+      ? {
+          date: {
+            ...(params.dateFrom ? { gte: params.dateFrom } : {}),
+            ...(params.dateTo ? { lte: params.dateTo } : {}),
+          },
+        }
+      : {}),
   };
 
   const [lectures, totalItems] = await Promise.all([
@@ -261,12 +314,13 @@ export async function listLecturesForTeacher(params: {
       skip: params.skip,
       take: params.take,
       orderBy: {
-        date: "desc",
+        date: params.sortOrder === "asc" ? "asc" : "desc",
       },
       select: {
         id: true,
         title: true,
         date: true,
+        classStatus: true,
         createdAt: true,
         class: {
           select: {
@@ -305,18 +359,23 @@ export async function listNotesForLectureForTeacher(teacherId: string, lectureId
     orderBy: {
       id: "desc",
     },
-    select: {
-      id: true,
-      title: true,
-      fileUrl: true,
-      kind: true,
-      mimeType: true,
-      sizeBytes: true,
-      downloadCount: true,
-      lastDownloadedAt: true,
-    },
+    select: noteSelect,
   });
 }
+
+const noteSelect = {
+  id: true,
+  lectureId: true,
+  title: true,
+  fileUrl: true,
+  kind: true,
+  mimeType: true,
+  sizeBytes: true,
+  downloadCount: true,
+  lastDownloadedAt: true,
+  visibility: true,
+  access: true,
+} as const;
 
 export async function listAssignmentsForLectureForTeacher(teacherId: string, lectureId: string) {
   await assertTeacherOwnsLecture(teacherId, lectureId);
@@ -346,6 +405,107 @@ export async function listQuizzesForLectureForTeacher(teacherId: string, lecture
     },
     orderBy: [{ id: "desc" }],
     select: quizWithQuestionsSelect,
+  });
+}
+
+export async function listRecordingsForLectureForTeacher(teacherId: string, lectureId: string) {
+  await assertTeacherOwnsLecture(teacherId, lectureId);
+
+  return prisma.youTubeRecording.findMany({
+    where: {
+      lectureId,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+      videoId: true,
+      youtubeUrl: true,
+      privacy: true,
+      status: true,
+      visibility: true,
+      access: true,
+      startedAt: true,
+      endedAt: true,
+      createdAt: true,
+    },
+  });
+}
+
+async function assertTeacherOwnsRecording(teacherId: string, recordingId: string) {
+  const recording = await prisma.youTubeRecording.findFirst({
+    where: {
+      id: recordingId,
+      lecture: {
+        class: {
+          teacherId,
+        },
+      },
+    },
+    select: {
+      id: true,
+      lectureId: true,
+    },
+  });
+
+  if (!recording) {
+    throw new AppError("Recording not found.", 404, "RECORDING_NOT_FOUND");
+  }
+
+  return recording;
+}
+
+export async function updateRecordingAccessForTeacher(
+  teacherId: string,
+  recordingId: string,
+  input: { visibility?: "PUBLIC" | "PRIVATE"; access?: "FREE" | "LOCKED" }
+) {
+  await assertTeacherOwnsRecording(teacherId, recordingId);
+
+  return prisma.youTubeRecording.update({
+    where: {
+      id: recordingId,
+    },
+    data: {
+      ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+      ...(input.access !== undefined ? { access: input.access } : {}),
+    },
+    select: {
+      id: true,
+      videoId: true,
+      youtubeUrl: true,
+      privacy: true,
+      status: true,
+      visibility: true,
+      access: true,
+      startedAt: true,
+      endedAt: true,
+      createdAt: true,
+    },
+  });
+}
+
+export async function listLiveBroadcastsForLectureForTeacher(teacherId: string, lectureId: string) {
+  await assertTeacherOwnsLecture(teacherId, lectureId);
+
+  return prisma.youTubeLiveBroadcast.findMany({
+    where: {
+      lectureId,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+      videoId: true,
+      youtubeUrl: true,
+      privacy: true,
+      status: true,
+      startedAt: true,
+      endedAt: true,
+      createdAt: true,
+    },
   });
 }
 
@@ -508,17 +668,7 @@ export async function addNoteToLectureForTeacher(params: {
       mimeType: params.mimeType,
       sizeBytes: params.sizeBytes,
     },
-    select: {
-      id: true,
-      lectureId: true,
-      title: true,
-      fileUrl: true,
-      kind: true,
-      mimeType: true,
-      sizeBytes: true,
-      downloadCount: true,
-      lastDownloadedAt: true,
-    },
+    select: noteSelect,
   });
 }
 
@@ -537,18 +687,10 @@ export async function updateNoteForTeacher(
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
+      ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+      ...(input.access !== undefined ? { access: input.access } : {}),
     },
-    select: {
-      id: true,
-      lectureId: true,
-      title: true,
-      fileUrl: true,
-      kind: true,
-      mimeType: true,
-      sizeBytes: true,
-      downloadCount: true,
-      lastDownloadedAt: true,
-    },
+    select: noteSelect,
   });
 }
 

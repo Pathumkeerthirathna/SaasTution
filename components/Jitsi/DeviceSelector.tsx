@@ -30,19 +30,25 @@ export default function DeviceSelector({
   onMicrophoneChange,
   onSpeakerChange,
 }: DeviceSelectorProps) {
+  const selectClassName =
+    "w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none";
+
+  const labelClassName =
+    "mb-1.5 block text-xs font-medium text-slate-400";
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
       {/* Camera */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-slate-700">
+        <label className={labelClassName}>
           Camera
         </label>
 
         <select
           value={selectedCamera}
           onChange={(e) => onCameraChange(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 focus:border-blue-500 focus:outline-none"
+          className={selectClassName}
         >
           {cameras.map((camera) => (
             <option
@@ -57,14 +63,14 @@ export default function DeviceSelector({
 
       {/* Microphone */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-slate-700">
+        <label className={labelClassName}>
           Microphone
         </label>
 
         <select
           value={selectedMicrophone}
           onChange={(e) => onMicrophoneChange(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 focus:border-blue-500 focus:outline-none"
+          className={selectClassName}
         >
           {microphones.map((mic) => (
             <option
@@ -79,14 +85,14 @@ export default function DeviceSelector({
 
       {/* Speaker */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-slate-700">
+        <label className={labelClassName}>
           Speaker
         </label>
 
         <select
           value={selectedSpeaker}
           onChange={(e) => onSpeakerChange(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 focus:border-blue-500 focus:outline-none"
+          className={selectClassName}
         >
           {speakers.map((speaker) => (
             <option

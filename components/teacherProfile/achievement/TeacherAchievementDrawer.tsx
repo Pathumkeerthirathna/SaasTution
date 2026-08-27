@@ -78,13 +78,13 @@ export default function TeacherAchievementDrawer({
 
             <div>
 
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 {initialValue
                   ? "Edit Achievement"
                   : "Add Achievement"}
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[16px] text-slate-500">
                 Showcase awards, recognitions and
                 milestones achieved throughout your
                 teaching career.
@@ -113,7 +113,7 @@ export default function TeacherAchievementDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Achievement Title
               </label>
 
@@ -135,7 +135,7 @@ export default function TeacherAchievementDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Achievement Year
               </label>
 
@@ -162,7 +162,7 @@ export default function TeacherAchievementDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Description
               </label>
 
@@ -195,7 +195,7 @@ export default function TeacherAchievementDrawer({
                     Professional Tip
                   </h4>
 
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                  <p className="mt-2 text-[16px] leading-6 text-slate-600">
                     Add awards, competition victories,
                     teaching recognitions, university
                     achievements or outstanding student

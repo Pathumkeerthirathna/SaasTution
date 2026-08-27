@@ -30,6 +30,23 @@ export const lectureListQuerySchema = z.object({
   classId: uuid.optional(),
 });
 
+export const updateLectureClassStatusSchema = z.object({
+  classStatus: z.enum(["COMPLETED", "CANCELLED"]),
+});
+
+export const updateLiveBroadcastPrivacySchema = z.object({
+  privacy: z.enum(["public", "unlisted", "private"]),
+});
+
+export const updateRecordingAccessSchema = z
+  .object({
+    visibility: z.enum(["PUBLIC", "PRIVATE"]).optional(),
+    access: z.enum(["FREE", "LOCKED"]).optional(),
+  })
+  .refine((value) => value.visibility !== undefined || value.access !== undefined, {
+    message: "At least one field is required.",
+  });
+
 export const createAssignmentSchema = z.object({
   title: z
     .string()
@@ -120,6 +137,9 @@ export const updateQuizSchema = createQuizSchema;
 
 export const noteKindSchema = z.enum(["NOTE", "SUPPORTING_MATERIAL"]);
 
+export const noteVisibilitySchema = z.enum(["PUBLIC", "PRIVATE"]);
+export const noteAccessSchema = z.enum(["FREE", "LOCKED"]);
+
 export const updateNoteSchema = z
   .object({
     title: z
@@ -129,10 +149,19 @@ export const updateNoteSchema = z
       .max(150, "Note title must be at most 150 characters long.")
       .optional(),
     kind: noteKindSchema.optional(),
+    visibility: noteVisibilitySchema.optional(),
+    access: noteAccessSchema.optional(),
   })
-  .refine((value) => value.title !== undefined || value.kind !== undefined, {
-    message: "At least one field is required.",
-  });
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.kind !== undefined ||
+      value.visibility !== undefined ||
+      value.access !== undefined,
+    {
+      message: "At least one field is required.",
+    }
+  );
 
 export const submitAssignmentSchema = z.object({
   notes: z
@@ -144,6 +173,9 @@ export const submitAssignmentSchema = z.object({
 
 export type CreateLectureInput = z.infer<typeof createLectureSchema>;
 export type UpdateLectureInput = z.infer<typeof updateLectureSchema>;
+export type UpdateLectureClassStatusInput = z.infer<typeof updateLectureClassStatusSchema>;
+export type UpdateLiveBroadcastPrivacyInput = z.infer<typeof updateLiveBroadcastPrivacySchema>;
+export type UpdateRecordingAccessInput = z.infer<typeof updateRecordingAccessSchema>;
 export type CreateAssignmentInput = z.infer<typeof createAssignmentSchema>;
 export type UpdateAssignmentInput = z.infer<typeof updateAssignmentSchema>;
 export type CreateQuizInput = z.infer<typeof createQuizSchema>;

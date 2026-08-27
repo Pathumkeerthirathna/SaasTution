@@ -122,41 +122,20 @@ export default function TeacherAboutCard({
 
 if (loading) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
-
-        {/* Left */}
-        <div className="flex gap-5">
-
-          {/* Avatar */}
-          <div className="h-28 w-28 rounded-full bg-slate-200" />
-
-          {/* Details */}
-          <div className="space-y-4">
-            <div className="h-8 w-64 rounded bg-slate-200" />
-            <div className="h-5 w-48 rounded bg-slate-200" />
-            <div className="h-4 w-72 rounded bg-slate-200" />
-            <div className="h-4 w-56 rounded bg-slate-200" />
-
-            <div className="flex gap-4">
-              <div className="h-4 w-32 rounded bg-slate-200" />
-              <div className="h-4 w-32 rounded bg-slate-200" />
-            </div>
-          </div>
-        </div>
-
-        {/* Right */}
-        <div className="space-y-4">
-          <div className="h-11 w-40 rounded-xl bg-slate-200" />
+    <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+        <div className="space-y-1.5">
           <div className="h-4 w-24 rounded bg-slate-200" />
-
-          <div className="flex gap-2">
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-          </div>
+          <div className="h-3 w-44 rounded bg-slate-200" />
         </div>
+        <div className="h-7 w-14 rounded-lg bg-slate-200" />
+      </div>
 
+      <div className="space-y-2 p-5">
+        <div className="h-3 w-full rounded bg-slate-200" />
+        <div className="h-3 w-11/12 rounded bg-slate-200" />
+        <div className="h-3 w-10/12 rounded bg-slate-200" />
+        <div className="mt-4 h-16 w-full rounded-xl bg-slate-100" />
       </div>
     </div>
   );
@@ -164,51 +143,50 @@ if (loading) {
 
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 className="text-[16px] font-bold text-slate-900">
             About Me
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Professional introduction and teaching
-            background.
+          <p className="mt-0.5 text-[14px] text-slate-500">
+            Professional introduction and teaching background.
           </p>
         </div>
 
         {!isPublic && (<button
           onClick={() => setDrawerOpen(true)}
-          className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[14px] font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
-          <Edit className="h-4 w-4" />
+          <Edit className="h-3.5 w-3.5" />
           Edit
         </button>)}
 
-        
+
       </div>
 
       {/* Body */}
-      <div className="p-6">
+      <div className="p-5">
         {loading ? (
-            <p className="text-slate-400">
+            <p className="text-[14px] text-slate-400">
                 Loading...
             </p>
         ) : aboutMe ? (
-            <p className="leading-8 text-slate-600">
+            <p className="text-[15px] leading-6 text-slate-600">
                 {aboutMe}
             </p>
         ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center">
+            <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center">
 
-                <p className="text-slate-500">
+                <p className="text-[14px] text-slate-500">
                     Tell students about yourself, your teaching style and your experience.
                 </p>
 
                 <button
                     onClick={() => setDrawerOpen(true)}
-                    className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700"
+                    className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-[14px] font-medium text-white hover:bg-emerald-700"
                 >
                     Add About Me
                 </button>
@@ -217,12 +195,9 @@ if (loading) {
         )}
 
         {/* Quote */}
-        <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-5">
-          <p className="text-sm italic leading-7 text-slate-700">
-              &#34;Education is not about memorizing facts.
-              It is about understanding concepts and
-              developing the confidence to solve
-              problems independently.&#34;
+        <div className="mt-4 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-4">
+          <p className="text-[14px] italic leading-6 text-slate-700">
+              &#34;Education is not about memorizing facts. It is about understanding concepts and developing the confidence to solve problems independently.&#34;
           </p>
         </div>
       </div>

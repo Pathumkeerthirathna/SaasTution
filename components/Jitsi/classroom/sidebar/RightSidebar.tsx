@@ -2,7 +2,7 @@
 
 
 import { useState,useEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { X, ClipboardList, Users } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
 import ParticipantsPanel from "./ParticipantsPanel";
@@ -13,6 +13,7 @@ import { ClassItem } from "@/components/class-management-panel";
 // import ResourcesPanel from "./ResourcesPanel";
 
 type RightSidebarProps = {
+  classId : string;
   className : String;
   lectureTitle? : string;
   teacherName : string;
@@ -112,8 +113,8 @@ export default function RightSidebar(props: RightSidebarProps) {
           w-[360px]
           overflow-hidden
           border-l
-          border-slate-700
-          bg-[#111827]
+          border-[#1E293B]
+          bg-[#0F172A]
           shadow-2xl
           transition-all
           duration-300
@@ -128,30 +129,42 @@ export default function RightSidebar(props: RightSidebarProps) {
 
         {/* Panel Header */}
 
-        <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[#1E293B] px-5 py-4">
 
-          <h2 className="text-lg font-semibold text-white">
-            {activePanel === "participants" && "Participants"}
+          <div className="flex items-center gap-2">
 
-            {activePanel === "attendance" && "Attendance"}
+            {activePanel === "participants" &&
+              (props.role === "teacher" ? (
+                <ClipboardList size={18} className="text-[#3B82F6]" />
+              ) : (
+                <Users size={18} className="text-[#3B82F6]" />
+              ))}
 
-            {activePanel === "resources" && "Resources"}
+            <h2 className="text-base font-semibold text-[#F8FAFC]">
+              {activePanel === "participants" &&
+                (props.role === "teacher" ? "Class Register" : "Participants")}
 
-            {activePanel === "whiteboard" && "Whiteboard"}
+              {activePanel === "attendance" && "Attendance"}
 
-            {activePanel === "chat" && "Chat"}
+              {activePanel === "resources" && "Resources"}
 
-            {activePanel === "quiz" && "Quiz"}
+              {activePanel === "whiteboard" && "Whiteboard"}
 
-            {activePanel === "notes" && "Notes"}
-          </h2>
+              {activePanel === "chat" && "Chat"}
+
+              {activePanel === "quiz" && "Quiz"}
+
+              {activePanel === "notes" && "Notes"}
+            </h2>
+
+          </div>
 
           <button
             type="button"
             onClick={closePanel}
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            className="rounded-lg p-2 text-[#94A3B8] transition hover:bg-[#1E293B] hover:text-[#F8FAFC]"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
 
         </div>
@@ -159,13 +172,16 @@ export default function RightSidebar(props: RightSidebarProps) {
 
         {/* Panel Content */}
 
-        <div className="h-[calc(100%-65px)] overflow-y-auto p-2">
+        <div className="h-[calc(100%-65px)] overflow-hidden p-3">
 
           {activePanel === "participants" && (
             <ParticipantsPanel
               participants={props.participants}
               ClassroomStudents={props.ClassroomStudents}
               role = {props.role}
+              lectureTitle={props.lectureTitle}
+              className={props.className as string}
+              classId={props.classId}
             />
           )}
 
@@ -197,8 +213,8 @@ export default function RightSidebar(props: RightSidebarProps) {
           z-50
           w-[72px]
           border-l
-          border-slate-700
-          bg-[#111827]
+          border-[#1E293B]
+          bg-[#0F172A]
         "
       >
 

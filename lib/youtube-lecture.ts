@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { AppError } from "@/lib/error-handler";
 import {
     createYouTubeLiveBroadcast,
     bindYouTubeLiveBroadcast,
@@ -42,6 +43,11 @@ export async function startYouTubeLecture(
             "You are not authorized to start YouTube streaming for this lecture."
         );
     }
+
+    await prisma.lecture.update({
+        where: { id: lecture.id },
+        data: { classStatus: "LIVE" },
+    });
 
     // 2. Get teacher's YouTube connection
     const connection =
@@ -1335,4 +1341,85 @@ export async function checkYouTubeRecordingStatus(
         streamId:
             liveStreamId,
     };
+}
+
+export async function updateYouTubeLiveBroadcastPrivacyForTeacher(
+    teacherId: string,
+    liveBroadcastId: string,
+    privacy: "public" | "unlisted" | "private"
+) {
+    const liveBroadcast = await prisma.youTubeLiveBroadcast.findUnique({
+        where: {
+            id: liveBroadcastId,
+        },
+        include: {
+            lecture: {
+                include: {
+                    class: {
+                        select: {
+                            teacherId: true,
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    if (!liveBroadcast) {
+        throw new AppError("Live broadcast not found.", 404, "LIVE_BROADCAST_NOT_FOUND");
+    }
+
+    if (liveBroadcast.lecture.class.teacherId !== teacherId) {
+        throw new AppError(
+            "You are not authorized to update this live broadcast.",
+            403,
+            "FORBIDDEN"
+        );
+    }
+
+    const connection = await prisma.youTubeConnection.findUnique({
+        where: {
+            teacherId,
+        },
+    });
+
+    if (!connection) {
+        throw new AppError(
+            "Teacher has not connected a YouTube channel.",
+            400,
+            "YOUTUBE_NOT_CONNECTED"
+        );
+    }
+
+    await updateYouTubeLiveBroadcastPrivacy(
+        connection.refreshTokenEncrypted,
+        liveBroadcast.broadcastId,
+        privacy
+    );
+
+    const youtubePrivacy =
+        privacy === "public"
+            ? YouTubePrivacy.PUBLIC
+            : privacy === "private"
+                ? YouTubePrivacy.PRIVATE
+                : YouTubePrivacy.UNLISTED;
+
+    return prisma.youTubeLiveBroadcast.update({
+        where: {
+            id: liveBroadcastId,
+        },
+        data: {
+            privacy: youtubePrivacy,
+        },
+        select: {
+            id: true,
+            videoId: true,
+            youtubeUrl: true,
+            privacy: true,
+            status: true,
+            startedAt: true,
+            endedAt: true,
+            createdAt: true,
+        },
+    });
 }

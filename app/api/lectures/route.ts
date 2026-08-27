@@ -13,6 +13,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const pagination = parsePaginationParams(searchParams);
     const classId = searchParams.get("classId")?.trim();
+    const title = searchParams.get("title")?.trim() || undefined;
+    const fromParam = searchParams.get("from")?.trim();
+    const toParam = searchParams.get("to")?.trim();
+    const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
 
     const parsedQuery = lectureListQuerySchema.safeParse({ classId });
 
@@ -21,9 +25,20 @@ export async function GET(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsedQuery.error.flatten());
     }
 
+    const dateFrom = fromParam ? new Date(fromParam) : undefined;
+    const dateTo = toParam ? new Date(toParam) : undefined;
+
+    if ((dateFrom && Number.isNaN(dateFrom.getTime())) || (dateTo && Number.isNaN(dateTo.getTime()))) {
+      return apiError("Invalid date range.", 400, "VALIDATION_ERROR");
+    }
+
     const result = await listLecturesForTeacher({
       teacherId: session.teacherId,
       classId: parsedQuery.data.classId,
+      title,
+      dateFrom,
+      dateTo,
+      sortOrder,
       skip: pagination.skip,
       take: pagination.take,
     });

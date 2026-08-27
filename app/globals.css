@@ -37,6 +37,10 @@
 @layer base {
   html, body { min-height: 100%; }
 
+  html {
+    scrollbar-gutter: stable both-edges;
+  }
+
   body {
     background:
       linear-gradient(

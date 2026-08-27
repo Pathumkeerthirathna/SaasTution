@@ -8,10 +8,10 @@ export default function MicrophoneLevel({
   level,
 }: MicrophoneLevelProps) {
   return (
-    <div className="mt-6">
+    <div className="mt-4">
 
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-700">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-medium text-slate-400">
           Microphone
         </span>
 
@@ -20,7 +20,7 @@ export default function MicrophoneLevel({
         </span>
       </div>
 
-      <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
 
         <div
           className="h-full rounded-full bg-green-500 transition-all duration-75"

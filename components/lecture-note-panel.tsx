@@ -2,20 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen,
   Calendar,
   ChevronDown,
   CircleHelp,
   Download,
   Eye,
+  EyeOff,
   FileText,
   FolderOpen,
+  Lock,
+  LockOpen,
   MoreVertical,
   Plus,
   Save,
   Trash2,
   X,
 } from "lucide-react";
+
+type NoteVisibility = "PUBLIC" | "PRIVATE";
+type NoteAccess = "FREE" | "LOCKED";
 
 type LectureNote = {
   id: string;
@@ -26,6 +31,8 @@ type LectureNote = {
   sizeBytes: number;
   downloadCount: number;
   lastDownloadedAt: string | null;
+  visibility: NoteVisibility;
+  access: NoteAccess;
 };
 
 type ApiError = {
@@ -57,12 +64,15 @@ export function LectureNotePanel(props: {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<"NOTE" | "SUPPORTING_MATERIAL">("NOTE");
+  const [visibility, setVisibility] = useState<NoteVisibility>("PRIVATE");
+  const [access, setAccess] = useState<NoteAccess>("LOCKED");
   const [file, setFile] = useState<File | null>(null);
   const [previewNote, setPreviewNote] = useState<LectureNote | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   const selectedNote = useMemo(() => notes.find((note) => note.id === selectedNoteId) ?? null, [notes, selectedNoteId]);
 
@@ -94,7 +104,6 @@ export function LectureNotePanel(props: {
       const nextSelectedId =
         (preferredId && list.some((item) => item.id === preferredId) ? preferredId : null) ??
         (selectedNoteId && list.some((item) => item.id === selectedNoteId) ? selectedNoteId : null) ??
-        list[0]?.id ??
         null;
 
       setSelectedNoteId(nextSelectedId);
@@ -104,10 +113,14 @@ export function LectureNotePanel(props: {
         if (note) {
           setTitle(note.title);
           setKind(note.kind);
+          setVisibility(note.visibility);
+          setAccess(note.access);
         }
       } else {
         setTitle("");
         setKind("NOTE");
+        setVisibility("PRIVATE");
+        setAccess("LOCKED");
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load notes.");
@@ -125,6 +138,8 @@ export function LectureNotePanel(props: {
     setSelectedNoteId(null);
     setTitle("");
     setKind("NOTE");
+    setVisibility("PRIVATE");
+    setAccess("LOCKED");
     setFile(null);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -139,9 +154,25 @@ export function LectureNotePanel(props: {
     setSelectedNoteId(noteId);
     setTitle(note.title);
     setKind(note.kind);
+    setVisibility(note.visibility);
+    setAccess(note.access);
     setFile(null);
     setErrorMessage(null);
     setSuccessMessage(null);
+  }
+
+  function openCreateForm() {
+    resetForNew();
+    setIsFormOpen(true);
+  }
+
+  function openEditForm(noteId: string) {
+    selectExisting(noteId);
+    setIsFormOpen(true);
+  }
+
+  function closeForm() {
+    setIsFormOpen(false);
   }
 
   async function saveNote() {
@@ -164,6 +195,8 @@ export function LectureNotePanel(props: {
           body: JSON.stringify({
             title: title.trim(),
             kind,
+            visibility,
+            access,
           }),
         });
 
@@ -178,6 +211,7 @@ export function LectureNotePanel(props: {
         await loadNotes(selectedNoteId);
         await notifyChanged();
         setSuccessMessage("Note details updated successfully.");
+        setIsFormOpen(false);
       } else {
         if (!file) {
           setErrorMessage("File is required for a new note.");
@@ -209,6 +243,7 @@ export function LectureNotePanel(props: {
         await notifyChanged();
         setFile(null);
         setSuccessMessage("Note uploaded successfully.");
+        setIsFormOpen(false);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to save note.");
@@ -247,6 +282,7 @@ export function LectureNotePanel(props: {
       await loadNotes(null);
       await notifyChanged();
       setSuccessMessage("Note deleted successfully.");
+      setIsFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete note.");
     } finally {
@@ -256,100 +292,189 @@ export function LectureNotePanel(props: {
 
   const previewUrl = previewNote ? `/api/lectures/notes/${previewNote.id}/preview` : "";
 
-  const selectedKindLabel = kind === "NOTE" ? "Note" : "Supporting material";
-
   return (
-    <div className="mt-4 space-y-6">
-      <article className="surface-panel border border-brand-100 p-0 overflow-hidden">
-        <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
-          <div className="flex items-center gap-4">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
-              <FileText size={24} />
+    <div className="space-y-4">
+      {errorMessage && !isFormOpen ? <p className="notice-error text-xs">{errorMessage}</p> : null}
+      {successMessage ? <p className="notice-success text-xs">{successMessage}</p> : null}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <FileText size={15} />
             </span>
             <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Lecture notes</h3>
-              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span>{selectedNote?.title ?? "Select a note or create a new one"}</span>
-                <span>•</span>
-                <span className="inline-flex items-center gap-1.5"><BookOpen size={13} /> {selectedKindLabel}</span>
-                <span>•</span>
-                <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> {selectedNote ? formatBytes(selectedNote.sizeBytes) : "Ready to upload"}</span>
-              </p>
+              <h4 className="text-sm font-semibold text-slate-900">Existing notes</h4>
+              <p className="text-[11px] text-muted">Browse lecture uploads and manage downloads.</p>
             </div>
           </div>
 
+          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{notes.length} total</span>
+        </div>
+
+        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs font-semibold text-slate-700">Add / organize files</p>
           <button
             type="button"
-            onClick={() => setPreviewNote(null)}
-            className="btn-secondary gap-2"
-            aria-label="Close notes panel"
+            onClick={openCreateForm}
+            className="inline-flex h-7 items-center gap-1 rounded-lg bg-brand-700 px-2.5 text-[11px] font-semibold text-white transition hover:bg-brand-600"
           >
-            <X size={15} />
-            Close
+            <Plus size={11} />
+            Add new note
           </button>
         </div>
 
-        <div className="px-5 py-5 sm:px-6">
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-            <section className="surface-card border border-brand-100 p-5 shadow-soft">
+        {isLoading ? <p className="mt-3 text-xs text-muted">Loading notes...</p> : null}
+        {!isLoading && notes.length === 0 ? <p className="mt-3 text-xs text-muted">No notes uploaded yet.</p> : null}
+
+        <div className="mt-3 space-y-2">
+          {notes.map((note) => (
+            <div
+              key={note.id}
+              className={`rounded-lg border p-3 transition ${
+                selectedNoteId === note.id && isFormOpen
+                  ? "border-brand-300 bg-brand-50/70"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="inline-flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+                  <FileText size={16} />
+                  {note.mimeType === "application/pdf" ? (
+                    <span className="mt-0.5 rounded bg-brand-600 px-1 py-px text-[8px] font-bold tracking-wide text-white">PDF</span>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <button type="button" onClick={() => openEditForm(note.id)} className="block w-full text-left">
+                    <p className="truncate text-xs font-semibold text-slate-900">{note.title}</p>
+                    <span className="mt-1 flex flex-wrap items-center gap-1">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          note.visibility === "PUBLIC"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {note.visibility === "PUBLIC" ? <Eye size={10} /> : <EyeOff size={10} />}
+                        {note.visibility === "PUBLIC" ? "Public" : "Private"}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          note.access === "FREE"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-amber-50 text-amber-700"
+                        }`}
+                      >
+                        {note.access === "FREE" ? <LockOpen size={10} /> : <Lock size={10} />}
+                        {note.access === "FREE" ? "Free" : "Locked"}
+                      </span>
+                    </span>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="uppercase tracking-wide">{note.kind}</span>
+                      <span>•</span>
+                      <span>{formatBytes(note.sizeBytes)}</span>
+                      <span>•</span>
+                      <span>Downloads: {note.downloadCount}</span>
+                    </p>
+                    <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                      <Calendar size={10} />
+                      {note.lastDownloadedAt ? `Last downloaded ${new Date(note.lastDownloadedAt).toLocaleString()}` : "Added to lecture"}
+                    </p>
+                  </button>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <a
+                      href={`/api/lectures/notes/${note.id}/download`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <Download size={11} />
+                      Download
+                    </a>
+
+                    {note.mimeType === "application/pdf" ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewNote(note)}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        <Eye size={11} />
+                        Preview
+                      </button>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(note.id)}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-slate-200 px-1.5 text-slate-500 transition hover:bg-slate-50"
+                    >
+                      <MoreVertical size={11} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {isFormOpen ? (
+        <>
+          <div className="fixed inset-0 z-[70] bg-black/40" onClick={closeForm} aria-hidden />
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+            <div
+              className="w-full max-h-[85vh] overflow-y-auto scrollbar-thin rounded-xl border border-slate-200 bg-white p-4 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                    <Plus size={18} />
+                <div className="flex items-center gap-2.5">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                    <Plus size={15} />
                   </span>
                   <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Create or update note</h4>
-                    <p className="mt-1 text-sm text-muted">Edit the selected note or upload a new lecture file.</p>
+                    <h4 className="text-sm font-semibold text-slate-900">{selectedNote ? "Edit note" : "Add new note"}</h4>
+                    <p className="text-[11px] text-muted">
+                      {selectedNote ? "Update the selected note's details." : "Upload a new lecture file."}
+                    </p>
                   </div>
                 </div>
 
-                {selectedNote ? (
-                  <span className="metric-badge">Editing existing</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={resetForNew}
-                    className="btn-primary gap-2 px-3 py-2 text-xs"
-                  >
-                    <Plus size={14} />
-                    Add new note
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                >
+                  <X size={13} />
+                </button>
               </div>
 
-              {errorMessage ? (
-                <p className="notice-error mt-4 text-xs">{errorMessage}</p>
-              ) : null}
+              {errorMessage ? <p className="notice-error mt-3 text-xs">{errorMessage}</p> : null}
 
-              {successMessage ? (
-                <p className="notice-success mt-4 text-xs">{successMessage}</p>
-              ) : null}
-
-              <div className="mt-5 space-y-4">
+              <div className="mt-3.5 space-y-3">
                 <div>
-                  <label className="form-label">Title</label>
-                  <div className="relative mt-2">
+                  <label className="form-label mb-1 block">Title</label>
+                  <div className="relative">
                     <input
                       value={title}
                       onChange={(event) => setTitle(event.target.value)}
                       placeholder="File title"
-                      className="control-input h-14 pr-16 text-base"
+                      className="control-input h-9 pr-12 text-sm"
                     />
-                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-muted">
                       {title.length}/120
                     </span>
                   </div>
                 </div>
 
                 <div>
-                  <label className="form-label">Kind</label>
-                  <div className="relative mt-2">
-                    <FolderOpen size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <label className="form-label mb-1 block">Kind</label>
+                  <div className="relative">
+                    <FolderOpen size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <ChevronDown size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <select
                       value={kind}
                       onChange={(event) => setKind(event.target.value as "NOTE" | "SUPPORTING_MATERIAL")}
-                      className="control-select h-14 appearance-none pl-11 pr-12 text-base"
+                      className="control-select h-9 w-full appearance-none pl-8 pr-7 text-sm"
                     >
                       <option value="NOTE">Note</option>
                       <option value="SUPPORTING_MATERIAL">Supporting material</option>
@@ -357,31 +482,86 @@ export function LectureNotePanel(props: {
                   </div>
                 </div>
 
+                {selectedNote ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="form-label mb-1 block">Visibility</label>
+                      <div className="relative">
+                        {visibility === "PUBLIC" ? (
+                          <Eye size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500" />
+                        ) : (
+                          <EyeOff size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        )}
+                        <ChevronDown size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={visibility}
+                          onChange={(event) => setVisibility(event.target.value as NoteVisibility)}
+                          className="control-select h-9 w-full appearance-none pl-8 pr-7 text-sm"
+                        >
+                          <option value="PRIVATE">Private</option>
+                          <option value="PUBLIC">Public</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label mb-1 block">Access</label>
+                      <div className="relative">
+                        {access === "FREE" ? (
+                          <LockOpen size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500" />
+                        ) : (
+                          <Lock size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-amber-500" />
+                        )}
+                        <ChevronDown size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={access}
+                          onChange={(event) => setAccess(event.target.value as NoteAccess)}
+                          className="control-select h-9 w-full appearance-none pl-8 pr-7 text-sm"
+                        >
+                          <option value="LOCKED">Locked</option>
+                          <option value="FREE">Free</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <p className="col-span-2 flex items-start gap-1.5 text-[11px] text-muted">
+                      <CircleHelp size={12} className="mt-0.5 shrink-0" />
+                      <span>
+                        Public notes appear on the class page. Free notes can be opened without
+                        registering; locked notes require enrolment.
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
+
                 {!selectedNote ? (
-                  <div className="rounded-2xl border border-dashed border-brand-200 bg-brand-50/40 p-4">
-                    <label className="form-label">Upload file</label>
+                  <div className="rounded-lg border border-dashed border-brand-200 bg-brand-50/40 p-3">
+                    <label className="form-label mb-1 block">Upload file</label>
                     <input
                       type="file"
                       onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                      className="mt-2 w-full text-sm text-slate-600"
+                      className="w-full text-xs text-slate-600"
                     />
-                    <p className="mt-3 text-xs text-brand-700">PDF, image, or document file for the lecture note/material.</p>
+                    <p className="mt-2 flex items-center gap-1 text-[11px] text-brand-700">
+                      <FileText size={11} />
+                      PDF, image, or document file for the lecture note/material.
+                    </p>
                   </div>
                 ) : (
-                  <div className="notice-info flex items-start gap-2 text-xs">
-                    <CircleHelp size={14} className="mt-0.5 shrink-0" />
+                  <div className="notice-info flex items-start gap-1.5 text-[11px]">
+                    <CircleHelp size={12} className="mt-0.5 shrink-0" />
                     <span>File replacement is not enabled. Upload a new note if needed.</span>
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-3 pt-1">
+                <div className="flex flex-wrap gap-2 pt-0.5">
                   <button
                     type="button"
                     onClick={() => void saveNote()}
                     disabled={isSaving}
-                    className="btn-primary gap-2 px-4 py-3 text-sm"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-700 px-3.5 text-xs font-semibold text-white shadow-soft transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <Save size={15} />
+                    <Save size={13} />
                     {isSaving ? "Saving..." : selectedNote ? "Save note" : "Upload note"}
                   </button>
 
@@ -390,109 +570,18 @@ export function LectureNotePanel(props: {
                       type="button"
                       onClick={() => void deleteSelected()}
                       disabled={isSaving}
-                      className="btn-danger gap-2 px-4 py-3 text-sm"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={13} />
                       Delete note
                     </button>
                   ) : null}
                 </div>
               </div>
-            </section>
-
-            <aside className="surface-card border border-brand-100 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                    <FileText size={18} />
-                  </span>
-                  <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Existing notes</h4>
-                    <p className="mt-1 text-sm text-muted">Browse lecture uploads and manage downloads.</p>
-                  </div>
-                </div>
-
-                <span className="metric-badge">{notes.length} total</span>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-brand-100 bg-white/90 px-4 py-3 shadow-soft">
-                <p className="text-sm font-semibold text-slate-800">Add / organize files</p>
-                <button type="button" onClick={resetForNew} className="btn-primary gap-2 px-3 py-2 text-xs">
-                  <Plus size={14} />
-                  Add new note
-                </button>
-              </div>
-
-              {isLoading ? <p className="mt-4 text-sm text-muted">Loading notes...</p> : null}
-              {!isLoading && notes.length === 0 ? <p className="mt-4 text-sm text-muted">No notes uploaded yet.</p> : null}
-
-              <div className="mt-4 space-y-3">
-                {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className={`rounded-2xl border p-4 shadow-soft transition ${
-                      selectedNoteId === note.id
-                        ? "border-brand-300 bg-brand-50/70"
-                        : "border-brand-100 bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="inline-flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
-                        <FileText size={22} />
-                        {note.mimeType === "application/pdf" ? (
-                          <span className="mt-1 rounded-md bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">PDF</span>
-                        ) : null}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <button type="button" onClick={() => selectExisting(note.id)} className="block w-full text-left">
-                          <p className="truncate text-lg font-semibold text-slate-900">{note.title}</p>
-                          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                            <span className="uppercase tracking-wide">{note.kind}</span>
-                            <span>•</span>
-                            <span>{formatBytes(note.sizeBytes)}</span>
-                            <span>•</span>
-                            <span>Downloads: {note.downloadCount}</span>
-                          </p>
-                          <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500">
-                            <Calendar size={12} />
-                            {note.lastDownloadedAt ? `Last downloaded ${new Date(note.lastDownloadedAt).toLocaleString()}` : "Added to lecture"}
-                          </p>
-                        </button>
-
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                          <a
-                            href={`/api/lectures/notes/${note.id}/download`}
-                            className="btn-secondary gap-2 px-3 py-2 text-xs"
-                          >
-                            <Download size={13} />
-                            Download
-                          </a>
-
-                          {note.mimeType === "application/pdf" ? (
-                            <button
-                              type="button"
-                              onClick={() => setPreviewNote(note)}
-                              className="btn-secondary gap-2 px-3 py-2 text-xs"
-                            >
-                              <Eye size={13} />
-                              Preview
-                            </button>
-                          ) : null}
-
-                          <button type="button" className="btn-ghost px-3 py-2 text-xs" disabled>
-                            <MoreVertical size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </aside>
+            </div>
           </div>
-        </div>
-      </article>
+        </>
+      ) : null}
 
       {previewNote ? (
         <>

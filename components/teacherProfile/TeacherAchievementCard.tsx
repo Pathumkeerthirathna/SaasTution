@@ -255,41 +255,18 @@ export default function TeacherAchievementCard({
 
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-        <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
-
-          {/* Left */}
-          <div className="flex gap-5">
-
-            {/* Avatar */}
-            <div className="h-28 w-28 rounded-full bg-slate-200" />
-
-            {/* Details */}
-            <div className="space-y-4">
-              <div className="h-8 w-64 rounded bg-slate-200" />
-              <div className="h-5 w-48 rounded bg-slate-200" />
-              <div className="h-4 w-72 rounded bg-slate-200" />
-              <div className="h-4 w-56 rounded bg-slate-200" />
-
-              <div className="flex gap-4">
-                <div className="h-4 w-32 rounded bg-slate-200" />
-                <div className="h-4 w-32 rounded bg-slate-200" />
-              </div>
-            </div>
+      <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div className="space-y-1.5">
+            <div className="h-4 w-40 rounded bg-slate-200" />
+            <div className="h-3 w-56 rounded bg-slate-200" />
           </div>
+          <div className="h-7 w-32 rounded-lg bg-slate-200" />
+        </div>
 
-          {/* Right */}
-          <div className="space-y-4">
-            <div className="h-11 w-40 rounded-xl bg-slate-200" />
-            <div className="h-4 w-24 rounded bg-slate-200" />
-
-            <div className="flex gap-2">
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-              <div className="h-8 w-20 rounded-full bg-slate-200" />
-            </div>
-          </div>
-
+        <div className="space-y-3 p-5">
+          <div className="h-20 rounded-xl bg-slate-100" />
+          <div className="h-20 rounded-xl bg-slate-100" />
         </div>
       </div>
     );
@@ -297,69 +274,64 @@ export default function TeacherAchievementCard({
 
   return (
 
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
       {/* Header */}
 
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
 
         <div>
 
-          <h3 className="text-lg font-bold text-slate-900">
-            Achievements & Awards
+          <h3 className="text-[16px] font-bold text-slate-900">
+            Achievements &amp; Awards
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Showcase your accomplishments,
-            recognitions and teaching milestones.
+          <p className="mt-0.5 text-[14px] text-slate-500">
+            Showcase your accomplishments, recognitions and teaching milestones.
           </p>
 
         </div>
 
           {isPublic ? null : (<button
           onClick={openAddDrawer}
-          className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
         >
 
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
 
           Add Achievement
 
         </button>)}
 
-        
-
       </div>
 
       {/* Body */}
 
-      <div className="p-6">
+      <div className="p-5">
 
         {loading ? (
 
-          <div className="py-12 text-center text-slate-400">
+          <div className="py-8 text-center text-[14px] text-slate-400">
             Loading achievements...
           </div>
 
         ) : achievements.length === 0 ? (
 
-          <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center">
+          <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center">
 
-            <Trophy className="mx-auto h-12 w-12 text-slate-300" />
+            <Trophy className="mx-auto h-8 w-8 text-slate-300" />
 
-            <h4 className="mt-4 text-lg font-semibold text-slate-700">
+            <h4 className="mt-2 text-[16px] font-semibold text-slate-700">
               No achievements yet
             </h4>
 
-            <p className="mt-2 text-sm text-slate-500">
-              Add awards, recognitions or
-              milestones to increase trust
-              among students and parents.
+            <p className="mt-1 text-[14px] text-slate-500">
+              Add awards, recognitions or milestones to increase trust among students and parents.
             </p>
 
             <button
               onClick={openAddDrawer}
-              className="mt-5 rounded-xl bg-orange-500 px-5 py-2.5 font-medium text-white transition hover:bg-orange-600"
+              className="mt-3 rounded-lg bg-orange-500 px-3 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
             >
               Add First Achievement
             </button>
@@ -369,38 +341,36 @@ export default function TeacherAchievementCard({
         ) : (
 
           <>
-            <div className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-2">
 
               {achievements.map((achievement) => (
 
                 <div
                   key={achievement.id}
-                  className="group rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-orange-200 hover:shadow-md"
+                  className="group rounded-lg border border-slate-200 bg-white p-3.5 transition hover:border-orange-200 hover:shadow-sm"
                 >
 
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
 
-                    {/* Left */}
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100">
 
-                    <div className="flex gap-4">
+                      <Trophy className="h-4 w-4 text-orange-600" />
 
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-100">
+                    </div>
 
-                        <Trophy className="h-6 w-6 text-orange-600" />
+                    <div className="min-w-0 flex-1">
 
-                      </div>
+                      <div className="flex items-start justify-between gap-2">
 
-                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
 
-                        <div className="flex flex-wrap items-center gap-3">
-
-                          <h4 className="text-lg font-semibold text-slate-900">
+                          <h4 className="text-[15px] font-semibold text-slate-900">
                             {achievement.title}
                           </h4>
 
                           {achievement.year && (
 
-                            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[12px] font-semibold text-orange-700">
                               {achievement.year}
                             </span>
 
@@ -408,53 +378,49 @@ export default function TeacherAchievementCard({
 
                         </div>
 
-                        {achievement.description && (
+                        {isPublic? null  : (<div className="flex shrink-0 items-center gap-0.5">
 
-                          <p className="mt-2 text-sm leading-7 text-slate-600 whitespace-pre-line">
-                            {achievement.description}
-                          </p>
+                          <button
+                            onClick={() =>
+                              openEditDrawer(
+                                achievement
+                              )
+                            }
+                            title="Edit Achievement"
+                            className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                          >
 
-                        )}
+                            <Pencil className="h-3.5 w-3.5" />
+
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              deleteAchievement(
+                                achievement.id
+                              )
+                            }
+                            title="Delete Achievement"
+                            className="rounded-md p-1 text-red-400 transition hover:bg-red-50 hover:text-red-600"
+                          >
+
+                            <Trash2 className="h-3.5 w-3.5" />
+
+                          </button>
+
+                        </div>)}
 
                       </div>
 
+                      {achievement.description && (
+
+                        <p className="mt-1 whitespace-pre-line text-[14px] leading-5 text-slate-600">
+                          {achievement.description}
+                        </p>
+
+                      )}
+
                     </div>
-
-                    {/* Actions */}
-
-                    {isPublic? null  : (<div className="flex items-center gap-2">
-
-                      <button
-                        onClick={() =>
-                          openEditDrawer(
-                            achievement
-                          )
-                        }
-                        title="Edit Achievement"
-                        className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50"
-                      >
-
-                        <Pencil className="h-4 w-4" />
-
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          deleteAchievement(
-                            achievement.id
-                          )
-                        }
-                        title="Delete Achievement"
-                        className="rounded-xl border border-red-200 p-2 text-red-500 transition hover:bg-red-50"
-                      >
-
-                        <Trash2 className="h-4 w-4" />
-
-                      </button>
-
-                    </div>)}
-
-                    
 
                   </div>
 
@@ -466,23 +432,23 @@ export default function TeacherAchievementCard({
 
             {/* Summary */}
 
-            <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-amber-50 p-5">
+            <div className="mt-4 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50 to-amber-50 p-3">
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
 
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100">
 
-                  <Award className="h-6 w-6 text-orange-600" />
+                  <Award className="h-4 w-4 text-orange-600" />
 
                 </div>
 
                 <div>
 
-                  <p className="text-sm text-slate-500">
+                  <p className="text-[13px] text-slate-500">
                     Total Achievements
                   </p>
 
-                  <h4 className="text-xl font-bold text-slate-900">
+                  <h4 className="text-[18px] font-bold leading-tight text-slate-900">
                     {achievements.length}
                   </h4>
 
@@ -490,12 +456,8 @@ export default function TeacherAchievementCard({
 
               </div>
 
-              <p className="mt-4 text-sm leading-6 text-slate-700">
-                Awards, recognitions and accomplishments
-                displayed here will also appear on your
-                public profile, helping students and
-                parents build confidence in your teaching
-                experience.
+              <p className="mt-2 text-[14px] leading-5 text-slate-700">
+                Awards, recognitions and accomplishments shown here also appear on your public profile, helping students and parents build confidence in your teaching experience.
               </p>
 
             </div>

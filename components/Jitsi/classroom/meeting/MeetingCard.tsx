@@ -24,6 +24,7 @@ type MeetingCardProps = {
   isLive?: boolean;
 
   isStartingLive?: boolean;
+  liveStartFailed?: boolean;
 
   youtubeLiveUrl?: string | null;
 
@@ -33,6 +34,8 @@ type MeetingCardProps = {
   onStopLive?: () => void | Promise<void>;
   youtubeChannelTitle?: string | null;
   youtubeStatus?: "CONNECTED" | "REAUTH_REQUIRED" | null;
+
+  showHeader?: boolean;
 };
 
 export default function MeetingCard({
@@ -50,7 +53,9 @@ export default function MeetingCard({
   youtubeChannelTitle,
   youtubeStatus,
   isStartingLive,
+  liveStartFailed = false,
   youtubeLiveUrl,
+  showHeader = true,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -59,9 +64,6 @@ export default function MeetingCard({
 
   const [recordingStartFailed, setRecordingStartFailed] =
     useState(false);
-
-  const [liveStartFailed, setLiveStartFailed] =
-      useState(false);
 
   const [showYoutubeShare, setShowYoutubeShare] =
   useState(false);
@@ -106,13 +108,10 @@ export default function MeetingCard({
   const handleStartLive = async () => {
     if (isStartingLive || isStoppingLive) return;
 
-     setLiveStartFailed(false);
-
     try {
       await onStartLive?.();
     } catch (error) {
       console.error("❌ Failed to start live:", error);
-      setLiveStartFailed(true);
     }
   };
 
@@ -130,23 +129,24 @@ export default function MeetingCard({
   const testYoutubeStatus = "REAUTH_REQUIRED";
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0f172a]">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0B1120]">
 
       {/* HEADER */}
-      <div className="flex h-[80px] shrink-0 items-center justify-between border-b border-slate-700 bg-[#0F172A] px-5 py-3">
+      {showHeader && (
+      <div className="flex h-[80px] shrink-0 items-center justify-between border-b border-[#1E293B] bg-[#111827] px-5 py-3">
 
         <div className="flex items-center gap-3">
           <MonitorPlay
-            className="text-blue-400"
+            className="text-[#3B82F6]"
             size={22}
           />
 
           <div>
-            <h2 className="font-semibold text-white">
+            <h2 className="font-semibold text-[#F8FAFC]">
               {lectureTitle}
             </h2>
 
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[#94A3B8]">
               {className}
             </p>
           </div>
@@ -162,7 +162,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartRecording}
                   disabled={isStartingRecording}
-                  className="flex items-center gap-2 rounded-full bg-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingRecording ? (
                     <Loader2
@@ -202,7 +202,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartLive}
                   disabled={isStartingLive}
-                  className="flex items-center gap-2 rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingLive ? (
                     <Loader2
@@ -224,7 +224,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStopLive}
                   disabled={isStoppingLive}
-                  className="flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStoppingLive ? (
                     <Loader2
@@ -246,13 +246,13 @@ export default function MeetingCard({
 
               {/* LIVE */}
               {isLive && (
-                <div className="flex items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-3 py-1.5">
                   <Radio
                     size={16}
-                    className="animate-pulse text-red-500"
+                    className="animate-pulse text-[#EF4444]"
                   />
 
-                  <span className="font-semibold text-red-400">
+                  <span className="font-semibold text-[#EF4444]">
                     LIVE
                   </span>
                 </div>
@@ -264,7 +264,7 @@ export default function MeetingCard({
                   onClick={() =>
                     setShowYoutubeShare(true)
                   }
-                  className="flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700"
+                  className="flex items-center gap-2 rounded-full bg-[#1E293B] px-3 py-1.5 text-sm font-medium text-[#F8FAFC] transition hover:bg-[#334155]"
                 >
                   <span>🔗</span>
                   <span>Get Link</span>
@@ -278,16 +278,16 @@ export default function MeetingCard({
             isLive &&
             youtubeLiveUrl && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-                <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0F172A] p-5 shadow-2xl">
+                <div className="w-full max-w-md rounded-2xl border border-[#1E293B] bg-[#172033] p-5 shadow-2xl">
 
                   {/* Header */}
                   <div className="mb-4 flex items-center justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">
+                      <h3 className="text-lg font-semibold text-[#F8FAFC]">
                         Share YouTube Live
                       </h3>
 
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-[#94A3B8]">
                         Share this live class with your students.
                       </p>
                     </div>
@@ -297,18 +297,18 @@ export default function MeetingCard({
                       onClick={() =>
                         setShowYoutubeShare(false)
                       }
-                      className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"
                     >
                       ✕
                     </button>
                   </div>
 
                   {/* URL */}
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-2">
+                  <div className="flex items-center gap-2 rounded-xl border border-[#1E293B] bg-[#0F172A] p-2">
                     <input
                       value={youtubeLiveUrl}
                       readOnly
-                      className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-300 outline-none"
+                      className="min-w-0 flex-1 bg-transparent px-2 text-sm text-[#CBD5E1] outline-none"
                     />
 
                     <button
@@ -318,7 +318,7 @@ export default function MeetingCard({
                           youtubeLiveUrl
                         );
                       }}
-                      className="rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white hover:bg-red-600"
+                      className="rounded-lg bg-[#3B82F6] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2563EB]"
                     >
                       Copy
                     </button>
@@ -326,7 +326,7 @@ export default function MeetingCard({
 
                   {/* Social sharing */}
                   <div className="mt-5">
-                    <p className="mb-3 text-sm font-medium text-slate-300">
+                    <p className="mb-3 text-sm font-medium text-[#CBD5E1]">
                       Share with
                     </p>
 
@@ -431,12 +431,12 @@ export default function MeetingCard({
           )} */}
 
          {role === "teacher" && youtubeChannelTitle && (
-            <div className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2">
+            <div className="flex items-center gap-3 rounded-xl border border-[#1E293B] bg-[#172033] px-3.5 py-2">
               {/* YouTube icon */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/10">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FF0033]/10">
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-4.5 w-4.5 text-red-500"
+                  className="h-4.5 w-4.5 text-[#FF0033]"
                   fill="currentColor"
                   aria-hidden="true"
                 >
@@ -446,18 +446,18 @@ export default function MeetingCard({
 
               {/* Channel information */}
               <div className="min-w-0">
-                <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-[#94A3B8]">
                   YouTube Channel
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="max-w-[130px] truncate text-sm font-semibold text-white">
+                  <span className="max-w-[130px] truncate text-sm font-semibold text-[#F8FAFC]">
                     {youtubeChannelTitle}
                   </span>
 
                   {youtubeStatus === "CONNECTED" && (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-green-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#22C55E]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
                       Connected
                     </span>
                   )}
@@ -507,6 +507,7 @@ export default function MeetingCard({
         </div>
 
       </div>
+      )}
 
       {/* JITSI CONTENT */}
       <div className="min-h-0 flex-1 overflow-hidden bg-black">

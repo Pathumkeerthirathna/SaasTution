@@ -51,11 +51,11 @@ export default function TeacherProfileCompletionCard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 className="text-[20px] font-bold text-slate-900">
             Profile Completion
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-[16px] text-slate-500">
             Complete your profile to build trust
             and attract more students.
           </p>
@@ -69,11 +69,11 @@ export default function TeacherProfileCompletionCard() {
       {/* Percentage */}
       <div className="mt-6">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-600">
+          <span className="text-[16px] font-medium text-slate-600">
             Completion Progress
           </span>
 
-          <span className="text-lg font-bold text-emerald-600">
+          <span className="text-[20px] font-bold text-emerald-600">
             {percentage}%
           </span>
         </div>
@@ -95,7 +95,7 @@ export default function TeacherProfileCompletionCard() {
             key={item.label}
             className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2"
           >
-            <span className="text-sm font-medium text-slate-700">
+            <span className="text-[16px] font-medium text-slate-700">
               {item.label}
             </span>
 
@@ -114,7 +114,7 @@ export default function TeacherProfileCompletionCard() {
 
       {/* Footer */}
       <div className="mt-6 rounded-xl border border-orange-100 bg-orange-50 p-4">
-        <p className="text-sm text-orange-700">
+        <p className="text-[16px] text-orange-700">
           Complete your profile to improve your
           visibility in the Teacher Directory and
           make a stronger first impression on

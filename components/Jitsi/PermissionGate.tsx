@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode,useState  } from "react";
+import { ReactNode, useEffect, useState } from "react";
 
 import DevicePreview from "./DevicePreview";
 import DeviceSelector from "./DeviceSelector";
@@ -13,10 +13,12 @@ import MicrophoneLevel from "../MicrophoneLevel";
 
 type PermissionGateProps = {
   children: ReactNode;
+  onReadyChange?: (ready: boolean) => void;
 };
 
 export default function PermissionGate({
   children,
+  onReadyChange,
 }: PermissionGateProps) {
   const {
     stream,
@@ -51,92 +53,102 @@ const [joinMeeting, setJoinMeeting] = useState(false);
 
 const level = useMicrophoneLevel(stream);
 
-  if (permissionGranted && joinMeeting) {
+  const ready = permissionGranted && joinMeeting;
+
+  useEffect(() => {
+    onReadyChange?.(ready);
+  }, [ready]);
+
+  if (ready) {
     return <>{children}</>;
 }
 
 
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl items-center justify-center py-12 p-4">
+    <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-[#0B1220] px-4 py-8">
 
-      <div className="grid w-full gap-10 lg:grid-cols-2">
+      <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0F172A] p-6 shadow-xl sm:p-8">
 
-        {/* LEFT */}
+        <div className="grid w-full gap-8 lg:grid-cols-2">
 
-        <div>
+          {/* LEFT */}
 
-          <DevicePreview
-            videoRef={videoRef}
-            cameraEnabled={cameraEnabled}
+          <div>
+
+            <DevicePreview
+              videoRef={videoRef}
+              cameraEnabled={cameraEnabled}
+            />
+
+            <MediaControls
+              cameraEnabled={cameraEnabled}
+              microphoneEnabled={microphoneEnabled}
+              onToggleCamera={toggleCamera}
+              onToggleMicrophone={toggleMicrophone}
           />
 
-          <MediaControls
-            cameraEnabled={cameraEnabled}
-            microphoneEnabled={microphoneEnabled}
-            onToggleCamera={toggleCamera}
-            onToggleMicrophone={toggleMicrophone}
-        />
+          <MicrophoneLevel level={level} />
 
-        <MicrophoneLevel level={level} />
-
-        {permissionGranted && (
-          <button
-            onClick={() => setJoinMeeting(true)}
-            className="mt-6 w-full rounded-xl bg-green-600 py-3 font-semibold text-white transition hover:bg-green-700"
-          >
-            Join Classroom
-          </button>
-        )}
-
-          <button
-            onClick={requestPermission}
-            disabled={checking || permissionGranted}
-            className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-white font-semibold hover:bg-blue-700 disabled:opacity-50"
-          >
-            {permissionGranted
-              ? "Permissions Granted"
-              : checking
-                  ? "Checking devices..."
-                  : "Allow Camera & Microphone"}
-          </button>
-
-          {error && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
+          {permissionGranted && (
+            <button
+              onClick={() => setJoinMeeting(true)}
+              className="mt-4 w-full rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white transition hover:bg-green-500"
+            >
+              Join Classroom
+            </button>
           )}
 
-        </div>
+            <button
+              onClick={requestPermission}
+              disabled={checking || permissionGranted}
+              className="mt-3 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {permissionGranted
+                ? "Permissions Granted"
+                : checking
+                    ? "Checking devices..."
+                    : "Allow Camera & Microphone"}
+            </button>
 
-        {/* RIGHT */}
+            {error && (
+              <div className="mt-3 rounded-lg border border-red-900/50 bg-red-950/40 p-3 text-xs text-red-300">
+                {error}
+              </div>
+            )}
 
-        <div>
+          </div>
 
-          <h1 className="text-3xl font-bold">
-            Device Setup
-          </h1>
+          {/* RIGHT */}
 
-          <p className="mt-2 text-slate-500">
-            Select the camera, microphone and speaker
-            before joining your live classroom.
-          </p>
+          <div>
 
-          <div className="mt-8">
+            <h1 className="text-xl font-semibold text-white">
+              Device Setup
+            </h1>
 
-            <DeviceSelector
-              cameras={cameras}
-              microphones={microphones}
-              speakers={speakers}
+            <p className="mt-1.5 text-sm text-slate-400">
+              Select the camera, microphone and speaker
+              before joining your live classroom.
+            </p>
 
-              selectedCamera={selectedCamera}
-              selectedMicrophone={selectedMicrophone}
-              selectedSpeaker={selectedSpeaker}
+            <div className="mt-6">
 
-              onCameraChange={setSelectedCamera}
-              onMicrophoneChange={setSelectedMicrophone}
-              onSpeakerChange={setSelectedSpeaker}
-            />
+              <DeviceSelector
+                cameras={cameras}
+                microphones={microphones}
+                speakers={speakers}
+
+                selectedCamera={selectedCamera}
+                selectedMicrophone={selectedMicrophone}
+                selectedSpeaker={selectedSpeaker}
+
+                onCameraChange={setSelectedCamera}
+                onMicrophoneChange={setSelectedMicrophone}
+                onSpeakerChange={setSelectedSpeaker}
+              />
+
+            </div>
 
           </div>
 

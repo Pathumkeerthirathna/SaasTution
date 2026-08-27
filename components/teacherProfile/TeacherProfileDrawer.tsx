@@ -57,11 +57,11 @@ export default function TeacherProfileDrawer({
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 {getTitle()}
               </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-[16px] text-slate-500">
                 Update your profile information.
               </p>
             </div>

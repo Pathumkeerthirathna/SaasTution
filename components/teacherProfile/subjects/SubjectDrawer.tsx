@@ -131,13 +131,13 @@ export default function SubjectDrawer({
 
             <div>
 
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 {editingSubject
                   ? "Edit Subject"
                   : "Add Subject"}
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[16px] text-slate-500">
                 Configure the subjects you teach.
               </p>
 
@@ -172,7 +172,7 @@ export default function SubjectDrawer({
 
               <div>
 
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                   Subject
                 </label>
 
@@ -206,7 +206,7 @@ export default function SubjectDrawer({
 
                 <div>
 
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                     Grade From
                   </label>
 
@@ -236,7 +236,7 @@ export default function SubjectDrawer({
 
                 <div>
 
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                     Grade To
                   </label>
 
@@ -269,7 +269,7 @@ export default function SubjectDrawer({
               {form.gradeTo <
                 form.gradeFrom && (
 
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[16px] text-red-600">
                   Grade To cannot be less than Grade From.
                 </div>
 

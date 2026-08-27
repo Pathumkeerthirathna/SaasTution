@@ -21,6 +21,12 @@ export async function GET(request: Request) {
 
     const email = searchParams.get("email")?.trim() || undefined;
 
+    const statusParam = searchParams.get("status");
+    const status =
+      statusParam === "0" || statusParam === "1"
+        ? Number(statusParam)
+        : undefined;
+
     const sortBy = searchParams.get("sortBy") ?? "registrationNumber";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
 
@@ -34,6 +40,7 @@ export async function GET(request: Request) {
       sortBy,
       sortOrder,
       registrationNumber,
+      status,
     });
 
     return apiSuccess(students, {

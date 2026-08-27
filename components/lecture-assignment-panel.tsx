@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   ChevronDown,
-  FileText,
   FolderOpen,
   MoreVertical,
   Plus,
@@ -100,6 +99,7 @@ export function LectureAssignmentPanel(props: {
   const [submissionsData, setSubmissionsData] = useState<SubmissionsData | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   const [isExpandedList, setIsExpandedList] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   const selectedAssignment = useMemo(
     () => assignments.find((item) => item.id === selectedAssignmentId) ?? null,
@@ -136,7 +136,6 @@ export function LectureAssignmentPanel(props: {
         (selectedAssignmentId && list.some((item) => item.id === selectedAssignmentId)
           ? selectedAssignmentId
           : null) ??
-        list[0]?.id ??
         null;
 
       setSelectedAssignmentId(nextSelectedId);
@@ -186,6 +185,20 @@ export function LectureAssignmentPanel(props: {
     });
     setErrorMessage(null);
     setSuccessMessage(null);
+  }
+
+  function openCreateForm() {
+    handleAddNewAssignment();
+    setIsFormOpen(true);
+  }
+
+  function openEditForm(assignmentId: string) {
+    handleSelectAssignment(assignmentId);
+    setIsFormOpen(true);
+  }
+
+  function closeForm() {
+    setIsFormOpen(false);
   }
 
   function validateDraft() {
@@ -250,6 +263,7 @@ export function LectureAssignmentPanel(props: {
       await loadAssignments(result.data.assignment.id);
       await notifyChanged();
       setSuccessMessage(selectedAssignmentId ? "Assignment updated successfully." : "Assignment created successfully.");
+      setIsFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to save assignment.");
     } finally {
@@ -322,6 +336,7 @@ export function LectureAssignmentPanel(props: {
       await loadAssignments(fallbackId);
       await notifyChanged();
       setSuccessMessage("Assignment deleted successfully.");
+      setIsFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete assignment.");
     } finally {
@@ -330,103 +345,172 @@ export function LectureAssignmentPanel(props: {
   }
 
   return (
-    <div className="mt-4 space-y-6">
-      <article className="surface-panel overflow-hidden border border-brand-100 p-0">
-        <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
-          <div className="flex items-center gap-4">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
-              <FileText size={24} />
+    <div className="space-y-4">
+      {errorMessage && !isFormOpen ? <p className="notice-error text-xs">{errorMessage}</p> : null}
+      {successMessage ? <p className="notice-success text-xs">{successMessage}</p> : null}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <Users size={15} />
             </span>
             <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Lecture assignments</h3>
-              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span>{selectedAssignment?.title ?? "Select an assignment or create a new one"}</span>
-                <span>•</span>
-                <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> {selectedAssignment ? new Date(selectedAssignment.dueDate).toLocaleString() : "Ready to schedule"}</span>
-              </p>
+              <h4 className="text-sm font-semibold text-slate-900">Existing assignments</h4>
+              <p className="text-[11px] text-muted">Open a record to edit or inspect submissions.</p>
             </div>
           </div>
 
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{assignments.length} total</span>
+            <button
+              type="button"
+              onClick={() => setIsExpandedList((prev) => !prev)}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              {isExpandedList ? <ChevronDown size={11} /> : <FolderOpen size={11} />}
+              {isExpandedList ? "Collapse" : "Expand"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs font-semibold text-slate-700">Add / organize assignments</p>
           <button
             type="button"
-            onClick={() => setIsExpandedList((prev) => !prev)}
-            className="btn-secondary gap-2"
+            onClick={openCreateForm}
+            className="inline-flex h-7 items-center gap-1 rounded-lg bg-brand-700 px-2.5 text-[11px] font-semibold text-white transition hover:bg-brand-600"
           >
-            {isExpandedList ? <ChevronDown size={15} /> : <FolderOpen size={15} />}
-            {isExpandedList ? "Collapse" : "Expand"}
+            <Plus size={11} />
+            Add new assignment
           </button>
         </div>
 
-        <div className="px-5 py-5 sm:px-6">
-          {errorMessage ? <p className="notice-error mb-4 text-xs">{errorMessage}</p> : null}
-          {successMessage ? <p className="notice-success mb-4 text-xs">{successMessage}</p> : null}
+        {isLoading ? <p className="mt-3 text-xs text-muted">Loading assignments...</p> : null}
+        {!isLoading && assignments.length === 0 ? (
+          <p className="mt-3 text-xs text-muted">No assignments added yet.</p>
+        ) : null}
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-            <section className="surface-card border border-brand-100 p-5 shadow-soft">
+        <div className={`mt-3 space-y-2 ${isExpandedList ? "max-h-none" : "max-h-[420px] overflow-y-auto scrollbar-thin pr-1"}`}>
+          {assignments.map((assignment) => (
+            <div
+              key={assignment.id}
+              className={`rounded-lg border p-3 transition ${
+                selectedAssignmentId === assignment.id && isFormOpen
+                  ? "border-brand-300 bg-brand-50/70"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => openEditForm(assignment.id)}
+                className="block w-full text-left"
+              >
+                <p className="truncate text-xs font-semibold text-slate-900">{assignment.title}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{assignment.description}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                  <Calendar size={10} />
+                  Due: {new Date(assignment.dueDate).toLocaleString()}
+                </p>
+              </button>
+
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void openSubmissions(assignment.id)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  <Eye size={11} />
+                  View submissions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openEditForm(assignment.id)}
+                  className="inline-flex h-7 items-center justify-center rounded-md border border-slate-200 px-1.5 text-slate-500 transition hover:bg-slate-50"
+                >
+                  <MoreVertical size={11} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {isFormOpen ? (
+        <>
+          <div className="fixed inset-0 z-[70] bg-black/40" onClick={closeForm} aria-hidden />
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+            <div
+              className="w-full max-h-[85vh] overflow-y-auto scrollbar-thin rounded-xl border border-slate-200 bg-white p-4 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                    <Plus size={18} />
+                <div className="flex items-center gap-2.5">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                    <Plus size={15} />
                   </span>
                   <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Create or update assignment</h4>
-                    <p className="mt-1 text-sm text-muted">Manage title, description, and due date here.</p>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      {selectedAssignment ? "Edit assignment" : "Add new assignment"}
+                    </h4>
+                    <p className="text-[11px] text-muted">Manage title, description, and due date here.</p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleAddNewAssignment}
-                  className="btn-primary gap-2 px-3 py-2 text-xs"
+                  onClick={closeForm}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"
                 >
-                  <Plus size={14} />
-                  Add new assignment
+                  <X size={13} />
                 </button>
               </div>
 
-              <div className="mt-5 space-y-4">
+              {errorMessage ? <p className="notice-error mt-3 text-xs">{errorMessage}</p> : null}
+
+              <div className="mt-3.5 space-y-3">
                 <div>
-                  <label className="form-label">Assignment title</label>
+                  <label className="form-label mb-1 block">Assignment title</label>
                   <input
                     value={draft.title}
                     onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
                     placeholder="Assignment title"
-                    className="control-input mt-2 h-14 text-base"
+                    className="control-input h-9 text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="form-label">Description</label>
+                  <label className="form-label mb-1 block">Description</label>
                   <textarea
                     value={draft.description}
                     onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))}
-                    rows={6}
+                    rows={4}
                     placeholder="Assignment description"
-                    className="control-textarea mt-2 text-base"
+                    className="control-textarea text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="form-label">Due date</label>
-                  <div className="relative mt-2">
-                    <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <label className="form-label mb-1 block">Due date</label>
+                  <div className="relative">
+                    <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="datetime-local"
                       value={draft.dueDate}
                       onChange={(event) => setDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
-                      className="control-input h-14 pl-11 text-base"
+                      className="control-input h-9 pl-8 text-sm"
                     />
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3 pt-1">
+                <div className="flex flex-wrap gap-2 pt-0.5">
                   <button
                     type="button"
                     onClick={() => void handleSaveAssignment()}
                     disabled={isSaving}
-                    className="btn-primary gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-700 px-3.5 text-xs font-semibold text-white shadow-soft transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <Save size={15} />
+                    <Save size={13} />
                     {isSaving ? "Saving..." : selectedAssignment ? "Save assignment" : "Create assignment"}
                   </button>
 
@@ -435,90 +519,32 @@ export function LectureAssignmentPanel(props: {
                       type="button"
                       onClick={() => void handleDeleteAssignment(selectedAssignment.id)}
                       disabled={isSaving}
-                      className="btn-danger gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={13} />
                       Delete assignment
                     </button>
                   ) : null}
                 </div>
               </div>
-            </section>
-
-            <aside className="surface-card border border-brand-100 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                    <Users size={18} />
-                  </span>
-                  <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Existing assignments</h4>
-                    <p className="mt-1 text-sm text-muted">Open a record to edit or inspect submissions.</p>
-                  </div>
-                </div>
-
-                <span className="metric-badge">{assignments.length} total</span>
-              </div>
-
-              {isLoading ? <p className="mt-4 text-sm text-muted">Loading assignments...</p> : null}
-              {!isLoading && assignments.length === 0 ? (
-                <p className="mt-4 text-sm text-muted">No assignments added yet.</p>
-              ) : null}
-
-              <div className={`mt-4 space-y-3 ${isExpandedList ? "max-h-none" : "max-h-[520px] overflow-y-auto pr-1"}`}>
-                {assignments.map((assignment) => (
-                  <div
-                    key={assignment.id}
-                    className={`rounded-2xl border p-4 shadow-soft transition ${
-                      selectedAssignmentId === assignment.id
-                        ? "border-brand-300 bg-brand-50/70"
-                        : "border-brand-100 bg-white"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSelectAssignment(assignment.id)}
-                      className="block w-full text-left"
-                    >
-                      <p className="truncate text-lg font-semibold text-slate-900">{assignment.title}</p>
-                      <p className="mt-1 line-clamp-2 text-sm text-slate-500">{assignment.description}</p>
-                      <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500">
-                        <Calendar size={12} />
-                        Due: {new Date(assignment.dueDate).toLocaleString()}
-                      </p>
-                    </button>
-
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void openSubmissions(assignment.id)}
-                        className="btn-secondary gap-2 px-3 py-2 text-xs"
-                      >
-                        <Eye size={13} />
-                        View submissions
-                      </button>
-                      <button type="button" className="btn-ghost px-3 py-2 text-xs" disabled>
-                        <MoreVertical size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </aside>
+            </div>
           </div>
-        </div>
-      </article>
+        </>
+      ) : null}
 
       {submissionsAssignmentId ? (
-        <div className="surface-panel border border-brand-100 p-0 overflow-hidden">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Student submissions</p>
+              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-700">
+                <Users size={11} />
+                Student submissions
+              </p>
               {submissionsData ? (
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">{submissionsData.assignment.title}</h3>
+                <h3 className="mt-0.5 text-sm font-semibold text-slate-900">{submissionsData.assignment.title}</h3>
               ) : null}
               {submissionsData ? (
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-1 text-[11px] text-slate-600">
                   Due {new Date(submissionsData.assignment.dueDate).toLocaleString()} • {submissionsData.totalSubmissions}/{submissionsData.assignment.totalEnrolled} submissions
                 </p>
               ) : null}
@@ -529,80 +555,80 @@ export function LectureAssignmentPanel(props: {
                 setSubmissionsAssignmentId(null);
                 setSubmissionsData(null);
               }}
-              className="btn-secondary gap-2"
+              className="btn-secondary shrink-0"
             >
-              <X size={14} />
+              <X size={12} />
               Close
             </button>
           </div>
 
-          <div className="px-5 py-5 sm:px-6">
+          <div className="px-4 py-4">
             {isLoadingSubmissions ? (
-              <p className="text-sm text-muted">Loading submissions...</p>
+              <p className="text-xs text-muted">Loading submissions...</p>
             ) : submissionsData ? (
               <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Submissions</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Submissions</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
                       {submissionsData.totalSubmissions}
-                      <span className="ml-2 text-sm font-normal text-muted">/ {submissionsData.assignment.totalEnrolled} enrolled</span>
+                      <span className="ml-1.5 text-[11px] font-normal text-muted">/ {submissionsData.assignment.totalEnrolled} enrolled</span>
                     </p>
                   </div>
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Due</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{new Date(submissionsData.assignment.dueDate).toLocaleString()}</p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Due</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-900">{new Date(submissionsData.assignment.dueDate).toLocaleString()}</p>
                   </div>
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Status</p>
-                    <p className="mt-2 text-sm font-semibold text-emerald-700">Ready for review</p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Status</p>
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">Ready for review</p>
                   </div>
                 </div>
 
                 {submissionsData.submissions.length === 0 ? (
-                  <p className="mt-4 text-sm text-muted">No submissions yet.</p>
+                  <p className="mt-3 text-xs text-muted">No submissions yet.</p>
                 ) : (
-                  <div className="mt-4 overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-soft">
-                    <table className="min-w-[640px] w-full text-sm">
-                      <thead className="bg-brand-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  <div className="mt-3 overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white">
+                    <table className="min-w-[640px] w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
                         <tr>
-                          <th className="px-4 py-3 text-left">Student</th>
-                          <th className="px-4 py-3 text-left">Submitted</th>
-                          <th className="px-4 py-3 text-left">File</th>
-                          <th className="px-4 py-3 text-left">Notes</th>
-                          <th className="px-4 py-3 text-left"></th>
+                          <th className="px-3 py-2 text-left">Student</th>
+                          <th className="px-3 py-2 text-left">Submitted</th>
+                          <th className="px-3 py-2 text-left">File</th>
+                          <th className="px-3 py-2 text-left">Notes</th>
+                          <th className="px-3 py-2 text-left"></th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-brand-100">
+                      <tbody className="divide-y divide-slate-100">
                         {submissionsData.submissions.map((sub) => (
                           <tr key={sub.submissionId} className="align-top">
-                            <td className="px-4 py-4">
+                            <td className="px-3 py-2.5">
                               <p className="font-semibold text-slate-900">{sub.studentName}</p>
                               {sub.registrationNumber ? (
-                                <p className="mt-1 text-xs text-muted">{sub.registrationNumber}</p>
+                                <p className="mt-0.5 text-[10px] text-muted">{sub.registrationNumber}</p>
                               ) : null}
                             </td>
-                            <td className="px-4 py-4 text-sm text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
-                            <td className="px-4 py-4">
-                              <p className="max-w-[180px] truncate text-sm text-slate-800">{sub.fileName}</p>
-                              <p className="mt-1 text-xs text-muted">{formatBytes(sub.sizeBytes)}</p>
+                            <td className="px-3 py-2.5 text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
+                            <td className="px-3 py-2.5">
+                              <p className="max-w-[180px] truncate text-slate-800">{sub.fileName}</p>
+                              <p className="mt-0.5 text-[10px] text-muted">{formatBytes(sub.sizeBytes)}</p>
                             </td>
-                            <td className="px-4 py-4">
+                            <td className="px-3 py-2.5">
                               {sub.notes ? (
-                                <p className="max-w-[220px] truncate text-sm text-slate-600" title={sub.notes}>
+                                <p className="max-w-[220px] truncate text-slate-600" title={sub.notes}>
                                   {sub.notes}
                                 </p>
                               ) : (
-                                <span className="text-sm text-muted">—</span>
+                                <span className="text-muted">—</span>
                               )}
                             </td>
-                            <td className="px-4 py-4">
+                            <td className="px-3 py-2.5">
                               <a
                                 href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
                                 download
-                                className="btn-secondary gap-2 px-3 py-2 text-xs"
+                                className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
                               >
-                                <Download size={13} />
+                                <Download size={11} />
                                 Download
                               </a>
                             </td>

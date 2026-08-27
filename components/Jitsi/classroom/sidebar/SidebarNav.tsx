@@ -16,7 +16,7 @@ export default function SidebarNav({
   onPanelChange,
 }: SidebarNavProps) {
   return (
-    <div className="flex h-full w-[72px] flex-col items-center border-r border-slate-700 py-5">
+    <div className="flex h-full w-[72px] flex-col items-center border-r border-[#1E293B] py-5">
 
       {/* Participants */}
       <button
@@ -31,8 +31,8 @@ export default function SidebarNav({
           transition-all duration-200
           ${
             activePanel === "participants"
-              ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              ? "bg-[#172554] text-[#60A5FA] shadow-lg shadow-[#172554]/40"
+              : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0]"
           }
         `}
       >
@@ -52,8 +52,8 @@ export default function SidebarNav({
           transition-all duration-200
           ${
             activePanel === "attendance"
-              ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              ? "bg-[#172554] text-[#60A5FA] shadow-lg shadow-[#172554]/40"
+              : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0]"
           }
         `}
       >
@@ -73,8 +73,8 @@ export default function SidebarNav({
           transition-all duration-200
           ${
             activePanel === "resources"
-              ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              ? "bg-[#172554] text-[#60A5FA] shadow-lg shadow-[#172554]/40"
+              : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0]"
           }
         `}
       >

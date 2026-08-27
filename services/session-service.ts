@@ -124,6 +124,11 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     },
   });
 
+  await prisma.lecture.update({
+    where: { id: lecture.id },
+    data: { classStatus: "LIVE" },
+  });
+
   return {
     session,
     class: classroom,

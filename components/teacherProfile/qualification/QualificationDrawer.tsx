@@ -86,11 +86,11 @@ export default function QualificationDrawer({
             </div>
 
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 {qualification ? "Edit Qualification" : "Add Qualification"}
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[16px] text-slate-500">
                 Your academic and professional educational background.
               </p>
             </div>
@@ -116,7 +116,7 @@ export default function QualificationDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Qualification *
               </label>
 
@@ -138,7 +138,7 @@ export default function QualificationDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Institute *
               </label>
 
@@ -162,7 +162,7 @@ export default function QualificationDrawer({
 
               <div>
 
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                   Start Year
                 </label>
 
@@ -185,7 +185,7 @@ export default function QualificationDrawer({
 
               <div>
 
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                   End Year
                 </label>
 
@@ -212,7 +212,7 @@ export default function QualificationDrawer({
 
             <div>
 
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
                 Display Order
               </label>
 
@@ -228,7 +228,7 @@ export default function QualificationDrawer({
                 className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
               />
 
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-[14px] text-slate-500">
                 Higher priority qualifications can be displayed first by using
                 display order.
               </p>

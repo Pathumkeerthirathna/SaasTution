@@ -50,11 +50,11 @@ export default function AboutMeDrawer({
 
             <div>
 
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 About Me
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[16px] text-slate-500">
                 Introduce yourself to students and parents.
               </p>
 
@@ -77,7 +77,7 @@ export default function AboutMeDrawer({
 
           <div>
 
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
+            <label className="mb-2 block text-[16px] font-semibold text-slate-700">
               About Me
             </label>
 
@@ -96,7 +96,7 @@ export default function AboutMeDrawer({
                 border
                 border-slate-300
                 p-4
-                text-sm
+                text-[16px]
                 leading-7
                 outline-none
                 transition
@@ -108,11 +108,11 @@ export default function AboutMeDrawer({
 
             <div className="mt-2 flex items-center justify-between">
 
-              <p className="text-xs text-slate-500">
+              <p className="text-[14px] text-slate-500">
                 This section appears on your public teacher profile.
               </p>
 
-              <span className="text-xs font-medium text-slate-500">
+              <span className="text-[14px] font-medium text-slate-500">
                 {aboutMe.length}/1000
               </span>
 
@@ -127,7 +127,7 @@ export default function AboutMeDrawer({
               Tips for a great profile
             </h4>
 
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+            <ul className="mt-3 space-y-2 text-[16px] leading-6 text-slate-600">
               <li>• Mention your teaching experience.</li>
               <li>• Explain your teaching methodology.</li>
               <li>• Highlight qualifications or achievements.</li>

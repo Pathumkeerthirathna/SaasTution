@@ -9,15 +9,18 @@ import ClassTestimonials from "./ClassTestimonials";
 import ClassRegisterCard from "./ClassRegisterCard";
 import ClassTrustCard from "./ClassTrustCard";
 
-import {dummySessions,dummyNotes,dummyLearningOutcomes,dummyTestimonials,dummyBenefits } from "./dummyData";
+import {dummyNotes,dummyLearningOutcomes,dummyTestimonials,dummyBenefits } from "./dummyData";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
+import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
 
 interface Props {
   classInfo: TeacherClass;
+  sessions?: ClassLectureSession[];
 }
 
 export default function ClassLandingPage({
   classInfo,
+  sessions = [],
 }: Props) {
 
 
@@ -26,7 +29,7 @@ export default function ClassLandingPage({
     <div className="min-h-screen bg-slate-50">
       {/* Breadcrumb */}
       {/* <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-4 text-sm text-slate-500 lg:px-8">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-4 text-[16px] text-slate-500 lg:px-8">
           <span>Home</span>
 
           <span>/</span>
@@ -42,8 +45,8 @@ export default function ClassLandingPage({
       </div> */}
 
       {/* Main */}
-      <div className="mx-auto max-w-[1500px] px-3 py-4 lg:px-5">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mx-auto max-w-[1500px] px-3 py-6 lg:px-5">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
 
           {/* LEFT */}
           <div className="space-y-6">
@@ -58,7 +61,7 @@ export default function ClassLandingPage({
               />
             </div>
 
-            <ClassSessionsPreview sessions={dummySessions} />
+            <ClassSessionsPreview lectures={sessions} />
 
             <ClassNotesPreview notes={dummyNotes} />
 

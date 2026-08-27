@@ -1,10 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo,  useState } from "react";
+import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
+import {
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Ban,
   BookOpen,
+  CalendarDays,
   CheckCircle,
   ChevronDown,
   ChevronLeft,
@@ -14,9 +24,9 @@ import {
   ChevronUp,
   CircleHelp,
   Download,
-  Eye,
   FileSpreadsheet,
   GraduationCap,
+  Hash,
   Loader2,
   Mail,
   Pencil,
@@ -24,12 +34,11 @@ import {
   PhoneCall,
   Plus,
   Search,
-  SlidersHorizontal,
   Trash2,
   Upload,
   User,
-  UserCircle2,
   Users,
+  X,
   XCircle,
 } from "lucide-react";
 
@@ -97,9 +106,76 @@ function formatGradeLabel(value: string | null) {
   return value.startsWith("GRADE_") ? `Grade ${value.slice(6)}` : value;
 }
 
+function getPaginationRange(
+  current: number,
+  total: number
+): (number | "ellipsis")[] {
+  if (total <= 1) {
+    return total === 1 ? [1] : [];
+  }
+
+  const range: (number | "ellipsis")[] = [1];
+
+  const left = Math.max(2, current - 1);
+  const right = Math.min(total - 1, current + 1);
+
+  if (left > 2) {
+    range.push("ellipsis");
+  }
+
+  for (let page = left; page <= right; page++) {
+    range.push(page);
+  }
+
+  if (right < total - 1) {
+    range.push("ellipsis");
+  }
+
+  range.push(total);
+
+  return range;
+}
+
+function formatRegisteredDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const AVATAR_COLORS = [
+  "bg-slate-700",
+  "bg-blue-600",
+  "bg-emerald-600",
+  "bg-violet-600",
+  "bg-amber-600",
+  "bg-rose-600",
+  "bg-cyan-600",
+  "bg-indigo-600",
+];
+
+function getStudentAvatarColor(seed: string) {
+  let hash = 0;
+
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
 export function StudentGuardianManagementPanel() {
 
-  const [pageSize, setPageSize] = useState(6);
+  const router = useRouter();
+
+  const [pageSize, setPageSize] = useState(5);
 
   const [isCheckingRegistrationNumber, setIsCheckingRegistrationNumber] =
   useState(false);
@@ -111,6 +187,10 @@ export function StudentGuardianManagementPanel() {
   useState(false);
 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+
+  const [filterAnchorRect, setFilterAnchorRect] = useState<DOMRect | null>(
+    null
+  );
 
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
 
@@ -139,13 +219,47 @@ export function StudentGuardianManagementPanel() {
   const [filters, setFilters] = useState({
     name: "",
     grade: "",
-    email:""
+    email: "",
+    registrationNumber: "",
+  });
+
+  const [statusFilter, setStatusFilter] = useState({
+    active: false,
+    inactive: false,
   });
 
   const [sortBy, setSortBy] = useState("CreatedAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [isConfirmingAll, setIsConfirmingAll] = useState(false);
+
+  const [pendingAction, setPendingAction] = useState<{
+    type: "delete" | "deactivate";
+    studentId: string;
+    rect: DOMRect;
+  } | null>(null);
+
+  function askDeleteStudent(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    studentId: string
+  ) {
+    setPendingAction({
+      type: "delete",
+      studentId,
+      rect: event.currentTarget.getBoundingClientRect(),
+    });
+  }
+
+  function askDeactivateStudent(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    studentId: string
+  ) {
+    setPendingAction({
+      type: "deactivate",
+      studentId,
+      rect: event.currentTarget.getBoundingClientRect(),
+    });
+  }
 
     const loadRegistrationNumber = useCallback(async () => {
       const response = await fetch(
@@ -307,10 +421,6 @@ export function StudentGuardianManagementPanel() {
     }
 
     async function handleDeleteStudent(studentId: string) {
-      if (!confirm("Are you sure you want to delete this student?")) {
-        return;
-      }
-
       try {
         const response = await fetch(
           `/api/students/${studentId}`,
@@ -388,13 +498,44 @@ const pendingCount = pendingStudents.length;
       );
     }
 
+  function toggleActiveStatusFilter(checked: boolean) {
+    const next = { ...statusFilter, active: checked };
+
+    setStatusFilter(next);
+
+    void loadStudentList(
+      1,
+      filters,
+      sortBy,
+      sortOrder,
+      pageSize,
+      next
+    );
+  }
+
+  function toggleInactiveStatusFilter(checked: boolean) {
+    const next = { ...statusFilter, inactive: checked };
+
+    setStatusFilter(next);
+
+    void loadStudentList(
+      1,
+      filters,
+      sortBy,
+      sortOrder,
+      pageSize,
+      next
+    );
+  }
+
   const loadStudentList = useCallback(
     async (
       nextPage = 1,
-      appliedFilters = { name: "", grade: "",email:"" },
+      appliedFilters = { name: "", grade: "", email: "", registrationNumber: "" },
       currentSortBy = sortBy,
       currentSortOrder = sortOrder,
-      currentPageSize = pageSize
+      currentPageSize = pageSize,
+      currentStatusFilter = statusFilter
     ) => {
         setIsLoadingList(true);
         setErrorMessage(null);
@@ -418,6 +559,25 @@ const pendingCount = pendingStudents.length;
 
           if (appliedFilters.email.trim()) {
             query.set("email", appliedFilters.email.trim());
+          }
+
+          if (appliedFilters.registrationNumber.trim()) {
+            query.set(
+              "registrationNumber",
+              appliedFilters.registrationNumber.trim()
+            );
+          }
+
+          if (
+            currentStatusFilter.active &&
+            !currentStatusFilter.inactive
+          ) {
+            query.set("status", "0");
+          } else if (
+            currentStatusFilter.inactive &&
+            !currentStatusFilter.active
+          ) {
+            query.set("status", "1");
           }
 
           console.log(
@@ -457,7 +617,7 @@ const pendingCount = pendingStudents.length;
           setIsLoadingList(false);
         }
       },
-      [sortBy, sortOrder]
+      [sortBy, sortOrder, statusFilter]
     );
 
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -510,7 +670,7 @@ const pendingCount = pendingStudents.length;
 
   useEffect(() => {
 
-    void loadStudentList(1, { name: "", grade: "",email:"" });
+    void loadStudentList(1, { name: "", grade: "", email: "", registrationNumber: "" });
     void loadGrades();
     void loadRegistrationNumber();
 
@@ -1121,76 +1281,62 @@ const handleConfirmAllStudents = async () => {
 };
 
   return (
-    <section className="relative overflow-hidden">
-      <div className="pointer-events-none absolute -left-28 -top-24 h-72 w-72 rounded-md bg-brand-100 blur-3xl" />
-      <div className="pointer-events-none absolute -right-24 top-14 h-72 w-72 rounded-md bg-cyan-100 blur-3xl" />
-
-      <article
-        className="
-          relative
-          space-y-6
-          rounded-xl
-          border
-          border-slate-200
-          bg-white
-          p-6
-          shadow-sm
-        "
-      >
+    <section>
+      <article className="flex max-h-[calc(100vh-110px)] flex-col gap-4 overflow-hidden rounded-xl border border-slate-200 bg-white px-4 pb-4 pt-4 shadow-sm">
         {/* ── Header ── */}
-       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
-          <div className="flex items-start gap-4 rounded-2xl border border-green-100 bg-gradient-to-r from-green-50 via-white to-white px-5 py-4 shadow-sm">
+          <div className="flex items-center gap-3">
 
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-600 text-white shadow-sm">
-              <GraduationCap size={22} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-600 text-white">
+              <GraduationCap size={18} />
             </span>
 
             <div>
-              <h2 className="page-title mt-0 text-slate-900">
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
                 Students
               </h2>
 
-              <p className="page-subtitle text-slate-600">
+              <p className="text-xs text-slate-500">
                 View and manage all students in your institution.
               </p>
             </div>
 
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
 
             <button
               type="button"
               onClick={downloadStudents}
               className="btn-secondary border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <FileSpreadsheet size={16} />
+              <FileSpreadsheet size={14} />
               Export Excel
             </button>
 
             <button
               type="button"
               onClick={() => setIsHelpOpen(true)}
-              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <CircleHelp size={16} />
+              <CircleHelp size={14} />
               Help
             </button>
 
             <button
               type="button"
               onClick={downloadTemplate}
-              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <Download size={16} />
+              <Download size={14} />
               Download Template
             </button>
 
             <label
-              className="btn-secondary cursor-pointer gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary cursor-pointer gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <Upload size={16} />
+              <Upload size={14} />
               Upload Student List
 
               <input
@@ -1204,19 +1350,24 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsAddPanelOpen(true)}
-              className="btn-primary gap-2 bg-orange-500 text-white hover:bg-orange-600 border-orange-500 shadow-sm hover:shadow-md"
+              className="btn-primary gap-1.5 bg-orange-500 text-white hover:bg-orange-600 border-orange-500 shadow-sm hover:shadow-md"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               Add Student
             </button>
 
             <button
               type="button"
-              onClick={() => setIsFilterPanelOpen(true)}
-              className="btn-secondary gap-2 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              onClick={(event) => {
+                setFilterAnchorRect(
+                  event.currentTarget.getBoundingClientRect()
+                );
+                setIsFilterPanelOpen(true);
+              }}
+              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <SlidersHorizontal size={16} />
-              Filters
+              <Search size={14} />
+              Search By
             </button>
 
           </div>
@@ -1225,36 +1376,27 @@ const handleConfirmAllStudents = async () => {
 
        
 
-        <div className="mb-4 flex justify-end">
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-              <Users size={12}/>
-              {totalItems} Students
-          </span>
-      </div>
-
-       
-        {isLoadingList ? <p className="text-sm text-muted">Loading students...</p> : null}
         {!isLoadingList && !hasStudents ? (
           <p className="text-sm text-muted">No students found. Add students or adjust your filters.</p>
         ) : null}
 
         {/* ── Table ── */}
-        <div className="max-lg:hidden overflow-x-auto bg-white shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col max-lg:hidden bg-white">
 
           {/* ===================== TOP ===================== */}
-         <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-white p-2 shadow-sm">
+         <div className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 pb-2">
 
-          <div className="flex items-center gap-2">
-            <span className="rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-brand-700">
+          <div className="flex items-center gap-1.5">
+            <span className="rounded-md bg-brand-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-700">
               Sort By
             </span>
 
             <button
               type="button"
               onClick={() => handleSort("Name")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "Name"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1262,18 +1404,18 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "Name" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
 
             <button
               type="button"
               onClick={() => handleSort("RegistrationNumber")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "RegistrationNumber"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1281,18 +1423,18 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "RegistrationNumber" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
 
             <button
               type="button"
               onClick={() => handleSort("CreatedAt")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "CreatedAt"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1300,37 +1442,66 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "CreatedAt" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
           </div>
 
-          
-
-          <div className="hidden items-center gap-3 lg:flex">
+          <div className="hidden items-center gap-2 lg:flex">
             {pendingCount > 0 && (
               <button
                 onClick={handleConfirmAllStudents}
                 disabled={isConfirmingAll}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isConfirmingAll ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
+                    <Loader2 size={13} className="animate-spin" />
                     Confirming...
                   </>
                 ) : (
                   <>
-                    <CheckCircle size={16} />
+                    <CheckCircle size={13} />
                     Confirm All Pending ({pendingCount})
                   </>
                 )}
               </button>
             )}
 
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-1">
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={statusFilter.active}
+                  onChange={(e) =>
+                    toggleActiveStatusFilter(e.target.checked)
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
+                />
+                Active
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={statusFilter.inactive}
+                  onChange={(e) =>
+                    toggleInactiveStatusFilter(e.target.checked)
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-amber-600"
+                />
+                Deactive
+              </label>
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600">
+              <Users size={11} />
+              {totalItems} {totalItems === 1 ? "Student" : "Students"}
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-500">
               Active Sort:
               <span className="font-semibold text-slate-800">
                 {sortBy}
@@ -1340,40 +1511,146 @@ const handleConfirmAllStudents = async () => {
 
         </div>
 
-          <div className="max-lg:hidden space-y-4">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-auto max-lg:hidden">
 
-              {students.map((student) => (
-                <div
-                  key={student.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-green-200 hover:shadow-md"
-                >
+            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
 
-                  <div className="grid grid-cols-[80px_280px_180px_180px_minmax(260px,1fr)_180px] gap-6 items-center">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2">Student</th>
+                  <th className="px-3 py-2">Contact Details</th>
+                  <th className="px-3 py-2">Enrollment</th>
+                  <th className="px-3 py-2">Confirmation</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Registered</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
 
-                    {/* <button onClick={handleSort()}></button> */}
+              <tbody>
+                {isLoadingList
+                  ? Array.from({ length: Math.min(pageSize, 6) }).map((_, index) => (
+                      <StudentRowSkeletonDesktop key={index} />
+                    ))
+                  : students.map((student) => (
+                    <tr
+                      key={student.id}
+                      onClick={() =>
+                        router.push(`/dashboard/students/${student.id}`)
+                      }
+                      className="cursor-pointer border-b border-slate-100 align-top transition-colors hover:bg-slate-50"
+                    >
 
-                    {/* Avatar */}
-                    <div className="flex justify-center">
-                      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-violet-100 to-violet-50 text-violet-600">
-                        <UserCircle2 size={36} strokeWidth={1.6} />
-                      </div>
-                    </div>
+                      {/* Student: Icon, Name, Reg No, Grade */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-3">
 
-                    {/* Student */}
-                    <div className="border-r border-slate-100 pr-6">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white ${getStudentAvatarColor(
+                              student.id
+                            )}`}
+                          >
+                            <GraduationCap size={16} />
+                          </div>
 
-                      <span className="inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                        {student.registrationNumber}
-                      </span>
+                          <div className="min-w-0">
 
-                      <h3 className="mt-2 text-xl font-semibold text-slate-900">
-                        {student.name}
-                      </h3>
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {student.name}{" "}
+                              <span className="font-normal text-slate-500">
+                                ({student.registrationNumber})
+                              </span>
+                            </p>
 
-                      <div className="mt-3 flex gap-2">
+                            <div className="mt-1 flex flex-col items-start gap-1">
 
+                              <span className="inline-flex rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                                {formatGradeLabel(student.grade?.GradeDesc ?? "")}
+                              </span>
+
+                            </div>
+
+                          </div>
+
+                        </div>
+                      </td>
+
+                      {/* Contact Details: Contact 1 / Contact 2, Email */}
+                      <td className="max-w-[220px] px-3 py-3">
+                        <div className="space-y-1">
+
+                          <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                            <Phone size={12} className="shrink-0 text-blue-500" />
+                            {student.contact01 || "—"} / {student.contact02 || "—"}
+                          </div>
+
+                          <div className="flex min-w-0 items-center gap-1.5 text-xs text-slate-700">
+                            <Mail size={12} className="shrink-0 text-rose-500" />
+                            <span className="truncate">
+                              {student.email || "—"}
+                            </span>
+                          </div>
+
+                        </div>
+                      </td>
+
+                      {/* Enrollment (Registration Source) */}
+                      <td className="px-3 py-3">
                         <span
-                          className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                            registrationSourceClasses[
+                              student.StudentRegistrationSource as keyof typeof registrationSourceClasses
+                            ] || "border-slate-200 bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {student.StudentRegistrationSource}
+                        </span>
+                      </td>
+
+                      {/* Confirmation Status */}
+                      <td
+                        className="px-3 py-3"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {student.StudentConfirmationStatus === "PENDING" ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleConfirmStudent(student)}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-emerald-600"
+                            >
+                              <CheckCircle size={12} />
+                              Confirm
+                            </button>
+
+                            <button
+                              onClick={() => handleDeclineStudent(student)}
+                              className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-red-600"
+                            >
+                              <XCircle size={12} />
+                              Decline
+                            </button>
+                          </div>
+                        ) : student.StudentConfirmationStatus === StudentConfirmationStatus.APPROVED ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                              <CheckCircle size={12} />
+                              Confirmed
+                            </span>
+                          ) : student.StudentConfirmationStatus === StudentConfirmationStatus.REJECTED ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
+                              <XCircle size={12} />
+                              Declined
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                              Unknown
+                            </span>
+                          )}
+                      </td>
+
+                      {/* Status: Active / Inactive / Deleted */}
+                      <td className="px-3 py-3">
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
                             student.status === 0
                               ? "bg-emerald-50 text-emerald-700"
                               : student.status === 1
@@ -1387,254 +1664,83 @@ const handleConfirmAllStudents = async () => {
                             ? "Inactive"
                             : "Deleted"}
                         </span>
+                      </td>
 
-                        <span className="rounded-md bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700">
-                          {formatGradeLabel(student.grade?.GradeDesc ?? "")}
-                        </span>
+                      {/* Registered At */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                          <CalendarDays size={12} className="text-emerald-500" />
+                          {formatRegisteredDate(student.createdAt)}
+                        </div>
+                      </td>
 
-                      </div>
+                      {/* Actions */}
+                      <td
+                        className="px-3 py-3"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
 
-                    </div>
-
-                    {/* Contact 01 */}
-                    <div className="flex gap-3">
-
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <Phone size={17} />
-                      </div>
-
-                      <div>
-
-                        <p className="text-sm font-medium text-slate-900">
-                          {student.contact01 || "—"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          Contact 01
-                        </p>
-
-                      </div>
-
-                    </div>
-
-                    {/* Contact 02 */}
-
-                    <div className="flex gap-3">
-
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                        <PhoneCall size={17} />
-                      </div>
-
-                      <div>
-
-                        <p className="text-sm font-medium text-slate-900">
-                          {student.contact02 || "—"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          Contact 02
-                        </p>
-
-                      </div>
-
-                    </div>
-
-                    {/* Email */}
-
-                    <div className="flex gap-3 min-w-0">
-
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <Mail size={17} />
-                      </div>
-
-                      <div className="min-w-0">
-
-                        <p className="truncate text-sm font-medium text-slate-900">
-                          {student.email || "—"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          Email
-                        </p>
-
-                      </div>
-
-                    </div>
-
-                    {/* Classes */}
-
-                    <div className="flex gap-3">
-
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-                        <BookOpen size={17} />
-                      </div>
-
-                      <div>
-
-                        {student.classes.length > 0 ? (
-                          <>
-                            <p className="text-sm font-medium text-slate-900">
-                              {student.classes[0].name}
-                            </p>
-
-                            {student.classes.length > 1 && (
-                              <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                                +{student.classes.length - 1} more
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-sm text-slate-500">
-                            No Classes
-                          </p>
-                        )}
-
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                  {/* ===================== BOTTOM ===================== */}
-
-                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-
-                    <div>
-                    
-
-                      <div className="flex flex-wrap items-center gap-6">
-
-                        {/* Registration Source */}
-                        <div>
-                          <p className="mb-1 text-xs text-slate-500">
-                            Registration Source
-                          </p>
-
-                          <span
-                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                              registrationSourceClasses[
-                                student.StudentRegistrationSource as keyof typeof registrationSourceClasses
-                              ] || "border-slate-200 bg-slate-100 text-slate-700"
-                            }`}
+                          <button
+                            onClick={() => handleEditStudent(student)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
                           >
-                            {student.StudentRegistrationSource}
-                          </span>
+                            <Pencil size={13} />
+                            Edit
+                          </button>
+
+                          <button
+                            onClick={(event) => askDeleteStudent(event, student.id)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={13} />
+                            Delete
+                          </button>
+
+                          {student.status === 0 ? (
+                            <button
+                              onClick={(event) => askDeactivateStudent(event, student.id)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-orange-200 bg-white px-2.5 text-xs font-medium text-orange-700 hover:bg-orange-50"
+                            >
+                              <Ban size={13} />
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleActivateStudent(student.id)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                            >
+                              <CheckCircle size={13} />
+                              Activate
+                            </button>
+                          )}
+
                         </div>
+                      </td>
 
-                        {/* Confirmation Status */}
-                        <div>
-                          <p className="mb-1 text-xs text-slate-500">
-                            Confirmation Status
-                          </p>
+                    </tr>
+                  ))}
+              </tbody>
 
-                          {student.StudentConfirmationStatus === "PENDING" ? (
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleConfirmStudent(student)}
-                                className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600"
-                              >
-                                <CheckCircle size={14} />
-                                Confirm
-                              </button>
+            </table>
 
-                              <button
-                                onClick={() => handleDeclineStudent(student)}
-                                className="inline-flex items-center gap-2 rounded-full bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600"
-                              >
-                                <XCircle size={14} />
-                                Decline
-                              </button>
-                            </div>
-                            
-                            
-                          ) : student.StudentConfirmationStatus === StudentConfirmationStatus.APPROVED ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                <CheckCircle size={14} />
-                                Confirmed
-                              </span>
-                            ) : student.StudentConfirmationStatus === StudentConfirmationStatus.REJECTED ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
-                                <XCircle size={14} />
-                                Declined
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                                Unknown
-                              </span>
-                            )}
-                        </div>
-
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-
-                      <Link
-                        href={`/dashboard/students/${student.id}`}
-                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        <Eye size={15} />
-                        View
-                      </Link>
-
-                      <button
-                        onClick={() => handleEditStudent(student)}
-                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-medium text-blue-600 hover:bg-blue-50"
-                      >
-                        <Pencil size={15} />
-                        Edit
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteStudent(student.id)}
-                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-medium text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 size={15} />
-                        Delete
-                      </button>
-
-                      {student.status === 0 ? (
-                        <button
-                          onClick={() => handleDeactivateStudent(student.id)}
-                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
-                        >
-                          <Ban size={15} />
-                          Deactivate
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleActivateStudent(student.id)}
-                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
-                        >
-                          <CheckCircle size={15} />
-                          Activate
-                        </button>
-                      )}
-
-                    </div>
-
-                  </div>
-
-                </div>
-              ))}
-
-            </div>
+          </div>
         </div>
 
-        <div className="space-y-4 hidden max-lg:block">
-          <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-white p-2 shadow-sm">
+        <div className="hidden min-h-0 flex-1 flex-col max-lg:flex">
+          <div className="mb-3 flex shrink-0 flex-col gap-2 border-b border-slate-200 pb-2">
 
-          <div className="flex items-center gap-2">
-            <span className="rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-brand-700">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-md bg-brand-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-700">
               Sort By
             </span>
 
             <button
               type="button"
               onClick={() => handleSort("Name")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "Name"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1642,18 +1748,18 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "Name" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
 
             <button
               type="button"
               onClick={() => handleSort("RegistrationNumber")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "RegistrationNumber"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1661,18 +1767,18 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "RegistrationNumber" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
 
             <button
               type="button"
               onClick={() => handleSort("CreatedAt")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "CreatedAt"
-                  ? "bg-brand-700 text-white shadow-md"
+                  ? "bg-brand-700 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1680,48 +1786,115 @@ const handleConfirmAllStudents = async () => {
 
               {sortBy === "CreatedAt" &&
                 (sortOrder === "asc" ? (
-                  <ChevronUp size={15} />
+                  <ChevronUp size={13} />
                 ) : (
-                  <ChevronDown size={15} />
+                  <ChevronDown size={13} />
                 ))}
             </button>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 lg:flex">
-            Active Sort:
-            <span className="font-semibold text-slate-800">
-              {sortBy}
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+
+            {pendingCount > 0 && (
+              <button
+                onClick={handleConfirmAllStudents}
+                disabled={isConfirmingAll}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isConfirmingAll ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={13} />
+                    Confirm All Pending ({pendingCount})
+                  </>
+                )}
+              </button>
+            )}
+
+            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-1">
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={statusFilter.active}
+                  onChange={(e) =>
+                    toggleActiveStatusFilter(e.target.checked)
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
+                />
+                Active
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={statusFilter.inactive}
+                  onChange={(e) =>
+                    toggleInactiveStatusFilter(e.target.checked)
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-amber-600"
+                />
+                Deactive
+              </label>
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600">
+              <Users size={11} />
+              {totalItems} {totalItems === 1 ? "Student" : "Students"}
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-500">
+              Active Sort:
+              <span className="font-semibold text-slate-800">
+                {sortBy}
+              </span>
+            </div>
+
           </div>
 
         </div>
-          {students.map((student) => (
+          <div className="scrollbar-thin min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          {isLoadingList
+            ? Array.from({ length: Math.min(pageSize, 6) }).map((_, index) => (
+                <StudentRowSkeletonMobile key={index} />
+              ))
+            : students.map((student) => (
             <div
               key={student.id}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              onClick={() =>
+                router.push(`/dashboard/students/${student.id}`)
+              }
+              className="cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white transition-all hover:shadow-sm"
             >
               {/* Header */}
-              <div className="border-b border-slate-100 bg-gradient-to-r from-green-50 via-white to-white p-4">
+              <div className="border-b border-slate-100 p-3">
                 <div className="flex items-start justify-between">
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
 
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-green-600 text-white shadow-sm">
-                      <UserCircle2 size={28} />
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full text-white ${getStudentAvatarColor(
+                        student.id
+                      )}`}
+                    >
+                      <GraduationCap size={18} />
                     </div>
 
                     <div>
 
-                      <span className="inline-flex rounded-md bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                      <span className="inline-flex rounded-md bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
                         {student.registrationNumber ?? "—"}
                       </span>
 
-                      <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                      <h3 className="mt-1 text-sm font-semibold text-slate-900">
                         {student.name}
                       </h3>
 
                       <span
-                        className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           student.status === 0
                             ? "bg-emerald-100 text-emerald-700"
                             : student.status === 1
@@ -1739,106 +1912,98 @@ const handleConfirmAllStudents = async () => {
                     </div>
                   </div>
 
-                  <Link
-                    href={`/dashboard/students/${student.id}`}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-green-300 hover:bg-green-50 hover:text-green-700"
-                  >
-                    <Eye size={16} />
-                    View
-                  </Link>
-
                 </div>
               </div>
 
               {/* Details */}
-              <div className="space-y-4 p-4">
+              <div className="space-y-2.5 p-3">
 
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                    <GraduationCap size={18} />
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                    <GraduationCap size={14} />
                   </div>
 
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
                       Grade
                     </p>
 
-                    <p className="font-medium text-slate-800">
+                    <p className="text-sm font-medium text-slate-800">
                       {formatGradeLabel(student.grade?.GradeDesc ?? "")}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-green-700">
-                    <Phone size={18} />
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-500">
+                    <Phone size={14} />
                   </div>
 
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
                       Primary Contact
                     </p>
 
-                    <p className="font-medium text-slate-800">
+                    <p className="text-sm font-medium text-slate-800">
                       {student.contact01 || "—"}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700">
-                    <PhoneCall size={18} />
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
+                    <PhoneCall size={14} />
                   </div>
 
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
                       Secondary Contact
                     </p>
 
-                    <p className="font-medium text-slate-800">
+                    <p className="text-sm font-medium text-slate-800">
                       {student.contact02 || "—"}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                    <Mail size={18} />
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
+                    <Mail size={14} />
                   </div>
 
                   <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
                       Email
                     </p>
 
-                    <p className="break-all font-medium text-slate-800">
+                    <p className="break-all text-sm font-medium text-slate-800">
                       {student.email || "—"}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3">
-                  <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                    <BookOpen size={18} />
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                    <BookOpen size={14} />
                   </div>
 
                   <div className="flex-1">
-                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                    <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
                       Classes
                     </p>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {student.classes.length > 0 ? (
                         student.classes.map((cls) => (
                           <span
                             key={cls.id}
-                            className="rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
+                            className="rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700"
                           >
                             {cls.name}
                           </span>
                         ))
                       ) : (
-                        <span className="text-sm text-slate-400">
+                        <span className="text-xs text-slate-400">
                           No classes assigned
                         </span>
                       )}
@@ -1847,23 +2012,21 @@ const handleConfirmAllStudents = async () => {
                 </div>
 
               </div>
-              <div className="mt-5 flex flex-col gap-4 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
 
                 {/* Student Information */}
                 <div className="w-full lg:w-auto">
 
-                  
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 px-3 pb-3">
 
                     {/* Registration Source */}
                     <div>
-                      <p className="mb-1 text-xs text-slate-500">
+                      <p className="mb-0.5 text-[11px] text-slate-500">
                         Registration Source
                       </p>
 
                       <span
-                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                           registrationSourceClasses[
                             student.StudentRegistrationSource as keyof typeof registrationSourceClasses
                           ] || "border-slate-200 bg-slate-100 text-slate-700"
@@ -1873,23 +2036,35 @@ const handleConfirmAllStudents = async () => {
                       </span>
                     </div>
 
-                    {/* Confirmation Status */}
+                    {/* Registered At */}
                     <div>
-                      <p className="mb-1 text-xs text-slate-500">
+                      <p className="mb-0.5 text-[11px] text-slate-500">
+                        Registered
+                      </p>
+
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
+                        <CalendarDays size={12} className="text-emerald-500" />
+                        {formatRegisteredDate(student.createdAt)}
+                      </span>
+                    </div>
+
+                    {/* Confirmation Status */}
+                    <div onClick={(event) => event.stopPropagation()}>
+                      <p className="mb-0.5 text-[11px] text-slate-500">
                         Confirmation Status
                       </p>
 
                       {student.StudentConfirmationStatus === "PENDING" ? (
                         <button
                           onClick={() => handleConfirmStudent(student)}
-                          className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600"
                         >
-                          <CheckCircle size={14} />
+                          <CheckCircle size={12} />
                           Confirm
                         </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                          <CheckCircle size={14} />
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          <CheckCircle size={12} />
                           Verified
                         </span>
                       )}
@@ -1900,46 +2075,41 @@ const handleConfirmAllStudents = async () => {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap">
-
-                  <Link
-                    href={`/dashboard/students/${student.id}`}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <Eye size={15} />
-                    View
-                  </Link>
+                <div
+                  onClick={(event) => event.stopPropagation()}
+                  className="grid w-full grid-cols-3 gap-1.5 lg:flex lg:w-auto lg:flex-wrap"
+                >
 
                   <button
                     onClick={() => handleEditStudent(student)}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-medium text-blue-600 transition hover:bg-blue-50"
+                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 transition hover:bg-blue-50"
                   >
-                    <Pencil size={15} />
+                    <Pencil size={13} />
                     Edit
                   </button>
 
                   <button
-                    onClick={() => handleDeleteStudent(student.id)}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                    onClick={(event) => askDeleteStudent(event, student.id)}
+                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-medium text-red-600 transition hover:bg-red-50"
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={13} />
                     Delete
                   </button>
 
                   {student.status === 0 ? (
                     <button
-                      onClick={() => handleDeactivateStudent(student.id)}
-                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                      onClick={(event) => askDeactivateStudent(event, student.id)}
+                      className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-orange-200 bg-white px-2.5 text-xs font-medium text-orange-700 transition hover:bg-orange-50"
                     >
-                      <Ban size={15} />
+                      <Ban size={13} />
                       Deactivate
                     </button>
                   ) : (
                     <button
                       onClick={() => handleActivateStudent(student.id)}
-                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                      className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50"
                     >
-                      <CheckCircle size={15} />
+                      <CheckCircle size={13} />
                       Activate
                     </button>
                   )}
@@ -1949,10 +2119,11 @@ const handleConfirmAllStudents = async () => {
               </div>
             </div>
           ))}
+          </div>
         </div>
 
         {/* ── Pagination ── */}
-        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 md:flex-row md:items-center md:justify-between">
 
           {/* Left */}
           <div className="flex items-center gap-3">
@@ -1981,20 +2152,19 @@ const handleConfirmAllStudents = async () => {
                     border
                     border-slate-200
                     bg-white
-                    py-2
-                    pl-3
-                    pr-9
-                    text-sm
+                    py-1.5
+                    pl-2.5
+                    pr-8
+                    text-xs
                     font-medium
                     text-slate-700
-                    shadow-sm
                     transition
                     hover:border-brand-300
                     focus:border-brand-500
                     focus:outline-none
                   "
                 >
-                  <option value={6}>6 / Page</option>
+                  <option value={5}>5 / Page</option>
                   <option value={10}>10 / Page</option>
                   <option value={20}>20 / Page</option>
                   <option value={50}>50 / Page</option>
@@ -2002,13 +2172,13 @@ const handleConfirmAllStudents = async () => {
                 </select>
 
                 <ChevronDown
-                  size={14}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
                 />
 
               </div>
 
-              <span className="hidden text-sm text-slate-500 sm:block">
+              <span className="text-xs text-slate-500">
                 Page <strong>{page}</strong> of <strong>{totalPages}</strong>
               </span>
 
@@ -2016,47 +2186,52 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Right */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
 
             {/* First */}
             <button
               disabled={page === 1 || isLoadingList}
               onClick={() => void loadStudentList(1, filters)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronsLeft size={16} />
+              <ChevronsLeft size={14} />
             </button>
 
             {/* Previous */}
             <button
               disabled={page === 1 || isLoadingList}
               onClick={() => void loadStudentList(page - 1, filters)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={14} />
             </button>
 
-            {/* Scrollable Pages */}
-            <div className="max-w-[280px] overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+            {/* Page numbers */}
+            <div className="flex items-center gap-1.5">
 
-              <div className="flex gap-2 px-1">
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              {getPaginationRange(page, totalPages).map((p, index) =>
+                p === "ellipsis" ? (
+                  <span
+                    key={`ellipsis-${index}`}
+                    className="px-1 text-xs text-slate-400"
+                  >
+                    …
+                  </span>
+                ) : (
                   <button
                     key={p}
                     onClick={() => void loadStudentList(p, filters)}
                     disabled={isLoadingList}
-                    className={`flex h-9 min-w-[36px] items-center justify-center rounded-lg border text-sm font-semibold transition-all duration-200 ${
+                    className={`flex h-7 min-w-[28px] items-center justify-center rounded-lg border text-xs font-semibold transition-all duration-200 ${
                       p === page
-                        ? "border-brand-700 bg-brand-700 text-white shadow"
+                        ? "border-brand-700 bg-brand-700 text-white"
                         : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50"
                     }`}
                   >
                     {p}
                   </button>
-                ))}
-
-              </div>
+                )
+              )}
 
             </div>
 
@@ -2064,28 +2239,23 @@ const handleConfirmAllStudents = async () => {
             <button
               disabled={page === totalPages || isLoadingList}
               onClick={() => void loadStudentList(page + 1, filters)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={14} />
             </button>
 
             {/* Last */}
             <button
               disabled={page === totalPages || isLoadingList}
               onClick={() => void loadStudentList(totalPages, filters)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronsRight size={16} />
+              <ChevronsRight size={14} />
             </button>
 
           </div>
 
         </div>
-
-        {/* ── Count ── */}
-        <p className="text-center text-sm text-muted">
-          Showing {students.length > 0 ? (page - 1) * pageSize + 1 : 0} to {(page - 1) * pageSize + students.length} of {totalItems} {totalItems === 1 ? "student" : "students"}
-        </p>
       </article>
 
       <button
@@ -2101,25 +2271,25 @@ const handleConfirmAllStudents = async () => {
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-8 py-6">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-                <GraduationCap size={22} />
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                <GraduationCap size={18} />
               </div>
 
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-base font-semibold text-slate-900">
                     Add Student
                   </h2>
 
-                  <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                     New
                   </span>
                 </div>
 
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-0.5 text-xs text-slate-500">
                   Create a student profile and assign academic details.
                 </p>
               </div>
@@ -2128,7 +2298,7 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsAddPanelOpen(false)}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Close
             </button>
@@ -2137,22 +2307,22 @@ const handleConfirmAllStudents = async () => {
 
         <form
           onSubmit={handleCreateStudent}
-          className="space-y-6 p-4"
+          className="space-y-4 p-4"
         >
 
            {errorMessage ? <p className="notice-error">{errorMessage}</p> : null}
            {successMessage ? <p className="notice-success">{successMessage}</p> : null}
 
           {/* Basic Details */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               Basic Information
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Registration Number
                 </label>
 
@@ -2185,7 +2355,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Student Name
                 </label>
 
@@ -2227,7 +2397,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Grade
                 </label>
 
@@ -2267,14 +2437,14 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Contact Details */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               Contact Information
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Primary Contact
                 </label>
 
@@ -2299,7 +2469,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Secondary Contact
                 </label>
 
@@ -2324,7 +2494,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Email Address
                 </label>
 
@@ -2368,7 +2538,7 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Sticky Footer */}
-          <div className="sticky bottom-0 border-t border-slate-200 bg-white p-4">
+          <div className="sticky bottom-0 border-t border-slate-200 bg-white p-3">
             <div className="flex gap-3">
               <button
                 type="button"
@@ -2406,205 +2576,31 @@ const handleConfirmAllStudents = async () => {
 
       </aside>
 
-      {/* Overlay */}
-      <button
-        type="button"
-        aria-label="Close filter panel"
-        onClick={() => setIsFilterPanelOpen(false)}
-        className={`fixed inset-0 z-40 bg-black/40 transition ${
-          isFilterPanelOpen
-            ? "visible opacity-100"
-            : "invisible opacity-0"
-        }`}
-      />
+      {isFilterPanelOpen && filterAnchorRect && (
+        <FilterPopover
+          rect={filterAnchorRect}
+          filters={filters}
+          grades={grades}
+          onChange={setFilters}
+          onClose={() => setIsFilterPanelOpen(false)}
+          onClear={() => {
+            const cleared = {
+              name: "",
+              grade: "",
+              email: "",
+              registrationNumber: "",
+            };
 
-      {/* Drawer */}
-      {/* Drawer */}
-      <aside
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-50 shadow-2xl transition-transform duration-300 ${
-          isFilterPanelOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <form
-          className="flex h-full flex-col"
-          onSubmit={(e) => {
-            e.preventDefault();
+            setFilters(cleared);
+            void loadStudentList(1, cleared);
+            setIsFilterPanelOpen(false);
+          }}
+          onApply={() => {
             void loadStudentList(1, filters);
             setIsFilterPanelOpen(false);
           }}
-        >
-          {/* Header */}
-          <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-6 py-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-700">
-                  <SlidersHorizontal size={22} />
-                </div>
-
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">
-                    Filters
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    Filter the student list
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsFilterPanelOpen(false)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 space-y-6 overflow-y-auto p-6">
-
-            {/* Student Name */}
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Student Name
-              </label>
-
-              <div className="relative">
-                <Search
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  value={filters.name}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  placeholder="Search student..."
-                  className="control-input pl-9"
-                />
-              </div>
-            </div>
-
-            {/* Student Email */}
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Student Email
-              </label>
-
-              <div className="relative">
-                <Search
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  type="text"
-                  value={filters.email}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      email: e.target.value,
-                    }))
-                  }
-                  placeholder="Search by email..."
-                  className="control-input pl-9"
-                />
-              </div>
-            </div>
-
-            {/* Grade */}
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Grade
-              </label>
-
-              <div className="relative">
-                <BookOpen
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400"
-                />
-
-                <ChevronDown
-                  size={15}
-                  className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-slate-400"
-                />
-
-                <select
-                  value={filters.grade}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      grade: e.target.value,
-                    }))
-                  }
-                  className="
-                    w-full
-                    appearance-none
-                    rounded-lg
-                    border
-                    border-slate-300
-                    bg-white
-                    py-2
-                    pl-9
-                    pr-9
-                    text-sm
-                  "
-                >
-                  <option value="">All Grades</option>
-
-                  {grades.map((grade) => (
-                    <option
-                      key={grade.id}
-                      value={grade.id}
-                    >
-                      {grade.GradeDesc}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Footer */}
-          <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white p-6">
-            <div className="flex gap-3">
-
-              <button
-                type="button"
-                className="btn-secondary flex-1"
-                onClick={() => {
-                  const cleared = {
-                    name: "",
-                    grade: "",
-                    email:""
-                  };
-
-                  setFilters(cleared);
-                  void loadStudentList(1, cleared);
-                  setIsFilterPanelOpen(false);
-                }}
-              >
-                Clear
-              </button>
-
-              <button
-                type="submit"
-                className="btn-primary flex-1"
-              >
-                Apply Filters
-              </button>
-
-            </div>
-          </div>
-        </form>
-      </aside>
+        />
+      )}
 
       <button
       type="button"
@@ -2622,25 +2618,25 @@ const handleConfirmAllStudents = async () => {
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-8 py-6">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-                <GraduationCap size={22} />
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                <GraduationCap size={18} />
               </div>
 
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-base font-semibold text-slate-900">
                     Edit Student
                   </h2>
 
-                  <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                     Existing
                   </span>
                 </div>
 
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-0.5 text-xs text-slate-500">
                   Update student profile and assign academic details.
                 </p>
               </div>
@@ -2649,7 +2645,7 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsEditPanelOpen(false)}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Close
             </button>
@@ -2658,22 +2654,22 @@ const handleConfirmAllStudents = async () => {
 
         <form
           onSubmit={handleUpdateStudent}
-          className="space-y-6 p-4"
+          className="space-y-4 p-4"
         >
 
            {errorMessage ? <p className="notice-error">{errorMessage}</p> : null}
            {successMessage ? <p className="notice-success">{successMessage}</p> : null}
 
           {/* Basic Details */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               Basic Information
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
 
               <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Registration Number
               </label>
 
@@ -2719,7 +2715,7 @@ const handleConfirmAllStudents = async () => {
             </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Student Name
                 </label>
 
@@ -2768,7 +2764,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Grade
                 </label>
 
@@ -2808,14 +2804,14 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Contact Details */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               Contact Information
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Primary Contact
                 </label>
 
@@ -2840,7 +2836,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Secondary Contact
                 </label>
 
@@ -2865,7 +2861,7 @@ const handleConfirmAllStudents = async () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Email Address
                 </label>
 
@@ -2915,7 +2911,7 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Sticky Footer */}
-          <div className="sticky bottom-0 border-t border-slate-200 bg-white p-4">
+          <div className="sticky bottom-0 border-t border-slate-200 bg-white p-3">
             <div className="flex gap-3">
               <button
                 type="button"
@@ -2972,19 +2968,19 @@ const handleConfirmAllStudents = async () => {
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-8 py-6">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 Import Student Preview
               </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-0.5 text-xs text-slate-500">
                 Review uploaded students before importing.
               </p>
 
-              <div className="mt-3">
-                <span className="rounded-lg bg-blue-50 px-3 py-1 text-sm text-blue-700">
+              <div className="mt-2">
+                <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
                   Total Records: {importStudents.length}
                 </span>
               </div>
@@ -2993,7 +2989,7 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsImportPreviewOpen(false)}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Close
             </button>
@@ -3001,12 +2997,12 @@ const handleConfirmAllStudents = async () => {
         </div>
 
         {importErrors.length > 0 && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
-            <h3 className="mb-2 font-semibold text-red-700">
+          <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3">
+            <h3 className="mb-1.5 text-sm font-semibold text-red-700">
               Validation Errors
             </h3>
 
-            <ul className="space-y-1 text-sm text-red-600">
+            <ul className="space-y-1 text-xs text-red-600">
               {importErrors.map((error, index) => (
                 <li key={index}>
                   Row {error.row} - {error.message}
@@ -3017,18 +3013,18 @@ const handleConfirmAllStudents = async () => {
         )}
 
         {/* Table */}
-        <div className="p-6">
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
+        <div className="p-4">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="px-4 py-3 text-left">Reg No</th>
-                  <th className="px-4 py-3 text-left">Student Name</th>
-                  <th className="px-4 py-3 text-left">Grade</th>
-                  <th className="px-4 py-3 text-left">Grade Id</th>
-                  <th className="px-4 py-3 text-left">Primary Contact</th>
-                  <th className="px-4 py-3 text-left">Secondary Contact</th>
-                  <th className="px-4 py-3 text-left">Email</th>
+                  <th className="px-3 py-2 text-left">Reg No</th>
+                  <th className="px-3 py-2 text-left">Student Name</th>
+                  <th className="px-3 py-2 text-left">Grade</th>
+                  <th className="px-3 py-2 text-left">Grade Id</th>
+                  <th className="px-3 py-2 text-left">Primary Contact</th>
+                  <th className="px-3 py-2 text-left">Secondary Contact</th>
+                  <th className="px-3 py-2 text-left">Email</th>
                 </tr>
               </thead>
 
@@ -3039,31 +3035,31 @@ const handleConfirmAllStudents = async () => {
                       key={`${student.registrationNumber}-${index}`}
                       className="border-b border-slate-100"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.registrationNumber}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.studentName}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.grade}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.gradeId}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.primaryContact}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.secondaryContact}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         {student.email}
                       </td>
                     </tr>
@@ -3074,14 +3070,14 @@ const handleConfirmAllStudents = async () => {
           </div>
 
           {/* Pagination */}
-          <div className="mt-6 flex items-center justify-center gap-2">
+          <div className="mt-4 flex items-center justify-center gap-1.5">
             <button
               type="button"
               disabled={previewPage <= 1}
               onClick={() =>
                 setPreviewPage((prev) => prev - 1)
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-40"
+              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs disabled:opacity-40"
             >
               Previous
             </button>
@@ -3096,7 +3092,7 @@ const handleConfirmAllStudents = async () => {
                 onClick={() =>
                   setPreviewPage(pageNo)
                 }
-                className={`h-9 w-9 rounded-lg ${
+                className={`h-7 w-7 rounded-lg text-xs ${
                   previewPage === pageNo
                     ? "bg-brand-700 text-white"
                     : "border border-slate-300"
@@ -3114,7 +3110,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() =>
                 setPreviewPage((prev) => prev + 1)
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-40"
+              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs disabled:opacity-40"
             >
               Next
             </button>
@@ -3122,14 +3118,14 @@ const handleConfirmAllStudents = async () => {
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 border-t border-slate-200 bg-white p-4">
+        <div className="sticky bottom-0 border-t border-slate-200 bg-white p-3">
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() =>
                 setIsImportPreviewOpen(false)
               }
-              className="flex-1 rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium"
+              className="flex-1 rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-medium"
             >
               Cancel
             </button>
@@ -3138,7 +3134,7 @@ const handleConfirmAllStudents = async () => {
               type="button"
               disabled={isImporting}
               onClick={handleConfirmImport}
-              className="flex-1 rounded-lg bg-brand-700 py-2 text-sm font-medium text-white"
+              className="flex-1 rounded-lg bg-brand-700 py-1.5 text-xs font-medium text-white"
             >
               {isImporting
                 ? "Importing..."
@@ -3151,11 +3147,11 @@ const handleConfirmAllStudents = async () => {
 
       {isHelpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">About This Page</p>
-                <h3 className="mt-2 text-lg font-semibold">Student & Guardian Management</h3>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">About This Page</p>
+                <h3 className="mt-1.5 text-base font-semibold">Student & Guardian Management</h3>
               </div>
               <button
                 type="button"
@@ -3166,7 +3162,7 @@ const handleConfirmAllStudents = async () => {
               </button>
             </div>
 
-            <div className="mt-4 space-y-4 text-sm text-muted">
+            <div className="mt-3 space-y-3 text-sm text-muted">
               <div>
                 <p className="font-semibold text-foreground">Add Students</p>
                 <p className="mt-1">Create student profiles with their contact information, grade level, and registration numbers for easy management.</p>
@@ -3193,6 +3189,450 @@ const handleConfirmAllStudents = async () => {
           </div>
         </div>
       )}
+
+      {pendingAction && (
+        <ConfirmActionPopover
+          rect={pendingAction.rect}
+          message={
+            pendingAction.type === "delete"
+              ? "Are you sure you want to delete this student?"
+              : "Are you sure you want to deactivate this student?"
+          }
+          confirmLabel={
+            pendingAction.type === "delete" ? "Delete" : "Deactivate"
+          }
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            const { type, studentId } = pendingAction;
+
+            setPendingAction(null);
+
+            if (type === "delete") {
+              void handleDeleteStudent(studentId);
+            } else {
+              void handleDeactivateStudent(studentId);
+            }
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+type ConfirmActionPopoverProps = {
+  rect: DOMRect;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+type StudentFilters = {
+  name: string;
+  grade: string;
+  email: string;
+  registrationNumber: string;
+};
+
+type FilterPopoverProps = {
+  rect: DOMRect;
+  filters: StudentFilters;
+  grades: Grade[];
+  onChange: (updater: (prev: StudentFilters) => StudentFilters) => void;
+  onClose: () => void;
+  onClear: () => void;
+  onApply: () => void;
+};
+
+function FilterPopover({
+  rect,
+  filters,
+  grades,
+  onChange,
+  onClose,
+  onClear,
+  onApply,
+}: FilterPopoverProps) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node)
+      ) {
+        onClose();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const VIEWPORT_MARGIN = 12;
+
+  const viewportWidth =
+    typeof window !== "undefined" ? window.innerWidth : 300;
+
+  const POPOVER_WIDTH = Math.min(300, viewportWidth - VIEWPORT_MARGIN * 2);
+
+  const left = Math.min(
+    Math.max(rect.right - POPOVER_WIDTH, VIEWPORT_MARGIN),
+    viewportWidth - POPOVER_WIDTH - VIEWPORT_MARGIN
+  );
+
+  const top = rect.bottom + 8;
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      style={{
+        position: "fixed",
+        top,
+        left,
+        width: POPOVER_WIDTH,
+      }}
+      className="z-[100] rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-900">Search By</h3>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onApply();
+        }}
+      >
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Registration Number
+          </label>
+
+          <div className="relative">
+            <Hash
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <input
+              value={filters.registrationNumber}
+              onChange={(e) =>
+                onChange((prev) => ({
+                  ...prev,
+                  registrationNumber: e.target.value,
+                }))
+              }
+              placeholder="Search by registration number..."
+              className="control-input pl-8 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Student Name
+          </label>
+
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <input
+              value={filters.name}
+              onChange={(e) =>
+                onChange((prev) => ({ ...prev, name: e.target.value }))
+              }
+              placeholder="Search student..."
+              className="control-input pl-8 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Student Email
+          </label>
+
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <input
+              type="text"
+              value={filters.email}
+              onChange={(e) =>
+                onChange((prev) => ({ ...prev, email: e.target.value }))
+              }
+              placeholder="Search by email..."
+              className="control-input pl-8 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Grade
+          </label>
+
+          <div className="relative">
+            <BookOpen
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2 text-slate-400"
+            />
+
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 z-10 -translate-y-1/2 text-slate-400"
+            />
+
+            <select
+              value={filters.grade}
+              onChange={(e) =>
+                onChange((prev) => ({ ...prev, grade: e.target.value }))
+              }
+              className="w-full appearance-none rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-sm"
+            >
+              <option value="">All Grades</option>
+
+              {grades.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.GradeDesc}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClear}
+            className="btn-secondary flex-1"
+          >
+            Clear
+          </button>
+
+          <button type="submit" className="btn-primary flex-1">
+            Apply
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body
+  );
+}
+
+function ConfirmActionPopover({
+  rect,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: ConfirmActionPopoverProps) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node)
+      ) {
+        onCancel();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+      }
+    }
+
+    function handleScroll() {
+      onCancel();
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [onCancel]);
+
+  const VIEWPORT_MARGIN = 12;
+
+  const viewportWidth =
+    typeof window !== "undefined" ? window.innerWidth : 256;
+
+  const POPOVER_WIDTH = Math.min(256, viewportWidth - VIEWPORT_MARGIN * 2);
+
+  const desiredLeft = rect.left + rect.width / 2;
+  const minLeft = POPOVER_WIDTH / 2 + VIEWPORT_MARGIN;
+  const maxLeft = Math.max(
+    viewportWidth - POPOVER_WIDTH / 2 - VIEWPORT_MARGIN,
+    minLeft
+  );
+  const left = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+
+  const arrowLeft = Math.min(
+    Math.max(desiredLeft - (left - POPOVER_WIDTH / 2), 16),
+    POPOVER_WIDTH - 16
+  );
+
+  const showBelow = rect.top < 160;
+  const top = showBelow ? rect.bottom + 10 : rect.top - 10;
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      style={{
+        position: "fixed",
+        top,
+        left,
+        width: POPOVER_WIDTH,
+        transform: showBelow ? "translate(-50%, 0)" : "translate(-50%, -100%)",
+      }}
+      className="z-[100] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+    >
+      <div
+        style={{ left: arrowLeft }}
+        className={`absolute h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-slate-200 bg-white ${
+          showBelow
+            ? "-top-1.5 border-l border-t"
+            : "top-full -translate-y-1/2 border-b border-r"
+        }`}
+      />
+
+      <p className="text-sm text-slate-700">{message}</p>
+
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function StudentRowSkeletonDesktop() {
+  return (
+    <tr className="animate-pulse border-b border-slate-100">
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 shrink-0 rounded-full bg-slate-200" />
+          <div className="space-y-1.5">
+            <div className="h-3.5 w-28 rounded bg-slate-200" />
+            <div className="h-3 w-16 rounded bg-slate-100" />
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-3">
+        <div className="space-y-1.5">
+          <div className="h-3 w-24 rounded bg-slate-100" />
+          <div className="h-3 w-20 rounded bg-slate-100" />
+          <div className="h-3 w-28 rounded bg-slate-100" />
+        </div>
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-4 w-16 rounded-md bg-slate-100" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-4 w-16 rounded-md bg-slate-100" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-4 w-14 rounded-md bg-slate-100" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-3 w-16 rounded bg-slate-100" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="flex justify-end gap-1.5">
+          <div className="h-8 w-16 rounded-lg bg-slate-100" />
+          <div className="h-8 w-16 rounded-lg bg-slate-100" />
+          <div className="h-8 w-16 rounded-lg bg-slate-100" />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function StudentRowSkeletonMobile() {
+  return (
+    <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white">
+
+      <div className="border-b border-slate-100 p-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="h-10 w-10 rounded-full bg-slate-200" />
+            <div className="space-y-1.5">
+              <div className="h-3 w-16 rounded bg-slate-100" />
+              <div className="h-3.5 w-28 rounded bg-slate-200" />
+              <div className="h-3 w-12 rounded bg-slate-100" />
+            </div>
+          </div>
+          <div className="h-8 w-16 rounded-lg bg-slate-100" />
+        </div>
+      </div>
+
+      <div className="space-y-2.5 p-3">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-slate-100" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-2.5 w-16 rounded bg-slate-100" />
+              <div className="h-3 w-24 rounded bg-slate-200" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2 border-t border-slate-100 p-3">
+        <div className="h-8 flex-1 rounded-lg bg-slate-100" />
+        <div className="h-8 flex-1 rounded-lg bg-slate-100" />
+        <div className="h-8 flex-1 rounded-lg bg-slate-100" />
+      </div>
+
+    </div>
   );
 }

@@ -7,7 +7,6 @@ import { useState } from "react";
 import TeacherProfileHeader from "../../components/teacherProfile/TeacherProfileHeader";
 
 import TeacherAboutCard from "./TeacherAboutCard";
-import TeacherMediumsCard from "./TeacherMediumsCard";
 import TeacherSocialLinksCard from "./TeacherSocialLinksCard";
 
 import TeacherQualificationCard from "./TeacherQualificationCard";
@@ -62,44 +61,45 @@ export default function TeacherProfilePage({
           </div> */}
 
           {/* Main Content */}
-          <div className="space-y-6">
+          <div className="mt-6 space-y-6">
 
-            <TeacherClassesCard
-              classes={teacher?.classes ?? []}
-              isPublic={isPublic}
-            />
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+              <div className="space-y-6 lg:col-span-1">
+                <TeacherAboutCard
+                  onEdit={() => openDrawer("about")}
+                  teacherId={teacher?.teacherId ?? ""}
+                  isPublic={isPublic}
+                />
 
-            <TeacherAboutCard
-              onEdit={() => openDrawer("about")}
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
+                <TeacherSubjectsCard
+                  teacherId={teacher?.teacherId ?? ""}
+                  isPublic={isPublic}
+                />
 
-            <TeacherSubjectsCard
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
+                <TeacherSocialLinksCard
+                  onEdit={() => openDrawer("social")}
+                  teacherId={teacher?.teacherId ?? ""}
+                  isPublic={isPublic}
+                />
+              </div>
 
-            <TeacherQualificationCard
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
+              <div className="space-y-6 lg:col-span-2">
+                <TeacherClassesCard
+                  classes={teacher?.classes ?? []}
+                  isPublic={isPublic}
+                />
 
-            <TeacherAchievementCard
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
+                <TeacherQualificationCard
+                  teacherId={teacher?.teacherId ?? ""}
+                  isPublic={isPublic}
+                />
 
-            <TeacherMediumsCard
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
-
-            <TeacherSocialLinksCard
-              onEdit={() => openDrawer("social")}
-              teacherId={teacher?.teacherId ?? ""}
-              isPublic={isPublic}
-            />
+                <TeacherAchievementCard
+                  teacherId={teacher?.teacherId ?? ""}
+                  isPublic={isPublic}
+                />
+              </div>
+            </div>
 
           </div>
         </div>

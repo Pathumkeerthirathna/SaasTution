@@ -201,93 +201,75 @@ const [loading, setLoading] =
 
   if (loading) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-      <div className="flex flex-col gap-6 lg:flex-row lg:justify-between">
-
-        {/* Left */}
-        <div className="flex gap-5">
-
-          {/* Avatar */}
-          <div className="h-28 w-28 rounded-full bg-slate-200" />
-
-          {/* Details */}
-          <div className="space-y-4">
-            <div className="h-8 w-64 rounded bg-slate-200" />
-            <div className="h-5 w-48 rounded bg-slate-200" />
-            <div className="h-4 w-72 rounded bg-slate-200" />
-            <div className="h-4 w-56 rounded bg-slate-200" />
-
-            <div className="flex gap-4">
-              <div className="h-4 w-32 rounded bg-slate-200" />
-              <div className="h-4 w-32 rounded bg-slate-200" />
-            </div>
-          </div>
+    <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+        <div className="space-y-1.5">
+          <div className="h-4 w-32 rounded bg-slate-200" />
+          <div className="h-3 w-40 rounded bg-slate-200" />
         </div>
+        <div className="h-7 w-7 rounded-lg bg-slate-200" />
+      </div>
 
-        {/* Right */}
-        <div className="space-y-4">
-          <div className="h-11 w-40 rounded-xl bg-slate-200" />
-          <div className="h-4 w-24 rounded bg-slate-200" />
-
-          <div className="flex gap-2">
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-            <div className="h-8 w-20 rounded-full bg-slate-200" />
-          </div>
+      <div className="space-y-3 p-5">
+        <div className="h-10 w-40 rounded-lg bg-slate-100" />
+        <div className="flex gap-2">
+          <div className="h-7 w-20 rounded-full bg-slate-100" />
+          <div className="h-7 w-24 rounded-full bg-slate-100" />
+          <div className="h-7 w-16 rounded-full bg-slate-100" />
         </div>
-
       </div>
     </div>
   );
 }
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 className="text-[16px] font-bold text-slate-900">
             Teaching Mediums
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-0.5 text-[14px] text-slate-500">
             Languages available for teaching.
           </p>
         </div>
 
-        {isPublic ? null : (<button
-          onClick={openDrawer}
-          className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
-        >
-          <Edit className="h-4 w-4" />
-          Edit
-        </button>)}
-
-        
+        {isPublic ? null : (
+          <button
+            onClick={openDrawer}
+            title="Edit teaching mediums"
+            aria-label="Edit teaching mediums"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+          >
+            <Edit className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Body */}
-      <div className="p-6">
-        <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-            <Languages className="h-6 w-6 text-emerald-600" />
+      <div className="p-5">
+        <div className="mb-4 flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
+            <Languages className="h-4 w-4 text-emerald-600" />
           </div>
 
           <div>
-            <p className="text-sm text-slate-500">
+            <p className="text-[13px] text-slate-500">
               Available Mediums
             </p>
 
-            <p className="font-semibold text-slate-900">
+            <p className="text-[16px] font-semibold leading-tight text-slate-900">
               {teacherMediums.length} Mediums
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
           {teacherMediums.map((medium) => (
             <div
               key={medium.id}
-              className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700"
+              className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[14px] font-semibold text-emerald-700"
             >
               {medium.name}
             </div>
@@ -295,11 +277,9 @@ const [loading, setLoading] =
         </div>
 
         {/* Info Box */}
-        <div className="mt-6 rounded-xl border border-orange-100 bg-orange-50 p-4">
-          <p className="text-sm leading-6 text-orange-700">
-            Students can easily identify the
-            languages you teach in when viewing
-            your public profile.
+        <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50 p-3">
+          <p className="text-[14px] leading-5 text-orange-700">
+            Students can easily identify the languages you teach in when viewing your public profile.
           </p>
         </div>
       </div>

@@ -155,6 +155,7 @@ export function LectureQuizPanel(props: {
   const [resultsQuizId, setResultsQuizId] = useState<string | null>(null);
   const [resultsData, setResultsData] = useState<QuizResultsData | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   // const [isExpandedList, setIsExpandedList] = useState(false);
 
   const selectedQuiz = useMemo(
@@ -190,7 +191,6 @@ export function LectureQuizPanel(props: {
       const nextSelectedId =
         (preferredQuizId && list.some((quiz) => quiz.id === preferredQuizId) ? preferredQuizId : null) ??
         (selectedQuizId && list.some((quiz) => quiz.id === selectedQuizId) ? selectedQuizId : null) ??
-        list[0]?.id ??
         null;
 
       setSelectedQuizId(nextSelectedId);
@@ -234,6 +234,20 @@ export function LectureQuizPanel(props: {
     setSuccessMessage(null);
     setResultsQuizId(null);
     setResultsData(null);
+  }
+
+  function openCreateForm() {
+    handleAddNewQuiz();
+    setIsFormOpen(true);
+  }
+
+  function openEditForm(quizId: string) {
+    selectExistingQuiz(quizId);
+    setIsFormOpen(true);
+  }
+
+  function closeForm() {
+    setIsFormOpen(false);
   }
 
   async function openResults(quizId: string) {
@@ -444,6 +458,7 @@ export function LectureQuizPanel(props: {
       await loadQuizzes(result.data.quiz.id);
       await notifyChanged();
       setSuccessMessage(selectedQuizId ? "Quiz updated successfully." : "Quiz created successfully.");
+      setIsFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to save quiz.");
     } finally {
@@ -480,6 +495,7 @@ export function LectureQuizPanel(props: {
       await loadQuizzes(fallbackQuizId);
       await notifyChanged();
       setSuccessMessage("Quiz deleted successfully.");
+      setIsFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete quiz.");
     } finally {
@@ -488,343 +504,368 @@ export function LectureQuizPanel(props: {
   }
 
   return (
-    <div className="mt-4 space-y-6">
-      <article className="surface-panel overflow-hidden border border-brand-100 p-0">
-        <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
-          <div className="flex items-center gap-4">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 shadow-soft">
-              <FileText size={24} />
+    <div className="space-y-4">
+      {errorMessage && !isFormOpen ? <p className="notice-error text-xs">{errorMessage}</p> : null}
+      {successMessage ? <p className="notice-success text-xs">{successMessage}</p> : null}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <Users size={15} />
             </span>
             <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Lecture quizzes</h3>
-              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span>{selectedQuiz?.title ?? "Select a quiz or create a new one"}</span>
-                <span>•</span>
-                <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> {selectedQuiz ? (selectedQuiz.dueDate ? new Date(selectedQuiz.dueDate).toLocaleString() : "No due date") : "Ready to configure"}</span>
-              </p>
+              <h4 className="text-sm font-semibold text-slate-900">Existing quizzes</h4>
+              <p className="text-[11px] text-muted">Manage previously created quizzes.</p>
             </div>
           </div>
 
-          <button type="button" onClick={() => setResultsQuizId(null)} className="btn-secondary gap-2">
-            <X size={15} />
-            Close
+          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{quizzes.length} total</span>
+        </div>
+
+        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs font-semibold text-slate-700">Add / organize quizzes</p>
+          <button
+            type="button"
+            onClick={openCreateForm}
+            className="inline-flex h-7 items-center gap-1 rounded-lg bg-brand-700 px-2.5 text-[11px] font-semibold text-white transition hover:bg-brand-600"
+          >
+            <Plus size={11} />
+            Add new quiz
           </button>
         </div>
 
-        <div className="px-5 py-5 sm:px-6">
-          {errorMessage ? <p className="notice-error mb-4 text-xs">{errorMessage}</p> : null}
-          {successMessage ? <p className="notice-success mb-4 text-xs">{successMessage}</p> : null}
+        {isLoading ? <p className="mt-3 text-xs text-muted">Loading quizzes...</p> : null}
+        {!isLoading && quizzes.length === 0 ? <p className="mt-3 text-xs text-muted">No quizzes added yet.</p> : null}
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-            <section className="surface-card border border-brand-100 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                    <Plus size={18} />
+        <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto scrollbar-thin pr-1">
+          {quizzes.map((quiz) => (
+            <div
+              key={quiz.id}
+              className={`rounded-lg border p-3 transition ${
+                selectedQuizId === quiz.id && isFormOpen ? "border-brand-300 bg-brand-50/70" : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+                  <FileText size={16} />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <button type="button" onClick={() => openEditForm(quiz.id)} className="block w-full text-left">
+                    <p className="truncate text-xs font-semibold text-slate-900">{quiz.title}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{quiz.questions.length} question(s)</p>
+                    {quiz.maxAttempts !== null ? (
+                      <p className="mt-0.5 text-[11px] text-slate-500">Max {quiz.maxAttempts} attempt(s)</p>
+                    ) : null}
+                    {quiz.dueDate ? (
+                      <p className="mt-0.5 text-[10px] text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
+                    ) : null}
+                  </button>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void openResults(quiz.id)}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <Eye size={11} />
+                      View results
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteQuiz(quiz.id)}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-rose-200 px-2 text-[11px] font-medium text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <Trash2 size={11} />
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(quiz.id)}
+                      className="inline-flex h-7 items-center justify-center rounded-md border border-slate-200 px-1.5 text-slate-500 transition hover:bg-slate-50"
+                    >
+                      <MoreVertical size={11} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {isFormOpen ? (
+        <>
+          <div className="fixed inset-0 z-[70] bg-black/40" onClick={closeForm} aria-hidden />
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+            <div
+              className="flex max-h-[85vh] w-full flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 p-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                    <Plus size={15} />
                   </span>
                   <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Create or update quiz</h4>
-                    <p className="mt-1 text-sm text-muted">Build questions and set quiz details.</p>
+                    <h4 className="text-sm font-semibold text-slate-900">{selectedQuiz ? "Edit quiz" : "Add new quiz"}</h4>
+                    <p className="text-[11px] text-muted">Build questions and set quiz details.</p>
                   </div>
                 </div>
 
-                <button type="button" onClick={handleAddNewQuiz} className="btn-primary gap-2 px-3 py-2 text-xs">
-                  <Plus size={14} />
-                  Add new quiz
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                >
+                  <X size={13} />
                 </button>
               </div>
 
-              <div className="mt-5 space-y-4">
-                <div>
-                  <label className="form-label">Quiz title *</label>
-                  <div className="relative mt-2">
-                    <input
-                      value={draft.title}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          title: event.target.value,
-                        }))
-                      }
-                      placeholder="Quiz title"
-                      className="control-input h-14 pr-16 text-base"
-                    />
-                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
-                      {draft.title.length}/120
-                    </span>
-                  </div>
-                </div>
+              <div className="overflow-y-auto scrollbar-thin p-4">
+                {errorMessage ? <p className="notice-error mb-3 text-xs">{errorMessage}</p> : null}
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-3">
                   <div>
-                    <label className="form-label">Max attempts (optional)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={draft.maxAttempts ?? ""}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          maxAttempts: event.target.value ? Number(event.target.value) : null,
-                        }))
-                      }
-                      placeholder="Unlimited"
-                      className="control-input mt-2 h-14 text-base"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="form-label">Due date (optional)</label>
-                    <div className="relative mt-2">
-                      <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                    <label className="form-label mb-1 block">Quiz title *</label>
+                    <div className="relative">
                       <input
-                        type="datetime-local"
-                        value={draft.dueDate ? new Date(draft.dueDate).toISOString().slice(0, 16) : ""}
+                        value={draft.title}
                         onChange={(event) =>
                           setDraft((prev) => ({
                             ...prev,
-                            dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
+                            title: event.target.value,
                           }))
                         }
-                        className="control-input h-14 pl-11 text-base"
+                        placeholder="Quiz title"
+                        className="control-input h-9 pr-12 text-sm"
                       />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-muted">
+                        {draft.title.length}/120
+                      </span>
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-4">
-                  {draft.questions.map((question, questionIndex) => (
-                    <article key={question.id ?? `new-${questionIndex}`} className="rounded-3xl border border-brand-100 bg-white p-4 shadow-soft">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 pb-3">
-                        <div className="flex items-center gap-3">
-                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
-                            {questionIndex + 1}
-                          </span>
-                          <div>
-                            <p className="text-base font-semibold text-slate-900">Question {questionIndex + 1}</p>
-                            <p className="text-sm text-muted">Build the prompt and answer options.</p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeQuestion(questionIndex)}
-                          className="btn-danger gap-2 px-3 py-2 text-xs"
-                        >
-                          <Trash2 size={13} />
-                          Remove question
-                        </button>
-                      </div>
-
-                      <textarea
-                        value={question.text}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="form-label mb-1 block">Max attempts (optional)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={draft.maxAttempts ?? ""}
                         onChange={(event) =>
-                          updateQuestion(questionIndex, (current) => ({
-                            ...current,
-                            text: event.target.value,
+                          setDraft((prev) => ({
+                            ...prev,
+                            maxAttempts: event.target.value ? Number(event.target.value) : null,
                           }))
                         }
-                        rows={2}
-                        placeholder="Enter question text"
-                        className="control-textarea mt-4 text-base"
+                        placeholder="Unlimited"
+                        className="control-input h-9 text-sm"
                       />
+                    </div>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-semibold text-slate-500">Answer type</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateQuestion(questionIndex, (current) => {
-                              const correctedOptions = current.options.map((option, index) => ({
-                                ...option,
-                                isCorrect: index === 0 ? option.isCorrect : false,
-                              }));
-
-                              const hasCorrect = correctedOptions.some((option) => option.isCorrect);
-
-                              return {
-                                ...current,
-                                answerType: "SINGLE",
-                                options: hasCorrect
-                                  ? correctedOptions
-                                  : correctedOptions.map((option, index) => ({
-                                      ...option,
-                                      isCorrect: index === 0,
-                                    })),
-                              };
-                            })
-                          }
-                          className={`rounded-full border px-3 py-2 font-semibold ${
-                            question.answerType === "SINGLE"
-                              ? "border-brand-700 bg-brand-700 text-white"
-                              : "border-brand-100 bg-white text-slate-700"
-                          }`}
-                        >
-                          Single (radio)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateQuestion(questionIndex, (current) => ({
-                              ...current,
-                              answerType: "MULTIPLE",
+                    <div>
+                      <label className="form-label mb-1 block">Due date (optional)</label>
+                      <div className="relative">
+                        <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="datetime-local"
+                          value={draft.dueDate ? new Date(draft.dueDate).toISOString().slice(0, 16) : ""}
+                          onChange={(event) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
                             }))
                           }
-                          className={`rounded-full border px-3 py-2 font-semibold ${
-                            question.answerType === "MULTIPLE"
-                              ? "border-brand-700 bg-brand-700 text-white"
-                              : "border-brand-100 bg-white text-slate-700"
-                          }`}
-                        >
-                          Multiple (checkbox)
-                        </button>
-                      </div>
-
-                      <div className="mt-4 space-y-3">
-                        {question.options.map((option, optionIndex) => (
-                          <div key={option.id ?? `option-${optionIndex}`} className="flex items-center gap-3">
-                            {question.answerType === "SINGLE" ? (
-                              <input
-                                type="radio"
-                                checked={option.isCorrect}
-                                onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
-                                aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} single answer selector`}
-                                className="h-4 w-4 accent-brand-700"
-                              />
-                            ) : (
-                              <input
-                                type="checkbox"
-                                checked={option.isCorrect}
-                                onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
-                                aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} multiple answer selector`}
-                                className="h-4 w-4 accent-brand-700"
-                              />
-                            )}
-
-                            <input
-                              value={option.text}
-                              onChange={(event) =>
-                                updateOption(questionIndex, optionIndex, (current) => ({
-                                  ...current,
-                                  text: event.target.value,
-                                }))
-                              }
-                              placeholder={`Answer ${optionIndex + 1}`}
-                              className="control-input flex-1"
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => removeOption(questionIndex, optionIndex)}
-                              className="btn-danger px-3 py-2 text-xs"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      <button type="button" onClick={() => addOption(questionIndex)} className="btn-secondary mt-4 gap-2 px-3 py-2 text-xs">
-                        <Plus size={13} />
-                        Add answer
-                      </button>
-                    </article>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-3 pt-1">
-                  <button type="button" onClick={addQuestion} className="btn-secondary gap-2 px-4 py-3 text-sm">
-                    <Plus size={15} />
-                    Add question
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveQuiz()}
-                    disabled={isSaving}
-                    className="btn-primary gap-2 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Save size={15} />
-                    {isSaving ? "Saving..." : selectedQuiz ? "Save quiz" : "Create quiz"}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <aside className="surface-card border border-brand-100 p-5 shadow-soft">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                    <Users size={18} />
-                  </span>
-                  <div>
-                    <h4 className="text-xl font-semibold text-slate-900">Existing quizzes</h4>
-                    <p className="mt-1 text-sm text-muted">Manage previously created quizzes.</p>
-                  </div>
-                </div>
-
-                <span className="metric-badge">{quizzes.length} total</span>
-              </div>
-
-              {isLoading ? <p className="mt-4 text-sm text-muted">Loading quizzes...</p> : null}
-              {!isLoading && quizzes.length === 0 ? <p className="mt-4 text-sm text-muted">No quizzes added yet.</p> : null}
-
-              <div className={`mt-4 space-y-3 "max-h-[560px] overflow-y-auto pr-1"}`}>
-                {quizzes.map((quiz) => (
-                  <div
-                    key={quiz.id}
-                    className={`rounded-2xl border p-4 shadow-soft transition ${
-                      selectedQuizId === quiz.id ? "border-brand-300 bg-brand-50/70" : "border-brand-100 bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
-                        <FileText size={22} />
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <button type="button" onClick={() => selectExistingQuiz(quiz.id)} className="block w-full text-left">
-                          <p className="truncate text-lg font-semibold text-slate-900">{quiz.title}</p>
-                          <p className="mt-1 text-sm text-slate-500">{quiz.questions.length} question(s)</p>
-                          {quiz.maxAttempts !== null ? (
-                            <p className="mt-1 text-sm text-slate-500">Max {quiz.maxAttempts} attempt(s)</p>
-                          ) : null}
-                          {quiz.dueDate ? (
-                            <p className="mt-1 text-xs text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
-                          ) : null}
-                        </button>
-
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                          <button type="button" onClick={() => void openResults(quiz.id)} className="btn-secondary gap-2 px-3 py-2 text-xs">
-                            <Eye size={13} />
-                            View results
-                          </button>
-                          <button type="button" onClick={() => void handleDeleteQuiz(quiz.id)} className="btn-danger gap-2 px-3 py-2 text-xs">
-                            <Trash2 size={13} />
-                            Delete
-                          </button>
-                          <button type="button" className="btn-ghost px-3 py-2 text-xs" disabled>
-                            <MoreVertical size={13} />
-                          </button>
-                        </div>
+                          className="control-input h-9 pl-8 text-sm"
+                        />
                       </div>
                     </div>
                   </div>
-                ))}
+
+                  <div className="space-y-3">
+                    {draft.questions.map((question, questionIndex) => (
+                      <article key={question.id ?? `new-${questionIndex}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                              {questionIndex + 1}
+                            </span>
+                            <div>
+                              <p className="text-xs font-semibold text-slate-900">Question {questionIndex + 1}</p>
+                              <p className="text-[11px] text-muted">Build the prompt and answer options.</p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeQuestion(questionIndex)}
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-600 transition hover:bg-rose-100"
+                          >
+                            <Trash2 size={11} />
+                            Remove question
+                          </button>
+                        </div>
+
+                        <textarea
+                          value={question.text}
+                          onChange={(event) =>
+                            updateQuestion(questionIndex, (current) => ({
+                              ...current,
+                              text: event.target.value,
+                            }))
+                          }
+                          rows={2}
+                          placeholder="Enter question text"
+                          className="control-textarea mt-2.5 text-sm"
+                        />
+
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span className="font-semibold text-slate-500">Answer type</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateQuestion(questionIndex, (current) => {
+                                const correctedOptions = current.options.map((option, index) => ({
+                                  ...option,
+                                  isCorrect: index === 0 ? option.isCorrect : false,
+                                }));
+
+                                const hasCorrect = correctedOptions.some((option) => option.isCorrect);
+
+                                return {
+                                  ...current,
+                                  answerType: "SINGLE",
+                                  options: hasCorrect
+                                    ? correctedOptions
+                                    : correctedOptions.map((option, index) => ({
+                                        ...option,
+                                        isCorrect: index === 0,
+                                      })),
+                                };
+                              })
+                            }
+                            className={`rounded-full border px-2.5 py-1 font-semibold ${
+                              question.answerType === "SINGLE"
+                                ? "border-brand-700 bg-brand-700 text-white"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }`}
+                          >
+                            Single (radio)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateQuestion(questionIndex, (current) => ({
+                                ...current,
+                                answerType: "MULTIPLE",
+                              }))
+                            }
+                            className={`rounded-full border px-2.5 py-1 font-semibold ${
+                              question.answerType === "MULTIPLE"
+                                ? "border-brand-700 bg-brand-700 text-white"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }`}
+                          >
+                            Multiple (checkbox)
+                          </button>
+                        </div>
+
+                        <div className="mt-2.5 space-y-2">
+                          {question.options.map((option, optionIndex) => (
+                            <div key={option.id ?? `option-${optionIndex}`} className="flex items-center gap-2">
+                              {question.answerType === "SINGLE" ? (
+                                <input
+                                  type="radio"
+                                  checked={option.isCorrect}
+                                  onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
+                                  aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} single answer selector`}
+                                  className="h-3.5 w-3.5 accent-brand-700"
+                                />
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  checked={option.isCorrect}
+                                  onChange={() => toggleCorrectOption(questionIndex, optionIndex)}
+                                  aria-label={`Question ${questionIndex + 1} option ${optionIndex + 1} multiple answer selector`}
+                                  className="h-3.5 w-3.5 accent-brand-700"
+                                />
+                              )}
+
+                              <input
+                                value={option.text}
+                                onChange={(event) =>
+                                  updateOption(questionIndex, optionIndex, (current) => ({
+                                    ...current,
+                                    text: event.target.value,
+                                  }))
+                                }
+                                placeholder={`Answer ${optionIndex + 1}`}
+                                className="control-input h-8 flex-1 text-sm"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => removeOption(questionIndex, optionIndex)}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => addOption(questionIndex)}
+                          className="mt-2.5 inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                        >
+                          <Plus size={11} />
+                          Add answer
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={addQuestion}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <Plus size={13} />
+                      Add question
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveQuiz()}
+                      disabled={isSaving}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-700 px-3.5 text-xs font-semibold text-white shadow-soft transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Save size={13} />
+                      {isSaving ? "Saving..." : selectedQuiz ? "Save quiz" : "Create quiz"}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </aside>
+            </div>
           </div>
-        </div>
-      </article>
+        </>
+      ) : null}
 
       {resultsQuizId ? (
-        <article className="surface-panel border border-brand-100 p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-4 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-5 py-4 sm:px-6">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Quiz results</p>
-              {resultsData ? <h3 className="mt-1 text-xl font-semibold text-slate-900">{resultsData.quiz.title}</h3> : null}
+              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-700">
+                <Eye size={11} />
+                Quiz results
+              </p>
+              {resultsData ? <h3 className="mt-0.5 text-sm font-semibold text-slate-900">{resultsData.quiz.title}</h3> : null}
               {resultsData ? (
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-1 text-[11px] text-slate-600">
                   {resultsData.stats.totalSubmissions}/{resultsData.stats.totalEnrolled} submissions • Average score:{" "}
                   {resultsData.stats.averageScore !== null ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}` : "—"}
                 </p>
@@ -837,73 +878,73 @@ export function LectureQuizPanel(props: {
                 setResultsQuizId(null);
                 setResultsData(null);
               }}
-              className="btn-secondary gap-2"
+              className="btn-secondary shrink-0"
             >
-              <X size={14} />
+              <X size={12} />
               Close results
             </button>
           </div>
 
-          <div className="px-5 py-5 sm:px-6">
+          <div className="px-4 py-4">
             {isLoadingResults ? (
-              <p className="text-sm text-muted">Loading results...</p>
+              <p className="text-xs text-muted">Loading results...</p>
             ) : resultsData ? (
               <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Submissions</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Submissions</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
                       {resultsData.stats.totalSubmissions}
-                      <span className="ml-2 text-sm font-normal text-muted">/ {resultsData.stats.totalEnrolled}</span>
+                      <span className="ml-1.5 text-[11px] font-normal text-muted">/ {resultsData.stats.totalEnrolled}</span>
                     </p>
                   </div>
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Average score</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Average score</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
                       {resultsData.stats.averageScore !== null
                         ? `${resultsData.stats.averageScore} / ${resultsData.quiz.totalQuestions}`
                         : "—"}
                     </p>
                   </div>
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Max attempts</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">{resultsData.quiz.maxAttempts ?? "Unlimited"}</p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Max attempts</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">{resultsData.quiz.maxAttempts ?? "Unlimited"}</p>
                   </div>
-                  <div className="metric-tile">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Due</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Due</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-900">
                       {resultsData.quiz.dueDate ? new Date(resultsData.quiz.dueDate).toLocaleDateString() : "No due date"}
                     </p>
                   </div>
                 </div>
 
                 {resultsData.submissions.length === 0 ? (
-                  <p className="mt-4 text-sm text-muted">No submissions yet.</p>
+                  <p className="mt-3 text-xs text-muted">No submissions yet.</p>
                 ) : (
-                  <div className="mt-4 overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-soft">
-                    <table className="min-w-[680px] w-full text-sm">
-                      <thead className="bg-brand-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  <div className="mt-3 overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white">
+                    <table className="min-w-[680px] w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
                         <tr>
-                          <th className="px-4 py-3 text-left">Student</th>
-                          <th className="px-4 py-3 text-left">Score</th>
-                          <th className="px-4 py-3 text-left">%</th>
-                          <th className="px-4 py-3 text-left">Attempts</th>
-                          <th className="px-4 py-3 text-left">Submitted</th>
+                          <th className="px-3 py-2 text-left">Student</th>
+                          <th className="px-3 py-2 text-left">Score</th>
+                          <th className="px-3 py-2 text-left">%</th>
+                          <th className="px-3 py-2 text-left">Attempts</th>
+                          <th className="px-3 py-2 text-left">Submitted</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-brand-100">
+                      <tbody className="divide-y divide-slate-100">
                         {resultsData.submissions.map((sub) => (
                           <tr key={sub.studentId} className="align-top">
-                            <td className="px-4 py-4">
+                            <td className="px-3 py-2.5">
                               <p className="font-semibold text-slate-900">{sub.studentName}</p>
-                              {sub.registrationNumber ? <p className="mt-1 text-xs text-muted">{sub.registrationNumber}</p> : null}
+                              {sub.registrationNumber ? <p className="mt-0.5 text-[10px] text-muted">{sub.registrationNumber}</p> : null}
                             </td>
-                            <td className="px-4 py-4 text-sm text-slate-700">
+                            <td className="px-3 py-2.5 text-slate-700">
                               {sub.score}/{sub.totalQuestions}
                             </td>
-                            <td className="px-4 py-4">
+                            <td className="px-3 py-2.5">
                               <span
-                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                                   sub.percentage >= 80
                                     ? "bg-emerald-100 text-emerald-700"
                                     : sub.percentage >= 50
@@ -914,8 +955,8 @@ export function LectureQuizPanel(props: {
                                 {sub.percentage}%
                               </span>
                             </td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{sub.attemptCount}</td>
-                            <td className="px-4 py-4 text-sm text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
+                            <td className="px-3 py-2.5 text-slate-700">{sub.attemptCount}</td>
+                            <td className="px-3 py-2.5 text-slate-600">{new Date(sub.submittedAt).toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -925,7 +966,7 @@ export function LectureQuizPanel(props: {
               </>
             ) : null}
           </div>
-        </article>
+        </div>
       ) : null}
     </div>
   );

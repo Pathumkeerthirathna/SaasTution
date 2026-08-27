@@ -21,7 +21,7 @@ export default function DevicePreview({
       .toUpperCase() ?? "U";
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border bg-slate-900">
+    <div className="relative overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
 
       <video
         ref={videoRef}
@@ -36,7 +36,7 @@ export default function DevicePreview({
       {!cameraEnabled && (
         <div className="flex aspect-video items-center justify-center">
 
-          <div className="flex h-32 w-32 items-center justify-center rounded-full bg-blue-600 text-5xl font-bold text-white">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-600 text-2xl font-semibold text-white">
             {initials}
           </div>
 

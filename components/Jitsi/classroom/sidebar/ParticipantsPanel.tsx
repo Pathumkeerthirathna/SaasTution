@@ -1,14 +1,20 @@
 "use client";
 
+import { useState } from "react";
+import toast from "react-hot-toast";
+
 import {
   Camera,
   CameraOff,
   Mic,
   MicOff,
   Crown,
-  Hand,
   BookOpenCheck,
   UserRoundX,
+  Bell,
+  X,
+  Send,
+  Loader2,
 } from "lucide-react";
 
 import type { ClassroomStudent, JitsiParticipant } from "../../types";
@@ -19,13 +25,43 @@ type ParticipantsPanelProps = {
   participants: JitsiParticipant[];
   ClassroomStudents?: ClassroomStudent[];
   role : string
+  lectureTitle?: string;
+  className?: string;
+  classId?: string;
 };
 
 export default function ParticipantsPanel({
-  participants,ClassroomStudents,role
+  participants,ClassroomStudents,role,
+  lectureTitle,
+  className,
+  classId,
 }: ParticipantsPanelProps) {
 
   console.log(participants);
+
+  const [showNotify, setShowNotify] = useState(false);
+
+  const [selectedAbsentIds, setSelectedAbsentIds] =
+    useState<Set<string>>(new Set());
+
+  const [notifyMessage, setNotifyMessage] = useState("");
+
+  const [isSendingNotify, setIsSendingNotify] =
+    useState(false);
+
+  const toggleAbsentSelected = (studentId: string) => {
+    setSelectedAbsentIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(studentId)) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
+
+      return next;
+    });
+  };
 
 const presentStudents = ClassroomStudents?.filter(
   (student) =>
@@ -46,35 +82,76 @@ const absentStudents = ClassroomStudents?.filter(
 console.log(presentStudents);
 console.log(absentStudents);
 
+  const handleSendNotifyEmails = async () => {
+    if (!classId || selectedAbsentIds.size === 0) {
+      return;
+    }
+
+    setIsSendingNotify(true);
+
+    try {
+      const response = await fetch(
+        `/api/classes/${classId}/notify-absent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            studentIds: Array.from(selectedAbsentIds),
+            message: notifyMessage,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ?? "Unable to send notification emails."
+        );
+      }
+
+      toast.success(
+        `Sending emails to ${data.queued} student${
+          data.queued === 1 ? "" : "s"
+        }.`
+      );
+
+      setShowNotify(false);
+    } catch (error) {
+      console.error(
+        "❌ Failed to send notification emails:",
+        error
+      );
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to send notification emails."
+      );
+    } finally {
+      setIsSendingNotify(false);
+    }
+  };
+
    // =====================================================
   // STUDENT VIEW
   // =====================================================
 
   if (role === "student") {
     return (
-      <div className="rounded-3xl border border-slate-700 bg-[#111827] p-6 shadow-xl">
-
-        <div className="mb-5 flex items-center justify-between">
-
-          <h3 className="text-lg font-semibold text-white">
-            Participants
-          </h3>
-
-          <span className="rounded-full bg-blue-600 px-3 py-1 text-sm text-white">
-            {participants.length}
-          </span>
-
-        </div>
+      <div className="flex h-full min-h-0 flex-col">
 
         {participants.length === 0 ? (
 
-          <div className="rounded-xl bg-slate-800 p-6 text-center text-slate-400">
+          <div className="rounded-lg bg-[#1E293B] p-5 text-center text-sm text-[#94A3B8]">
             Waiting for participants...
           </div>
 
         ) : (
 
-          <div className="space-y-3">
+          <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
 
             {participants.map((participant) => (
               <ParticipantRow
@@ -91,73 +168,50 @@ console.log(absentStudents);
     );
   }
 
-  
+
 
     return (
-    <div className="rounded-3xl border border-slate-700 bg-[#111827] p-4 shadow-xl">
-
-      {/* SUMMARY */}
-
-      <div className="mb-5 flex items-center justify-between">
-
-        <h3 className="text-lg font-semibold text-white">
-          Class register
-        </h3>
-
-        <span className="rounded-full bg-blue-600 px-3 py-1 text-sm text-white">
-          {presentStudents?.length}/{ClassroomStudents?.length}
-        </span>
-
-      </div>
-
-
-      {/* PRESENT / ABSENT */}
-
-      <div className="max-h-[calc(100vh-250px)] overflow-y-auto scrollbar-thin pr-1">
+    <div className="flex h-full min-h-0 flex-col gap-3">
 
       {/* PRESENT */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
+      <div className="flex min-h-0 flex-1 flex-col">
 
-          <h3 className="font-semibold text-white">
+        <div className="mb-2 flex shrink-0 items-center gap-2">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-[#22C55E]" />
+
+          <h3 className="text-sm font-semibold text-[#F8FAFC]">
             Present
           </h3>
 
-          <span className="text-sm text-slate-400">
+          <span className="text-xs text-[#94A3B8]">
             {presentStudents?.length}
           </span>
         </div>
 
-        <div className="space-y-2">
+        <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           {presentStudents?.length === 0 ? (
-            <div className="rounded-xl bg-slate-800 p-3 text-center text-xs text-slate-500">
+            <div className="rounded-lg bg-[#1E293B] p-2.5 text-center text-xs text-[#64748B]">
               No students
             </div>
           ) : (
             presentStudents?.map((student) => (
               <div
                 key={student.studentId}
-                className="flex items-center gap-3 rounded-xl bg-slate-800 px-3 py-2.5"
+                className="flex items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
               >
                 {/* Learning / Present Icon */}
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10">
                   <BookOpenCheck
-                    size={17}
+                    size={14}
                     className="text-emerald-400"
                   />
                 </div>
 
                 {/* Student */}
                 <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-white">
+                  <span className="block truncate text-sm font-medium text-[#F8FAFC]">
                     {student.displayName}
                   </span>
-
-                  {/* Registration number - add later */}
-                  {/* <span className="block truncate text-xs text-slate-500">
-                    {student.registrationNumber}
-                  </span> */}
                 </div>
               </div>
             ))
@@ -167,48 +221,77 @@ console.log(absentStudents);
 
 
       {/* ABSENT */}
-      <div>
-        <div className="mb-3 flex items-center gap-2 mt-4">
-          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
+      <div className="flex min-h-0 flex-1 flex-col">
 
-          <h3 className="font-semibold text-white">
-            Absent
-          </h3>
+        <div className="mb-2 flex shrink-0 items-center justify-between">
 
-          <span className="text-sm text-slate-400">
-            {absentStudents?.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+
+            <h3 className="text-sm font-semibold text-[#F8FAFC]">
+              Absent
+            </h3>
+
+            <span className="text-xs text-[#94A3B8]">
+              {absentStudents?.length}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            title="Notify absent students"
+            disabled={!absentStudents || absentStudents.length === 0}
+            onClick={() => {
+              setSelectedAbsentIds(
+                new Set(
+                  absentStudents?.map(
+                    (student) => student.studentId
+                  ) ?? []
+                )
+              );
+
+              setNotifyMessage(
+                `Hi,\n\nClass has started for ${
+                  className ?? "your class"
+                } - ${
+                  lectureTitle ?? "your lecture"
+                }. Please join as soon as you can.\n\nThank you.`
+              );
+
+              setShowNotify(true);
+            }}
+            className="flex items-center gap-1 rounded-full bg-[#1E293B] px-2.5 py-1 text-[11px] font-medium text-[#94A3B8] transition hover:bg-[#334155] hover:text-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Bell size={12} />
+            Notify
+          </button>
+
         </div>
 
-        <div className="space-y-2">
+        <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           {absentStudents?.length === 0 ? (
-            <div className="rounded-xl bg-slate-800 p-3 text-center text-xs text-slate-500">
+            <div className="rounded-lg bg-[#1E293B] p-2.5 text-center text-xs text-[#64748B]">
               No students
             </div>
           ) : (
             absentStudents?.map((student) => (
               <div
                 key={student.studentId}
-                className="flex items-center gap-3 rounded-xl bg-slate-800 px-3 py-2.5"
+                className="flex items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
               >
                 {/* Absent Icon */}
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/10">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-500/10">
                   <UserRoundX
-                    size={17}
+                    size={14}
                     className="text-red-400"
                   />
                 </div>
 
                 {/* Student */}
                 <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-slate-300">
+                  <span className="block truncate text-sm font-medium text-[#CBD5E1]">
                     {student.displayName}
                   </span>
-
-                  {/* Registration number - add later */}
-                  {/* <span className="block truncate text-xs text-slate-500">
-                    {student.registrationNumber}
-                  </span> */}
                 </div>
               </div>
             ))
@@ -216,7 +299,96 @@ console.log(absentStudents);
         </div>
       </div>
 
-    </div>
+      {showNotify && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[#1E293B] bg-[#172033] p-5 shadow-2xl">
+
+            {/* Header */}
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[#F8FAFC]">
+                  Notify Absent Students
+                </h3>
+
+                <p className="mt-1 text-xs text-[#94A3B8]">
+                  Send an email to the selected students below.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowNotify(false)}
+                className="rounded-lg p-2 text-[#94A3B8] transition hover:bg-[#1E293B] hover:text-[#F8FAFC]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Selected absent students */}
+            <div className="mb-4">
+              <div className="mb-2 text-xs font-medium text-[#94A3B8]">
+                {selectedAbsentIds.size} of {absentStudents?.length ?? 0} selected
+              </div>
+
+              <div className="scrollbar-thin max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                {absentStudents?.map((student) => (
+                  <label
+                    key={student.studentId}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAbsentIds.has(student.studentId)}
+                      onChange={() =>
+                        toggleAbsentSelected(student.studentId)
+                      }
+                      className="h-4 w-4 rounded border-[#334155] bg-[#0F172A] accent-[#3B82F6]"
+                    />
+
+                    <span className="truncate text-sm text-[#F8FAFC]">
+                      {student.displayName}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Message */}
+            <div className="mb-4">
+              <label className="mb-1.5 block text-xs font-medium text-[#94A3B8]">
+                Message
+              </label>
+
+              <textarea
+                value={notifyMessage}
+                onChange={(e) => setNotifyMessage(e.target.value)}
+                rows={5}
+                className="w-full resize-none rounded-lg border border-[#1E293B] bg-[#0F172A] px-3 py-2 text-sm text-[#F8FAFC] outline-none focus:border-[#3B82F6]"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSendNotifyEmails}
+                disabled={
+                  selectedAbsentIds.size === 0 || isSendingNotify
+                }
+                className="flex items-center gap-2 rounded-lg bg-[#3B82F6] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSendingNotify ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+                {isSendingNotify ? "Sending..." : "Send Emails"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );
@@ -229,11 +401,11 @@ function ParticipantRow({
   participant: JitsiParticipant;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+    <div className="flex items-center justify-between rounded-lg bg-[#1E293B] px-3 py-2">
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
 
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-semibold text-white">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#3B82F6] text-sm font-semibold text-white">
 
           {participant.displayName?.charAt(0) ?? "?"}
 
@@ -241,15 +413,15 @@ function ParticipantRow({
 
         <div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
 
-            <span className="font-medium text-white">
+            <span className="text-sm font-medium text-[#F8FAFC]">
               {participant.displayName ?? "Unknown User"}
             </span>
 
             {participant.role === "moderator" && (
               <Crown
-                size={16}
+                size={14}
                 className="text-yellow-400"
               />
             )}
@@ -260,35 +432,31 @@ function ParticipantRow({
 
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
 
         {participant.status?.audioMuted ?? false ? (
           <MicOff
-            size={18}
+            size={15}
             className="text-red-400"
           />
         ) : (
           <Mic
-            size={18}
-            className="text-green-400"
+            size={15}
+            className="text-[#22C55E]"
           />
         )}
 
         {participant.status?.videoMuted ?? false ? (
           <CameraOff
-            size={18}
+            size={15}
             className="text-red-400"
           />
         ) : (
           <Camera
-            size={18}
-            className="text-green-400"
+            size={15}
+            className="text-[#22C55E]"
           />
         )}
-
-        {/* {participant.status.raisedHand && (
-          <Hand className="h-4 w-4 text-yellow-400" />
-        )} */}
 
       </div>
 

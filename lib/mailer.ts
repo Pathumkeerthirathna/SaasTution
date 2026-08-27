@@ -475,3 +475,178 @@ export async function sendEmail(
     throw error;
   }
 }
+
+//////
+// Class-started notification broadcast (absent students)
+//////
+
+type ClassStartedNotificationRecipient = {
+  email: string | null;
+  displayName: string;
+};
+
+export type ClassStartedNotificationResult = {
+  email: string;
+  displayName: string;
+  success: boolean;
+  error?: string;
+};
+
+function buildClassStartedNotificationEmail(input: {
+  studentName: string;
+  message: string;
+}) {
+  const safeStudentName = escapeHtml(input.studentName);
+  const safeMessage = escapeHtml(input.message).replace(
+    /\n/g,
+    "<br>"
+  );
+
+  const html = `
+    <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+      <div style="max-width:480px;margin:0 auto;">
+
+        <div style="background:#111827;padding:22px 24px;border-radius:14px 14px 0 0;text-align:center;">
+          <span style="font-size:18px;font-weight:700;color:#f8fafc;letter-spacing:0.3px;">
+            SL Classroom
+          </span>
+        </div>
+
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 14px 14px;padding:28px 24px;">
+
+          <p style="margin:0 0 6px;font-size:11px;font-weight:600;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;">
+            Class Started Notification
+          </p>
+
+          <p style="margin:0 0 16px;font-size:15px;color:#0f172a;">
+            Hi ${safeStudentName},
+          </p>
+
+          <div style="font-size:15px;line-height:1.6;color:#334155;">
+            ${safeMessage}
+          </div>
+
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+
+          <p style="margin:0;font-size:12px;color:#94a3b8;">
+            This is an automated notification from SL Classroom. Please do not reply to this email.
+          </p>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  const text = `Hi ${input.studentName},\n\n${input.message}`;
+
+  return { html, text };
+}
+
+async function sendEmailWithRetry(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+  maxAttempts = 3
+): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await sendEmail(to, subject, html, text);
+      return;
+    } catch (error) {
+      lastError = error;
+
+      console.error(
+        `❌ Class-started notification attempt ${attempt}/${maxAttempts} failed for ${to}`,
+        error
+      );
+
+      if (attempt < maxAttempts) {
+        const delayMs = attempt * 1000;
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayMs)
+        );
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+/**
+ * Sends "class started" notification emails to a list of students one at a
+ * time (not in parallel), retrying each recipient a few times before giving
+ * up on it. A failure on one recipient never stops the rest of the batch —
+ * every recipient is attempted, and a per-recipient result is returned so
+ * the caller can see exactly who did and didn't get notified.
+ */
+export async function sendClassStartedNotifications(
+  recipients: ClassStartedNotificationRecipient[],
+  message: string
+): Promise<ClassStartedNotificationResult[]> {
+  const subject = "SL Classroom - Class Started Notification";
+
+  const results: ClassStartedNotificationResult[] = [];
+
+  for (const recipient of recipients) {
+    const email = recipient.email?.trim();
+
+    if (!email) {
+      results.push({
+        email: "",
+        displayName: recipient.displayName,
+        success: false,
+        error: "Missing email address.",
+      });
+
+      continue;
+    }
+
+    const { html, text } = buildClassStartedNotificationEmail({
+      studentName: recipient.displayName,
+      message,
+    });
+
+    try {
+      await sendEmailWithRetry(email, subject, html, text);
+
+      results.push({
+        email,
+        displayName: recipient.displayName,
+        success: true,
+      });
+
+      console.log(
+        `✅ Class-started notification sent to ${email}`
+      );
+    } catch (error) {
+      results.push({
+        email,
+        displayName: recipient.displayName,
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown error.",
+      });
+
+      console.error(
+        `❌ Giving up on class-started notification to ${email} after retries`,
+        error
+      );
+    }
+  }
+
+  const successCount = results.filter(
+    (result) => result.success
+  ).length;
+
+  console.log(
+    `📧 Class-started notifications complete: ${successCount}/${results.length} sent.`
+  );
+
+  return results;
+}

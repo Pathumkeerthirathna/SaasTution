@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
+import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
 
 type ListClassesParams = {
   teacherId: string;
@@ -208,6 +209,72 @@ export async function getPublicClass(
   };
 
   return result;
+}
+
+/**
+ * Public course sessions for a class: lectures that have at least one
+ * publicly visible recording, newest lecture first. Each lecture keeps all of
+ * its public recordings ordered by when the recording started (oldest first),
+ * so the UI can number them 1, 2, 3. Recordings marked LOCKED are still
+ * returned so the page can render them behind a lock.
+ */
+export async function getPublicClassSessions(
+  classId: string
+): Promise<ClassLectureSession[]> {
+  const lectures = await prisma.lecture.findMany({
+    where: {
+      classId,
+      youtubeRecordings: {
+        some: {
+          visibility: "PUBLIC",
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+      createdAt: true,
+      youtubeRecordings: {
+        where: {
+          visibility: "PUBLIC",
+        },
+        orderBy: {
+          startedAt: "asc",
+        },
+        select: {
+          id: true,
+          videoId: true,
+          youtubeUrl: true,
+          access: true,
+          startedAt: true,
+          endedAt: true,
+        },
+      },
+    },
+  });
+
+  return lectures.map((lecture) => ({
+    id: lecture.id,
+    title: lecture.title,
+    date: lecture.date.toISOString(),
+    createdAt: lecture.createdAt.toISOString(),
+    recordings: lecture.youtubeRecordings.map((recording) => ({
+      id: recording.id,
+      videoId: recording.videoId,
+      youtubeUrl: recording.youtubeUrl,
+      access: recording.access,
+      startedAt: recording.startedAt
+        ? recording.startedAt.toISOString()
+        : null,
+      endedAt: recording.endedAt
+        ? recording.endedAt.toISOString()
+        : null,
+    })),
+  }));
 }
 
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {

@@ -171,34 +171,31 @@ export default function TeacherSocialLinksCard({
   ];
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">
-            Social & Online Presence
+          <h3 className="text-[16px] font-bold text-slate-900">
+            Social &amp; Online Presence
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Connect students with your online
-            channels and content.
+          <p className="mt-0.5 text-[14px] text-slate-500">
+            Connect students with your online channels and content.
           </p>
         </div>
 
         {isPublic ? null : (<button
           onClick={() => setDrawerOpen(true)}
-          className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[14px] font-medium text-emerald-700 transition hover:bg-emerald-100"
         >
-          <Edit className="h-4 w-4" />
+          <Edit className="h-3.5 w-3.5" />
           Edit
         </button>)}
-
-        
       </div>
 
       {/* Body */}
-      <div className="p-6">
-        <div className="space-y-3">
+      <div className="p-5">
+        <div className="space-y-2">
           {items.map((social) => {
             const Icon = social.icon;
 
@@ -210,7 +207,7 @@ export default function TeacherSocialLinksCard({
                     window.open(social.value, "_blank", "noopener,noreferrer");
                   }
                 }}
-                className={`flex items-center gap-4 rounded-xl border border-slate-100 p-4 transition
+                className={`flex items-center gap-2.5 rounded-lg border border-slate-100 p-2.5 transition
                   ${
                     social.value
                       ? "cursor-pointer hover:bg-slate-50"
@@ -218,17 +215,17 @@ export default function TeacherSocialLinksCard({
                   }`}
               >
                 <div
-                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${social.bg}`}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${social.bg}`}
                 >
-                  <Icon className={`h-5 w-5 ${social.text}`} />
+                  <Icon className={`h-4 w-4 ${social.text}`} />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="text-[14px] font-semibold text-slate-900">
                     {social.name}
                   </p>
 
-                  <p className="truncate text-sm text-slate-500">
+                  <p className="truncate text-[13px] text-slate-500">
                     {social.value || "Not Added"}
                   </p>
                 </div>
@@ -238,12 +235,9 @@ export default function TeacherSocialLinksCard({
         </div>
 
         {/* Footer Message */}
-        <div className="mt-6 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-orange-50 p-4">
-          <p className="text-sm leading-6 text-slate-700">
-            Add your social links and website to
-            strengthen your personal teaching
-            brand and help students discover your
-            educational content.
+        <div className="mt-4 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-orange-50 p-3">
+          <p className="text-[14px] leading-5 text-slate-700">
+            Add your social links and website to strengthen your teaching brand and help students discover your content.
           </p>
         </div>
       </div>

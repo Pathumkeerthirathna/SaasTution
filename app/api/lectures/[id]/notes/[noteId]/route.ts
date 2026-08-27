@@ -36,6 +36,8 @@ export async function PUT(
     const body = (await request.json()) as {
       title?: string;
       kind?: "NOTE" | "SUPPORTING_MATERIAL";
+      visibility?: "PUBLIC" | "PRIVATE";
+      access?: "FREE" | "LOCKED";
     };
 
     const parsed = updateNoteSchema.safeParse(body);

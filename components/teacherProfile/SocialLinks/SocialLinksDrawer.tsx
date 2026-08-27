@@ -58,11 +58,11 @@ export default function SocialLinksDrawer({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">
+            <h2 className="text-[22px] font-bold text-slate-900">
               Social & Online Presence
             </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-[16px] text-slate-500">
               Connect students with your online platforms.
             </p>
           </div>
@@ -80,7 +80,7 @@ export default function SocialLinksDrawer({
           <div className="space-y-6">
             {/* Facebook */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
                 <FaFacebook className="h-4 w-4 text-blue-600" />
                 Facebook
               </label>
@@ -100,7 +100,7 @@ export default function SocialLinksDrawer({
 
             {/* YouTube */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
                 <FaYoutube className="h-4 w-4 text-red-600" />
                 YouTube
               </label>
@@ -120,7 +120,7 @@ export default function SocialLinksDrawer({
 
             {/* Instagram */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
                 <FaInstagram className="h-4 w-4 text-pink-600" />
                 Instagram
               </label>
@@ -140,7 +140,7 @@ export default function SocialLinksDrawer({
 
             {/* TikTok */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
                 <FaTiktok className="h-4 w-4" />
                 TikTok
               </label>
@@ -160,7 +160,7 @@ export default function SocialLinksDrawer({
 
             {/* Website */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
                 <Globe className="h-4 w-4 text-emerald-600" />
                 Website
               </label>

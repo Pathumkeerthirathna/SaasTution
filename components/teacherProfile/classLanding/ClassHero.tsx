@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Clock3,
   GraduationCap,
+  Wallet,
 } from "lucide-react";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 
@@ -54,15 +55,12 @@ function getNextClassDate(
   });
 }
 
-
-
 export default function ClassHero({
   classInfo,
 }: Props) {
 
-  if(!classInfo){
-    alert("NULL");
-    return;
+  if (!classInfo) {
+    return null;
   }
 
   const nextClass = getNextClassDate(
@@ -71,144 +69,88 @@ export default function ClassHero({
   );
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
-      <div className="p-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
 
-      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
 
-          <div className="flex items-center gap-4">
-
-              {/* Class Icon */}
-
-              <div className="
-                  flex
-                  h-16
-                  w-16
-                  shrink-0
-                  items-center
-                  justify-center
-                  rounded-2xl
-                  bg-gradient-to-br
-                  from-emerald-500
-                  to-emerald-600
-                  shadow-md
-              ">
-
-                  <GraduationCap className="h-8 w-8 text-white" />
-
-              </div>
-
-              {/* Class Details */}
-
-              <div>
-
-                  <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                      {classInfo.name}
-                  </h1>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                      Live Interactive {classInfo.name} Programme
-                  </p>
-
-              </div>
-
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+            <GraduationCap className="h-4 w-4" />
           </div>
 
-          <span className="
-              rounded-full
-              bg-emerald-100
-              px-3
-              py-1
-              text-xs
-              font-semibold
-              text-emerald-700
-          ">
-              {/* {classInfo.medium} */}
-          </span>
+          <div>
+            <h1 className="text-[16px] font-bold tracking-tight text-slate-900">
+              {classInfo.name}
+            </h1>
 
-      </div>
-
-        {/* Summary */}
-
-        
-
-        {/* Schedule */}
-
-        {/* Course Information */}
-
-        <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-3">
-
-          {/* Next Class */}
-
-          <div className="flex items-center gap-3">
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
-              <CalendarDays className="h-5 w-5 text-emerald-600" />
-            </div>
-
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                Next Class
-              </p>
-
-              <p className="text-sm font-semibold text-slate-900">
-                 {nextClass}
-              </p>
-            </div>
-
-          </div>
-
-          {/* Schedule */}
-
-          <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50">
-              <Clock3 className="h-5 w-5 text-orange-500" />
-            </div>
-
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                Schedule
-              </p>
-
-              <p className="text-sm font-semibold text-slate-900">
-                {classInfo.schedule}
-              </p>
-            </div>
-
-          </div>
-
-          {/* Fee */}
-
-          <div className="flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
-
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-orange-700">
-                Monthly Fee
-              </p>
-
-              <p className="mt-1 text-2xl font-bold text-orange-600">
-                Rs. {classInfo.monthlyFee.toLocaleString()}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-orange-100 px-3 py-2">
-              <span className="text-xs font-semibold text-orange-700">
-                / Month
-              </span>
-            </div>
-
+            <p className="mt-0.5 text-[14px] text-slate-500">
+              Live interactive {classInfo.name} programme
+            </p>
           </div>
 
         </div>
 
-                {/* Buttons */}
+      </div>
 
-                
+      {/* Course info */}
+      <div className="p-5">
 
-              </div>
+        <div className="grid gap-3 sm:grid-cols-3">
 
+          {/* Next Class */}
+          <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+              <CalendarDays className="h-4 w-4 text-emerald-600" />
             </div>
-          );
-        }
+
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+                Next Class
+              </p>
+              <p className="truncate text-[15px] font-semibold text-slate-900">
+                {nextClass}
+              </p>
+            </div>
+          </div>
+
+          {/* Schedule */}
+          <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100">
+              <Clock3 className="h-4 w-4 text-orange-500" />
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+                Schedule
+              </p>
+              <p className="truncate text-[15px] font-semibold text-slate-900">
+                {classInfo.schedule}
+              </p>
+            </div>
+          </div>
+
+          {/* Fee */}
+          <div className="flex items-center gap-2.5 rounded-lg border border-orange-200 bg-orange-50 p-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100">
+              <Wallet className="h-4 w-4 text-orange-600" />
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-orange-700">
+                Monthly Fee
+              </p>
+              <p className="truncate text-[15px] font-bold text-orange-600">
+                Rs. {classInfo.monthlyFee.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}

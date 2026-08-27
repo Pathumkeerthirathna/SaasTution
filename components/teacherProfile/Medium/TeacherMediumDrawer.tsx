@@ -43,11 +43,11 @@ export default function TeacherMediumDrawer({
             </div>
 
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-[22px] font-bold text-slate-900">
                 Teaching Mediums
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[16px] text-slate-500">
                 Select the languages you teach in.
               </p>
             </div>
@@ -92,7 +92,7 @@ export default function TeacherMediumDrawer({
                         {medium.name}
                       </p>
 
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-[14px] text-slate-500">
                         Students will see this on your public profile.
                       </p>
                     </div>

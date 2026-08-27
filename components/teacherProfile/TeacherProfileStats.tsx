@@ -63,12 +63,12 @@ export default function TeacherProfileStats() {
             <div className="flex items-start justify-between">
               <div>
                 <p
-                  className={`text-sm font-medium ${item.text}`}
+                  className={`text-[16px] font-medium ${item.text}`}
                 >
                   {item.title}
                 </p>
 
-                <h3 className="mt-3 text-3xl font-bold text-slate-900">
+                <h3 className="mt-3 text-[32px] font-bold text-slate-900">
                   {item.value}
                 </h3>
               </div>

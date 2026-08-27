@@ -233,45 +233,42 @@ export default function ClassRegisterCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
       {/* Header */}
 
-     <div className="relative overflow-hidden bg-gradient-to-r from-emerald-600 via-emerald-600 to-orange-500 px-6 py-5 text-white">
+     <div className="relative overflow-hidden bg-gradient-to-r from-emerald-600 via-emerald-600 to-orange-500 px-5 py-3.5 text-white">
 
         {/* Decorative Circle */}
 
-        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/10" />
-        <div className="absolute -right-3 bottom-3 h-12 w-12 rounded-full bg-white/10" />
+        <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-white/10" />
+        <div className="absolute -right-3 bottom-2 h-10 w-10 rounded-full bg-white/10" />
 
-        <div className="relative flex items-center justify-between">
+        <div className="relative flex items-center gap-2.5">
 
-          <div>
-
-            <h2 className="mt-2 text-2xl font-bold text-white">
-              Join This Class
-            </h2>
-
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 backdrop-blur-sm">
+            <GraduationCap className="h-4 w-4 text-white" />
           </div>
 
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
-
-            <GraduationCap className="h-7 w-7 text-white" />
-
+          <div>
+            <h2 className="text-[16px] font-bold text-white">
+              Join This Class
+            </h2>
+            <p className="mt-0.5 text-[13px] text-emerald-50">
+              Register in a few steps.
+            </p>
           </div>
 
         </div>
 
       </div>
 
-      
-
       {/* Form */}
 
-      <div className="space-y-3 p-5">
+      <div className="space-y-2.5 p-5">
 
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">
+          <label className="mb-1 block text-[13px] font-semibold text-slate-700">
             Student Name
           </label>
 
@@ -291,7 +288,7 @@ export default function ClassRegisterCard({
               checkName(e.target.value);
             }}
             
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition ${
+            className={`w-full rounded-lg px-3 py-2 text-[14px] outline-none transition ${
               errors.studentName || NameError
                 ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
                 : "border border-slate-300 focus:border-emerald-500 focus:ring-emerald-500"
@@ -299,7 +296,7 @@ export default function ClassRegisterCard({
             placeholder="Enter student name"
           />
           {NameError && (
-            <p className="mt-1 text-xs text-red-600">
+            <p className="mt-1 text-[12px] text-red-600">
               {NameError}
             </p>
           )}
@@ -307,13 +304,13 @@ export default function ClassRegisterCard({
         </div>
 
         {errors.studentName && (
-          <p className="mt-1 text-[11px] text-red-600">
+          <p className="mt-1 text-[12px] text-red-600">
             {errors.studentName}
           </p>
         )}
 
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">
+          <label className="mb-1 block text-[13px] font-semibold text-slate-700">
             Mobile Number
           </label>
 
@@ -327,7 +324,7 @@ export default function ClassRegisterCard({
                 mobileNumber: "",
               }));
             }}
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+            className={`w-full rounded-lg px-3 py-2 text-[14px] outline-none transition
                         ${
                           errors.mobileNumber
                             ? "border border-red-500 focus:border-red-500"
@@ -339,20 +336,20 @@ export default function ClassRegisterCard({
         </div>
 
         {errors.mobileNumber && (
-          <p className="mt-1 text-[11px] text-red-600">
+          <p className="mt-1 text-[12px] text-red-600">
             {errors.mobileNumber}
           </p>
         )}
 
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">
+          <label className="mb-1 block text-[13px] font-semibold text-slate-700">
             Parent / Guardian Mobile Number
           </label>
 
           <input
             value={parentMobileNumber}
             onChange={(e) => setParentMobileNumber(e.target.value)}
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+            className={`w-full rounded-lg px-3 py-2 text-[14px] outline-none transition
                       ${
                         errors.parentMobileNumber
                           ? "border border-red-500 focus:border-red-500"
@@ -363,7 +360,7 @@ export default function ClassRegisterCard({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">
+          <label className="mb-1 block text-[13px] font-semibold text-slate-700">
             Email Address
           </label>
 
@@ -383,7 +380,7 @@ export default function ClassRegisterCard({
 
               checkEmail(e.target.value);
             }}
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition ${
+            className={`w-full rounded-lg px-3 py-2 text-[14px] outline-none transition ${
               errors.email || EmailError
                 ? "border border-red-500 focus:border-red-500 focus:ring-red-500"
                 : "border border-slate-300 focus:border-emerald-500 focus:ring-emerald-500"
@@ -393,13 +390,13 @@ export default function ClassRegisterCard({
         </div>
 
         {errors.email && (
-          <p className="mt-1 text-[11px] text-red-600">
+          <p className="mt-1 text-[12px] text-red-600">
             {errors.email}
           </p>
         )}
 
         {/* <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">
+          <label className="mb-1 block text-[13px] font-semibold text-slate-700">
             School
           </label>
 
@@ -411,7 +408,7 @@ export default function ClassRegisterCard({
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-[13px] font-semibold text-slate-700">
               Grade
             </label>
 
@@ -432,7 +429,7 @@ export default function ClassRegisterCard({
                 grade: "",
               }));
             }}
-            className={`w-full rounded-lg px-3 py-2.5 text-sm outline-none transition
+            className={`w-full rounded-lg px-3 py-2 text-[14px] outline-none transition
                       ${
                         errors.grade
                           ? "border border-red-500 focus:border-red-500"
@@ -453,7 +450,7 @@ export default function ClassRegisterCard({
         </div>
 
         {errors.grade && (
-          <p className="mt-1 text-[11px] text-red-600">
+          <p className="mt-1 text-[12px] text-red-600">
             {errors.grade}
           </p>
         )}
@@ -472,7 +469,7 @@ export default function ClassRegisterCard({
           onClick={registerStudent}
           className={`
             flex w-full items-center justify-center gap-2
-            rounded-xl py-3.5 text-sm font-semibold text-white transition
+            rounded-lg py-2.5 text-[14px] font-semibold text-white transition
             ${
               isRegistering
                 ? "cursor-not-allowed bg-emerald-400"
@@ -497,12 +494,12 @@ export default function ClassRegisterCard({
             items-center
             justify-center
             gap-2
-            rounded-xl
+            rounded-lg
             border
             border-orange-300
             bg-orange-50
-            py-3.5
-            text-sm
+            py-2.5
+            text-[14px]
             font-semibold
             text-orange-700
             transition
@@ -539,7 +536,7 @@ export default function ClassRegisterCard({
             >
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
 
-              <span className="text-sm text-slate-700">
+              <span className="text-[16px] text-slate-700">
                 {item}
               </span>
             </div>
@@ -557,7 +554,7 @@ export default function ClassRegisterCard({
 
           <ShieldCheck className="h-5 w-5 text-emerald-600" />
 
-          <p className="text-xs leading-5 text-slate-500">
+          <p className="text-[13px] leading-5 text-slate-500">
             Your registration details are securely
             protected.
           </p>
@@ -568,7 +565,7 @@ export default function ClassRegisterCard({
 
           <CreditCard className="h-5 w-5 text-orange-500" />
 
-          <p className="text-xs leading-5 text-slate-500">
+          <p className="text-[13px] leading-5 text-slate-500">
             Flexible monthly payments with no
             hidden charges.
           </p>

@@ -22,107 +22,77 @@ export default function ClassTestimonials({
 }: Props) {
   const [index, setIndex] = useState(0);
 
-  const testimonial =
-    testimonials[index];
+  const testimonial = testimonials[index];
 
   const previous = () =>
     setIndex((prev) =>
-      prev === 0
-        ? testimonials.length - 1
-        : prev - 1
+      prev === 0 ? testimonials.length - 1 : prev - 1
     );
 
   const next = () =>
     setIndex((prev) =>
-      prev === testimonials.length - 1
-        ? 0
-        : prev + 1
+      prev === testimonials.length - 1 ? 0 : prev + 1
     );
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
       {/* Header */}
-
-      <div className="border-b border-slate-100 bg-gradient-to-r from-orange-50 via-white to-emerald-50 px-6 py-5">
-
-        <div className="flex items-center justify-between">
-
-          <div>
-
-            <h2 className="text-xl font-bold text-slate-900">
-              Student Success Stories
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Hear from students who have
-              successfully completed this class.
-            </p>
-
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100">
+            <Quote className="h-4 w-4 text-orange-500" />
           </div>
 
-          <Quote className="h-9 w-9 text-orange-500" />
-
+          <div>
+            <h2 className="text-[16px] font-bold text-slate-900">
+              Student Success Stories
+            </h2>
+            <p className="mt-0.5 text-[14px] text-slate-500">
+              Hear from students who completed this class.
+            </p>
+          </div>
         </div>
-
       </div>
 
       {/* Body */}
+      <div className="p-5">
 
-      <div className="p-8">
+        <div className="flex flex-col gap-4 sm:flex-row">
 
-        <div className="flex flex-col gap-8 lg:flex-row">
-
-          {/* Left */}
-
-          <div className="shrink-0">
-
-            <Image
-              src={testimonial.image}
-              alt={testimonial.studentName}
-              width={112}
-              height={112}
-              className="h-28 w-28 rounded-2xl object-cover shadow-md"
-            />
-
-          </div>
-
-          {/* Right */}
+          <Image
+            src={testimonial.image}
+            alt={testimonial.studentName}
+            width={72}
+            height={72}
+            className="h-16 w-16 shrink-0 rounded-xl object-cover shadow-sm"
+          />
 
           <div className="flex-1">
 
-            <div className="flex items-center gap-1">
-
-              {Array.from({
-                length: testimonial.rating,
-              }).map((_, i) => (
+            <div className="flex items-center gap-0.5">
+              {Array.from({ length: testimonial.rating }).map((_, i) => (
                 <Star
                   key={i}
-                  className="h-5 w-5 fill-orange-400 text-orange-400"
+                  className="h-3.5 w-3.5 fill-orange-400 text-orange-400"
                 />
               ))}
-
             </div>
 
-            <p className="mt-5 text-lg leading-9 text-slate-700 italic">
+            <p className="mt-2 text-[14px] italic leading-6 text-slate-700">
               &ldquo;{testimonial.comment}&rdquo;
             </p>
 
-            <div className="mt-6">
-
-              <h3 className="text-xl font-bold text-slate-900">
+            <div className="mt-3">
+              <h3 className="text-[15px] font-bold text-slate-900">
                 {testimonial.studentName}
               </h3>
-
-              <p className="mt-1 text-sm text-slate-500">
-                {testimonial.grade} •{" "}
-                {testimonial.school}
+              <p className="mt-0.5 text-[13px] text-slate-500">
+                {testimonial.grade} • {testimonial.school}
               </p>
-
-              <span className="mt-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+              <span className="mt-1.5 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">
                 {testimonial.year}
               </span>
-
             </div>
 
           </div>
@@ -130,90 +100,50 @@ export default function ClassTestimonials({
         </div>
 
         {/* Navigation */}
-
-        <div className="mt-8 flex items-center justify-between">
-
-          <div className="flex gap-2">
-
+        <div className="mt-4 flex items-center justify-between">
+          <div className="flex gap-1.5">
             {testimonials.map((_, i) => (
-
               <div
                 key={i}
-                className={`h-2 rounded-full transition-all ${
-                  i === index
-                    ? "w-8 bg-emerald-600"
-                    : "w-2 bg-slate-300"
+                className={`h-1.5 rounded-full transition-all ${
+                  i === index ? "w-6 bg-emerald-600" : "w-1.5 bg-slate-300"
                 }`}
               />
-
             ))}
-
           </div>
 
-          <div className="flex gap-3">
-
+          <div className="flex gap-2">
             <button
               onClick={previous}
-              className="rounded-xl border border-slate-300 p-3 transition hover:bg-slate-50"
+              aria-label="Previous testimonial"
+              className="rounded-lg border border-slate-300 p-1.5 text-slate-600 transition hover:bg-slate-50"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
-
             <button
               onClick={next}
-              className="rounded-xl border border-slate-300 p-3 transition hover:bg-slate-50"
+              aria-label="Next testimonial"
+              className="rounded-lg border border-slate-300 p-1.5 text-slate-600 transition hover:bg-slate-50"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
-
           </div>
-
         </div>
 
-        {/* Bottom */}
-
-        <div className="mt-8 rounded-3xl bg-gradient-to-r from-emerald-600 to-orange-500 p-6 text-white">
-
-          <div className="grid gap-6 md:grid-cols-3">
-
-            <div className="text-center">
-
-              <div className="text-4xl font-bold">
-                4.9
+        {/* Stats */}
+        <div className="mt-4 rounded-xl bg-gradient-to-r from-emerald-600 to-orange-500 p-4 text-white">
+          <div className="grid gap-3 text-center sm:grid-cols-3">
+            {[
+              { value: "4.9", label: "Average Rating" },
+              { value: "520+", label: "Happy Students" },
+              { value: "96%", label: "Recommend This Class" },
+            ].map(({ value, label }) => (
+              <div key={label}>
+                <div className="text-[20px] font-bold">{value}</div>
+                <div className="mt-0.5 text-[13px] text-emerald-50">{label}</div>
               </div>
-
-              <div className="mt-2 text-sm text-emerald-50">
-                Average Rating
-              </div>
-
-            </div>
-
-            <div className="text-center">
-
-              <div className="text-4xl font-bold">
-                520+
-              </div>
-
-              <div className="mt-2 text-sm text-emerald-50">
-                Happy Students
-              </div>
-
-            </div>
-
-            <div className="text-center">
-
-              <div className="text-4xl font-bold">
-                96%
-              </div>
-
-              <div className="mt-2 text-sm text-emerald-50">
-                Recommend This Class
-              </div>
-
-            </div>
-
+            ))}
           </div>
-
         </div>
 
       </div>

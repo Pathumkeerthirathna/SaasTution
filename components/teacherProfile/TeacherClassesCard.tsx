@@ -2,210 +2,237 @@
 
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import {
-  BookOpen,
   CalendarDays,
+  Clock,
   Eye,
+  FileText,
+  Layers3,
+  Wallet,
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
+import {
+  ClassBookBadge,
+  formatTime12h,
+  getClassBookLabel,
+  getClassCardIcon,
+  getClassCardTheme,
+  getClassNumber,
+} from "@/components/class-management-panel";
 
 interface Props {
   isPublic?: boolean;
-  classes:TeacherClass[]
+  classes: TeacherClass[];
 }
 
-
-
 export default function TeacherClassesCard({
- classes,
- isPublic
-}:Props) {
-
-
-const router = useRouter();
-
-
-// if (loading) {
-//   return (
-//     <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
-//       Loading classes...
-//     </div>
-//   );
-// }
-
+  classes,
+  isPublic,
+}: Props) {
+  const router = useRouter();
 
   return (
-
-    
-
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-
-      {classes.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center text-slate-500">
-          No active classes available.
-        </div>
-      ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 p-6">
-          {classes.map((item) => (
-            <div
-              key={item.id}
-              onClick={() =>
-                router.push(
-                  isPublic
-                    ? `/publicClass/${item.id}`
-                    : `/dashboard/publicclasses/${item.id}`
-                )
-              }
-              //onClick={() => router.push(`/dashboard/publicclasses/${item.id}`)}
-              className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-lg"
-            >
-              {/* Top */}
-             <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-5 text-white">
-
-                {/* Top Row */}
-                <div className="flex items-center justify-between">
-                  <BookOpen className="h-8 w-8 opacity-90" />
-
-                  <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold backdrop-blur-sm">
-                    Class
-                  </span>
-                </div>
-
-                {/* Bottom Row */}
-                <div className="mt-5 flex items-end justify-between">
-
-                  {/* Left */}
-                  <div className="flex items-center gap-2">
-
-                    {item.startDate &&
-                      new Date(item.startDate) > new Date() && (
-                        <span className="rounded-full bg-red-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white shadow">
-                          NEW
-                        </span>
-                    )}
-
-                    <h4 className="text-lg font-bold tracking-tight">
-                      {item.name}
-                    </h4>
-
-                  </div>
-
-                  {/* Right */}
-                  {item.startDate && (
-                    <div className="text-right">
-                      <p className="text-[10px] uppercase tracking-wide text-emerald-100">
-                        Starts
-                      </p>
-
-                      <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold backdrop-blur-sm">
-                        {new Date(item.startDate).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    </div>
-                  )}
-
-                </div>
-
-              </div>
-
-              {/* Details */}
-              <div className="space-y-4 p-5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">
-                    Monthly Fee
-                  </span>
-
-                  <span className="font-bold text-orange-600">
-                    Rs.{" "}
-                    {item.monthlyFee.toLocaleString()}
-                  </span>
-                </div>
-
-                {/* <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <Users className="h-4 w-4 text-emerald-600" />
-
-                  {item.students.filter(s => s.isActive).length} Students
-                </div> */}
-
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <CalendarDays className="h-4 w-4 text-orange-500" />
-
-                  {item.schedule || "Schedule not available"}
-                </div>
-
-                <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
-                  <Eye className="h-4 w-4" />
-                  View Class
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-        {/* Left */}
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 className="text-[16px] font-bold text-slate-900">
             Active Classes
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-0.5 text-[14px] text-slate-500">
             Classes currently conducted by the teacher.
           </p>
         </div>
 
-        {/* Right */}
         {!isPublic ? (
           <button
             onClick={() => router.push("/dashboard/classes")}
-            className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:from-emerald-700 hover:to-emerald-800"
+            className="inline-flex h-8 items-center rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 text-[14px] font-semibold text-white shadow-sm transition hover:shadow-md hover:from-emerald-700 hover:to-emerald-800"
           >
             Manage Classes
           </button>
         ) : (
-          <div className="rounded-xl bg-emerald-50 px-4 py-2">
-            <span className="text-sm font-semibold text-emerald-700">
+          <div className="rounded-lg bg-emerald-50 px-3 py-1.5">
+            <span className="text-[14px] font-semibold text-emerald-700">
               {classes.length} Active Classes
             </span>
           </div>
         )}
-
-        
       </div>
 
       {/* Body */}
-      <div className="p-6">
-        {/* <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          
-        </div> */}
+      {classes.length === 0 ? (
+        <div className="m-5 rounded-lg border border-dashed border-slate-300 py-10 text-center text-[16px] text-slate-500">
+          No active classes available.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
+          {classes.map((item) => {
+            const theme = getClassCardTheme(item.id);
+            const ClassIcon = getClassCardIcon(item.id);
+            const bookLabel = getClassBookLabel(item.name);
+            const bookNumber = getClassNumber(item.name);
 
-        {/* Summary Section */}
-        <div className="mt-6 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-5">
-          {/* <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">
-                Total Students Across Classes
-              </p>
+            return (
+              <div
+                key={item.id}
+                onClick={() =>
+                  router.push(
+                    isPublic
+                      ? `/publicClass/${item.id}`
+                      : `/dashboard/publicclasses/${item.id}`
+                  )
+                }
+                className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:ring-teal-100"
+              >
+                {/* Header */}
+                <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-36 text-white`}>
+                  <div className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full ${theme.glow1} blur-2xl`} />
+                  <div className={`pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full ${theme.glow2} blur-2xl`} />
 
-              <h4 className="mt-1 text-2xl font-bold text-slate-900">
-                {totalStudents} Students
-              </h4>
-            </div>
+                  <ClassBookBadge
+                    label={bookLabel}
+                    number={bookNumber}
+                    bookGradient={theme.bookGradient}
+                    numberColor={theme.numberColor}
+                  />
 
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100">
-              <Users className="h-7 w-7 text-orange-600" />
-            </div>
-          </div> */}
+                  <div className="relative flex items-start gap-2">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 shadow-inner backdrop-blur">
+                      <ClassIcon className={`h-4 w-4 ${theme.iconColor}`} />
+                    </div>
 
-          <p className="mt-4 text-sm leading-6 text-slate-700">
-            These classes will be visible on the
-            public teacher profile, allowing
-            students and parents to discover and
-            enroll in available programs.
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="truncate text-[16px] font-bold leading-tight tracking-tight text-white">
+                          {item.name}
+                        </h3>
+
+                      </div>
+
+                      <div className={`mt-1 flex items-center gap-1 text-[13px] font-medium ${theme.metaText}`}>
+                        <Layers3 size={10} />
+                        General
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="relative mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                    <span className={`truncate text-[12px] ${theme.metaText}`}>
+                      {item.schedule || "Schedule not set"}
+                    </span>
+
+                    {item.startDate && new Date(item.startDate).getTime() > Date.now() && (
+                      <div className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[12px] font-semibold ${theme.badgeText} backdrop-blur`}>
+                        <CalendarDays size={11} />
+                        Upcoming: {new Date(item.startDate).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="space-y-3 p-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/* Left: Details */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-teal-200">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700">
+                          <Wallet size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                            Fee
+                          </p>
+                          <p className="truncate text-[16px] font-bold text-slate-900">
+                            Rs. {item.monthlyFee.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Schedule */}
+                    <div className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+                      <div className="mb-2 flex items-center gap-1.5">
+                        <div className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-900/10">
+                          <CalendarDays className="h-3 w-3 text-blue-900" />
+                        </div>
+
+                        <span className="text-[14px] font-semibold text-slate-800">
+                          Weekly Schedule
+                        </span>
+                      </div>
+
+                      {item.schedules?.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {item.schedules.slice(0, 2).map((schedule) => (
+                            <div
+                              key={`${schedule.dayOfWeek}-${schedule.startTime}`}
+                              className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-2 py-1.5 shadow-sm"
+                            >
+                              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[12px] font-semibold text-blue-700">
+                                {schedule.dayOfWeek}
+                              </span>
+
+                              <span className="flex items-center gap-1 text-[12px] font-medium text-slate-500">
+                                <Clock size={10} className="text-teal-600" />
+                                {formatTime12h(schedule.startTime)}
+                                {" - "}
+                                {formatTime12h(schedule.endTime)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[14px] text-slate-500">
+                          Schedule not available
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div className="flex items-start gap-1.5">
+                    <FileText size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                    <p className="line-clamp-2 text-[14px] leading-5 text-slate-600">
+                      {item.description || "No class description provided."}
+                    </p>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="border-t border-slate-100 pt-3">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        router.push(
+                          isPublic
+                            ? `/publicClass/${item.id}`
+                            : `/dashboard/publicclasses/${item.id}`
+                        );
+                      }}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-900 to-teal-600 py-2 text-[14px] font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110"
+                    >
+                      <Eye size={13} />
+                      View Class
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Summary */}
+      <div className="px-5 pb-5">
+        <div className="rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-4">
+          <p className="text-[14px] leading-5 text-slate-700">
+            These classes will be visible on the public teacher profile, allowing students and parents to discover and enroll in available programs.
           </p>
         </div>
       </div>

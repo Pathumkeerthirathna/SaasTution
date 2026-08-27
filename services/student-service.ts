@@ -301,14 +301,18 @@ export async function listStudentsByTeacher(params: {
   sortBy?: string;
   sortOrder?: string;
   registrationNumber?: string; // <-- Add this
+  status?: number; // 0 = active, 1 = inactive; omitted = active + inactive
 
 }) {
 
   const where = {
     teacherId: params.teacherId,
-    status: {
-      not: 2,
-    },
+    status:
+      params.status === 0 || params.status === 1
+        ? params.status
+        : {
+            not: 2,
+          },
     ...(params.registrationNumber
     ? {
         registrationNumber: {
@@ -378,6 +382,11 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
     confirmationStatus: "asc", // PENDING → APPROVED → REJECTED
   },
   secondaryOrderBy,
+  // Tiebreaker so pagination stays stable when the primary sort field
+  // (e.g. createdAt) has duplicate values across students.
+  ...(params.sortBy === "RegistrationNumber"
+    ? []
+    : [{ registrationNumber: sortOrder } as Prisma.StudentOrderByWithRelationInput]),
 ];
 
   const [students, totalItems] = await Promise.all([

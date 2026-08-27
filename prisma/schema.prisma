@@ -670,6 +670,7 @@ model Lecture {
   title       String
   date        DateTime
   classId     String
+  classStatus ClassStatus    @default(SCHEDULED)
   createdAt   DateTime       @default(now())
 
   assignments Assignment[]
@@ -682,6 +683,13 @@ model Lecture {
   youtubeLives      YouTubeLiveBroadcast[]
 
   @@index([classId, date])
+}
+
+enum ClassStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
 }
 model YouTubeRecording {
   id String @id @default(uuid())
@@ -696,6 +704,9 @@ model YouTubeRecording {
   privacy YouTubePrivacy @default(UNLISTED)
   status  YouTubeBroadcastStatus @default(READY)
 
+  visibility RecordingVisibility @default(PRIVATE)
+  access     RecordingAccess     @default(LOCKED)
+
   startedAt DateTime?
   endedAt   DateTime?
 
@@ -703,6 +714,16 @@ model YouTubeRecording {
   updatedAt DateTime @updatedAt
 
   @@index([lectureId])
+}
+
+enum RecordingVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RecordingAccess {
+  FREE
+  LOCKED
 }
 
 model YouTubeLiveBroadcast {
@@ -753,6 +774,10 @@ model Note {
   sizeBytes        Int
   downloadCount    Int       @default(0)
   lastDownloadedAt DateTime?
+
+  visibility RecordingVisibility @default(PRIVATE)
+  access     RecordingAccess     @default(LOCKED)
+
   lecture          Lecture   @relation(fields: [lectureId], references: [id])
 
   @@index([lectureId])
