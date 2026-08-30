@@ -1,25 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  AlertCircle,
   BookOpen,
   Calendar,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
-  Download,
-  Eye,
   FileText,
   Files,
   GraduationCap,
-  List,
-  Pencil,
   Plus,
   MoreHorizontal,
-  Search,
   Send,
   Trash2,
   Users,
@@ -59,6 +52,12 @@ type BundleItem = {
   paperStartAt: string | null;
   paperEndAt: string | null;
   createdAt: string;
+};
+
+type BundleStudentOption = {
+  id: string;
+  name: string;
+  registrationNumber: string | null;
 };
 
 type BundleStudent = {
@@ -101,46 +100,8 @@ type ApiError = {
   message?: string;
 };
 
-type PaperSubmissionRecord = {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  submittedAt: string;
-  isLate: boolean;
-};
 
-type PaperSubmissionStudent = {
-  id: string;
-  name: string;
-  registrationNumber: string | null;
-  hasSubmitted: boolean;
-  latestSubmittedAt: string | null;
-  supportMessages: {
-    id: string;
-    message: string;
-    createdAt: string;
-  }[];
-  submissions: PaperSubmissionRecord[];
-};
 
-type PaperSubmissionView = {
-  item: {
-    id: string;
-    title: string;
-    paperEndAt: string | null;
-  };
-  classroom: {
-    id: string;
-    name: string;
-  };
-  students: PaperSubmissionStudent[];
-  summary: {
-    totalStudents: number;
-    submittedStudents: number;
-    notSubmittedStudents: number;
-  };
-};
 
 function readApiError(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== "object") return fallback;
@@ -167,23 +128,6 @@ const MONTHS_SHORT = [
   "Dec",
 ];
 
-function formatBytes(bytes: number | null) {
-  if (!bytes) return "-";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function toDateTimeLocal(value: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day}T${h}:${min}`;
-}
 
 export function MaterialBundlePanel() {
   const now = new Date();
@@ -200,46 +144,41 @@ export function MaterialBundlePanel() {
   const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
   const [bundleDetail, setBundleDetail] = useState<BundleDetail | null>(null);
 
-  const [createClassId, setCreateClassId] = useState("");
-  const [createTitle, setCreateTitle] = useState("");
-  const [createYear, setCreateYear] = useState(String(now.getFullYear()));
-  const [createMonth, setCreateMonth] = useState(String(now.getMonth() + 1));
+  // ── "Add class bundle" wizard ──────────────────────────────────────────
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<"details" | "items">("details");
+  const [wzBundleId, setWzBundleId] = useState<string | null>(null);
 
-  const [itemType, setItemType] = useState<"TUTE" | "PAPER">("TUTE");
-  const [itemTitle, setItemTitle] = useState("");
-  const [itemDescription, setItemDescription] = useState("");
-  const [itemFile, setItemFile] = useState<File | null>(null);
-  const [paperStartAt, setPaperStartAt] = useState("");
-  const [paperEndAt, setPaperEndAt] = useState("");
+  const [wzClassId, setWzClassId] = useState("");
+  const [wzTitle, setWzTitle] = useState("");
+  const [wzYear, setWzYear] = useState(String(now.getFullYear()));
+  const [wzMonth, setWzMonth] = useState(String(now.getMonth() + 1));
 
-  const [editItemId, setEditItemId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editPaperStartAt, setEditPaperStartAt] = useState("");
-  const [editPaperEndAt, setEditPaperEndAt] = useState("");
+  const [wzItems, setWzItems] = useState<BundleItem[]>([]);
+  const [wzPopover, setWzPopover] = useState<null | "TUTE" | "PAPER">(null);
+  const [wzItemTitle, setWzItemTitle] = useState("");
+  const [wzItemDescription, setWzItemDescription] = useState("");
+  const [wzItemFile, setWzItemFile] = useState<File | null>(null);
+  const [wzPaperStart, setWzPaperStart] = useState("");
+  const [wzPaperEnd, setWzPaperEnd] = useState("");
+
+  const [wzStudents, setWzStudents] = useState<BundleStudentOption[]>([]);
+  const [wzStudentSel, setWzStudentSel] = useState<Record<string, boolean>>({});
+  const [wzLoadingStudents, setWzLoadingStudents] = useState(false);
+  const [wzSaving, setWzSaving] = useState(false);
+  const [wzError, setWzError] = useState<string | null>(null);
 
   const [recipientSelection, setRecipientSelection] = useState<Record<string, boolean>>({});
   const [isRecipientPanelOpen, setIsRecipientPanelOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
-  const [isItemPanelOpen, setIsItemPanelOpen] = useState(false);
-  const [confirmAddToSentBundle, setConfirmAddToSentBundle] = useState(false);
-  const [activeItemTab, setActiveItemTab] = useState<"TUTE" | "PAPER">("TUTE");
-  const [isSubmissionsOpen, setIsSubmissionsOpen] = useState(false);
-  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
-  const [submissionsView, setSubmissionsView] = useState<PaperSubmissionView | null>(null);
-  const [submissionsItemId, setSubmissionsItemId] = useState<string | null>(null);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const currentYear = now.getFullYear();
   const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
 
-  const [previewItem, setPreviewItem] = useState<BundleItem | null>(null);
-  const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
-
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [, setIsLoadingDetails] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -256,17 +195,12 @@ export function MaterialBundlePanel() {
         throw new Error(readApiError(payload, "Failed to load classes."));
       }
 
-      const classList = payload.data ?? [];
-      setClasses(classList);
-      if (!createClassId && classList[0]) {
-        setCreateClassId(classList[0].id);
-      }
+      setClasses(payload.data ?? []);
     }
 
     void loadClasses().catch((error) => {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load classes.");
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -371,31 +305,48 @@ export function MaterialBundlePanel() {
     }
   }
 
-  async function handleCreateBundle() {
-    if (!createClassId) {
-      setErrorMessage("Class is required.");
+  function openWizard() {
+    setWizardStep("details");
+    setWzBundleId(null);
+    setWzClassId(classes[0]?.id ?? "");
+    setWzTitle("");
+    setWzYear(String(now.getFullYear()));
+    setWzMonth(String(now.getMonth() + 1));
+    setWzItems([]);
+    setWzPopover(null);
+    setWzItemTitle("");
+    setWzItemDescription("");
+    setWzItemFile(null);
+    setWzPaperStart("");
+    setWzPaperEnd("");
+    setWzStudents([]);
+    setWzStudentSel({});
+    setWzError(null);
+    setIsWizardOpen(true);
+  }
+
+  async function wizardCreateBundle() {
+    if (!wzClassId) {
+      setWzError("Select a class.");
       return;
     }
-    if (!createTitle.trim()) {
-      setErrorMessage("Bundle title is required.");
+    if (wzTitle.trim().length < 2) {
+      setWzError("Bundle title must be at least 2 characters.");
       return;
     }
 
-    setIsSaving(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setWzSaving(true);
+    setWzError(null);
 
     try {
       const response = await fetch("/api/material-bundles", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          classId: createClassId,
-          title: createTitle.trim(),
-          year: Number(createYear),
-          month: Number(createMonth),
+          classId: wzClassId,
+          title: wzTitle.trim(),
+          year: Number(wzYear),
+          month: Number(wzMonth),
         }),
       });
 
@@ -408,48 +359,79 @@ export function MaterialBundlePanel() {
         throw new Error(readApiError(payload, "Failed to create bundle."));
       }
 
-      await loadBundles(1);
-      await loadBundleDetails(payload.data.bundle.id);
-      setSuccessMessage("Bundle created successfully.");
+      setWzBundleId(payload.data.bundle.id);
+      setWizardStep("items");
+      void wizardLoadStudents();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create bundle.");
+      setWzError(error instanceof Error ? error.message : "Failed to create bundle.");
     } finally {
-      setIsSaving(false);
+      setWzSaving(false);
     }
   }
 
-  async function handleAddItem() {
-    if (!selectedBundleId) {
-      setErrorMessage("Select a bundle first.");
+  async function wizardLoadStudents() {
+    if (!wzClassId) return;
+
+    setWzLoadingStudents(true);
+
+    try {
+      const qs = new URLSearchParams({
+        classId: wzClassId,
+        year: wzYear,
+        month: wzMonth,
+      });
+
+      const response = await fetch(
+        `/api/material-bundles/class-students?${qs.toString()}`,
+        { cache: "no-store" }
+      );
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { students: BundleStudentOption[] };
+      };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to load class students."));
+      }
+
+      const list = payload.data?.students ?? [];
+      setWzStudents(list);
+      setWzStudentSel(Object.fromEntries(list.map((student) => [student.id, true])));
+    } catch (error) {
+      setWzError(error instanceof Error ? error.message : "Failed to load class students.");
+    } finally {
+      setWzLoadingStudents(false);
+    }
+  }
+
+  async function wizardAddItem() {
+    if (!wzBundleId || !wzPopover) return;
+
+    if (wzItemTitle.trim().length < 2) {
+      setWzError("Item title must be at least 2 characters.");
+      return;
+    }
+    if (wzPopover === "PAPER" && (!wzPaperStart || !wzPaperEnd)) {
+      setWzError("Paper start and end time are required.");
       return;
     }
 
-    if (bundleDetail?.status === "SENT" && !confirmAddToSentBundle) {
-      setErrorMessage("This bundle is already sent. Confirm before adding a new item.");
-      return;
-    }
-
-    if (!itemTitle.trim()) {
-      setErrorMessage("Item title is required.");
-      return;
-    }
-
-    setIsSaving(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setWzSaving(true);
+    setWzError(null);
 
     try {
       const formData = new FormData();
-      formData.set("type", itemType);
-      formData.set("title", itemTitle.trim());
-      if (itemDescription.trim()) formData.set("description", itemDescription.trim());
-      if (itemType === "PAPER") {
-        formData.set("paperStartAt", paperStartAt);
-        formData.set("paperEndAt", paperEndAt);
+      formData.set("type", wzPopover);
+      formData.set("title", wzItemTitle.trim());
+      if (wzItemDescription.trim()) formData.set("description", wzItemDescription.trim());
+      if (wzPopover === "PAPER") {
+        formData.set("paperStartAt", wzPaperStart);
+        formData.set("paperEndAt", wzPaperEnd);
       }
-      if (itemFile) formData.set("file", itemFile);
+      if (wzItemFile) formData.set("file", wzItemFile);
 
-      const response = await fetch(`/api/material-bundles/${selectedBundleId}/items`, {
+      const response = await fetch(`/api/material-bundles/${wzBundleId}/items`, {
         method: "POST",
         body: formData,
       });
@@ -463,173 +445,76 @@ export function MaterialBundlePanel() {
         throw new Error(readApiError(payload, "Failed to add item."));
       }
 
-      const newItem = payload.data.item;
-
-      setItemTitle("");
-      setItemDescription("");
-      setItemFile(null);
-      setPaperStartAt("");
-      setPaperEndAt("");
-      setConfirmAddToSentBundle(false);
-      setIsItemPanelOpen(false);
-
-      setBundleDetail((prev) =>
-        prev ? { ...prev, items: [...prev.items, newItem] } : prev
-      );
-      setBundles((prev) =>
-        prev.map((b) =>
-          b.id === selectedBundleId
-            ? { ...b, _count: { ...b._count, items: b._count.items + 1 } }
-            : b
-        )
-      );
-      setSuccessMessage("Item added successfully.");
+      const item = payload.data.item;
+      setWzItems((prev) => [...prev, item]);
+      setWzPopover(null);
+      setWzItemTitle("");
+      setWzItemDescription("");
+      setWzItemFile(null);
+      setWzPaperStart("");
+      setWzPaperEnd("");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to add item.");
+      setWzError(error instanceof Error ? error.message : "Failed to add item.");
     } finally {
-      setIsSaving(false);
+      setWzSaving(false);
     }
   }
 
-  function openAddItemPanel() {
-    if (!selectedBundleId || !bundleDetail) {
-      setErrorMessage("Select a bundle first.");
-      return;
-    }
+  async function wizardRemoveItem(itemId: string) {
+    if (!wzBundleId) return;
 
-    setConfirmAddToSentBundle(false);
-    setIsItemPanelOpen(true);
-  }
-
-  async function handleDeleteItem(itemId: string) {
-    if (!selectedBundleId) return;
-
-    const confirmed = window.confirm("Delete this item?");
-    if (!confirmed) return;
-
-    setIsSaving(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    try {
-      const response = await fetch(`/api/material-bundles/${selectedBundleId}/items/${itemId}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to delete item."));
-      }
-
-      setBundleDetail((prev) =>
-        prev ? { ...prev, items: prev.items.filter((i) => i.id !== itemId) } : prev
-      );
-      setBundles((prev) =>
-        prev.map((b) =>
-          b.id === selectedBundleId
-            ? { ...b, _count: { ...b._count, items: Math.max(0, b._count.items - 1) } }
-            : b
-        )
-      );
-      setSuccessMessage("Item deleted successfully.");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete item.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function openSubmissions(item: BundleItem) {
-    if (!selectedBundleId) return;
-
-    setIsSubmissionsOpen(true);
-    setIsLoadingSubmissions(true);
-    setSubmissionsItemId(item.id);
-    setSubmissionsView(null);
-    setErrorMessage(null);
+    setWzSaving(true);
+    setWzError(null);
 
     try {
       const response = await fetch(
-        `/api/material-bundles/${selectedBundleId}/items/${item.id}/submissions`,
-        { cache: "no-store" }
+        `/api/material-bundles/${wzBundleId}/items/${itemId}`,
+        { method: "DELETE" }
       );
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: PaperSubmissionView;
-      };
+      const payload = (await response.json()) as { success: boolean };
 
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(readApiError(payload, "Failed to load submissions."));
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to remove item."));
       }
 
-      setSubmissionsView(payload.data);
+      setWzItems((prev) => prev.filter((item) => item.id !== itemId));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load submissions.");
+      setWzError(error instanceof Error ? error.message : "Failed to remove item.");
     } finally {
-      setIsLoadingSubmissions(false);
+      setWzSaving(false);
     }
   }
 
-  function beginEditItem(item: BundleItem) {
-    setActiveItemTab(item.type);
-    setEditItemId(item.id);
-    setEditTitle(item.title);
-    setEditDescription(item.description ?? "");
-    setEditPaperStartAt(toDateTimeLocal(item.paperStartAt));
-    setEditPaperEndAt(toDateTimeLocal(item.paperEndAt));
-  }
+  async function wizardSubmit() {
+    if (!wzBundleId) return;
 
-  async function handleSaveItemEdit(itemType: "TUTE" | "PAPER") {
-    if (!selectedBundleId || !editItemId) return;
-
-    setIsSaving(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setWzSaving(true);
+    setWzError(null);
 
     try {
-      const payload: {
-        title: string;
-        description?: string;
-        paperStartAt?: string | null;
-        paperEndAt?: string | null;
-      } = {
-        title: editTitle.trim(),
-      };
+      const selectedStudentIds = Object.entries(wzStudentSel)
+        .filter(([, selected]) => selected)
+        .map(([id]) => id);
 
-      if (editDescription.trim()) payload.description = editDescription.trim();
-      if (itemType === "PAPER") {
-        payload.paperStartAt = editPaperStartAt ? new Date(editPaperStartAt).toISOString() : null;
-        payload.paperEndAt = editPaperEndAt ? new Date(editPaperEndAt).toISOString() : null;
-      }
-
-      const response = await fetch(`/api/material-bundles/${selectedBundleId}/items/${editItemId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+      const response = await fetch(`/api/material-bundles/${wzBundleId}/recipients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedStudentIds }),
       });
 
-      const resultPayload = (await response.json()) as {
-        success: boolean;
-        data?: { item: BundleItem };
-      };
-      if (!response.ok || !resultPayload.success || !resultPayload.data?.item) {
-        throw new Error(readApiError(resultPayload, "Failed to update item."));
+      const payload = (await response.json()) as { success: boolean };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to save recipients."));
       }
 
-      const updatedItem = resultPayload.data.item;
-      setEditItemId(null);
-      setBundleDetail((prev) =>
-        prev
-          ? { ...prev, items: prev.items.map((i) => (i.id === updatedItem.id ? updatedItem : i)) }
-          : prev
-      );
-      setSuccessMessage("Item updated successfully.");
+      setIsWizardOpen(false);
+      setSuccessMessage("Bundle created and sent to the selected students.");
+      await loadBundles(1);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update item.");
+      setWzError(error instanceof Error ? error.message : "Failed to save recipients.");
     } finally {
-      setIsSaving(false);
+      setWzSaving(false);
     }
   }
 
@@ -698,14 +583,8 @@ export function MaterialBundlePanel() {
     }
   }
 
-  const tuteItems = useMemo(
-    () => (bundleDetail?.items ?? []).filter((item) => item.type === "TUTE"),
-    [bundleDetail?.items]
-  );
-  const paperItems = useMemo(
-    () => (bundleDetail?.items ?? []).filter((item) => item.type === "PAPER"),
-    [bundleDetail?.items]
-  );
+  const wzMonthLabel = `${monthLabel(Number(wzMonth))} ${wzYear}`;
+  const wzSelectedCount = Object.values(wzStudentSel).filter(Boolean).length;
 
   return (
     <div className="px-0 py-1 sm:py-0">
@@ -837,17 +716,77 @@ export function MaterialBundlePanel() {
 
         </aside>
 
-        <div className="scrollbar-thin flex flex-col gap-3 self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
-          {/* Bundle list — compact strip */}
-          <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="mb-2 flex items-center justify-between px-1">
+        <div className="self-start">
+          {/* Bundle list */}
+          <section className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:h-[calc(100vh-6rem)]">
+            <div className="mb-2 flex items-center justify-between gap-2 px-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-100 px-2 text-[11px] font-semibold text-teal-700">
-                {bundles.length}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-100 px-2 text-[11px] font-semibold text-teal-700">
+                  {bundles.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-teal-600 px-3 text-xs font-semibold text-white transition hover:bg-teal-700"
+                >
+                  <Plus size={14} />
+                  New bundle
+                </button>
+                <div className="relative shrink-0" ref={actionMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsActionMenuOpen((prev) => !prev)}
+                    aria-label="Open actions menu"
+                    aria-expanded={isActionMenuOpen}
+                    className="btn-secondary h-8 w-8 rounded-lg p-0"
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+
+                  {isActionMenuOpen ? (
+                    <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-brand-100 bg-white p-2 shadow-card">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          openRecipientPanel();
+                        }}
+                        disabled={!bundleDetail}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50 disabled:opacity-40"
+                      >
+                        <Send size={16} />
+                        Set recipients &amp; send
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          setIsHelpOpen(true);
+                        }}
+                        className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
+                      >
+                        <CircleHelp size={16} />
+                        Help
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          openWizard();
+                        }}
+                        className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
+                      >
+                        <Plus size={16} />
+                        New bundle
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </div>
             {isLoading ? <p className="px-1 pb-2 text-xs font-medium text-slate-400">Loading...</p> : null}
-            <div className="scrollbar-thin grid max-h-[260px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
+            <div className="scrollbar-thin grid flex-1 auto-rows-min gap-2 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
               {bundles.map((bundle) => {
                 const selected = selectedBundleId === bundle.id;
                 return (
@@ -935,445 +874,6 @@ export function MaterialBundlePanel() {
               </button>
             </div>
           </section>
-
-          {!bundleDetail || isLoadingDetails ? (
-            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
-                <FileText size={18} />
-              </span>
-              <p className="mt-3 text-base font-semibold text-slate-900">
-                {isLoadingDetails ? "Loading bundle details..." : "Select a bundle to manage items and recipients."}
-              </p>
-              <p className="mt-1.5 max-w-md text-[13px] leading-6 text-slate-500">
-                Choose a bundle above to review students, upload monthly learning materials, and track paper submissions.
-              </p>
-            </div>
-          ) : (
-            <>
-              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-end gap-4">
-
-                  <div className="relative shrink-0" ref={actionMenuRef}>
-                    <button
-                      type="button"
-                      onClick={() => setIsActionMenuOpen((prev) => !prev)}
-                      aria-label="Open actions menu"
-                      aria-expanded={isActionMenuOpen}
-                      className="btn-secondary h-9 w-9 rounded-xl p-0"
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-
-                    {isActionMenuOpen ? (
-                      <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-brand-100 bg-white p-2 shadow-card">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            openRecipientPanel();
-                          }}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
-                        >
-                          <Send size={16} />
-                          Set recipients & send
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            setIsHelpOpen(true);
-                          }}
-                          className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
-                        >
-                          <CircleHelp size={16} />
-                          Help
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            setIsCreatePanelOpen(true);
-                          }}
-                          className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50"
-                        >
-                          <Plus size={16} />
-                          Add bundle
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-
-                </div>
-
-                <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Class students</p>
-                        <p className="mt-1 text-xl font-bold leading-none text-slate-900">{bundleDetail.summary.totalStudents}</p>
-                      </div>
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-teal-700">
-                        <Users size={16} />
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-emerald-50/80 p-3 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-emerald-700">Will receive</p>
-                        <p className="mt-1 text-xl font-bold leading-none text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
-                      </div>
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/80 text-emerald-700">
-                        <CheckCircle2 size={16} />
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-amber-50/80 p-3 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-amber-700">Will not receive</p>
-                        <p className="mt-1 text-xl font-bold leading-none text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
-                      </div>
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/80 text-amber-700">
-                        <AlertCircle size={16} />
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
-                        <Files size={16} />
-                      </span>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Add tute / paper</p>
-                        <p className="mt-1 text-[13px] leading-5 text-slate-500">Open the side panel to add new items to this bundle.</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openAddItemPanel}
-                      className="btn-secondary h-9 gap-2 px-3 text-xs"
-                    >
-                      <Plus size={16} />
-                      Add tute / paper
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setActiveItemTab("TUTE")}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      activeItemTab === "TUTE"
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "border border-slate-200 bg-white text-slate-500 hover:bg-teal-50 hover:text-slate-900"
-                    }`}
-                  >
-                    <FileText size={16} />
-                    Tutes ({tuteItems.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveItemTab("PAPER")}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      activeItemTab === "PAPER"
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "border border-slate-200 bg-white text-slate-500 hover:bg-teal-50 hover:text-slate-900"
-                    }`}
-                  >
-                    <Files size={16} />
-                    Papers ({paperItems.length})
-                  </button>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4">
-                  {activeItemTab === "TUTE" ? (
-                    <div className="space-y-3">
-                      {tuteItems.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
-                          {editItemId === item.id ? (
-                            <>
-                              <input
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                className="w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                              />
-                              <textarea
-                                value={editDescription}
-                                onChange={(e) => setEditDescription(e.target.value)}
-                                rows={2}
-                                className="mt-2 w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                              />
-                              <div className="mt-2 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleSaveItemEdit(item.type)}
-                                  className="btn-secondary px-3 py-1.5 text-xs"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditItemId(null)}
-                                  className="btn-ghost px-3 py-1.5 text-xs"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-start gap-3">
-                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
-                                    <FileText size={18} />
-                                  </span>
-                                  <div>
-                                    <p className="text-[16px] font-semibold text-slate-900">{item.title}</p>
-                                    {item.description ? <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p> : null}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-1.5 text-[13px] leading-6 text-slate-400">
-                                <p>Created {new Date(item.createdAt).toLocaleString()}</p>
-                                <p>File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
-                              </div>
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => beginEditItem(item)}
-                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
-                                >
-                                  <Pencil size={12} />
-                                  Edit
-                                </button>
-                                {item.fileUrl ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewItem(item)}
-                                      className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
-                                    >
-                                      <Eye size={12} />
-                                      Preview
-                                    </button>
-                                    <a
-                                      href={`/api/material-bundles/${bundleDetail.id}/items/${item.id}/file?download=1`}
-                                      className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
-                                    >
-                                      <Download size={12} />
-                                      Download
-                                    </a>
-                                  </>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteItem(item.id)}
-                                  className="btn-danger gap-1.5 px-3 py-1.5 text-xs"
-                                >
-                                  <Trash2 size={12} />
-                                  Delete
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ))}
-                      {tuteItems.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
-                            <FileText size={18} />
-                          </span>
-                          <p className="mt-3 text-sm font-semibold text-slate-900">No tutes added yet</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-500">Use the add item panel to attach monthly tutes to this bundle.</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {paperItems.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
-                          {editItemId === item.id ? (
-                            <>
-                              <input
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                className="w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                              />
-                              <textarea
-                                value={editDescription}
-                                onChange={(e) => setEditDescription(e.target.value)}
-                                rows={2}
-                                className="mt-2 w-full rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                              />
-                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                                <input
-                                  type="datetime-local"
-                                  value={editPaperStartAt}
-                                  onChange={(e) => setEditPaperStartAt(e.target.value)}
-                                  className="rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                                />
-                                <input
-                                  type="datetime-local"
-                                  value={editPaperEndAt}
-                                  onChange={(e) => setEditPaperEndAt(e.target.value)}
-                                  className="rounded-xl border border-brand-200 px-3 py-2.5 text-sm"
-                                />
-                              </div>
-                              <div className="mt-2 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleSaveItemEdit(item.type)}
-                                  className="btn-secondary px-3 py-1.5 text-xs"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditItemId(null)}
-                                  className="btn-ghost px-3 py-1.5 text-xs"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-start gap-3">
-                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
-                                    <Files size={18} />
-                                  </span>
-                                  <div>
-                                    <p className="text-[16px] font-semibold text-slate-900">{item.title}</p>
-                                    {item.description ? <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p> : null}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-1.5 text-[13px] leading-6 text-slate-400">
-                                <p>Created {new Date(item.createdAt).toLocaleString()}</p>
-                                <p>
-                                  Window: {item.paperStartAt ? new Date(item.paperStartAt).toLocaleString() : "-"} -{" "}
-                                  {item.paperEndAt ? new Date(item.paperEndAt).toLocaleString() : "-"}
-                                </p>
-                                <p>File: {item.fileName ?? "No file"} ({formatBytes(item.sizeBytes)})</p>
-                              </div>
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => beginEditItem(item)}
-                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
-                                >
-                                  <Pencil size={12} />
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void openSubmissions(item)}
-                                  className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
-                                >
-                                  <List size={12} />
-                                  Submissions
-                                </button>
-                                {item.fileUrl ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewItem(item)}
-                                      className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
-                                    >
-                                      <Eye size={12} />
-                                      Preview
-                                    </button>
-                                    <a
-                                      href={`/api/material-bundles/${bundleDetail.id}/items/${item.id}/file?download=1`}
-                                      className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
-                                    >
-                                      <Download size={12} />
-                                      Download
-                                    </a>
-                                  </>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteItem(item.id)}
-                                  className="btn-danger gap-1.5 px-3 py-1.5 text-xs"
-                                >
-                                  <Trash2 size={12} />
-                                  Delete
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ))}
-                      {paperItems.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
-                            <Files size={18} />
-                          </span>
-                          <p className="mt-3 text-sm font-semibold text-slate-900">No papers added yet</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-500">Add a paper with a time window when you are ready to collect submissions.</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 lg:auto-rows-fr lg:grid-cols-2">
-                  <div className="flex h-full min-h-[180px] flex-col rounded-lg border border-slate-200 bg-emerald-50/80 p-4 shadow-sm">
-                    <p className="text-sm font-semibold text-emerald-700">
-                      {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
-                    </p>
-                    <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
-                      <div className="space-y-2">
-                        {bundleDetail.students
-                          .filter((s) => s.willReceive)
-                          .map((student) => (
-                            <div key={student.id} className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200/70 bg-white/80 px-3 py-2.5 text-sm text-emerald-700">
-                              <span className="font-medium text-slate-700">
-                                {student.name}
-                                {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
-                              </span>
-                              <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${student.receivedAt ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                                {student.receivedAt ? `Confirmed ${new Date(student.receivedAt).toLocaleString()}` : "Waiting for confirmation"}
-                              </span>
-                            </div>
-                          ))}
-                        {bundleDetail.students.filter((s) => s.willReceive).length === 0 ? (
-                          <p className="text-sm leading-6 text-emerald-700/80">No students selected.</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex h-full min-h-[180px] flex-col rounded-lg border border-slate-200 bg-amber-50/80 p-4 shadow-sm">
-                    <p className="text-sm font-semibold text-amber-700">Students who will not receive</p>
-                    <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
-                      <div className="space-y-2">
-                        {bundleDetail.students
-                          .filter((s) => !s.willReceive)
-                          .map((student) => (
-                            <div key={student.id} className="rounded-2xl border border-amber-200/80 bg-white/80 px-3 py-2.5 text-sm font-medium text-slate-700">
-                              {student.name}
-                              {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
-                            </div>
-                          ))}
-                        {bundleDetail.students.filter((s) => !s.willReceive).length === 0 ? (
-                          <p className="text-sm leading-6 text-amber-700/80">All students are selected.</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
         </div>
       </div>
 
@@ -1439,202 +939,6 @@ export function MaterialBundlePanel() {
         </div>
       ) : null}
 
-      {/* Submissions side panel backdrop (mobile only) */}
-      {isSubmissionsOpen && selectedBundleId ? (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-          onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
-        />
-      ) : null}
-
-      {/* Submissions side panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col border-l border-brand-100 bg-white/95 shadow-[0_24px_64px_-24px_rgba(13,26,46,0.38)] backdrop-blur-xl transition-transform duration-300 ${
-          isSubmissionsOpen && selectedBundleId ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <div className="border-b border-brand-100 bg-gradient-to-b from-white to-slate-50 px-5 py-5 sm:px-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
-                  <Files size={18} />
-                </span>
-                <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Paper Submissions</p>
-                  <h4 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-slate-900">
-                    {submissionsView?.item.title ?? (isLoadingSubmissions ? "Loading..." : "Submissions")}
-                  </h4>
-                </div>
-              </div>
-              <p className="mt-3 text-sm font-medium text-slate-500">{submissionsView?.classroom.name ?? "Track student uploads and late reasons."}</p>
-              {submissionsView?.item.paperEndAt ? (
-                <p className="mt-1 text-[13px] leading-6 text-slate-400">
-                  Deadline: {new Date(submissionsView.item.paperEndAt).toLocaleString()}
-                </p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
-              className="btn-secondary h-10 shrink-0 px-4 text-xs"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-brand-100 bg-white px-4 py-3 shadow-soft">
-              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-muted">Total students</p>
-              <p className="mt-2 text-[28px] font-bold leading-none text-slate-900">{submissionsView?.summary.totalStudents ?? 0}</p>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 shadow-soft">
-              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-emerald-700">Submitted</p>
-              <p className="mt-2 text-[28px] font-bold leading-none text-emerald-700">{submissionsView?.summary.submittedStudents ?? 0}</p>
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-soft">
-              <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-amber-700">Not submitted</p>
-              <p className="mt-2 text-[28px] font-bold leading-none text-amber-700">{submissionsView?.summary.notSubmittedStudents ?? 0}</p>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-brand-100 bg-white px-4 py-3 shadow-soft">
-            <Search size={18} className="text-slate-400" />
-            <p className="text-sm text-slate-500">Submission records for the selected paper are listed below.</p>
-          </div>
-        </div>
-
-        <div className="scrollbar-none flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-          {isLoadingSubmissions ? (
-            <p className="text-sm text-muted">Loading submissions…</p>
-          ) : null}
-
-          {submissionsView ? (
-            <div className="space-y-4">
-              {submissionsView.students.map((student) => (
-                <div key={student.id} className="rounded-[22px] border border-brand-100 bg-white p-4 shadow-soft">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[16px] font-semibold text-slate-900">
-                        {student.name}
-                        {student.registrationNumber ? ` (${student.registrationNumber})` : ""}
-                      </p>
-                      <p className="mt-1 text-[13px] leading-6 text-slate-400">
-                        {student.hasSubmitted ? "Submission history available below." : "No submission uploaded yet."}
-                      </p>
-                    </div>
-                    <div>
-                      {student.hasSubmitted ? (
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[12px] font-semibold text-emerald-700">
-                          Submitted
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[12px] font-semibold text-amber-700">
-                          Not submitted
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {student.hasSubmitted ? (
-                    <>
-                      <p className="mt-3 text-[13px] leading-6 text-slate-400">
-                        Latest: {student.latestSubmittedAt ? new Date(student.latestSubmittedAt).toLocaleString() : "-"}
-                      </p>
-                      <div className="mt-3 space-y-2">
-                        {student.submissions.map((submission) => (
-                          <div key={submission.id} className="rounded-2xl border border-brand-100 bg-slate-50/70 px-3 py-3 text-sm">
-                            <p className="font-semibold text-slate-900">{submission.fileName}</p>
-                            <p className="mt-1 text-[13px] leading-6 text-slate-400">
-                              Submitted {new Date(submission.submittedAt).toLocaleString()} • {formatBytes(submission.sizeBytes)}
-                            </p>
-                            <p className={`mt-1 text-[13px] font-medium ${submission.isLate ? "text-red-700" : "text-emerald-700"}`}>
-                              {submission.isLate ? "Late submission" : "On-time submission"}
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <a
-                                href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="btn-secondary px-3 py-1.5 text-xs"
-                              >
-                                Preview
-                              </a>
-                              <a
-                                href={`/api/material-bundles/${selectedBundleId}/items/${submissionsItemId ?? submissionsView.item.id}/submissions/${submission.id}/file?download=1`}
-                                className="btn-secondary px-3 py-1.5 text-xs"
-                              >
-                                Download
-                              </a>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
-
-                  {student.supportMessages.length > 0 ? (
-                    <div className="mt-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
-                      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-700">Student late reasons</p>
-                      {student.supportMessages.map((msg) => (
-                        <div key={msg.id} className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">
-                          <p className="whitespace-pre-line text-slate-700">{msg.message}</p>
-                          <p className="mt-2 text-[12px] leading-5 text-slate-400">{new Date(msg.createdAt).toLocaleString()}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="border-t border-brand-100 bg-white/95 px-5 py-4 shadow-[0_-16px_30px_-26px_rgba(13,26,46,0.35)] sm:px-6">
-          <button
-            type="button"
-            onClick={() => { setIsSubmissionsOpen(false); setSubmissionsItemId(null); }}
-            className="btn-primary h-11 w-full"
-          >
-            Close submissions panel
-          </button>
-        </div>
-      </div>
-
-      {previewItem && selectedBundleId ? (
-        <div className="fixed inset-0 z-[60] bg-black/80 p-4">
-          <div className="mx-auto flex h-full w-full max-w-6xl flex-col rounded-2xl bg-card">
-            <div className="flex items-center justify-between border-b border-black/10 px-4 py-2 dark:border-white/10">
-              <p className="truncate text-sm font-semibold">{previewItem.title}</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsPreviewFullScreen((prev) => !prev)}
-                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
-                >
-                  {isPreviewFullScreen ? "Exit full screen" : "Full screen"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPreviewItem(null);
-                    setIsPreviewFullScreen(false);
-                  }}
-                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs dark:border-white/15"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <iframe
-              src={`/api/material-bundles/${selectedBundleId}/items/${previewItem.id}/file`}
-              title={previewItem.title}
-              className={`w-full flex-1 border-0 ${isPreviewFullScreen ? "h-screen" : "h-[75vh]"}`}
-            />
-          </div>
-        </div>
-      ) : null}
 
       {isHelpOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
@@ -1688,267 +992,345 @@ export function MaterialBundlePanel() {
         </div>
       ) : null}
 
-      {isCreatePanelOpen ? (
+
+
+      {isWizardOpen ? (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/35"
-            onClick={() => setIsCreatePanelOpen(false)}
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setIsWizardOpen(false)}
             aria-hidden
           />
-
-          <aside className="drawer-panel scrollbar-none z-50 w-full max-w-[520px] border-l border-brand-100 bg-white/98 p-0 shadow-2xl">
-            <div className="flex h-full flex-col">
-              <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-slate-50 px-6 py-6">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-700">Create New Bundle</p>
-                    <h4 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Monthly bundle details</h4>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatePanelOpen(false)}
-                    className="btn-secondary h-10 w-10 rounded-xl p-0"
-                    aria-label="Close create bundle panel"
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[520px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Add class bundle</p>
+                <h4 className="mt-1 truncate text-lg font-semibold text-slate-900">
+                  {wizardStep === "details" ? "Bundle details" : wzTitle || "New bundle"}
+                </h4>
+                {wizardStep === "items" ? (
+                  <p className="mt-0.5 truncate text-[12px] text-slate-500">
+                    {classes.find((c) => c.id === wzClassId)?.name ?? "Class"} &bull; {wzMonthLabel}
+                  </p>
+                ) : null}
               </div>
+              <button
+                type="button"
+                onClick={() => setIsWizardOpen(false)}
+                className="btn-secondary h-8 w-8 shrink-0 rounded-lg p-0"
+                aria-label="Close add class bundle panel"
+              >
+                <X size={15} />
+              </button>
+            </div>
 
-              <div className="scrollbar-none flex-1 space-y-6 overflow-y-auto px-6 py-6">
-                <section className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Class</p>
-                  <div className="relative">
-                    <GraduationCap size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <select
-                      value={createClassId}
-                      onChange={(e) => setCreateClassId(e.target.value)}
-                      className="control-select h-14 appearance-none pl-11 pr-12 text-base"
-                    >
-                      <option value="">Select class</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </section>
+            <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-4">
+              {wzError ? <p className="notice-error mb-3">{wzError}</p> : null}
 
-                <section className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bundle title</p>
-                  <div className="relative">
-                    <FileText size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="text"
-                      placeholder="e.g. Monthly Tutes"
-                      value={createTitle}
-                      onChange={(e) => setCreateTitle(e.target.value)}
-                      className="control-input h-14 pl-11 pr-16 text-base"
-                    />
-                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
-                      {createTitle.length}/60
-                    </span>
-                  </div>
-                </section>
-
-                <section className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Period</p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {wizardStep === "details" ? (
+                <div className="space-y-4">
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Class</span>
                     <div className="relative">
-                      <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                      <input
-                        type="number"
-                        value={createYear}
-                        onChange={(e) => setCreateYear(e.target.value)}
-                        className="control-input h-14 pl-11 text-base"
-                      />
-                    </div>
-                    <div className="relative">
-                      <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+                      <GraduationCap size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <select
-                        value={createMonth}
-                        onChange={(e) => setCreateMonth(e.target.value)}
-                        className="control-select h-14 appearance-none pr-12 text-base"
+                        value={wzClassId}
+                        onChange={(e) => setWzClassId(e.target.value)}
+                        className="control-select h-11 appearance-none pl-9 pr-9 text-sm"
                       >
-                        {Array.from({ length: 12 }).map((_, idx) => (
-                          <option key={idx + 1} value={String(idx + 1)}>
-                            {monthLabel(idx + 1)}
+                        <option value="">Select class</option>
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
                           </option>
                         ))}
                       </select>
                     </div>
+                  </label>
+
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Title</span>
+                    <input
+                      value={wzTitle}
+                      onChange={(e) => setWzTitle(e.target.value)}
+                      placeholder="e.g. August tutes and papers"
+                      maxLength={150}
+                      className="control-input h-11 text-sm"
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block space-y-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Year</span>
+                      <div className="relative">
+                        <Calendar size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={wzYear}
+                          onChange={(e) => setWzYear(e.target.value)}
+                          className="control-select h-11 appearance-none pl-9 pr-9 text-sm"
+                        >
+                          {yearOptions.map((y) => (
+                            <option key={y} value={String(y)}>
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Month</span>
+                      <div className="relative">
+                        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={wzMonth}
+                          onChange={(e) => setWzMonth(e.target.value)}
+                          className="control-select h-11 appearance-none pr-9 text-sm"
+                        >
+                          {Array.from({ length: 12 }).map((_, idx) => (
+                            <option key={idx + 1} value={String(idx + 1)}>
+                              {monthLabel(idx + 1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </label>
                   </div>
-                </section>
 
-                <div className="notice-info">
-                  A new bundle will be created for the selected class, year, and month. You can add tutes and papers after creating the bundle.
+                  <p className="notice-info">
+                    The bundle is created first. Then add tutes and papers, review the active
+                    students, and submit to add them as recipients.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWzError(null);
+                        setWzPopover((prev) => (prev === "TUTE" ? null : "TUTE"));
+                      }}
+                      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                        wzPopover === "TUTE"
+                          ? "border-teal-600 bg-teal-600 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-teal-50"
+                      }`}
+                    >
+                      <Plus size={14} />
+                      Add tute
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWzError(null);
+                        setWzPopover((prev) => (prev === "PAPER" ? null : "PAPER"));
+                      }}
+                      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                        wzPopover === "PAPER"
+                          ? "border-teal-600 bg-teal-600 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-teal-50"
+                      }`}
+                    >
+                      <Plus size={14} />
+                      Add paper
+                    </button>
+                  </div>
 
-              <div className="border-t border-brand-100 bg-white px-6 py-5">
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatePanelOpen(false)}
-                    className="btn-secondary flex-1"
-                  >
-                    Cancel
-                  </button>
+                  {wzPopover ? (
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        New {wzPopover === "TUTE" ? "tute" : "paper"}
+                      </p>
+                      <input
+                        value={wzItemTitle}
+                        onChange={(e) => setWzItemTitle(e.target.value)}
+                        placeholder="Title"
+                        maxLength={150}
+                        className="control-input h-10 text-sm"
+                      />
+                      <textarea
+                        value={wzItemDescription}
+                        onChange={(e) => setWzItemDescription(e.target.value)}
+                        rows={2}
+                        placeholder="Description (optional)"
+                        className="control-textarea text-sm"
+                      />
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={(e) => setWzItemFile(e.target.files?.[0] ?? null)}
+                        className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs file:mr-3 file:rounded-md file:border-0 file:bg-teal-50 file:px-2 file:py-1 file:font-semibold file:text-teal-700"
+                      />
+                      {wzPopover === "PAPER" ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block space-y-1 text-[11px] font-medium text-slate-500">
+                            Start time
+                            <input
+                              type="datetime-local"
+                              value={wzPaperStart}
+                              onChange={(e) => setWzPaperStart(e.target.value)}
+                              className="control-input h-10 text-xs"
+                            />
+                          </label>
+                          <label className="block space-y-1 text-[11px] font-medium text-slate-500">
+                            End time
+                            <input
+                              type="datetime-local"
+                              value={wzPaperEnd}
+                              onChange={(e) => setWzPaperEnd(e.target.value)}
+                              className="control-input h-10 text-xs"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWzPopover(null)}
+                          className="btn-ghost h-8 px-3 text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void wizardAddItem()}
+                          disabled={wzSaving}
+                          className="btn-primary h-8 px-3 text-xs disabled:opacity-60"
+                        >
+                          {wzSaving ? "Adding..." : "Add"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    {wzItems.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                        No tutes or papers added yet.
+                      </p>
+                    ) : (
+                      wzItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+                                {item.type}
+                              </span>
+                              <p className="truncate text-[13px] font-semibold text-slate-900">
+                                {item.title}
+                              </p>
+                            </div>
+                            {item.type === "PAPER" && item.paperStartAt ? (
+                              <p className="mt-0.5 text-[11px] text-slate-400">
+                                {new Date(item.paperStartAt).toLocaleString()} -{" "}
+                                {item.paperEndAt ? new Date(item.paperEndAt).toLocaleString() : "?"}
+                              </p>
+                            ) : null}
+                            {item.fileName ? (
+                              <p className="mt-0.5 truncate text-[11px] text-slate-400">{item.fileName}</p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void wizardRemoveItem(item.id)}
+                            disabled={wzSaving}
+                            className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                            aria-label="Remove item"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <Users size={13} />
+                        Active students
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-400">
+                        {wzSelectedCount}/{wzStudents.length}
+                      </span>
+                    </div>
+                    <div className="scrollbar-thin max-h-[220px] overflow-y-auto p-1.5">
+                      {wzLoadingStudents ? (
+                        <p className="px-2 py-3 text-center text-xs text-slate-400">Loading students...</p>
+                      ) : wzStudents.length === 0 ? (
+                        <p className="px-2 py-3 text-center text-xs text-slate-400">
+                          No active students for this month.
+                        </p>
+                      ) : (
+                        wzStudents.map((s) => (
+                          <label
+                            key={s.id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={wzStudentSel[s.id] ?? false}
+                              onChange={(e) =>
+                                setWzStudentSel((prev) => ({ ...prev, [s.id]: e.target.checked }))
+                              }
+                            />
+                            <span className="text-[13px] text-slate-700">{s.name}</span>
+                            {s.registrationNumber ? (
+                              <span className="text-[11px] text-slate-400">({s.registrationNumber})</span>
+                            ) : null}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 px-5 py-3">
+              {wizardStep === "details" ? (
+                <button
+                  type="button"
+                  onClick={() => void wizardCreateBundle()}
+                  disabled={wzSaving}
+                  className="btn-primary h-10 w-full disabled:opacity-60"
+                >
+                  {wzSaving ? "Creating..." : "Create bundle and add items"}
+                </button>
+              ) : (
+                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => {
-                      void handleCreateBundle();
-                      setIsCreatePanelOpen(false);
+                      setIsWizardOpen(false);
+                      void loadBundles(1);
                     }}
-                    disabled={isSaving}
-                    className="btn-primary flex-1 gap-2 disabled:opacity-60"
+                    className="btn-secondary h-10 flex-1"
                   >
-                    <Plus size={14} />
-                    {isSaving ? "Creating..." : "Create bundle"}
+                    Finish later
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void wizardSubmit()}
+                    disabled={wzSaving}
+                    className="btn-primary h-10 flex-1 disabled:opacity-60"
+                  >
+                    {wzSaving
+                      ? "Sending..."
+                      : `Submit to ${wzSelectedCount} student${wzSelectedCount === 1 ? "" : "s"}`}
                   </button>
                 </div>
-              </div>
+              )}
             </div>
           </aside>
         </>
       ) : null}
 
-      {isItemPanelOpen && bundleDetail && selectedBundleId ? (
-        <div className="scrollbar-none fixed inset-y-0 right-0 z-50 w-full max-w-[540px] overflow-y-auto border-l border-brand-100 bg-white/95 shadow-[0_24px_64px_-24px_rgba(13,26,46,0.38)] backdrop-blur-xl">
-          <div className="sticky top-0 border-b border-brand-100 bg-gradient-to-b from-white to-slate-50 px-5 py-5 sm:px-6">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-soft">
-                    <Files size={18} />
-                  </span>
-                  <div>
-                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Add Item</p>
-                    <h4 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-slate-900">Add tute / paper</h4>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm font-medium text-slate-500">
-                  {bundleDetail.title} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsItemPanelOpen(false)}
-                className="btn-secondary h-10 shrink-0 px-4 text-xs"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-5 p-5 sm:p-6">
-            {bundleDetail.status === "SENT" ? (
-              <div className="rounded-[20px] border border-amber-300 bg-amber-50/90 p-4 text-sm text-amber-800 shadow-soft">
-                <p className="font-semibold">Warning: bundle already sent</p>
-                <p className="mt-2 leading-6">
-                  This bundle was already sent
-                  {bundleDetail.sentAt ? ` on ${new Date(bundleDetail.sentAt).toLocaleString()}` : ""}. Adding new items now will not automatically re-send to students.
-                </p>
-                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-white/70 px-3 py-3 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={confirmAddToSentBundle}
-                    onChange={(e) => setConfirmAddToSentBundle(e.target.checked)}
-                  />
-                  <span>I understand and confirm adding an item to an already sent bundle.</span>
-                </label>
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Item type</span>
-                <select
-                  value={itemType}
-                  onChange={(e) => setItemType(e.target.value as "TUTE" | "PAPER")}
-                  className="control-select h-14 text-[15px]"
-                >
-                  <option value="TUTE">Tute</option>
-                  <option value="PAPER">Paper</option>
-                </select>
-              </label>
-              <label className="space-y-2">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Title</span>
-                <input
-                  value={itemTitle}
-                  onChange={(e) => setItemTitle(e.target.value)}
-                  placeholder="Title"
-                  className="control-input h-14 text-[15px]"
-                />
-              </label>
-            </div>
-
-            <label className="block space-y-2">
-              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Description</span>
-              <textarea
-                value={itemDescription}
-                onChange={(e) => setItemDescription(e.target.value)}
-                rows={4}
-                placeholder="Description (optional)"
-                className="control-textarea min-h-[120px] text-[15px] leading-6"
-              />
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">PDF file</span>
-              <input
-                type="file"
-                accept="application/pdf"
-                onChange={(e) => setItemFile(e.target.files?.[0] ?? null)}
-                className="block w-full rounded-2xl border border-brand-200 bg-white px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:font-semibold file:text-brand-700"
-              />
-            </label>
-
-            {itemType === "PAPER" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">Start time</span>
-                  <input
-                    type="datetime-local"
-                    value={paperStartAt}
-                    onChange={(e) => setPaperStartAt(e.target.value)}
-                    className="control-input h-14 text-[15px]"
-                  />
-                </label>
-                <label className="space-y-2">
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted">End time</span>
-                  <input
-                    type="datetime-local"
-                    value={paperEndAt}
-                    onChange={(e) => setPaperEndAt(e.target.value)}
-                    className="control-input h-14 text-[15px]"
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            <div className="flex gap-3 border-t border-brand-100 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsItemPanelOpen(false)}
-                className="btn-secondary flex-1"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleAddItem()}
-                disabled={isSaving || (bundleDetail.status === "SENT" && !confirmAddToSentBundle)}
-                className="btn-primary flex-1 disabled:opacity-60"
-              >
-                {isSaving ? "Adding..." : "Add item"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
