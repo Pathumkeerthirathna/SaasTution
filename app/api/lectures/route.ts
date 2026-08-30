@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const pagination = parsePaginationParams(searchParams);
     const classId = searchParams.get("classId")?.trim();
+    const lectureId = searchParams.get("lectureId")?.trim() || undefined;
     const title = searchParams.get("title")?.trim() || undefined;
     const fromParam = searchParams.get("from")?.trim();
     const toParam = searchParams.get("to")?.trim();
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
     const result = await listLecturesForTeacher({
       teacherId: session.teacherId,
       classId: parsedQuery.data.classId,
+      lectureId,
       title,
       dateFrom,
       dateTo,

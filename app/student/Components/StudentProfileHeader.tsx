@@ -8,6 +8,9 @@ import {
   Users,
   BookOpen,
   Settings,
+  CalendarCheck,
+  ClipboardCheck,
+  Wallet,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -31,12 +34,23 @@ interface Student {
 
 interface StudentProfileHeaderProps {
   student: Student;
+  classesCount?: number | null;
+  guardiansCount?: number | null;
+  attendancePct?: number | null;
+  quizAvg?: number | null;
+  paidPercent?: number | null;
+  dueAmount?: number | null;
 }
 
 export function StudentProfileHeader({
   student,
+  classesCount = null,
+  guardiansCount = null,
+  attendancePct = null,
+  quizAvg = null,
+  paidPercent = null,
+  dueAmount = null,
 }: StudentProfileHeaderProps) {
-
   const [isPasswordPanelOpen, setIsPasswordPanelOpen] = useState(false);
 
   const [password, setPassword] = useState("");
@@ -92,126 +106,117 @@ export function StudentProfileHeader({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      {/* Accent Bar */}
-      <div className="h-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-violet-500" />
-
-      {/* Header */}
-      <div className="flex flex-col gap-5 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
           {/* Avatar */}
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-sm">
-            <User className="h-7 w-7 text-white" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-teal-600 to-teal-700 shadow-sm">
+            <User className="h-4 w-4 text-white" />
           </div>
 
           {/* Details */}
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+          <div className="min-w-0">
+            <h1 className="text-[15px] font-semibold leading-tight tracking-tight text-slate-900">
               {student.name}
             </h1>
 
-            <p className="mt-0.5 text-sm font-medium text-slate-500">
-              Registration No: {student.registrationNumber}
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+              Registration No: {student.registrationNumber ?? "—"}
             </p>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                <GraduationCap className="h-3.5 w-3.5" />
-                {student.grade?.name?.replace("_", " ")}
-              </span>
+            {/* Contact number */}
+            <p className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+              <Phone className="h-3.5 w-3.5 text-teal-600" />
+              {student.contact || "—"}
+            </p>
 
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                <BookOpen className="h-3.5 w-3.5" />
-                {student.classes?.length ?? 0} Classes
-              </span>
+            {/* Email under contact number */}
+            <p className="mt-0.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+              <Mail className="h-3.5 w-3.5 text-slate-400" />
+              <span className="truncate">{student.email || "—"}</span>
+            </p>
 
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                <Users className="h-3.5 w-3.5" />
-                {student.guardians?.length ?? 0} Guardian(s)
-              </span>
+            {/* Counts + metrics under contact number */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {student.grade?.name ? (
+                <HeaderChip
+                  icon={<GraduationCap className="h-3 w-3" />}
+                  tone="slate"
+                >
+                  {student.grade.name.replace("_", " ")}
+                </HeaderChip>
+              ) : null}
+
+              <HeaderChip
+                icon={<BookOpen className="h-3 w-3" />}
+                tone="teal"
+                value={classesCount}
+              >
+                {(count) => `${count} Classes`}
+              </HeaderChip>
+
+              <HeaderChip
+                icon={<Users className="h-3 w-3" />}
+                tone="slate"
+                value={guardiansCount}
+              >
+                {(count) => `${count} Guardian${count === 1 ? "" : "s"}`}
+              </HeaderChip>
             </div>
           </div>
         </div>
 
-        {/* Back Button */}
-        {/* <Link
-          href="/dashboard/students"
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link> */}
+        <div className="flex shrink-0 flex-wrap items-center gap-4">
+          <RadialStat
+            value={attendancePct}
+            label="Attendance"
+            icon={<CalendarCheck className="h-3 w-3" />}
+            tone="blue"
+          />
 
-        <div className="flex items-center gap-2">
-          <button
+          <RadialStat
+            value={quizAvg}
+            label="Quiz avg"
+            icon={<ClipboardCheck className="h-3 w-3" />}
+            tone="amber"
+          />
+
+          <div className="flex items-center gap-2">
+            <RadialStat
+              value={paidPercent}
+              label="Paid"
+              icon={<Wallet className="h-3 w-3" />}
+              tone="teal"
+            />
+
+            {dueAmount !== null && dueAmount > 0 ? (
+              <span className="inline-flex flex-col rounded-md bg-rose-50 px-2 py-1 text-rose-700">
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-rose-400">
+                  Due
+                </span>
+                <span className="text-[12px] font-bold leading-tight">
+                  Rs. {dueAmount.toLocaleString()}
+                </span>
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
             type="button"
             onClick={() => setIsPasswordPanelOpen(true)}
-            className="
-              inline-flex
-              items-center
-              gap-2
-              rounded-lg
-              border
-              border-slate-200
-              bg-white
-              px-3.5
-              py-2
-              text-sm
-              font-medium
-              text-slate-700
-              transition
-              hover:bg-slate-50
-            "
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-3.5 w-3.5" />
             Settings
           </button>
 
           <Link
             href="/dashboard/students"
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+            className="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-teal-700"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             Back
           </Link>
-        </div>
-
-      </div>
-
-      
-
-      {/* Contact Section */}
-      <div className="grid border-t border-slate-200 md:grid-cols-2">
-        {/* Phone */}
-        <div className="flex items-center gap-4 p-5 md:border-r md:border-slate-200">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
-            <Phone className="h-5 w-5 text-blue-600" />
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Contact Number
-            </p>
-
-            <p className="mt-1 text-base font-medium text-slate-900">
-              {student.contact}
-            </p>
-          </div>
-        </div>
-
-        {/* Email */}
-        <div className="flex items-center gap-4 p-5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-50">
-            <Mail className="h-5 w-5 text-violet-600" />
-          </div>
-
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Email Address
-            </p>
-
-            <p className="mt-1 truncate text-base font-medium text-slate-900">
-              {student.email}
-            </p>
           </div>
         </div>
       </div>
@@ -292,7 +297,118 @@ export function StudentProfileHeader({
           </button>
         </div>
       </aside>
+    </div>
+  );
+}
 
+const CHIP_TONES = {
+  slate: "bg-slate-100 text-slate-600",
+  teal: "bg-teal-50 text-teal-700",
+  blue: "bg-blue-50 text-blue-700",
+  amber: "bg-amber-50 text-amber-700",
+} as const;
+
+function HeaderChip({
+  icon,
+  tone,
+  value,
+  children,
+}: {
+  icon: React.ReactNode;
+  tone: keyof typeof CHIP_TONES;
+  value?: number | null;
+  children: React.ReactNode | ((value: number) => React.ReactNode);
+}) {
+  const isPending = typeof children === "function" && (value === null || value === undefined);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${CHIP_TONES[tone]}`}
+    >
+      {icon}
+      {isPending ? (
+        <span className="inline-block h-2.5 w-6 animate-pulse rounded bg-current opacity-30" />
+      ) : typeof children === "function" ? (
+        children(value as number)
+      ) : (
+        children
+      )}
+    </span>
+  );
+}
+
+const RADIAL_TONES = {
+  blue: { track: "#dbeafe", bar: "#2563eb", text: "text-blue-700" },
+  amber: { track: "#fef3c7", bar: "#d97706", text: "text-amber-700" },
+  teal: { track: "#ccfbf1", bar: "#0d9488", text: "text-teal-700" },
+} as const;
+
+function RadialStat({
+  value,
+  label,
+  icon,
+  tone,
+}: {
+  value: number | null;
+  label: string;
+  icon: React.ReactNode;
+  tone: keyof typeof RADIAL_TONES;
+}) {
+  const size = 46;
+  const stroke = 4;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const pending = value === null || value === undefined;
+  const pct = pending ? 0 : Math.max(0, Math.min(100, value));
+  const offset = circumference * (1 - pct / 100);
+
+  const colors = RADIAL_TONES[tone];
+
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="relative shrink-0"
+        style={{ width: size, height: size }}
+      >
+        <svg
+          width={size}
+          height={size}
+          className="-rotate-90"
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={colors.track}
+            strokeWidth={stroke}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={colors.bar}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={pending ? circumference : offset}
+            className="transition-[stroke-dashoffset] duration-700 ease-out"
+          />
+        </svg>
+
+        <span
+          className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold ${colors.text}`}
+        >
+          {pending ? "…" : `${pct}%`}
+        </span>
+      </div>
+
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {icon}
+        {label}
+      </span>
     </div>
   );
 }

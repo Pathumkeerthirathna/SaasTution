@@ -1,4 +1,4 @@
-import { getPublicClass, getPublicClassSessions } from "@/services/class-service";
+import { getPublicClass, getPublicClassNotes, getPublicClassSessions } from "@/services/class-service";
 import ClassLandingPage from "../../../../components/teacherProfile/classLanding/ClassLandingPage";
 import { notFound } from "next/navigation";
 
@@ -15,7 +15,12 @@ export default async function Page({ params }: Props) {
     notFound();
   }
 
-  const sessions = await getPublicClassSessions(params.classId);
+  const [sessions, notes] = await Promise.all([
+    getPublicClassSessions(params.classId),
+    getPublicClassNotes(params.classId),
+  ]);
 
-  return <ClassLandingPage classInfo={classInfo} sessions={sessions} />;
+  return (
+    <ClassLandingPage classInfo={classInfo} sessions={sessions} notes={notes} />
+  );
 }

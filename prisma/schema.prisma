@@ -29,7 +29,107 @@ model Teacher {
 
   approvedDevices StudentDevice[] @relation("ApprovedDevices")
 
+  announcements TeacherAnnouncement[]
+
+  profileSections TeacherProfileSection[]
+
+  eventTypes     TeacherEventType[]
+  calendarEvents TeacherCalendarEvent[]
+
   @@index([createdAt])
+}
+
+model TeacherEventType {
+  id        Int    @id @default(autoincrement())
+  teacherId String
+
+  name        String
+  description String?
+  color       String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher Teacher                @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  events  TeacherCalendarEvent[]
+
+  @@unique([teacherId, name])
+  @@index([teacherId])
+}
+
+model TeacherCalendarEvent {
+  id Int @id @default(autoincrement())
+
+  teacherId   String
+  eventTypeId Int
+
+  title       String
+  description String?
+
+  startDateTime DateTime
+  endDateTime   DateTime
+  isAllDay      Boolean  @default(false)
+
+  location   String?
+  meetingUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  eventType TeacherEventType @relation(fields: [eventTypeId], references: [id])
+
+  @@index([teacherId, startDateTime])
+  @@index([eventTypeId])
+}
+
+enum TeacherProfileSectionType {
+  ABOUT_ME
+  ANNOUNCEMENTS
+  SUBJECTS
+  SOCIAL_MEDIA
+  QUALIFICATIONS
+  ACHIEVEMENTS
+}
+
+model TeacherProfileSection {
+  id String @id @default(uuid())
+
+  teacherId String
+
+  sectionType TeacherProfileSectionType
+
+  displayOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, sectionType])
+  @@unique([teacherId, displayOrder])
+  @@index([teacherId])
+}
+
+model TeacherAnnouncement {
+  id String @id @default(uuid())
+
+  teacherId String
+
+  imageName   String
+  description String @db.Text
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+  @@index([teacherId, sortOrder])
 }
 
 model YouTubeConnection {
@@ -171,6 +271,14 @@ model TeacherProfile {
   // true  = profile visible
   // false = profile hidden
   isPublic Boolean @default(true)
+
+  // Per-section visibility on the public profile.
+  // The teacher toggles these from their own profile page; when false the
+  // section is hidden from non-teacher (public) visitors but stays visible
+  // to the teacher.
+  isDisplayQualification Boolean @default(true)
+  isDisplayAchievements  Boolean @default(true)
+  isDisplaySubjects      Boolean @default(true)
 
   // Number of visits to public profile page
   profileViewCount Int @default(0)
@@ -487,6 +595,7 @@ model Class {
   paymentDueWeek       Int                   @default(1)
   teacher              Teacher               @relation(fields: [teacherId], references: [id])
   payments             ClassPayment[]
+  feeHistory           ClassFee[]
   schedules            ClassSchedule[]
   sessions             ClassSession[]
   students             ClassStudent[]
@@ -499,6 +608,22 @@ model Class {
   publicRegistrations Student[] @relation("PublicClassRegistration")
 
   @@index([teacherId, createdAt])
+}
+
+model ClassFee {
+  id      String @id @default(uuid())
+  classId String
+
+  amount Int
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  createdAt DateTime @default(now())
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([classId, effectiveFrom])
 }
 
 model TeacherPaperConfig {
@@ -646,8 +771,38 @@ model ClassStudent {
   class        Class     @relation(fields: [classId], references: [id])
   student      Student   @relation(fields: [studentId], references: [id])
 
+  fees ClassStudentFee[]
+
   @@index([studentId])
   @@index([classId, isActive])
+}
+
+model ClassStudentFee {
+  id String @id @default(uuid())
+
+  classStudentId String
+
+  year  Int
+  month Int
+
+  amount         Int
+  discount       Int @default(0)
+  lateJoinDeduct Int @default(0)
+  waiverAmount   Int @default(0)
+
+  finalAmount Int
+
+  dueDate DateTime?
+  status  Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classStudent ClassStudent   @relation(fields: [classStudentId], references: [id], onDelete: Cascade)
+  payments     ClassPayment[]
+
+  @@unique([classStudentId, year, month])
+  @@index([classStudentId, year, month])
 }
 
 model ClassStudentHistory {
@@ -930,29 +1085,42 @@ model MessageDelivery {
 
 model ClassPayment {
   id                   String             @id @default(uuid())
+
   classId              String
   studentId            String
-  month                String
+  classStudentFeeId    String
+
   amount               Int
+
   note                 String?
+
   slipFileName         String?
   slipFileUrl          String?
   slipMimeType         String?
   slipSizeBytes        Int?
+
   status               ClassPaymentStatus @default(PENDING)
   teacherFeedback      String?
+
   submittedAt          DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   confirmedAt          DateTime?
   confirmedByTeacherId String?
+
   class                Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
-  confirmedByTeacher   Teacher?           @relation("ClassPaymentConfirmedBy", fields: [confirmedByTeacherId], references: [id])
+
   student              Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  classStudentFee      ClassStudentFee    @relation(fields: [classStudentFeeId], references: [id])
+
+  confirmedByTeacher   Teacher?           @relation("ClassPaymentConfirmedBy", fields: [confirmedByTeacherId], references: [id])
+
   messages             PaymentMessage[]
 
-  @@unique([classId, studentId, month])
-  @@index([studentId, month])
-  @@index([classId, month, status])
+  @@index([studentId])
+  @@index([classId, status])
+  @@index([classStudentFeeId])
+  @@index([confirmedByTeacherId])
 }
 
 model PaymentMessage {

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { nowInSriLanka } from "@/lib/time";
 import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
@@ -250,12 +251,14 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
 
 
     const record = await prisma.$transaction(async (tx) => {
+      const assignedAt = nowInSriLanka();
+
       const assignment = await tx.classStudent.create({
         data: {
           classId,
           studentId,
           isActive: true,
-          assignedAt: new Date(),
+          assignedAt,
         },
         select: {
           id: true,
@@ -270,7 +273,7 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
           classId,
           studentId,
           action: StudentClassAction.ASSIGNED,
-          actionDate: new Date(),
+          actionDate: assignedAt,
         },
       });
 
@@ -881,13 +884,15 @@ export async function removeStudentFromClassForTeacher(params: {
   // });
 
   return prisma.$transaction(async (tx) => {
+    const removedAt = nowInSriLanka();
+
     const assignment = await tx.classStudent.update({
       where: {
         id: activeAssignment.id,
       },
       data: {
         isActive: false,
-        removedAt: new Date(),
+        removedAt,
         removeReason: params.reason,
       },
       select: {
@@ -905,7 +910,7 @@ export async function removeStudentFromClassForTeacher(params: {
         classId: params.classId,
         studentId: params.studentId,
         action: StudentClassAction.UNASSIGNED,
-        actionDate: new Date(),
+        actionDate: removedAt,
         reason: params.reason,
       },
     });
@@ -1013,6 +1018,59 @@ export async function updateGuardianForTeacher(
   });
 }
 
+async function assertTeacherOwnsStudent(teacherId: string, studentId: string) {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, teacherId },
+    select: { id: true },
+  });
+
+  if (!student) {
+    throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
+  }
+}
+
+const guardianSelect = {
+  id: true,
+  studentId: true,
+  name: true,
+  relation: true,
+  phone: true,
+  email: true,
+  createdAt: true,
+} as const;
+
+export async function listGuardiansForTeacher(
+  teacherId: string,
+  studentId: string
+) {
+  await assertTeacherOwnsStudent(teacherId, studentId);
+
+  return prisma.guardian.findMany({
+    where: { studentId },
+    orderBy: { createdAt: "asc" },
+    select: guardianSelect,
+  });
+}
+
+export async function deleteGuardianForTeacher(
+  teacherId: string,
+  guardianId: string
+) {
+  const guardian = await prisma.guardian.findUnique({
+    where: { id: guardianId },
+    select: { id: true, studentId: true },
+  });
+
+  if (!guardian) {
+    throw new AppError("Guardian not found.", 404, "GUARDIAN_NOT_FOUND");
+  }
+
+  await assertTeacherOwnsStudent(teacherId, guardian.studentId);
+
+  await prisma.guardian.delete({ where: { id: guardianId } });
+  return { success: true };
+}
+
 export async function listStudentsByClassForTeacher(params: {
   teacherId: string;
   classId: string;
@@ -1102,15 +1160,17 @@ export async function getStudentClassesForTeacher(
               studentId,
             },
             orderBy: {
-              month: "desc",
+              submittedAt: "desc",
             },
             select: {
               id: true,
-              month: true,
               amount: true,
               status: true,
               submittedAt: true,
               confirmedAt: true,
+              classStudentFee: {
+                select: { year: true, month: true },
+              },
             },
           },
 
@@ -1246,18 +1306,21 @@ export async function getStudentQuizResults(
     return {
       quizId: quiz.id,
       quizTitle: quiz.title,
+      lectureId: quiz.lecture.id,
       lectureTitle: quiz.lecture.title,
       lectureDate: quiz.lecture.date,
+      dueDate: quiz.dueDate ?? null,
 
       attempted: !!submission,
 
       score: submission?.score ?? null,
       totalQuestions: submission?.totalQuestions ?? null,
-      percentage: submission
-        ? Math.round(
-            (submission.score / submission.totalQuestions) * 100
-          )
-        : null,
+      percentage:
+        submission && submission.totalQuestions > 0
+          ? Math.round(
+              (submission.score / submission.totalQuestions) * 100
+            )
+          : null,
 
       submittedAt: submission?.submittedAt ?? null,
       attemptCount: submission?.attemptCount ?? 0,
@@ -1364,38 +1427,168 @@ export async function getStudentAttendanceSummary(
   return summary;
 }
 
-export async function getStudentPaymentSummary(
-  studentId: string
-) {
-  const classes = await prisma.classStudent.findMany({
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * Builds the student's payment position from the ClassStudentFee ledger.
+ *
+ * Every ClassStudentFee row is a charge the student owes for one class in one
+ * month. A row counts as "done" when it carries a CONFIRMED ClassPayment;
+ * everything else is "not done". Amounts are the row's finalAmount.
+ */
+export async function getStudentPaymentSummary(studentId: string) {
+  const feeRows = await prisma.classStudentFee.findMany({
     where: {
-      studentId,
+      classStudent: { studentId },
     },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
     select: {
-      classId: true,
-      class: {
+      id: true,
+      year: true,
+      month: true,
+      finalAmount: true,
+      dueDate: true,
+      status: true,
+      classStudent: {
+        select: {
+          class: {
+            select: { id: true, name: true, monthlyFee: true },
+          },
+        },
+      },
+      payments: {
+        orderBy: { submittedAt: "desc" },
         select: {
           id: true,
-          name: true,
-          monthlyFee: true,
-
-          payments: {
-            where: {
-              studentId,
-            },
-            select: {
-              id: true,
-              month: true,
-              amount: true,
-              status: true,
-            },
-          },
+          amount: true,
+          status: true,
+          submittedAt: true,
+          confirmedAt: true,
         },
       },
     },
   });
 
-  return classes;
+  type ClassBucket = {
+    classId: string;
+    className: string;
+    monthlyFee: number;
+    paidCount: number;
+    unpaidCount: number;
+    paidAmount: number;
+    unpaidAmount: number;
+    totalAmount: number;
+    fees: Array<{
+      id: string;
+      year: number;
+      month: number;
+      monthLabel: string;
+      finalAmount: number;
+      dueDate: string | null;
+      paid: boolean;
+      payment: {
+        id: string;
+        amount: number;
+        status: string;
+        submittedAt: string | null;
+        confirmedAt: string | null;
+      } | null;
+    }>;
+  };
+
+  const buckets = new Map<string, ClassBucket>();
+
+  let paidCount = 0;
+  let unpaidCount = 0;
+  let paidAmount = 0;
+  let unpaidAmount = 0;
+
+  for (const row of feeRows) {
+    const cls = row.classStudent.class;
+
+    const confirmed = row.payments.find((p) => p.status === "CONFIRMED");
+    const latest = row.payments[0] ?? null;
+    const paid = Boolean(confirmed) || row.status === 1;
+
+    const chosen = confirmed ?? latest;
+
+    if (paid) {
+      paidCount += 1;
+      paidAmount += row.finalAmount;
+    } else {
+      unpaidCount += 1;
+      unpaidAmount += row.finalAmount;
+    }
+
+    let bucket = buckets.get(cls.id);
+    if (!bucket) {
+      bucket = {
+        classId: cls.id,
+        className: cls.name,
+        monthlyFee: cls.monthlyFee,
+        paidCount: 0,
+        unpaidCount: 0,
+        paidAmount: 0,
+        unpaidAmount: 0,
+        totalAmount: 0,
+        fees: [],
+      };
+      buckets.set(cls.id, bucket);
+    }
+
+    bucket.totalAmount += row.finalAmount;
+    if (paid) {
+      bucket.paidCount += 1;
+      bucket.paidAmount += row.finalAmount;
+    } else {
+      bucket.unpaidCount += 1;
+      bucket.unpaidAmount += row.finalAmount;
+    }
+
+    bucket.fees.push({
+      id: row.id,
+      year: row.year,
+      month: row.month,
+      monthLabel: `${MONTH_LABELS[row.month - 1] ?? row.month} ${row.year}`,
+      finalAmount: row.finalAmount,
+      dueDate: row.dueDate ? row.dueDate.toISOString() : null,
+      paid,
+      payment: chosen
+        ? {
+            id: chosen.id,
+            amount: chosen.amount,
+            status: chosen.status,
+            submittedAt: chosen.submittedAt
+              ? chosen.submittedAt.toISOString()
+              : null,
+            confirmedAt: chosen.confirmedAt
+              ? chosen.confirmedAt.toISOString()
+              : null,
+          }
+        : null,
+    });
+  }
+
+  const totalAmount = paidAmount + unpaidAmount;
+
+  return {
+    summary: {
+      totalFees: feeRows.length,
+      paidCount,
+      unpaidCount,
+      paidAmount,
+      unpaidAmount,
+      totalAmount,
+      paidPercent:
+        totalAmount === 0
+          ? 0
+          : Math.round((paidAmount / totalAmount) * 100),
+    },
+    classes: [...buckets.values()],
+  };
 }
 
 export async function getStudentQuizSummary(
@@ -1701,10 +1894,13 @@ export async function RegisterStudentViaPublicClasses(
       },
     });
 
+    const assignedAt = nowInSriLanka();
+
     await tx.classStudent.create({
       data: {
         classId: cls.id,
         studentId: student.id,
+        assignedAt,
       },
     });
 
@@ -1713,6 +1909,7 @@ export async function RegisterStudentViaPublicClasses(
         classId: cls.id,
         studentId: student.id,
         action: "ASSIGNED",
+        actionDate: assignedAt,
       },
     });
 
@@ -1941,4 +2138,430 @@ export async function listStudentsForClassroom(params: {
     displayName: student.name,
     email: student.email,
   }));
+}
+export type AttendanceStatusLabel =
+  | "Excellent"
+  | "Good"
+  | "At Risk"
+  | "Poor";
+
+export function classifyAttendance(pct: number): AttendanceStatusLabel {
+  if (pct >= 90) return "Excellent";
+  if (pct >= 75) return "Good";
+  if (pct >= 60) return "At Risk";
+  return "Poor";
+}
+
+export interface AttendanceAnalyticsMonth {
+  key: string;
+  label: string;
+  year: number;
+  month: number;
+  attended: number;
+  total: number;
+  percent: number;
+  isCurrent: boolean;
+}
+
+export interface AttendanceAnalytics {
+  monthsBack: number;
+  attendanceRate: number;
+  status: AttendanceStatusLabel;
+  attended: number;
+  totalClasses: number;
+  trendDelta: number;
+  trendDirection: "up" | "down" | "flat";
+  averageDuration: number | null;
+  targetLine: number;
+  monthly: AttendanceAnalyticsMonth[];
+}
+
+/**
+ * Attendance health + monthly trend for a single student, aggregated across
+ * every class the student is (or was) enrolled in.
+ *
+ * - A lecture counts as "attended" when the student has at least one Attendance
+ *   row on any of that lecture's sessions.
+ * - The headline rate is all-time; the chart series covers the last `months`
+ *   calendar months.
+ * - Average duration is the mean of (time present / session length) over
+ *   sessions where both the student left-time and the session end-time are known.
+ */
+export async function getStudentAttendanceAnalytics(
+  studentId: string,
+  options: { months?: number } = {}
+): Promise<AttendanceAnalytics> {
+  const monthsBack = Math.min(Math.max(options.months ?? 6, 3), 12);
+
+  const enrolments = await prisma.classStudent.findMany({
+    where: { studentId },
+    select: { classId: true },
+  });
+  const classIds = [...new Set(enrolments.map((e) => e.classId))];
+
+  const now = new Date();
+  const buckets = Array.from({ length: monthsBack }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1 - i), 1);
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      label: MONTH_LABELS[d.getMonth()] ?? String(d.getMonth() + 1),
+      attended: 0,
+      total: 0,
+    };
+  });
+
+  const emptyResult: AttendanceAnalytics = {
+    monthsBack,
+    attendanceRate: 0,
+    status: classifyAttendance(0),
+    attended: 0,
+    totalClasses: 0,
+    trendDelta: 0,
+    trendDirection: "flat",
+    averageDuration: null,
+    targetLine: 75,
+    monthly: buckets.map((b, idx) => ({
+      key: `${b.year}-${String(b.month).padStart(2, "0")}`,
+      label: b.label,
+      year: b.year,
+      month: b.month,
+      attended: 0,
+      total: 0,
+      percent: 0,
+      isCurrent: idx === buckets.length - 1,
+    })),
+  };
+
+  if (classIds.length === 0) return emptyResult;
+
+  const lectures = await prisma.lecture.findMany({
+    where: { classId: { in: classIds } },
+    select: {
+      id: true,
+      date: true,
+      sessions: {
+        select: {
+          attendance: { where: { studentId }, select: { id: true } },
+        },
+      },
+    },
+  });
+
+  const attended = (lecture: (typeof lectures)[number]) =>
+    lecture.sessions.some((s) => s.attendance.length > 0);
+
+  const totalAll = lectures.length;
+  const attendedAll = lectures.filter(attended).length;
+  const attendanceRate =
+    totalAll === 0 ? 0 : Math.round((attendedAll / totalAll) * 100);
+
+  const bucketIndex = new Map(
+    buckets.map((b, idx) => [`${b.year}-${b.month}`, idx])
+  );
+
+  for (const lecture of lectures) {
+    const d = new Date(lecture.date);
+    const idx = bucketIndex.get(`${d.getFullYear()}-${d.getMonth() + 1}`);
+    if (idx === undefined) continue;
+    buckets[idx].total += 1;
+    if (attended(lecture)) buckets[idx].attended += 1;
+  }
+
+  const monthly: AttendanceAnalyticsMonth[] = buckets.map((b, idx) => ({
+    key: `${b.year}-${String(b.month).padStart(2, "0")}`,
+    label: b.label,
+    year: b.year,
+    month: b.month,
+    attended: b.attended,
+    total: b.total,
+    percent: b.total === 0 ? 0 : Math.round((b.attended / b.total) * 100),
+    isCurrent: idx === buckets.length - 1,
+  }));
+
+  const current = monthly[monthly.length - 1];
+  const previous = monthly[monthly.length - 2];
+  const trendDelta =
+    current && previous
+      ? Number((current.percent - previous.percent).toFixed(1))
+      : 0;
+
+  const attendanceRecords = await prisma.attendance.findMany({
+    where: {
+      studentId,
+      classId: { in: classIds },
+      leftAt: { not: null },
+      classSession: { endedAt: { not: null } },
+    },
+    select: {
+      joinedAt: true,
+      leftAt: true,
+      classSession: { select: { startedAt: true, endedAt: true } },
+    },
+  });
+
+  let durationSum = 0;
+  let durationCount = 0;
+  for (const rec of attendanceRecords) {
+    const sessionMs =
+      (rec.classSession.endedAt as Date).getTime() -
+      rec.classSession.startedAt.getTime();
+    const presentMs =
+      (rec.leftAt as Date).getTime() - rec.joinedAt.getTime();
+    if (sessionMs <= 0 || presentMs <= 0) continue;
+    durationSum += Math.min(1, presentMs / sessionMs);
+    durationCount += 1;
+  }
+  const averageDuration =
+    durationCount === 0 ? null : Math.round((durationSum / durationCount) * 100);
+
+  return {
+    monthsBack,
+    attendanceRate,
+    status: classifyAttendance(attendanceRate),
+    attended: attendedAll,
+    totalClasses: totalAll,
+    trendDelta,
+    trendDirection: trendDelta > 0 ? "up" : trendDelta < 0 ? "down" : "flat",
+    averageDuration,
+    targetLine: 75,
+    monthly,
+  };
+}
+
+export type QuizStatusLabel =
+  | "Excellent"
+  | "Good"
+  | "At Risk"
+  | "Needs Attention";
+
+export function classifyQuizScore(pct: number): QuizStatusLabel {
+  if (pct >= 90) return "Excellent";
+  if (pct >= 75) return "Good";
+  if (pct >= 60) return "At Risk";
+  return "Needs Attention";
+}
+
+export type QuizAnalyticsPeriod = "month" | "3months" | "year";
+
+export interface QuizAnalyticsMonth {
+  key: string;
+  label: string;
+  year: number;
+  month: number;
+  percent: number;
+  count: number;
+  isCurrent: boolean;
+}
+
+export interface QuizAnalyticsRecent {
+  id: string;
+  title: string;
+  scorePercent: number;
+  attempts: number;
+  submittedAt: string;
+}
+
+export interface QuizAnalytics {
+  period: QuizAnalyticsPeriod;
+  averageScore: number;
+  completed: number;
+  totalQuizzes: number;
+  bestScore: number;
+  lowestScore: number;
+  averageAttempts: number;
+  trendDelta: number;
+  trendDirection: "up" | "down" | "flat";
+  status: QuizStatusLabel;
+  targetLine: number;
+  monthly: QuizAnalyticsMonth[];
+  recent: QuizAnalyticsRecent[];
+}
+
+/**
+ * Quiz performance health + monthly trend for a single student across every
+ * class the student is (or was) enrolled in.
+ *
+ * - A student has at most one QuizSubmission per quiz; its `score` is the
+ *   final score and `attemptCount` is how many tries were made.
+ * - A quiz belongs to the selected period by its due date (falling back to its
+ *   lecture date) and is only counted once that date has passed.
+ * - The trend chart buckets submissions by `submittedAt` over the last 6 months
+ *   (12 for the "year" period).
+ */
+export async function getStudentQuizAnalytics(
+  studentId: string,
+  options: { period?: QuizAnalyticsPeriod } = {}
+): Promise<QuizAnalytics> {
+  const period: QuizAnalyticsPeriod = options.period ?? "3months";
+  const monthsBack = period === "year" ? 12 : 6;
+
+  const now = new Date();
+  const periodStart =
+    period === "month"
+      ? new Date(now.getFullYear(), now.getMonth(), 1)
+      : period === "3months"
+      ? new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      : new Date(now.getFullYear(), 0, 1);
+
+  const buckets = Array.from({ length: monthsBack }, (_, i) => {
+    const d = new Date(
+      now.getFullYear(),
+      now.getMonth() - (monthsBack - 1 - i),
+      1
+    );
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      label: MONTH_LABELS[d.getMonth()] ?? String(d.getMonth() + 1),
+      sum: 0,
+      count: 0,
+    };
+  });
+
+  const buildMonthly = (): QuizAnalyticsMonth[] =>
+    buckets.map((b, idx) => ({
+      key: `${b.year}-${String(b.month).padStart(2, "0")}`,
+      label: b.label,
+      year: b.year,
+      month: b.month,
+      count: b.count,
+      percent: b.count === 0 ? 0 : Math.round(b.sum / b.count),
+      isCurrent: idx === buckets.length - 1,
+    }));
+
+  const enrolments = await prisma.classStudent.findMany({
+    where: { studentId },
+    select: { classId: true },
+  });
+  const classIds = [...new Set(enrolments.map((e) => e.classId))];
+
+  const emptyResult: QuizAnalytics = {
+    period,
+    averageScore: 0,
+    completed: 0,
+    totalQuizzes: 0,
+    bestScore: 0,
+    lowestScore: 0,
+    averageAttempts: 0,
+    trendDelta: 0,
+    trendDirection: "flat",
+    status: classifyQuizScore(0),
+    targetLine: 75,
+    monthly: buildMonthly(),
+    recent: [],
+  };
+
+  if (classIds.length === 0) return emptyResult;
+
+  const quizzes = await prisma.quiz.findMany({
+    where: { lecture: { classId: { in: classIds } } },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      lecture: { select: { date: true } },
+      submissions: {
+        where: { studentId },
+        select: {
+          score: true,
+          totalQuestions: true,
+          submittedAt: true,
+          attemptCount: true,
+        },
+      },
+    },
+  });
+
+  const pct = (score: number, total: number) =>
+    total > 0 ? Math.round((score / total) * 100) : 0;
+
+  const bucketIndex = new Map(
+    buckets.map((b, idx) => [`${b.year}-${b.month}`, idx])
+  );
+
+  let periodTotal = 0;
+  const periodScores: number[] = [];
+  const periodAttempts: number[] = [];
+  const recentPool: Array<QuizAnalyticsRecent & { ts: number }> = [];
+
+  for (const quiz of quizzes) {
+    const scheduled = quiz.dueDate ?? quiz.lecture.date;
+    const scheduledDate = new Date(scheduled);
+    const inPeriod = scheduledDate >= periodStart && scheduledDate <= now;
+
+    const submission = quiz.submissions[0] ?? null;
+
+    if (inPeriod) {
+      periodTotal += 1;
+
+      if (submission) {
+        const score = pct(submission.score, submission.totalQuestions);
+        periodScores.push(score);
+        periodAttempts.push(submission.attemptCount);
+        recentPool.push({
+          id: quiz.id,
+          title: quiz.title,
+          scorePercent: score,
+          attempts: submission.attemptCount,
+          submittedAt: submission.submittedAt.toISOString(),
+          ts: submission.submittedAt.getTime(),
+        });
+      }
+    }
+
+    // Trend series is independent of the period filter.
+    if (submission) {
+      const d = new Date(submission.submittedAt);
+      const idx = bucketIndex.get(`${d.getFullYear()}-${d.getMonth() + 1}`);
+      if (idx !== undefined) {
+        buckets[idx].sum += pct(submission.score, submission.totalQuestions);
+        buckets[idx].count += 1;
+      }
+    }
+  }
+
+  const completed = periodScores.length;
+  const averageScore =
+    completed === 0
+      ? 0
+      : Math.round(periodScores.reduce((s, v) => s + v, 0) / completed);
+  const bestScore = completed === 0 ? 0 : Math.max(...periodScores);
+  const lowestScore = completed === 0 ? 0 : Math.min(...periodScores);
+  const averageAttempts =
+    completed === 0
+      ? 0
+      : Number(
+          (
+            periodAttempts.reduce((s, v) => s + v, 0) / completed
+          ).toFixed(1)
+        );
+
+  const monthly = buildMonthly();
+  const filled = monthly.filter((m) => m.count > 0);
+  const last = filled[filled.length - 1];
+  const prev = filled[filled.length - 2];
+  const trendDelta =
+    last && prev ? Number((last.percent - prev.percent).toFixed(1)) : 0;
+
+  const recent = recentPool
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 5)
+    .map(({ ts: _ts, ...rest }) => rest);
+
+  return {
+    period,
+    averageScore,
+    completed,
+    totalQuizzes: periodTotal,
+    bestScore,
+    lowestScore,
+    averageAttempts,
+    trendDelta,
+    trendDirection: trendDelta > 0 ? "up" : trendDelta < 0 ? "down" : "flat",
+    status: classifyQuizScore(averageScore),
+    targetLine: 75,
+    monthly,
+    recent,
+  };
 }

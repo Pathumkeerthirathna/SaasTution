@@ -54,6 +54,9 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
   const now = new Date();
   const currentMonthKey = getCurrentMonthKey();
+  const [currentYearNum, currentMonthNum] = currentMonthKey
+    .split("-")
+    .map(Number);
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const todayWeekday = WEEKDAY_NAMES[now.getDay()] as Weekday;
@@ -247,7 +250,10 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     }),
 
     prisma.classPayment.findMany({
-      where: { studentId, month: currentMonthKey },
+      where: {
+        studentId,
+        classStudentFee: { year: currentYearNum, month: currentMonthNum },
+      },
       select: {
         classId: true,
         status: true,

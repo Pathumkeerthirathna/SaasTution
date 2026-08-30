@@ -20,6 +20,7 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  History,
   Layers3,
   Microscope,
   Pencil,
@@ -36,212 +37,35 @@ import {
   X
 } from "lucide-react";
 import { PaginatedStudentsResponse, StudentListItem } from "./student-guardian-management-panel";
+import { formatStoredSriLankaDate, formatStoredSriLankaDateTime } from "@/lib/time";
+import {
+  ClassBookBadge,
+  getClassBookLabel,
+  getClassCardIcon,
+  getClassCardTheme,
+  getClassNumber,
+} from "./class-card-visuals";
 
-function hashString(value: string) {
-  let hash = 0;
-
-  for (let i = 0; i < value.length; i++) {
-    hash = value.charCodeAt(i) + ((hash << 5) - hash);
-  }
-
-  return Math.abs(hash);
-}
-
-const CLASS_CARD_THEMES = [
-  {
-    gradient: "from-blue-700 via-blue-800 to-indigo-900",
-    glow1: "bg-blue-300/20",
-    glow2: "bg-sky-400/10",
-    iconColor: "text-blue-200",
-    metaText: "text-blue-200/80",
-    badgeBorder: "border-blue-300/30",
-    badgeBg: "bg-blue-400/15",
-    badgeDot: "bg-blue-300",
-    badgeText: "text-blue-50",
-    bookGradient: "from-blue-400 to-blue-700",
-    numberColor: "text-blue-300",
-  },
-  {
-    gradient: "from-emerald-600 via-green-700 to-teal-800",
-    glow1: "bg-emerald-300/20",
-    glow2: "bg-teal-400/10",
-    iconColor: "text-emerald-200",
-    metaText: "text-emerald-200/80",
-    badgeBorder: "border-emerald-300/30",
-    badgeBg: "bg-emerald-400/15",
-    badgeDot: "bg-emerald-300",
-    badgeText: "text-emerald-50",
-    bookGradient: "from-emerald-400 to-green-700",
-    numberColor: "text-emerald-300",
-  },
-  {
-    gradient: "from-violet-600 via-purple-700 to-fuchsia-800",
-    glow1: "bg-violet-300/20",
-    glow2: "bg-fuchsia-400/10",
-    iconColor: "text-violet-200",
-    metaText: "text-violet-200/80",
-    badgeBorder: "border-violet-300/30",
-    badgeBg: "bg-violet-400/15",
-    badgeDot: "bg-violet-300",
-    badgeText: "text-violet-50",
-    bookGradient: "from-violet-400 to-purple-700",
-    numberColor: "text-violet-300",
-  },
-  {
-    gradient: "from-orange-600 via-amber-700 to-orange-800",
-    glow1: "bg-amber-200/25",
-    glow2: "bg-orange-300/10",
-    iconColor: "text-amber-100",
-    metaText: "text-amber-100/80",
-    badgeBorder: "border-amber-200/30",
-    badgeBg: "bg-amber-300/20",
-    badgeDot: "bg-amber-200",
-    badgeText: "text-amber-50",
-    bookGradient: "from-amber-300 to-orange-600",
-    numberColor: "text-amber-200",
-  },
-  {
-    gradient: "from-rose-600 via-pink-700 to-rose-800",
-    glow1: "bg-rose-300/20",
-    glow2: "bg-pink-400/10",
-    iconColor: "text-rose-200",
-    metaText: "text-rose-200/80",
-    badgeBorder: "border-rose-300/30",
-    badgeBg: "bg-rose-400/15",
-    badgeDot: "bg-rose-300",
-    badgeText: "text-rose-50",
-    bookGradient: "from-rose-400 to-pink-700",
-    numberColor: "text-rose-300",
-  },
-  {
-    gradient: "from-sky-700 via-cyan-700 to-teal-800",
-    glow1: "bg-teal-300/20",
-    glow2: "bg-sky-400/10",
-    iconColor: "text-teal-200",
-    metaText: "text-sky-200/80",
-    badgeBorder: "border-teal-300/30",
-    badgeBg: "bg-teal-400/15",
-    badgeDot: "bg-teal-300",
-    badgeText: "text-teal-50",
-    bookGradient: "from-teal-400 to-blue-800",
-    numberColor: "text-cyan-200",
-  },
-] as const;
-
-const CLASS_CARD_ICONS = [
-  Sigma,
-  Compass,
-  FlaskConical,
-  Atom,
-  Calculator,
-  Microscope,
-  BookOpen,
-  Pencil,
-];
-
-export function getClassCardTheme(classId: string) {
-  return CLASS_CARD_THEMES[
-    hashString(classId) % CLASS_CARD_THEMES.length
-  ];
-}
-
-export function getClassCardIcon(classId: string) {
-  return CLASS_CARD_ICONS[
-    hashString(`${classId}-icon`) % CLASS_CARD_ICONS.length
-  ];
-}
-
-export function getClassBookLabel(name: string) {
-  const firstPart = name.split(/[-–—]/)[0]?.trim() || name.trim();
-  const firstWord = firstPart.split(/\s+/)[0] || firstPart;
-  return firstWord.slice(0, 8).toUpperCase();
-}
-
-export function getClassNumber(name: string) {
-  const digits = name.match(/\d+/g);
-
-  if (digits && digits.length > 0) {
-    return String(Number(digits[digits.length - 1]));
-  }
-
-  return getClassBookLabel(name).charAt(0);
-}
-
-export function ClassBookBadge({
-  label,
-  number,
-  bookGradient,
-  numberColor,
-}: {
-  label: string;
-  number: string;
-  bookGradient: string;
-  numberColor: string;
-}) {
-  return (
-    <div className="pointer-events-none absolute right-6 top-1/2 h-24 w-28 -translate-y-1/2">
-
-      {/* Decorative sparkle dots */}
-      <span className="absolute right-2 top-0.5 h-1 w-1 rounded-full bg-white/50" />
-      <span className="absolute right-7 top-2.5 h-1 w-1 rounded-full bg-white/30" />
-      <span className="absolute right-4 top-4 h-0.5 w-0.5 rounded-full bg-white/40" />
-
-      {/* Bold numeral, sitting behind the book */}
-      <span className={`absolute right-2 top-1/2 -translate-y-1/2 select-none text-5xl font-black leading-none drop-shadow-sm ${numberColor}`}>
-        {number}
-      </span>
-
-      {/* Book */}
-      <div className="absolute left-2 top-1 h-20 w-[60px] rotate-[8deg]">
-
-        {/* Page edges */}
-        <div className="absolute inset-y-1 -right-1 w-2.5 rounded-r-sm bg-slate-100 shadow-sm" />
-        <div className="absolute inset-y-1.5 -right-0.5 w-2 rounded-r-sm bg-white" />
-
-        {/* Cover */}
-        <div
-          className={`relative flex h-full w-full items-center justify-center rounded-md bg-gradient-to-br ${bookGradient} shadow-xl ring-1 ring-black/10`}
-        >
-          {/* Spine shadow */}
-          <div className="absolute inset-y-0 left-0 w-2.5 rounded-l-md bg-black/20" />
-
-          {/* Glossy highlight */}
-          <div className="absolute inset-x-2.5 top-1.5 h-1/3 rounded-full bg-white/15 blur-[2px]" />
-
-          <span className="relative px-1 text-center text-[11px] font-extrabold uppercase leading-tight tracking-wide text-white drop-shadow">
-            {label}
-          </span>
-        </div>
-      </div>
-
-      {/* Pencil */}
-      <div className="absolute left-0 bottom-2 h-20 w-2.5 rotate-[40deg]">
-        {/* Shaft */}
-        <div className="absolute bottom-0 h-[72%] w-full rounded-sm bg-gradient-to-b from-orange-400 to-orange-500 shadow-md" />
-
-        {/* Metal band */}
-        <div className="absolute bottom-[72%] h-1.5 w-full bg-slate-300" />
-
-        {/* Wood taper */}
-        <div
-          className="absolute bottom-[calc(72%+6px)] h-3 w-full bg-amber-200"
-          style={{ clipPath: "polygon(0% 0%, 100% 0%, 65% 100%, 35% 100%)" }}
-        />
-
-        {/* Graphite tip */}
-        <div
-          className="absolute bottom-[calc(72%+18px)] h-1.5 w-full bg-slate-700"
-          style={{ clipPath: "polygon(35% 0%, 65% 0%, 50% 100%)" }}
-        />
-      </div>
-
-    </div>
-  );
-}
+// Re-exported for callers that historically imported these from this module.
+export {
+  ClassBookBadge,
+  getClassBookLabel,
+  getClassCardIcon,
+  getClassCardTheme,
+  getClassNumber,
+} from "./class-card-visuals";
 
 type GradeItem = {
   id: number;
   GradeDesc: string;
+};
+
+type ClassFeeHistoryEntry = {
+  id: string;
+  amount: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isCurrent: boolean;
 };
 
 export type ClassItem = {
@@ -461,6 +285,11 @@ export function ClassManagementPanel() {
   const [totalItems, setTotalItems] = useState(0);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [studentsPanelClassId, setStudentsPanelClassId] = useState<string | null>(null);
+
+  // Fee history modal
+  const [feeHistoryClass, setFeeHistoryClass] = useState<{ id: string; name: string } | null>(null);
+  const [feeHistory, setFeeHistory] = useState<ClassFeeHistoryEntry[]>([]);
+  const [isFeeHistoryLoading, setIsFeeHistoryLoading] = useState(false);
 
   // Add-students modal
   const [isAddStudentsOpen, setIsAddStudentsOpen] = useState(false);
@@ -689,6 +518,32 @@ const isAllSelected =
     });
     setErrorMessage(null);
     setSuccessMessage(null);
+  }
+
+  async function openFeeHistory(item: ClassItem) {
+    setFeeHistoryClass({ id: item.id, name: item.name });
+    setFeeHistory([]);
+    setIsFeeHistoryLoading(true);
+
+    try {
+      const response = await fetch(`/api/classes/${item.id}/fee-history`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: ClassFeeHistoryEntry[];
+      };
+
+      if (!response.ok || !payload.success) {
+        throw new Error("Failed to load fee history.");
+      }
+
+      setFeeHistory(payload.data ?? []);
+    } catch {
+      setFeeHistory([]);
+    } finally {
+      setIsFeeHistoryLoading(false);
+    }
   }
 
   async function saveEdit(classId: string) {
@@ -1240,19 +1095,25 @@ const isAllSelected =
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-teal-200">
+                    <button
+                      type="button"
+                      onClick={() => void openFeeHistory(item)}
+                      title="View fee change history"
+                      className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/50 group-hover:border-teal-200"
+                    >
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700">
                         <Wallet size={13} />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                        <p className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                           Fee
+                          <History size={9} className="text-teal-500" />
                         </p>
                         <p className="truncate text-sm font-bold text-slate-900">
                           Rs. {item.monthlyFee.toLocaleString()}
                         </p>
                       </div>
-                    </div>
+                    </button>
 
                     <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-blue-200">
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-700">
@@ -2168,7 +2029,7 @@ const isAllSelected =
                           ) : null}
                           <span className="flex items-center gap-1 text-[11px] text-muted">
                             <Calendar size={10} />
-                            {new Date(entry.assignedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                            {formatStoredSriLankaDate(entry.assignedAt)}
                           </span>
                         </div>
                       </div>
@@ -2235,20 +2096,12 @@ const isAllSelected =
                           <p className="flex items-center gap-1.5 text-[11px] text-muted">
                             <Calendar size={10} className="text-emerald-500" />
                             <span className="font-medium text-gray-500">Joined</span>
-                            {new Date(entry.assignedAt).toLocaleString("en-GB", {
-                              day: "2-digit", month: "short", year: "numeric",
-                              hour: "2-digit", minute: "2-digit",
-                            })}
+                            {formatStoredSriLankaDateTime(entry.assignedAt)}
                           </p>
                           <p className="flex items-center gap-1.5 text-[11px] text-muted">
                             <Clock size={10} className="text-rose-500" />
                             <span className="font-medium text-rose-500">Removed</span>
-                            {entry.removedAt
-                              ? new Date(entry.removedAt).toLocaleString("en-GB", {
-                                  day: "2-digit", month: "short", year: "numeric",
-                                  hour: "2-digit", minute: "2-digit",
-                                })
-                              : "—"}
+                            {entry.removedAt ? formatStoredSriLankaDateTime(entry.removedAt) : "—"}
                           </p>
                           {entry.removeReason ? (
                             <p className="flex items-start gap-1.5 text-[11px] text-muted">
@@ -2763,6 +2616,79 @@ const isAllSelected =
                 {isRemoving ? "Removing..." : "Remove"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {feeHistoryClass && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
+          onClick={() => setFeeHistoryClass(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-brand-200 bg-white p-6 shadow-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-100 text-teal-700">
+                  <History size={18} />
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Fee history</h2>
+                  <p className="text-xs text-muted">{feeHistoryClass.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeeHistoryClass(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {isFeeHistoryLoading ? (
+              <p className="py-6 text-center text-sm text-muted">Loading history...</p>
+            ) : feeHistory.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No fee history recorded.</p>
+            ) : (
+              <ol className="space-y-2.5">
+                {feeHistory.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className={`rounded-xl border p-3 ${
+                      entry.isCurrent
+                        ? "border-teal-200 bg-teal-50/60"
+                        : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-base font-bold text-slate-900">
+                        Rs. {entry.amount.toLocaleString()}
+                      </span>
+                      {entry.isCurrent ? (
+                        <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          Current
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                          Past
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      From {formatStoredSriLankaDateTime(entry.effectiveFrom)}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {entry.effectiveTo
+                        ? `Until ${formatStoredSriLankaDateTime(entry.effectiveTo)}`
+                        : "Still in effect"}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
         </div>
       )}

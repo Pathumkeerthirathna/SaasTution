@@ -37,6 +37,10 @@ export interface TeacherProfile {
   isVerified: boolean;
   isPublic: boolean;
 
+  isDisplayQualification: boolean;
+  isDisplayAchievements: boolean;
+  isDisplaySubjects: boolean;
+
   profileViewCount: number;
 
   createdAt: string;
@@ -67,6 +71,8 @@ export interface TeacherClass {
   startDate: string | null;
   schedule: string;
   teacherId:string;
+  /** Public profile slug of the class owner, when the teacher has a profile. */
+  teacherSlug?: string | null;
   schedules: TeacherClassSchedule[];
   students: TeacherClassStudent[];
 }

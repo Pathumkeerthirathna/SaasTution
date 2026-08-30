@@ -9,17 +9,22 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import SubjectDrawer from "./subjects/SubjectDrawer";
+import SectionVisibilityToggle from "./SectionVisibilityToggle";
 
 interface Props {
   teacherId:string;
   isPublic?: boolean;
+  sectionVisible?: boolean;
 }
 
 export default function TeacherSubjectsCard({
   teacherId,
-  isPublic
+  isPublic,
+  sectionVisible = true
 }: Props) {
- 
+
+  const [visible, setVisible] = useState(sectionVisible);
+
 
   useEffect(() => {
     setLoading(true);
@@ -151,6 +156,11 @@ export default function TeacherSubjectsCard({
 
   }
 
+  // Hidden from public visitors when the teacher has switched the section off.
+  if (isPublic && !visible) {
+    return null;
+  }
+
   if (loading) {
   return (
     <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -185,6 +195,12 @@ export default function TeacherSubjectsCard({
         </div>
 
         {isPublic ? null : (
+          <div className="flex shrink-0 items-center gap-2">
+          <SectionVisibilityToggle
+            section="subjects"
+            initialVisible={visible}
+            onChange={setVisible}
+          />
           <button
             onClick={openAddDrawer}
             disabled={saving || deleting}
@@ -224,6 +240,7 @@ export default function TeacherSubjectsCard({
                 </>
               )}
             </button>
+          </div>
       )}
       </div>
 

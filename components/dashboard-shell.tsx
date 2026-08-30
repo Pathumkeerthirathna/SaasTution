@@ -12,6 +12,8 @@ import {
   FolderOpen,
   Settings,
   Radio,
+  CircleDollarSign,
+  CalendarDays,
   Shield,
   Menu,
   X,
@@ -187,9 +189,11 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     }
     return [
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/calendar",                      label: "Calendar",           icon: <CalendarDays size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/teacher/profile",               label: "Teacher Profile",    icon: <BadgeInfo size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/classes",                       label: "Classes",            icon: <BookOpen size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/students",                      label: "Students",           icon: <Users size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/classes",                       label: "Classes",            icon: <BookOpen size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/payments",                      label: "Payments",           icon: <CircleDollarSign size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles",              label: "Tutes & Papers",     icon: <FolderOpen size={18} strokeWidth={1.75} /> },
@@ -213,7 +217,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     <div className="flex min-h-screen w-full bg-background-soft text-foreground">
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-gradient-to-b from-[#111726] via-[#0e1420] to-[#0b0f18] text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.06] ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-gradient-to-b from-[#2d68a5] via-[#244f8f] to-[#173d6d] text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.12] ${
           isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-20"
         }`}
       >
@@ -228,14 +232,14 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
         </div>
 
         {/* Logo / Brand */}
-        <div className="relative z-10 flex items-center justify-between border-b border-white/[0.06] px-4 py-4 lg:px-4">
+        <div className="relative z-10 flex items-center justify-between border-b border-white/[0.12] px-4 py-4 lg:px-4">
           <div className={`flex items-center gap-2.5 ${isSidebarOpen ? "" : "lg:justify-center"}`}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white/90">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[#2c5fa0] shadow-sm">
               <GraduationCap size={17} strokeWidth={1.75} />
             </div>
             <div className={isSidebarOpen ? "" : "hidden lg:hidden"}>
               <p className="text-[13px] font-semibold tracking-wide text-white/95">SL Classroom</p>
-              <p className="text-[11px] text-white/45 leading-tight">{role === "ADMIN" ? "Admin Console" : "Teacher Panel"}</p>
+              <p className="text-[11px] text-white/60 leading-tight">{role === "ADMIN" ? "Admin Console" : "Teacher Panel"}</p>
             </div>
           </div>
           <button
@@ -258,10 +262,10 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                 href={item.href}
                 title={!isSidebarOpen ? item.label : undefined}
                 aria-label={item.label}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors duration-150 ${
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-all duration-150 ${
                   isActive
-                    ? "bg-white/[0.07] font-medium text-white"
-                    : "font-normal text-white/55 hover:bg-white/[0.04] hover:text-white/85"
+                    ? "bg-white/15 font-medium text-white shadow-sm ring-1 ring-white/10"
+                    : "font-normal text-white/75 hover:bg-white/[0.08] hover:text-white"
                 } ${isSidebarOpen ? "" : "lg:justify-center lg:px-0"}`}
               >
                 <span className="flex-shrink-0">{item.icon}</span>

@@ -10,16 +10,21 @@ import {
 import { useEffect, useState } from "react";
 import { QualificationForm } from "./qualification/qualification-types";
 import QualificationDrawer from "./qualification/QualificationDrawer";
+import SectionVisibilityToggle from "./SectionVisibilityToggle";
 
 interface Props {
   teacherId:string;
   isPublic?: boolean;
+  sectionVisible?: boolean;
 }
 
 export default function TeacherQualificationCard({
   teacherId,
-  isPublic
+  isPublic,
+  sectionVisible = true
 }:Props) {
+
+  const [visible, setVisible] = useState(sectionVisible);
 
 
   const [qualifications, setQualifications] = useState<
@@ -194,6 +199,10 @@ export default function TeacherQualificationCard({
 
   }
 
+  if (isPublic && !visible) {
+    return null;
+  }
+
   if (loading) {
   return (
     <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -238,13 +247,22 @@ export default function TeacherQualificationCard({
           </p>
         </div>
 
-        {!isPublic && (<button
-          onClick={openAddDrawer}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-emerald-700"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Qualification
-        </button>)}
+        {!isPublic && (
+          <div className="flex shrink-0 items-center gap-2">
+            <SectionVisibilityToggle
+              section="qualification"
+              initialVisible={visible}
+              onChange={setVisible}
+            />
+            <button
+              onClick={openAddDrawer}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-emerald-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Qualification
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Timeline */}

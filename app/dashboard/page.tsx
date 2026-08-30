@@ -124,6 +124,9 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const currentMonthKey = getCurrentMonthKey();
+  const [currentYearNum, currentMonthNum] = currentMonthKey
+    .split("-")
+    .map(Number);
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -203,7 +206,10 @@ export default async function DashboardPage() {
 
     // monthPayments
     prisma.classPayment.findMany({
-      where: { month: currentMonthKey, class: { teacherId: teacher.id } },
+      where: {
+        class: { teacherId: teacher.id },
+        classStudentFee: { year: currentYearNum, month: currentMonthNum },
+      },
       select: { classId: true, studentId: true, amount: true, status: true },
     }),
 

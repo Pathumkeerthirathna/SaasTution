@@ -1,33 +1,25 @@
 import { notFound } from "next/navigation";
 import TeacherProfilePage from "../../../../components/teacherProfile/TeacherProfilePage";
-import { TeacherProfile } from "@/types/teacherProfileTypes/ClassTeacher";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { getTeacherProfile } from "@/services/teacher-profile-service";
-
+import { getTeacherProfileSections } from "@/services/teacher-profile-section-service";
 
 export default async function Page() {
-
-
   const teacherSes = await requireTeacherSession();
 
-  const response =  await getTeacherProfile(teacherSes.teacherId);
-
-    if (!response) {
-      notFound();
-    }
-
-  const teacher: TeacherProfile = await response;
+  const teacher = await getTeacherProfile(teacherSes.teacherId);
 
   if (!teacher) {
     notFound();
   }
 
-  console.log("teacher profile page", teacher);
+  const sections = await getTeacherProfileSections(teacherSes.teacherId);
 
   return (
     <TeacherProfilePage
       teacher={teacher}
       isPublic={false}
+      sectionOrder={sections.map((section) => section.sectionType)}
     />
   );
 }

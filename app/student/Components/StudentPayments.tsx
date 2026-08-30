@@ -1,353 +1,240 @@
 "use client";
 
 import {
-  CreditCard,
-  CheckCircle,
-  Clock3,
-  AlertCircle,
+  CheckCircle2,
+  CircleDashed,
+  Wallet,
+  CalendarClock,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
+import type { PaymentData } from "@/app/dashboard/students/[id]/page";
+import { formatStoredSriLankaDate } from "@/lib/time";
+
 interface StudentPaymentsProps {
   studentId: string;
+  /** When provided by the parent page, the tab renders this instead of fetching. */
+  data?: PaymentData | null;
 }
 
-interface PaymentSummary {
-  confirmed: number;
-  pending: number;
-  clarification: number;
-  totalPaid: number;
+function money(value: number) {
+  return `Rs. ${value.toLocaleString()}`;
 }
 
-interface ClassPayment {
-  classId: string;
-  className: string;
-  monthlyFee: number;
-  paidMonths: number;
-  pendingMonths: number;
-  totalAmount: number;
-}
+const EMPTY_SUMMARY: PaymentData["summary"] = {
+  totalFees: 0,
+  paidCount: 0,
+  unpaidCount: 0,
+  paidAmount: 0,
+  unpaidAmount: 0,
+  totalAmount: 0,
+  paidPercent: 0,
+};
 
-interface PaymentRecord {
-  id: string;
-  month: string;
-  amount: number;
-  status: "CONFIRMED" | "PENDING" | "CLARIFICATION";
-  submittedAt?: string;
-}
+export function StudentPayments({ studentId, data }: StudentPaymentsProps) {
+  const controlled = data !== undefined;
 
-export function StudentPayments({
-  studentId,
-}: StudentPaymentsProps) {
-  const [summary, setSummary] = useState<PaymentSummary | null>(null);
-  const [classes, setClasses] = useState<ClassPayment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [selectedClassId, setSelectedClassId] =
-    useState<string | null>(null);
-
-  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [fetched, setFetched] = useState<PaymentData | null>(null);
+  const [openClassId, setOpenClassId] = useState<string | null>(null);
 
   const loadPayments = useCallback(async () => {
     try {
-      setLoading(true);
-
       const response = await fetch(
         `/api/student/Profile/${studentId}/payments`
       );
-
       const result = await response.json();
 
-      if (result.success) {
-        setSummary(result.data.summary);
-        setClasses(result.data.classes);
-      }
+      setFetched(
+        result.success
+          ? (result.data as PaymentData)
+          : { summary: EMPTY_SUMMARY, classes: [] }
+      );
     } catch (error) {
       console.error(error);
-    } finally {
-      setLoading(false);
+      setFetched({ summary: EMPTY_SUMMARY, classes: [] });
     }
   }, [studentId]);
 
   useEffect(() => {
-    loadPayments();
-  }, [loadPayments]);
+    if (controlled) return;
+    void loadPayments();
+  }, [controlled, loadPayments]);
 
-  async function togglePaymentDetails(
-    classId: string
-  ) {
-    if (selectedClassId === classId) {
-      setSelectedClassId(null);
-      setPayments([]);
-      return;
-    }
-
-    try {
-      setSelectedClassId(classId);
-
-      const response = await fetch(
-        `/api/student/Profile/${studentId}/payments/${classId}`
-      );
-
-      const result = await response.json();
-
-      if (result.success) {
-        setPayments(result.data);
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }
+  const resolved = controlled ? data : fetched;
+  const loading = resolved == null;
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        Loading payments...
+      <div className="animate-pulse space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="h-24 rounded-xl bg-slate-100" />
+          <div className="h-24 rounded-xl bg-slate-100" />
+        </div>
+        <div className="h-32 rounded-xl bg-slate-100" />
       </div>
     );
   }
 
+  const { summary, classes } = resolved;
+
   return (
-    <div className="space-y-5">
-
-      {/* Summary */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <CreditCard className="h-5 w-5 text-blue-600" />
-
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Payments Overview
-              </h2>
-
-              <p className="text-sm text-slate-500">
-                Student payment statistics
-              </p>
-            </div>
+    <div className="space-y-4">
+      {/* Done / Not done totals */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              <CheckCircle2 size={13} />
+              Paid
+            </p>
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+              {summary.paidCount} / {summary.totalFees}
+            </span>
           </div>
+          <p className="mt-2 text-lg font-bold text-emerald-700">
+            {money(summary.paidAmount)}
+          </p>
         </div>
 
-        <div className="grid gap-4 p-5 md:grid-cols-4">
-          <div className="rounded-lg bg-emerald-50 p-4">
-            <p className="text-xs uppercase text-emerald-600">
-              Confirmed
+        <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+              <CircleDashed size={13} />
+              Not paid
             </p>
-
-            <p className="mt-2 text-2xl font-bold text-emerald-700">
-              {summary?.confirmed ?? 0}
-            </p>
+            <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+              {summary.unpaidCount} / {summary.totalFees}
+            </span>
           </div>
-
-          <div className="rounded-lg bg-amber-50 p-4">
-            <p className="text-xs uppercase text-amber-600">
-              Pending
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-amber-700">
-              {summary?.pending ?? 0}
-            </p>
-          </div>
-
-          <div className="rounded-lg bg-red-50 p-4">
-            <p className="text-xs uppercase text-red-600">
-              Clarification
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-red-700">
-              {summary?.clarification ?? 0}
-            </p>
-          </div>
-
-          <div className="rounded-lg bg-blue-50 p-4">
-            <p className="text-xs uppercase text-blue-600">
-              Total Paid
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-blue-700">
-              Rs.{" "}
-              {(summary?.totalPaid ?? 0).toLocaleString()}
-            </p>
-          </div>
+          <p className="mt-2 text-lg font-bold text-rose-700">
+            {money(summary.unpaidAmount)}
+          </p>
         </div>
       </div>
 
-      {/* Classes */}
+      {/* Progress bar */}
+      <div>
+        <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+          <span>
+            {summary.paidPercent}% of {money(summary.totalAmount)} settled
+          </span>
+          <span>{money(summary.totalAmount)}</span>
+        </div>
+        <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-teal-500 transition-all duration-700"
+            style={{ width: `${summary.paidPercent}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Per-class breakdown */}
       {classes.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-          <p className="text-slate-500">
-            No payment records found.
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
+          <Wallet className="mx-auto mb-2 h-8 w-8 text-slate-400" />
+          <h3 className="text-[13px] font-semibold text-slate-900">
+            No fee records
+          </h3>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Monthly fees appear here once the class runs a payment cycle.
           </p>
         </div>
       ) : (
-        classes.map((item) => (
-          <div
-            key={item.classId}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-          >
-            <div className="border-b border-slate-100 px-5 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-900">
-                    {item.className}
-                  </h3>
+        <div className="space-y-2.5">
+          {classes.map((item) => {
+            const open = openClassId === item.classId;
 
-                  <p className="text-sm text-slate-500">
-                    Monthly Fee: Rs.{" "}
-                    {item.monthlyFee.toLocaleString()}
-                  </p>
-                </div>
-
+            return (
+              <div
+                key={item.classId}
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+              >
                 <button
+                  type="button"
                   onClick={() =>
-                    togglePaymentDetails(item.classId)
+                    setOpenClassId(open ? null : item.classId)
                   }
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    selectedClassId === item.classId
-                      ? "bg-slate-200 text-slate-700"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
-                  }`}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                 >
-                  {selectedClassId === item.classId
-                    ? "Hide Details"
-                    : "View Details"}
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold text-slate-900">
+                      {item.className}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Monthly fee {money(item.monthlyFee)}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      {item.paidCount} paid
+                    </span>
+                    {item.unpaidCount > 0 && (
+                      <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                        {item.unpaidCount} due
+                      </span>
+                    )}
+                  </div>
                 </button>
-              </div>
-            </div>
 
-            <div className="grid gap-4 p-5 md:grid-cols-3">
-              <div>
-                <p className="text-xs uppercase text-slate-500">
-                  Paid Months
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-emerald-600">
-                  {item.paidMonths}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase text-slate-500">
-                  Pending Months
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {item.pendingMonths}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase text-slate-500">
-                  Total Amount
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  Rs.{" "}
-                  {item.totalAmount.toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            {selectedClassId === item.classId && (
-              <div className="border-t border-slate-100">
-                <div className="px-5 py-4">
-                  <h4 className="font-semibold text-slate-900">
-                    Payment History
-                  </h4>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-slate-500">
-                          Month
-                        </th>
-
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-slate-500">
-                          Amount
-                        </th>
-
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-slate-500">
-                          Status
-                        </th>
-
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-slate-500">
-                          Submitted
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {payments.map((payment) => (
-                        <tr
-                          key={payment.id}
-                          className="border-t"
-                        >
-                          <td className="px-5 py-4">
-                            {payment.month}
-                          </td>
-
-                          <td className="px-5 py-4">
-                            Rs.{" "}
-                            {payment.amount.toLocaleString()}
-                          </td>
-
-                          <td className="px-5 py-4">
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
-                                payment.status ===
-                                "CONFIRMED"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : payment.status ===
-                                    "PENDING"
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {payment.status ===
-                                "CONFIRMED" && (
-                                <CheckCircle className="h-3 w-3" />
+                {open && (
+                  <div className="border-t border-slate-100">
+                    {item.fees.length === 0 ? (
+                      <p className="px-4 py-3 text-[11px] text-slate-400">
+                        No fee rows for this class yet.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-slate-50">
+                        {item.fees.map((fee) => (
+                          <li
+                            key={fee.id}
+                            className="flex items-center justify-between gap-3 px-4 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-medium text-slate-700">
+                                {fee.monthLabel}
+                              </p>
+                              {fee.dueDate && (
+                                <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400">
+                                  <CalendarClock size={10} />
+                                  Due {formatStoredSriLankaDate(fee.dueDate)}
+                                </p>
                               )}
+                            </div>
 
-                              {payment.status ===
-                                "PENDING" && (
-                                <Clock3 className="h-3 w-3" />
-                              )}
-
-                              {payment.status !==
-                                "CONFIRMED" &&
-                                payment.status !==
-                                  "PENDING" && (
-                                  <AlertCircle className="h-3 w-3" />
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="text-[12px] font-semibold text-slate-900">
+                                {money(fee.finalAmount)}
+                              </span>
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                                  fee.paid
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-rose-100 text-rose-700"
+                                }`}
+                              >
+                                {fee.paid ? (
+                                  <CheckCircle2 size={10} />
+                                ) : (
+                                  <CircleDashed size={10} />
                                 )}
-
-                              {payment.status}
-                            </span>
-                          </td>
-
-                          <td className="px-5 py-4 text-sm text-slate-500">
-                            {payment.submittedAt
-                              ? new Date(
-                                  payment.submittedAt
-                                ).toLocaleDateString()
-                              : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {payments.length === 0 && (
-                    <div className="p-6 text-center text-sm text-slate-500">
-                      No payment history found.
-                    </div>
-                  )}
-                </div>
+                                {fee.paid
+                                  ? "Paid"
+                                  : fee.payment
+                                  ? fee.payment.status
+                                  : "Unpaid"}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))
+            );
+          })}
+        </div>
       )}
     </div>
   );

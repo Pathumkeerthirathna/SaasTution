@@ -11,6 +11,7 @@ import {
   CircleStop,
   Video,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 
 type MeetingCardProps = {
@@ -32,8 +33,11 @@ type MeetingCardProps = {
   onStopRecording?: () => void | Promise<void>;
   onStartLive?: () => void | Promise<void>;
   onStopLive?: () => void | Promise<void>;
+  onReconnectYoutube?: () => void;
   youtubeChannelTitle?: string | null;
   youtubeStatus?: "CONNECTED" | "REAUTH_REQUIRED" | null;
+  /** Set only when a live/recording start actually failed with a reauth error. */
+  youtubeReauthRequired?: boolean;
 
   showHeader?: boolean;
 };
@@ -50,8 +54,10 @@ export default function MeetingCard({
   onStopRecording,
   onStartLive,
   onStopLive,
+  onReconnectYoutube,
   youtubeChannelTitle,
   youtubeStatus,
+  youtubeReauthRequired = false,
   isStartingLive,
   liveStartFailed = false,
   youtubeLiveUrl,
@@ -115,6 +121,17 @@ export default function MeetingCard({
     }
   };
 
+  const handleReconnectYoutube = () => {
+    if (onReconnectYoutube) {
+      onReconnectYoutube();
+      return;
+    }
+
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.href =
+      `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
+  };
+
   const handleStopLive = async () => {
     if (isStartingLive || isStoppingLive) return;
     setIsStoppingLive(true);
@@ -156,6 +173,18 @@ export default function MeetingCard({
 
           {role === "teacher" && (
             <div className="flex items-center gap-2">
+
+             {youtubeReauthRequired && !isLive && !isRecording ? (
+                <button
+                  type="button"
+                  onClick={handleReconnectYoutube}
+                  className="flex items-center gap-2 rounded-full bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25"
+                >
+                  <RotateCcw size={16} />
+                  Reconnect YouTube
+                </button>
+             ) : (
+              <>
 
              {!isRecording && (
                 <button
@@ -243,6 +272,9 @@ export default function MeetingCard({
                     : "Stop Live"}
                 </button>
               )}
+
+              </>
+             )}
 
               {/* LIVE */}
               {isLive && (
@@ -455,27 +487,20 @@ export default function MeetingCard({
                     {youtubeChannelTitle}
                   </span>
 
-                  {youtubeStatus === "CONNECTED" && (
+                  {youtubeReauthRequired ? (
+                    <button
+                      type="button"
+                      onClick={handleReconnectYoutube}
+                      className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25"
+                    >
+                      <RotateCcw size={11} />
+                      Reconnect
+                    </button>
+                  ) : (
                     <span className="flex items-center gap-1 text-[11px] font-medium text-[#22C55E]">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
                       Connected
                     </span>
-                  )}
-
-                  {youtubeStatus === "REAUTH_REQUIRED" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const returnTo =
-                          `${window.location.pathname}${window.location.search}`;
-
-                        window.location.href =
-                          `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
-                      }}
-                      className="text-[11px] font-semibold text-red-400 transition hover:text-red-300"
-                    >
-                      Reconnect
-                    </button>
                   )}
                 </div>
               </div>

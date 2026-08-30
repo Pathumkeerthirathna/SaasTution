@@ -133,6 +133,43 @@ export async function listMaterialBundlesForTeacher(params: {
   };
 }
 
+/**
+ * Students active in a class during a given month — used by the create-bundle
+ * flow so the teacher can pick recipients before the bundle exists.
+ */
+export async function listActiveClassStudentsForMonthForTeacher(params: {
+  teacherId: string;
+  classId: string;
+  year: number;
+  month: number;
+}) {
+  await assertTeacherOwnsClass(params.teacherId, params.classId);
+
+  const monthStart = new Date(params.year, params.month - 1, 1);
+  const monthEnd = new Date(params.year, params.month, 0, 23, 59, 59, 999);
+
+  const rows = await prisma.classStudent.findMany({
+    where: {
+      classId: params.classId,
+      assignedAt: { lte: monthEnd },
+      OR: [{ removedAt: null }, { removedAt: { gte: monthStart } }],
+    },
+    orderBy: { student: { name: "asc" } },
+    select: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          registrationNumber: true,
+        },
+      },
+    },
+  });
+
+  const unique = new Map(rows.map((r) => [r.student.id, r.student]));
+  return [...unique.values()];
+}
+
 export async function createMaterialBundleForTeacher(teacherId: string, input: CreateMaterialBundleInput) {
   await assertTeacherOwnsClass(teacherId, input.classId);
 
@@ -216,18 +253,6 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
         select: {
           id: true,
           name: true,
-          students: {
-            where: { isActive: true },
-            select: {
-              student: {
-                select: {
-                  id: true,
-                  name: true,
-                  registrationNumber: true,
-                },
-              },
-            },
-          },
         },
       },
       items: {
@@ -265,6 +290,34 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
     throw new AppError("Bundle not found.", 404, "BUNDLE_NOT_FOUND");
   }
 
+  // Students who were active in this class during the bundle's month: assigned
+  // on or before the month ends and not removed before the month begins.
+  const monthStart = new Date(bundle.year, bundle.month - 1, 1);
+  const monthEnd = new Date(bundle.year, bundle.month, 0, 23, 59, 59, 999);
+
+  const classStudents = await prisma.classStudent.findMany({
+    where: {
+      classId: bundle.classId,
+      assignedAt: { lte: monthEnd },
+      OR: [{ removedAt: null }, { removedAt: { gte: monthStart } }],
+    },
+    orderBy: { student: { name: "asc" } },
+    select: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          registrationNumber: true,
+        },
+      },
+    },
+  });
+
+  // De-duplicate in case a student has multiple enrolment rows in the window.
+  const uniqueStudents = new Map(
+    classStudents.map((entry) => [entry.student.id, entry.student])
+  );
+
   const recipientsMap = new Map(
     bundle.recipients.map((r) => [
       r.studentId,
@@ -275,8 +328,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
     ])
   );
 
-  const students = bundle.class.students.map((entry) => {
-    const student = entry.student;
+  const students = [...uniqueStudents.values()].map((student) => {
     const recipientState = recipientsMap.get(student.id);
     const willReceive = recipientState?.willReceive ?? false;
 
@@ -407,40 +459,52 @@ export async function saveMaterialBundleRecipientsForTeacher(
   bundleId: string,
   input: SaveMaterialBundleRecipientsInput
 ) {
-  const bundle = await assertTeacherOwnsBundle(teacherId, bundleId);
+  await assertTeacherOwnsBundle(teacherId, bundleId);
 
-  const classStudents = await prisma.classStudent.findMany({
+  const bundle = await prisma.materialBundle.findUniqueOrThrow({
+    where: { id: bundleId },
+    select: { classId: true, year: true, month: true },
+  });
+
+  const monthStart = new Date(bundle.year, bundle.month - 1, 1);
+  const monthEnd = new Date(bundle.year, bundle.month, 0, 23, 59, 59, 999);
+
+  const classStudentRows = await prisma.classStudent.findMany({
     where: {
       classId: bundle.classId,
-      isActive: true,
+      assignedAt: { lte: monthEnd },
+      OR: [{ removedAt: null }, { removedAt: { gte: monthStart } }],
     },
     select: {
       studentId: true,
     },
   });
 
-  const classStudentIds = new Set(classStudents.map((s) => s.studentId));
+  const classStudentIds = [
+    ...new Set(classStudentRows.map((s) => s.studentId)),
+  ];
+  const classStudentIdSet = new Set(classStudentIds);
 
   for (const id of input.selectedStudentIds) {
-    if (!classStudentIds.has(id)) {
-      throw new AppError("One or more selected students are not in this class.", 400, "VALIDATION_ERROR");
+    if (!classStudentIdSet.has(id)) {
+      throw new AppError("One or more selected students are not in this class for this month.", 400, "VALIDATION_ERROR");
     }
   }
 
   await prisma.$transaction(async (tx) => {
-    for (const classStudent of classStudents) {
-      const willReceive = input.selectedStudentIds.includes(classStudent.studentId);
+    for (const studentId of classStudentIds) {
+      const willReceive = input.selectedStudentIds.includes(studentId);
 
       await tx.materialBundleRecipient.upsert({
         where: {
           bundleId_studentId: {
             bundleId,
-            studentId: classStudent.studentId,
+            studentId,
           },
         },
         create: {
           bundleId,
-          studentId: classStudent.studentId,
+          studentId,
           willReceive,
           receivedAt: null,
         },

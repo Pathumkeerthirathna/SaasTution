@@ -136,6 +136,32 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
   };
 }
 
+/**
+ * Start a fresh live session for a lecture. Looks up the lecture's class,
+ * verifies ownership, then delegates to the standard session-start flow (which
+ * also ends any currently-active session for that class).
+ */
+export async function startSessionForLectureForTeacher(teacherId: string, lectureId: string) {
+  const lecture = await prisma.lecture.findFirst({
+    where: {
+      id: lectureId,
+      class: {
+        teacherId,
+      },
+    },
+    select: {
+      id: true,
+      classId: true,
+    },
+  });
+
+  if (!lecture) {
+    throw new AppError("Lecture not found.", 404, "LECTURE_NOT_FOUND");
+  }
+
+  return startClassSessionForTeacher(teacherId, lecture.classId, lecture.id);
+}
+
 export async function restartClassSessionForTeacher(teacherId: string, sessionId: string) {
   const sourceSession = await prisma.classSession.findFirst({
     where: {

@@ -2,7 +2,10 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { updateGuardianSchema } from "@/lib/guardian-validation";
-import { updateGuardianForTeacher } from "@/services/student-service";
+import {
+  deleteGuardianForTeacher,
+  updateGuardianForTeacher,
+} from "@/services/student-service";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +46,26 @@ export async function PUT(
         message: "Guardian updated successfully.",
       }
     );
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: { id: string } }
+) {
+  try {
+    const session = await requireTeacherSession();
+    const guardianId = context.params.id;
+
+    if (!guardianId?.trim()) {
+      throw new AppError("Guardian id is required.", 400, "VALIDATION_ERROR");
+    }
+
+    const result = await deleteGuardianForTeacher(session.teacherId, guardianId);
+
+    return apiSuccess(result, { message: "Guardian removed." });
   } catch (error) {
     return handleRouteError(error);
   }

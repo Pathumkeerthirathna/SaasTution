@@ -249,11 +249,14 @@ export async function GET(request: NextRequest) {
             channelId,
             channelTitle,
             refreshTokenEncrypted,
+            status: "CONNECTED",
         },
         update: {
             channelId,
             channelTitle,
             refreshTokenEncrypted,
+            // A fresh refresh token clears any prior reauth requirement.
+            status: "CONNECTED",
         },
     });
 

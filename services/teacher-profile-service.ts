@@ -49,6 +49,10 @@ export async function getTeacherProfile(
     isVerified: true,
     isPublic: true,
 
+    isDisplayQualification: true,
+    isDisplayAchievements: true,
+    isDisplaySubjects: true,
+
     profileViewCount: true,
 
     createdAt: true,
@@ -226,6 +230,10 @@ export async function getTeacherProfile(
     isVerified: profile.isVerified,
     isPublic: profile.isPublic,
 
+    isDisplayQualification: profile.isDisplayQualification,
+    isDisplayAchievements: profile.isDisplayAchievements,
+    isDisplaySubjects: profile.isDisplaySubjects,
+
     profileViewCount: profile.profileViewCount,
 
     createdAt: profile.createdAt.toISOString(),
@@ -282,6 +290,10 @@ export async function GetTeacherPublicProfileBySlug(
 
     isVerified: true,
     isPublic: true,
+
+    isDisplayQualification: true,
+    isDisplayAchievements: true,
+    isDisplaySubjects: true,
 
     profileViewCount: true,
 
@@ -442,6 +454,10 @@ export async function GetTeacherPublicProfileBySlug(
 
     isVerified: profile.isVerified,
     isPublic: profile.isPublic,
+
+    isDisplayQualification: profile.isDisplayQualification,
+    isDisplayAchievements: profile.isDisplayAchievements,
+    isDisplaySubjects: profile.isDisplaySubjects,
 
     profileViewCount: profile.profileViewCount,
 
@@ -1502,6 +1518,64 @@ export async function updateAboutMe(
       aboutMe: true,
     },
   });
+}
+
+export type ProfileSection = "qualification" | "achievements" | "subjects";
+
+export type SectionVisibility = {
+  isDisplayQualification: boolean;
+  isDisplayAchievements: boolean;
+  isDisplaySubjects: boolean;
+};
+
+const SECTION_COLUMN: Record<ProfileSection, keyof SectionVisibility> = {
+  qualification: "isDisplayQualification",
+  achievements: "isDisplayAchievements",
+  subjects: "isDisplaySubjects",
+};
+
+export async function getSectionVisibility(
+  teacherId: string
+): Promise<SectionVisibility> {
+  const profile = await prisma.teacherProfile.findUnique({
+    where: { teacherId },
+    select: {
+      isDisplayQualification: true,
+      isDisplayAchievements: true,
+      isDisplaySubjects: true,
+    },
+  });
+
+  // Default everything to visible when a profile row does not exist yet.
+  return {
+    isDisplayQualification: profile?.isDisplayQualification ?? true,
+    isDisplayAchievements: profile?.isDisplayAchievements ?? true,
+    isDisplaySubjects: profile?.isDisplaySubjects ?? true,
+  };
+}
+
+export async function updateSectionVisibility(
+  teacherId: string,
+  section: ProfileSection,
+  visible: boolean
+): Promise<SectionVisibility> {
+  const column = SECTION_COLUMN[section];
+
+  if (!column) {
+    throw new Error("Unknown profile section.");
+  }
+
+  const updated = await prisma.teacherProfile.update({
+    where: { teacherId },
+    data: { [column]: visible },
+    select: {
+      isDisplayQualification: true,
+      isDisplayAchievements: true,
+      isDisplaySubjects: true,
+    },
+  });
+
+  return updated;
 }
 
 export async function getSocialLinks(

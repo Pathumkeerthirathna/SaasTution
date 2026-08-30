@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { startYouTubeLecture } from "@/lib/youtube-lecture";
+import { YouTubeReauthorizationRequiredError } from "@/lib/youtube-auth";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: NextRequest) {
     try {
@@ -53,6 +55,32 @@ export async function POST(request: NextRequest) {
             "Start YouTube lecture failed:",
             error
         );
+
+        // YouTube authorization expired / revoked → the teacher must reconnect.
+        if (error instanceof YouTubeReauthorizationRequiredError) {
+            try {
+                const teacherSession = await requireTeacherSession();
+
+                await prisma.youTubeConnection.updateMany({
+                    where: { teacherId: teacherSession.teacherId },
+                    data: { status: "REAUTH_REQUIRED" },
+                });
+            } catch (statusError) {
+                console.error(
+                    "Failed to mark YouTube connection as REAUTH_REQUIRED:",
+                    statusError
+                );
+            }
+
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "Your YouTube connection needs to be renewed.",
+                    code: "YOUTUBE_REAUTH_REQUIRED",
+                },
+                { status: 401 }
+            );
+        }
 
         const message =
             error instanceof Error

@@ -1,8 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   Calendar,
+  CalendarClock,
+  CalendarPlus,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -14,6 +18,7 @@ import {
   FileText,
   Filter,
   GraduationCap,
+  MonitorPlay,
   Play,
   Plus,
   Radio,
@@ -21,6 +26,9 @@ import {
   Search,
   SquarePen,
   Trash2,
+  UserCheck,
+  UserX,
+  Users,
   Video,
   X,
 } from "lucide-react";
@@ -85,6 +93,38 @@ type LiveBroadcastItem = {
 type PlayableVideo = {
   id: string;
   videoId: string;
+};
+
+type LectureSessionItem = {
+  id: string;
+  roomName: string;
+  jitsiDomain: string;
+  startedAt: string;
+  endedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  _count: {
+    attendance: number;
+  };
+};
+
+type SessionAttendanceLog = {
+  id: string;
+  joinedAt: string;
+  leftAt: string | null;
+};
+
+type SessionAttendanceStudent = {
+  id: string;
+  name: string;
+};
+
+type SessionAttendanceData = {
+  present: {
+    student: SessionAttendanceStudent;
+    logs: SessionAttendanceLog[];
+  }[];
+  absent: SessionAttendanceStudent[];
 };
 
 const PRIVACY_OPTIONS: { value: "public" | "unlisted" | "private"; label: string }[] = [
@@ -213,6 +253,47 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+type PeriodMode = "all" | "period" | "quick" | "custom";
+
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const QUICK_RANGE_OPTIONS = DATE_PRESET_OPTIONS.filter(
+  (option) => option.value !== "all" && option.value !== "custom"
+);
+
+function filterTileClass(active: boolean) {
+  return `rounded-md px-2 py-1 text-[11px] font-semibold leading-5 transition ${
+    active
+      ? "bg-brand-700 text-white shadow-sm"
+      : "bg-white text-slate-600 hover:bg-brand-50"
+  }`;
+}
+
+function quickPillClass(active: boolean) {
+  return `rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+    active
+      ? "border-brand-700 bg-brand-700 text-white"
+      : "border-slate-200 bg-white text-slate-600 hover:border-brand-200 hover:bg-brand-50"
+  }`;
+}
+
+function yearRange(year: number) {
+  return {
+    from: startOfDay(new Date(year, 0, 1)),
+    to: endOfDay(new Date(year, 11, 31)),
+  };
+}
+
+function monthRange(year: number, month: number) {
+  return {
+    from: startOfDay(new Date(year, month - 1, 1)),
+    to: endOfDay(new Date(year, month, 0)),
+  };
+}
+
 function computeDatePresetRange(preset: DatePreset): { from?: Date; to?: Date } {
   const now = new Date();
 
@@ -320,6 +401,11 @@ export function LectureManagementPanel() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("period");
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number | null>(
+    new Date().getMonth() + 1
+  );
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [statusMenuLectureId, setStatusMenuLectureId] = useState<string | null>(null);
@@ -335,6 +421,22 @@ export function LectureManagementPanel() {
   const [loadingLivesFor, setLoadingLivesFor] = useState<Set<string>>(new Set());
   const [updatingPrivacyFor, setUpdatingPrivacyFor] = useState<Set<string>>(new Set());
   const [updatingRecordingFor, setUpdatingRecordingFor] = useState<Set<string>>(new Set());
+
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
+  const [sessionsByLecture, setSessionsByLecture] = useState<Record<string, LectureSessionItem[]>>({});
+  const [loadingSessionsFor, setLoadingSessionsFor] = useState<Set<string>>(new Set());
+  const [creatingSessionFor, setCreatingSessionFor] = useState<Set<string>>(new Set());
+  const [endingSessionFor, setEndingSessionFor] = useState<Set<string>>(new Set());
+  const [endSessionConfirm, setEndSessionConfirm] = useState<
+    { sessionId: string; lectureId: string; roomName: string } | null
+  >(null);
+  const [attendancePopoverSessionId, setAttendancePopoverSessionId] = useState<string | null>(null);
+  const [attendanceBySession, setAttendanceBySession] = useState<Record<string, SessionAttendanceData>>({});
+  const [loadingAttendanceFor, setLoadingAttendanceFor] = useState<Set<string>>(new Set());
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
   const loadClasses = useCallback(async () => {
     const response = await fetch(`/api/classes?page=1&pageSize=${OPTION_PAGE_SIZE}`);
@@ -410,24 +512,163 @@ export function LectureManagementPanel() {
     }
   }, []);
 
+  function runLoad(nextRange: { from?: Date; to?: Date }, nextClassId = filterClassId) {
+    setDateRange(nextRange);
+    void loadLectures(
+      1,
+      nextClassId,
+      appliedSearch,
+      nextRange.from,
+      nextRange.to,
+      pageSize,
+      sortOrder
+    );
+  }
+
+  function selectFilterClass(value: string) {
+    setFilterClassId(value);
+    runLoad(dateRange, value);
+  }
+
+  function selectFilterYear(year: number) {
+    setFilterYear(year);
+    setPeriodMode("period");
+    setDatePreset("all");
+    runLoad(filterMonth ? monthRange(year, filterMonth) : yearRange(year));
+  }
+
+  function selectFilterMonth(month: number) {
+    setFilterMonth(month);
+    setPeriodMode("period");
+    setDatePreset("all");
+    runLoad(monthRange(filterYear, month));
+  }
+
+  function selectQuickRange(preset: DatePreset) {
+    setDatePreset(preset);
+    setPeriodMode("quick");
+    setFilterMonth(null);
+    runLoad(computeDatePresetRange(preset));
+  }
+
+  function clearPeriodFilter() {
+    setPeriodMode("all");
+    setDatePreset("all");
+    setFilterMonth(null);
+    runLoad({});
+  }
+
   useEffect(() => {
     async function bootstrap() {
+      let firstClassId = "";
+
       try {
         const classList = await loadClasses();
         setClasses(classList);
 
         if (classList.length > 0) {
+          firstClassId = classList[0].id;
           setCreateLectureForm((prev) => ({ ...prev, classId: classList[0].id }));
+          setFilterClassId(firstClassId);
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load class options.");
       }
 
-      await loadLectures(1, "");
+      // The deep-link effect handles loading when focusing a single lecture.
+      if (!searchParams.get("focusLectureId")) {
+        const now = new Date();
+        const range = monthRange(now.getFullYear(), now.getMonth() + 1);
+        setDateRange(range);
+        await loadLectures(
+          1,
+          firstClassId,
+          "",
+          range.from,
+          range.to,
+          pageSize,
+          sortOrder
+        );
+      }
     }
 
     void bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadClasses, loadLectures]);
+
+  // Deep links from the calendar.
+  const consumedDeepLink = useRef(false);
+
+  // Focus a single lecture: ?focusLectureId=<id>
+  const [focusLectureId, setFocusLectureId] = useState<string | null>(null);
+
+  async function loadFocusLecture(lectureId: string) {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setFocusLectureId(lectureId);
+
+    try {
+      const response = await fetch(
+        `/api/lectures?lectureId=${lectureId}&page=1&pageSize=1`
+      );
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: LectureItem[];
+      };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to load lecture."));
+      }
+
+      setLectures(payload.data ?? []);
+      setPage(1);
+      setTotalPages(1);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load lecture."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function clearFocusLecture() {
+    setFocusLectureId(null);
+    void loadLectures(1, filterClassId, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder);
+  }
+
+  useEffect(() => {
+    if (consumedDeepLink.current) return;
+
+    const focusId = searchParams.get("focusLectureId");
+    if (focusId) {
+      consumedDeepLink.current = true;
+      void loadFocusLecture(focusId);
+      router.replace(pathname);
+      return;
+    }
+
+    // ?addLecture=1&classId=...&date=YYYY-MM-DDTHH:MM
+    if (searchParams.get("addLecture") !== "1") return;
+    if (classes.length === 0) return;
+
+    consumedDeepLink.current = true;
+
+    const requestedClassId = searchParams.get("classId") ?? "";
+    const requestedDate = searchParams.get("date") ?? "";
+
+    setCreateLectureForm({
+      classId: classes.some((item) => item.id === requestedClassId)
+        ? requestedClassId
+        : classes[0]?.id ?? "",
+      title: "",
+      date: requestedDate,
+    });
+    setIsAddLecturePanelOpen(true);
+
+    router.replace(pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classes, searchParams, router, pathname]);
 
   async function withSubmitState(action: () => Promise<void>) {
     setIsSubmitting(true);
@@ -784,6 +1025,174 @@ export function LectureManagementPanel() {
     }
   }
 
+  async function loadSessionsForLecture(lectureId: string) {
+    setLoadingSessionsFor((prev) => new Set(prev).add(lectureId));
+
+    try {
+      const response = await fetch(`/api/lectures/${lectureId}/sessions`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as { success: boolean; data?: LectureSessionItem[] };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to load sessions."));
+      }
+
+      setSessionsByLecture((prev) => ({ ...prev, [lectureId]: payload.data ?? [] }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load sessions.");
+    } finally {
+      setLoadingSessionsFor((prev) => {
+        const next = new Set(prev);
+        next.delete(lectureId);
+        return next;
+      });
+    }
+  }
+
+  function toggleSessions(lectureId: string) {
+    setExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(lectureId)) {
+        next.delete(lectureId);
+      } else {
+        next.add(lectureId);
+
+        if (!sessionsByLecture[lectureId]) {
+          void loadSessionsForLecture(lectureId);
+        }
+      }
+
+      return next;
+    });
+  }
+
+  async function handleCreateSession(lectureId: string) {
+    setCreatingSessionFor((prev) => new Set(prev).add(lectureId));
+
+    try {
+      const response = await fetch(`/api/lectures/${lectureId}/sessions`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { success: boolean };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to create session."));
+      }
+
+      toast.success("New session created for this lecture.");
+      await loadSessionsForLecture(lectureId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create session.");
+    } finally {
+      setCreatingSessionFor((prev) => {
+        const next = new Set(prev);
+        next.delete(lectureId);
+        return next;
+      });
+    }
+  }
+
+  function handleJoinSession(sessionId: string) {
+    window.open(
+      `/session/join?sessionId=${sessionId}&role=teacher`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  async function handleEndSession(sessionId: string, lectureId: string) {
+    setEndSessionConfirm(null);
+    setEndingSessionFor((prev) => new Set(prev).add(sessionId));
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/end`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { success: boolean };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to end session."));
+      }
+
+      toast.success("Live session ended.");
+      await loadSessionsForLecture(lectureId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to end session.");
+    } finally {
+      setEndingSessionFor((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+    }
+  }
+
+  async function loadAttendanceForSession(sessionId: string) {
+    setLoadingAttendanceFor((prev) => new Set(prev).add(sessionId));
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/attendance`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: {
+          joinedStudents: { student: SessionAttendanceStudent; logs: SessionAttendanceLog[] }[];
+          notJoinedStudents: SessionAttendanceStudent[];
+        };
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(readApiError(payload, "Failed to load attendance."));
+      }
+
+      setAttendanceBySession((prev) => ({
+        ...prev,
+        [sessionId]: {
+          present: payload.data!.joinedStudents.map((entry) => ({
+            student: entry.student,
+            logs: entry.logs,
+          })),
+          absent: payload.data!.notJoinedStudents,
+        },
+      }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load attendance.");
+    } finally {
+      setLoadingAttendanceFor((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+    }
+  }
+
+  function toggleAttendancePopover(sessionId: string) {
+    setAttendancePopoverSessionId((prev) => {
+      if (prev === sessionId) {
+        return null;
+      }
+
+      if (!attendanceBySession[sessionId]) {
+        void loadAttendanceForSession(sessionId);
+      }
+
+      return sessionId;
+    });
+  }
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [
+    currentYear - 3,
+    currentYear - 2,
+    currentYear - 1,
+    currentYear,
+    currentYear + 1,
+    currentYear + 2,
+  ];
+
   return (
     <section className="space-y-4">
       <article className="relative space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -818,10 +1227,153 @@ export function LectureManagementPanel() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1.4fr_0.9fr_0.9fr_auto]">
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+
+          {/* Class · Year · Month tile pickers */}
+          <div className="grid gap-2.5 lg:grid-cols-[1.2fr_0.8fr_1.5fr]">
+            <div>
+              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <GraduationCap size={11} />
+                Class
+              </p>
+              <div className="scrollbar-thin max-h-[120px] space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => selectFilterClass("")}
+                  className={`${filterTileClass(filterClassId === "")} block w-full shrink-0 text-left`}
+                >
+                  All classes
+                </button>
+                {classes.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    title={item.name}
+                    onClick={() => selectFilterClass(item.id)}
+                    className={`${filterTileClass(filterClassId === item.id)} block w-full shrink-0 truncate text-left`}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <Calendar size={11} />
+                Year
+              </p>
+              <div className="grid grid-cols-2 gap-1 rounded-md border border-slate-200 bg-white p-1">
+                {yearOptions.map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => selectFilterYear(year)}
+                    className={filterTileClass(periodMode === "period" && filterYear === year)}
+                  >
+                    {year}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <CalendarClock size={11} />
+                Month
+              </p>
+              <div className="grid grid-cols-6 gap-1 rounded-md border border-slate-200 bg-white p-1">
+                {MONTH_LABELS.map((label, index) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => selectFilterMonth(index + 1)}
+                    className={filterTileClass(periodMode === "period" && filterMonth === index + 1)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick ranges */}
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Quick range
+            </p>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={clearPeriodFilter}
+                className={quickPillClass(periodMode === "all")}
+              >
+                All dates
+              </button>
+              {QUICK_RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectQuickRange(option.value)}
+                  className={quickPillClass(periodMode === "quick" && datePreset === option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodMode("custom");
+                  setDatePreset("custom");
+                  setFilterMonth(null);
+                }}
+                className={quickPillClass(periodMode === "custom")}
+              >
+                Custom range
+              </button>
+            </div>
+          </div>
+
+          {periodMode === "custom" ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <div className="relative">
+                <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(event) => setCustomFrom(event.target.value)}
+                  className="control-input h-8 pl-8 text-xs"
+                />
+              </div>
+              <div className="relative">
+                <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(event) => setCustomTo(event.target.value)}
+                  className="control-input h-8 pl-8 text-xs"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  runLoad({
+                    from: customFrom ? startOfDay(new Date(customFrom)) : undefined,
+                    to: customTo ? endOfDay(new Date(customTo)) : undefined,
+                  })
+                }
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-blue-600"
+              >
+                <Filter size={12} />
+                Apply range
+              </button>
+            </div>
+          ) : null}
+
+          {/* Search */}
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[1fr_auto]">
             <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
@@ -833,99 +1385,21 @@ export function LectureManagementPanel() {
                   }
                 }}
                 placeholder="Search lectures... (press Enter)"
-                className="control-input h-9 pl-9 text-sm"
+                className="control-input h-8 pl-7 text-xs"
               />
-            </div>
-            <div className="relative">
-              <GraduationCap size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <select
-                value={filterClassId}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setFilterClassId(value);
-                  void loadLectures(1, value, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder);
-                }}
-                className="control-select h-9 w-full appearance-none pl-9 pr-8 text-sm"
-              >
-                <option value="">All classes</option>
-                {classes.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="relative">
-              <Calendar size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <select
-                value={datePreset}
-                onChange={(event) => {
-                  const preset = event.target.value as DatePreset;
-                  setDatePreset(preset);
-
-                  if (preset === "custom") {
-                    return;
-                  }
-
-                  const range = computeDatePresetRange(preset);
-                  setDateRange(range);
-                  void loadLectures(1, filterClassId, appliedSearch, range.from, range.to, pageSize, sortOrder);
-                }}
-                className="control-select h-9 w-full appearance-none pl-9 pr-8 text-sm"
-              >
-                {DATE_PRESET_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
             </div>
             <button
               type="button"
               onClick={() => {
-                const range =
-                  datePreset === "custom"
-                    ? {
-                        from: customFrom ? startOfDay(new Date(customFrom)) : undefined,
-                        to: customTo ? endOfDay(new Date(customTo)) : undefined,
-                      }
-                    : computeDatePresetRange(datePreset);
-
-                setDateRange(range);
                 setAppliedSearch(searchText);
-                void loadLectures(1, filterClassId, searchText, range.from, range.to, pageSize, sortOrder);
+                void loadLectures(1, filterClassId, searchText, dateRange.from, dateRange.to, pageSize, sortOrder);
               }}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
-              <Filter size={13} />
+              <Filter size={11} />
               Apply
             </button>
           </div>
-
-          {datePreset === "custom" ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="relative">
-                <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(event) => setCustomFrom(event.target.value)}
-                  className="control-input h-9 pl-8 text-sm"
-                />
-              </div>
-              <div className="relative">
-                <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(event) => setCustomTo(event.target.value)}
-                  className="control-input h-9 pl-8 text-sm"
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -956,6 +1430,21 @@ export function LectureManagementPanel() {
           </p>
         ) : null}
 
+        {focusLectureId ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
+            <p className="text-xs font-semibold text-brand-700">
+              Showing 1 lecture opened from the calendar
+            </p>
+            <button
+              type="button"
+              onClick={clearFocusLecture}
+              className="rounded-md border border-brand-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-100"
+            >
+              Show all lectures
+            </button>
+          </div>
+        ) : null}
+
         {isLoading ? (
           <div className="space-y-2.5">
             {Array.from({ length: pageSize }).map((_, index) => (
@@ -972,9 +1461,17 @@ export function LectureManagementPanel() {
         <div className="space-y-2.5">
           {lectures.map((lecture) => {
             const statusMeta = CLASS_STATUS_META[lecture.classStatus];
+            const isFocused = lecture.id === focusLectureId;
 
             return (
-              <div key={lecture.id} className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-brand-200">
+              <div
+                key={lecture.id}
+                className={`rounded-lg border bg-white p-3.5 shadow-sm transition ${
+                  isFocused
+                    ? "border-brand-500 ring-2 ring-brand-200"
+                    : "border-slate-200 hover:border-brand-200"
+                }`}
+              >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex gap-3">
                     <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
@@ -1096,6 +1593,18 @@ export function LectureManagementPanel() {
                       >
                         <Radio size={11} />
                         Live Streams
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSessions(lecture.id)}
+                        className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition ${
+                          expandedSessionIds.has(lecture.id)
+                            ? "border-brand-700 bg-brand-700 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <CalendarClock size={11} />
+                        Sessions
                       </button>
                       <button
                         type="button"
@@ -1281,6 +1790,199 @@ export function LectureManagementPanel() {
                   </div>
                 ) : null}
 
+                {expandedSessionIds.has(lecture.id) ? (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <CalendarClock size={12} />
+                        Live Sessions
+                      </p>
+                      <button
+                        type="button"
+                        disabled={creatingSessionFor.has(lecture.id)}
+                        onClick={() => void handleCreateSession(lecture.id)}
+                        className="inline-flex h-7 items-center gap-1 rounded-md bg-brand-700 px-2 text-[11px] font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <CalendarPlus size={11} />
+                        {creatingSessionFor.has(lecture.id) ? "Creating..." : "New session"}
+                      </button>
+                    </div>
+
+                    {loadingSessionsFor.has(lecture.id) ? (
+                      <p className="mt-2 text-xs text-muted">Loading sessions...</p>
+                    ) : (sessionsByLecture[lecture.id]?.length ?? 0) === 0 ? (
+                      <p className="mt-2 text-xs text-muted">No live sessions run for this lecture yet.</p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5">
+                        {(sessionsByLecture[lecture.id] ?? []).map((sessionItem) => {
+                          const attendance = attendanceBySession[sessionItem.id];
+                          const isPopoverOpen = attendancePopoverSessionId === sessionItem.id;
+
+                          return (
+                            <div
+                              key={sessionItem.id}
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5"
+                            >
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                                    <MonitorPlay size={20} />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="flex items-center gap-1 text-[11px] font-semibold text-slate-700">
+                                      <Calendar size={10} />
+                                      Started {new Date(sessionItem.startedAt).toLocaleString()}
+                                    </p>
+                                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
+                                      <Clock3 size={10} />
+                                      {sessionItem.endedAt
+                                        ? `Ended ${new Date(sessionItem.endedAt).toLocaleString()}`
+                                        : "In progress"}
+                                    </p>
+                                    <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+                                      Room {sessionItem.roomName}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                  {sessionItem.isActive ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleJoinSession(sessionItem.id)}
+                                        className="inline-flex h-7 items-center gap-1 rounded-md bg-brand-700 px-2 text-[11px] font-semibold text-white transition hover:bg-brand-600"
+                                      >
+                                        <Video size={11} />
+                                        Join
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setEndSessionConfirm({
+                                            sessionId: sessionItem.id,
+                                            lectureId: lecture.id,
+                                            roomName: sessionItem.roomName,
+                                          })
+                                        }
+                                        disabled={endingSessionFor.has(sessionItem.id)}
+                                        className="inline-flex h-7 items-center gap-1 rounded-md border border-red-300 px-2 text-[11px] font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        <X size={11} />
+                                        {endingSessionFor.has(sessionItem.id) ? "Ending..." : "End session"}
+                                      </button>
+                                    </>
+                                  ) : null}
+
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      sessionItem.isActive
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : "bg-slate-200 text-slate-600"
+                                    }`}
+                                  >
+                                    {sessionItem.isActive ? "Live" : "Ended"}
+                                  </span>
+
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleAttendancePopover(sessionItem.id)}
+                                      className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition ${
+                                        isPopoverOpen
+                                          ? "border-brand-700 bg-brand-700 text-white"
+                                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      <Users size={11} />
+                                      Attendance {sessionItem._count.attendance}
+                                    </button>
+
+                                    {isPopoverOpen ? (
+                                      <>
+                                        <div
+                                          className="fixed inset-0 z-40"
+                                          onClick={() => setAttendancePopoverSessionId(null)}
+                                        />
+                                        <div className="absolute right-0 top-full z-50 mt-1 max-h-80 w-72 overflow-y-auto scrollbar-thin rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+                                          {loadingAttendanceFor.has(sessionItem.id) || !attendance ? (
+                                            <p className="text-xs text-muted">Loading attendance...</p>
+                                          ) : (
+                                            <div className="space-y-3">
+                                              <div>
+                                                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                                                  <UserCheck size={12} />
+                                                  Present ({attendance.present.length})
+                                                </p>
+                                                {attendance.present.length === 0 ? (
+                                                  <p className="mt-1 text-[11px] text-muted">No students joined.</p>
+                                                ) : (
+                                                  <ul className="mt-1.5 space-y-1.5">
+                                                    {attendance.present.map((entry) => (
+                                                      <li
+                                                        key={entry.student.id}
+                                                        className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5"
+                                                      >
+                                                        <p className="text-[12px] font-semibold text-emerald-800">
+                                                          {entry.student.name}
+                                                        </p>
+                                                        <div className="mt-0.5 space-y-0.5">
+                                                          {entry.logs.map((log) => (
+                                                            <p
+                                                              key={log.id}
+                                                              className="text-[10px] text-emerald-700"
+                                                            >
+                                                              In {new Date(log.joinedAt).toLocaleTimeString()}
+                                                              {" · "}
+                                                              Out{" "}
+                                                              {log.leftAt
+                                                                ? new Date(log.leftAt).toLocaleTimeString()
+                                                                : "—"}
+                                                            </p>
+                                                          ))}
+                                                        </div>
+                                                      </li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </div>
+
+                                              <div>
+                                                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                                                  <UserX size={12} />
+                                                  Absent ({attendance.absent.length})
+                                                </p>
+                                                {attendance.absent.length === 0 ? (
+                                                  <p className="mt-1 text-[11px] text-muted">Everyone joined.</p>
+                                                ) : (
+                                                  <ul className="mt-1.5 space-y-1">
+                                                    {attendance.absent.map((student) => (
+                                                      <li
+                                                        key={student.id}
+                                                        className="rounded-md border border-rose-100 bg-rose-50 px-2 py-1 text-[12px] font-medium text-rose-800"
+                                                      >
+                                                        {student.name}
+                                                      </li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
               </div>
             );
           })}
@@ -1370,6 +2072,52 @@ export function LectureManagementPanel() {
           </div>
         </div>
       </article>
+
+      {endSessionConfirm ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start gap-3 p-5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <AlertTriangle size={18} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  End this live session?
+                </h3>
+                <p className="mt-1 text-[12px] leading-5 text-slate-500">
+                  Students in{" "}
+                  <span className="font-medium text-slate-700">
+                    {endSessionConfirm.roomName}
+                  </span>{" "}
+                  will be disconnected and the session will be marked as ended.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setEndSessionConfirm(null)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void handleEndSession(
+                    endSessionConfirm.sessionId,
+                    endSessionConfirm.lectureId
+                  )
+                }
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-red-700"
+              >
+                End session
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div
         className={`fixed inset-0 z-40 bg-black/40 transition-opacity ${

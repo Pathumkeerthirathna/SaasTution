@@ -1,4 +1,10 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
+
+// Single system green. Tailwind's `teal` scale is `#0d9488` at 600 — the
+// green used across the app. `emerald` and `green` are aliased to it so every
+// green in the codebase resolves to the same hue.
+const systemGreen = colors.teal;
 
 const config: Config = {
   content: [
@@ -17,6 +23,9 @@ const config: Config = {
         border: "var(--border)",
         accent: "var(--accent)",
         "accent-light": "var(--accent-light)",
+        emerald: systemGreen,
+        green: systemGreen,
+        teal: systemGreen,
         brand: {
           50:  "var(--brand-50)",
           100: "var(--brand-100)",

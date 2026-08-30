@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { defaultProfileSectionsCreateInput } from "@/services/teacher-profile-section-service";
 
 type ListUsersParams = {
   skip: number;
@@ -38,6 +39,7 @@ export async function createUser(email: string, name?: string) {
       email,
       name: name ?? "Teacher",
       password: temporaryPasswordHash,
+      profileSections: defaultProfileSectionsCreateInput(),
     },
     select: {
       id: true,

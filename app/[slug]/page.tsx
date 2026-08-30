@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import TeacherProfilePage from "@/components/teacherProfile/TeacherProfilePage";
 import {  GetTeacherPublicProfileBySlug } from "@/services/teacher-profile-service";
+import { getTeacherProfileSections } from "@/services/teacher-profile-section-service";
 
 interface Props {
   params: {
@@ -15,17 +16,17 @@ export default async function PublicTeacherPage({
 
   const teacher = await GetTeacherPublicProfileBySlug(params.slug);
 
-  console.log("teacher", teacher);
-
-
   if (!teacher) {
     notFound();
   }
+
+  const sections = await getTeacherProfileSections(teacher.teacherId);
 
   return (
     <TeacherProfilePage
       teacher={teacher}
       isPublic={true}
+      sectionOrder={sections.map((section) => section.sectionType)}
     />
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
   Calendar,
   CheckCircle2,
   ChevronDown,
@@ -151,6 +152,21 @@ function monthLabel(month: number) {
   return new Date(2000, month - 1, 1).toLocaleString("en-US", { month: "long" });
 }
 
+const MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
 function formatBytes(bytes: number | null) {
   if (!bytes) return "-";
   if (bytes < 1024) return `${bytes} B`;
@@ -216,6 +232,14 @@ export function MaterialBundlePanel() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // The month grid drives a shared height; the class and year lists scroll
+  // within it (mirrors the payments fee-sheet selectors).
+  const monthGridRef = useRef<HTMLDivElement | null>(null);
+  const [selectorMaxHeight, setSelectorMaxHeight] = useState<number>();
+
+  const currentYear = now.getFullYear();
+  const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
+
   const [previewItem, setPreviewItem] = useState<BundleItem | null>(null);
   const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
 
@@ -273,6 +297,18 @@ export function MaterialBundlePanel() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isActionMenuOpen]);
+
+  useEffect(() => {
+    const element = monthGridRef.current;
+    if (!element) return;
+
+    const update = () => setSelectorMaxHeight(element.offsetHeight);
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   async function loadBundles(nextPage = page) {
     setIsLoading(true);
@@ -700,112 +736,199 @@ export function MaterialBundlePanel() {
         </p>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="self-start">
-          <section className="surface-card border border-brand-100/80 p-6 shadow-card">
+      <div className="grid gap-3 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="flex flex-col gap-2 self-start">
+          {/* Card 1 — header */}
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
                 <p className="mt-1 text-sm text-slate-500">Select a monthly bundle to review recipients and content.</p>
               </div>
-              <div className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-brand-100 px-2 text-xs font-semibold text-brand-700">
+              <div className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-teal-100 px-2 text-xs font-semibold text-teal-700">
                 {bundles.length}
               </div>
             </div>
+          </section>
 
-            <details className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/40 p-3">
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                Filters
-              </summary>
-              <div className="mt-3 space-y-3">
-                <div className="relative">
-                  <GraduationCap size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                  <ChevronDown size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
-                  <select
-                    value={filterClassId}
-                    onChange={(e) => setFilterClassId(e.target.value)}
-                    className="control-select h-12 appearance-none pl-12 pr-12 text-[14px]"
+          {/* Card 2 — filters (class / year / month tile pickers) */}
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              {/* Class */}
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Class</p>
+                <div
+                  className="scrollbar-thin space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
+                  style={{ maxHeight: selectorMaxHeight }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setFilterClassId("")}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
+                      filterClassId === ""
+                        ? "bg-teal-600 text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-teal-50"
+                    }`}
                   >
-                    <option value="">All classes</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    value={filterYear}
-                    onChange={(e) => setFilterYear(e.target.value)}
-                    placeholder="Year"
-                    className="control-input h-12 text-[14px]"
-                  />
-                  <div className="relative">
-                    <Calendar size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <select
-                      value={filterMonth}
-                      onChange={(e) => setFilterMonth(e.target.value)}
-                      className="control-select h-12 appearance-none pl-11 pr-11 text-[14px]"
-                    >
-                      <option value="">Month</option>
-                      {Array.from({ length: 12 }).map((_, idx) => (
-                        <option key={idx + 1} value={String(idx + 1)}>
-                          {monthLabel(idx + 1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <BookOpen size={12} className={filterClassId === "" ? "text-white" : "text-slate-400"} />
+                    <span className="truncate">All classes</span>
+                  </button>
+                  {classes.map((item) => {
+                    const selected = item.id === filterClassId;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setFilterClassId(item.id)}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
+                          selected
+                            ? "bg-teal-600 text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-teal-50"
+                        }`}
+                      >
+                        <BookOpen size={12} className={selected ? "text-white" : "text-slate-400"} />
+                        <span className="truncate">{item.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            </details>
 
-            {isLoading ? <p className="mt-4 text-xs font-medium text-slate-400">Loading...</p> : null}
-            <div className="mt-4 space-y-3">
-              {bundles.map((bundle) => (
-                <button
-                  key={bundle.id}
-                  type="button"
-                  onClick={() => void loadBundleDetails(bundle.id)}
-                  className={`group w-full rounded-[20px] border px-4 py-4 text-left shadow-soft transition-all duration-200 ${
-                    selectedBundleId === bundle.id
-                      ? "border-brand-300 bg-brand-50/80 shadow-card"
-                      : "border-brand-100 bg-white hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-50/70 hover:shadow-card"
-                  }`}
+              {/* Year */}
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Year</p>
+                <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFilterYear("")}
+                    className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                      filterYear === ""
+                        ? "bg-teal-600 text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-teal-50"
+                    }`}
+                  >
+                    All
+                  </button>
+                  {yearOptions.map((option) => {
+                    const selected = filterYear === String(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setFilterYear(String(option))}
+                        className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                          selected
+                            ? "bg-teal-600 text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-teal-50"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Month — 4 per row */}
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Month</p>
+                <div
+                  ref={monthGridRef}
+                  className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5"
                 >
-                  <div className="flex items-start gap-3">
-                    <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                      selectedBundleId === bundle.id ? "bg-white text-brand-700" : "bg-brand-50 text-brand-600"
-                    }`}>
-                      <FileText size={18} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p className="text-[16px] font-semibold leading-6 text-slate-900">{bundle.title}</p>
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                  <button
+                    type="button"
+                    onClick={() => setFilterMonth("")}
+                    className={`col-span-4 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                      filterMonth === ""
+                        ? "bg-teal-600 text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-teal-50"
+                    }`}
+                  >
+                    All months
+                  </button>
+                  {MONTHS_SHORT.map((label, index) => {
+                    const value = index + 1;
+                    const selected = filterMonth === String(value);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setFilterMonth(String(value))}
+                        className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                          selected
+                            ? "bg-teal-600 text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-teal-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Card 3 — bundle list */}
+          <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+            {isLoading ? <p className="px-1 pb-2 text-xs font-medium text-slate-400">Loading...</p> : null}
+            <div className="space-y-2">
+              {bundles.map((bundle) => {
+                const selected = selectedBundleId === bundle.id;
+                return (
+                  <button
+                    key={bundle.id}
+                    type="button"
+                    onClick={() => void loadBundleDetails(bundle.id)}
+                    className={`w-full rounded-lg px-3 py-3 text-left transition ${
+                      selected
+                        ? "bg-teal-50 ring-1 ring-teal-300"
+                        : "bg-slate-50 hover:bg-teal-50/60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          selected ? "bg-white text-teal-700" : "bg-white text-slate-500"
+                        }`}
+                      >
+                        <FileText size={16} />
+                      </span>
+                      <p className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-900">
+                        {bundle.title}
+                      </p>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                           bundle.status === "SENT"
                             ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}>
-                          {bundle.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[13px] font-medium text-slate-500">
-                        {bundle.class.name} • {monthLabel(bundle.month)} {bundle.year}
-                      </p>
-                      <div className="mt-3 space-y-1.5 text-[13px] leading-5 text-slate-400">
-                        <p>{bundle._count.items} items in this bundle</p>
-                        <p>Created {new Date(bundle.createdAt).toLocaleDateString()}</p>
-                      </div>
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {bundle.status}
+                      </span>
                     </div>
-                  </div>
-                </button>
-              ))}
+
+                    <p className="mt-2 text-[13px] font-medium text-slate-500">
+                      {monthLabel(bundle.month)} {bundle.year}
+                    </p>
+                    <p className="mt-1 text-[12px] text-slate-400">
+                      Created {new Date(bundle.createdAt).toLocaleDateString()}
+                    </p>
+
+                    <div className="mt-2 flex items-center justify-end gap-3">
+                      <span className="text-[12px] text-slate-400">Student list</span>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        View more
+                        <ChevronRight size={12} />
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
               {!isLoading && bundles.length === 0 ? (
-                <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/50 p-5 text-center">
-                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                     <Files size={18} />
                   </span>
                   <p className="mt-3 text-sm font-semibold text-slate-800">No bundles found</p>
@@ -814,12 +937,12 @@ export function MaterialBundlePanel() {
               ) : null}
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-3 border-t border-brand-100 pt-4">
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
               <button
                 type="button"
                 onClick={() => void loadBundles(Math.max(1, page - 1))}
                 disabled={page <= 1 || isLoading}
-                className="btn-ghost h-10 gap-1.5 px-3 text-xs disabled:opacity-40"
+                className="btn-ghost h-9 gap-1.5 px-3 text-xs disabled:opacity-40"
               >
                 <ChevronLeft size={14} />
                 Prev
@@ -831,7 +954,7 @@ export function MaterialBundlePanel() {
                 type="button"
                 onClick={() => void loadBundles(Math.min(totalPages, page + 1))}
                 disabled={page >= totalPages || isLoading}
-                className="btn-ghost h-10 gap-1.5 px-3 text-xs disabled:opacity-40"
+                className="btn-ghost h-9 gap-1.5 px-3 text-xs disabled:opacity-40"
               >
                 Next
                 <ChevronRight size={14} />
@@ -840,10 +963,10 @@ export function MaterialBundlePanel() {
           </section>
         </aside>
 
-        <div className="grid gap-6">
+        <div className="grid gap-3">
           {!bundleDetail || isLoadingDetails ? (
-            <div className="surface-card flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-brand-100/80 px-6 py-10 text-center shadow-card">
-              <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-white text-brand-700 shadow-soft">
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
                 <FileText size={22} />
               </span>
               <p className="mt-4 text-lg font-semibold text-slate-900">
@@ -855,11 +978,11 @@ export function MaterialBundlePanel() {
             </div>
           ) : (
             <>
-              <section className="surface-card border border-brand-100/80 p-6 shadow-card sm:p-7">
+              <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
                 <div className="flex items-start justify-between gap-6">
 
                   <div className="flex min-w-0 flex-1 items-start gap-4">
-                    <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-brand-50 text-brand-700 shadow-soft">
+                    <span className="inline-flex h-14 w-14 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
                       <FileText size={22} />
                     </span>
 
@@ -928,46 +1051,46 @@ export function MaterialBundlePanel() {
 
                 </div>
 
-                <div className="mt-7 grid gap-4 xl:grid-cols-3">
-                  <div className="rounded-[20px] border border-brand-100 bg-white p-5 shadow-soft">
+                <div className="mt-6 grid gap-3 xl:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">Class students</p>
                         <p className="mt-3 text-[30px] font-bold leading-none text-slate-900">{bundleDetail.summary.totalStudents}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700">
                         <Users size={20} />
                       </span>
                     </div>
                   </div>
-                  <div className="rounded-[20px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft">
+                  <div className="rounded-xl border border-slate-200 bg-emerald-50/80 p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-emerald-700">Will receive</p>
                         <p className="mt-3 text-[30px] font-bold leading-none text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-emerald-700">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/80 text-emerald-700">
                         <CheckCircle2 size={20} />
                       </span>
                     </div>
                   </div>
-                  <div className="rounded-[20px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft">
+                  <div className="rounded-xl border border-slate-200 bg-amber-50/80 p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-amber-700">Will not receive</p>
                         <p className="mt-3 text-[30px] font-bold leading-none text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-amber-700">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/80 text-amber-700">
                         <AlertCircle size={20} />
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-7 rounded-[24px] border border-brand-100 bg-gradient-to-r from-white via-brand-50/50 to-white p-5 shadow-soft">
+                <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
                         <Files size={18} />
                       </span>
                       <div>
@@ -985,15 +1108,15 @@ export function MaterialBundlePanel() {
                     </button>
                   </div>
                 </div>
-                <div className="mt-7 overflow-hidden rounded-[24px] border border-brand-100 bg-white shadow-soft">
-                  <div className="flex items-center gap-2 border-b border-brand-100 px-5 py-5">
+                <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-5">
                   <button
                     type="button"
                     onClick={() => setActiveItemTab("TUTE")}
                     className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                       activeItemTab === "TUTE"
-                        ? "bg-brand-700 text-white shadow-soft"
-                        : "border border-brand-100 bg-white text-slate-500 hover:bg-brand-50 hover:text-slate-900"
+                        ? "bg-teal-600 text-white shadow-sm"
+                        : "border border-slate-200 bg-white text-slate-500 hover:bg-teal-50 hover:text-slate-900"
                     }`}
                   >
                     <FileText size={16} />
@@ -1004,8 +1127,8 @@ export function MaterialBundlePanel() {
                     onClick={() => setActiveItemTab("PAPER")}
                     className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                       activeItemTab === "PAPER"
-                        ? "bg-brand-700 text-white shadow-soft"
-                        : "border border-brand-100 bg-white text-slate-500 hover:bg-brand-50 hover:text-slate-900"
+                        ? "bg-teal-600 text-white shadow-sm"
+                        : "border border-slate-200 bg-white text-slate-500 hover:bg-teal-50 hover:text-slate-900"
                     }`}
                   >
                     <Files size={16} />
@@ -1017,7 +1140,7 @@ export function MaterialBundlePanel() {
                   {activeItemTab === "TUTE" ? (
                     <div className="space-y-3">
                       {tuteItems.map((item) => (
-                        <div key={item.id} className="rounded-[20px] border border-brand-100 bg-slate-50/70 p-4 shadow-soft">
+                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
                           {editItemId === item.id ? (
                             <>
                               <input
@@ -1052,7 +1175,7 @@ export function MaterialBundlePanel() {
                             <>
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-start gap-3">
-                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                                     <FileText size={18} />
                                   </span>
                                   <div>
@@ -1107,8 +1230,8 @@ export function MaterialBundlePanel() {
                         </div>
                       ))}
                       {tuteItems.length === 0 ? (
-                        <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/40 p-6 text-center">
-                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                             <FileText size={18} />
                           </span>
                           <p className="mt-3 text-sm font-semibold text-slate-900">No tutes added yet</p>
@@ -1119,7 +1242,7 @@ export function MaterialBundlePanel() {
                   ) : (
                     <div className="space-y-3">
                       {paperItems.map((item) => (
-                        <div key={item.id} className="rounded-[20px] border border-brand-100 bg-slate-50/70 p-4 shadow-soft">
+                        <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
                           {editItemId === item.id ? (
                             <>
                               <input
@@ -1168,7 +1291,7 @@ export function MaterialBundlePanel() {
                             <>
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-start gap-3">
-                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                                     <Files size={18} />
                                   </span>
                                   <div>
@@ -1235,8 +1358,8 @@ export function MaterialBundlePanel() {
                         </div>
                       ))}
                       {paperItems.length === 0 ? (
-                        <div className="rounded-[20px] border border-dashed border-brand-200 bg-brand-50/40 p-6 text-center">
-                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-soft">
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                             <Files size={18} />
                           </span>
                           <p className="mt-3 text-sm font-semibold text-slate-900">No papers added yet</p>
@@ -1248,8 +1371,8 @@ export function MaterialBundlePanel() {
                   </div>
                 </div>
 
-                <div className="mt-7 grid gap-4 lg:auto-rows-fr lg:grid-cols-2">
-                  <div className="flex h-full min-h-[220px] flex-col rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft">
+                <div className="mt-6 grid gap-3 lg:auto-rows-fr lg:grid-cols-2">
+                  <div className="flex h-full min-h-[220px] flex-col rounded-xl border border-slate-200 bg-emerald-50/80 p-5 shadow-sm">
                     <p className="text-base font-semibold text-emerald-700">
                       {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
                     </p>
@@ -1275,7 +1398,7 @@ export function MaterialBundlePanel() {
                     </div>
                   </div>
 
-                  <div className="flex h-full min-h-[220px] flex-col rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-soft">
+                  <div className="flex h-full min-h-[220px] flex-col rounded-xl border border-slate-200 bg-amber-50/80 p-5 shadow-sm">
                     <p className="text-base font-semibold text-amber-700">Students who will not receive</p>
                     <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
                       <div className="space-y-2">

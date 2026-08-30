@@ -5,6 +5,7 @@ import { StudentConfirmationStatus, type Role } from "@prisma/client";
 import { AppError } from "@/lib/error-handler";
 import { buildPasswordResetLink, sendPasswordResetEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
+import { defaultProfileSectionsCreateInput } from "@/services/teacher-profile-section-service";
 
 const HASH_ROUNDS = 12;
 const PASSWORD_RESET_TTL_MINUTES = 30;
@@ -99,6 +100,7 @@ export async function registerTeacher(input: {
       name: input.name,
       email: input.email,
       password: hashedPassword,
+      profileSections: defaultProfileSectionsCreateInput(),
     },
     select: {
       id: true,

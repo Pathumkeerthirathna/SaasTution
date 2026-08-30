@@ -27,7 +27,7 @@
   --accent-light: #ccfbf1;
 
   /* Tones */
-  --tone-emerald: #059669;
+  --tone-emerald: #0d9488;
   --tone-amber:   #d97706;
   --tone-rose:    #e11d48;
   --tone-violet:  #7c3aed;
@@ -36,10 +36,6 @@
 
 @layer base {
   html, body { min-height: 100%; }
-
-  html {
-    scrollbar-gutter: stable both-edges;
-  }
 
   body {
     background:

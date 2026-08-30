@@ -270,6 +270,7 @@ export async function deleteLectureForTeacher(teacherId: string, lectureId: stri
 export async function listLecturesForTeacher(params: {
   teacherId: string;
   classId?: string;
+  lectureId?: string;
   title?: string;
   dateFrom?: Date;
   dateTo?: Date;
@@ -285,6 +286,11 @@ export async function listLecturesForTeacher(params: {
     class: {
       teacherId: params.teacherId,
     },
+    ...(params.lectureId
+      ? {
+          id: params.lectureId,
+        }
+      : {}),
     ...(params.classId
       ? {
           classId: params.classId,
@@ -429,6 +435,33 @@ export async function listRecordingsForLectureForTeacher(teacherId: string, lect
       startedAt: true,
       endedAt: true,
       createdAt: true,
+    },
+  });
+}
+
+export async function listSessionsForLectureForTeacher(teacherId: string, lectureId: string) {
+  await assertTeacherOwnsLecture(teacherId, lectureId);
+
+  return prisma.classSession.findMany({
+    where: {
+      lectureId,
+    },
+    orderBy: {
+      startedAt: "desc",
+    },
+    select: {
+      id: true,
+      roomName: true,
+      jitsiDomain: true,
+      startedAt: true,
+      endedAt: true,
+      isActive: true,
+      createdAt: true,
+      _count: {
+        select: {
+          attendance: true,
+        },
+      },
     },
   });
 }

@@ -2,19 +2,27 @@
 
 
 import { useState,useEffect, useRef } from "react";
-import { X, ClipboardList, Users } from "lucide-react";
+import {
+  X,
+  ClipboardList,
+  Users,
+  FileText,
+  ListChecks,
+} from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
 import ParticipantsPanel from "./ParticipantsPanel";
 import { ClassroomStudent, JitsiParticipant, UserRole } from "../../types";
-import { ClassStudent } from "@prisma/client";
-import { ClassItem } from "@/components/class-management-panel";
-// import AttendancePanel from "./AttendancePanel";
-// import ResourcesPanel from "./ResourcesPanel";
+import { LectureNotePanel } from "@/components/lecture-note-panel";
+import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
+import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
+
+const LECTURE_TOOL_PANELS = ["notes", "assignments", "quiz"] as const;
 
 type RightSidebarProps = {
   classId : string;
   className : String;
+  lectureId? : string | null;
   lectureTitle? : string;
   teacherName : string;
   role : UserRole;
@@ -24,6 +32,13 @@ type RightSidebarProps = {
 
 export default function RightSidebar(props: RightSidebarProps) {
   const [activePanel, setActivePanel] = useState<string | null>(null);
+
+  const showLectureTools =
+    props.role === "teacher" && Boolean(props.lectureId);
+
+  const isLectureToolPanel = LECTURE_TOOL_PANELS.includes(
+    activePanel as (typeof LECTURE_TOOL_PANELS)[number]
+  );
 
   const handlePanelChange = (panel: string) => {
     setActivePanel((current) =>
@@ -66,6 +81,12 @@ export default function RightSidebar(props: RightSidebarProps) {
     return;
   }
 
+  // The lecture tool panels open their own modals/drawers outside this
+  // container — don't collapse the sidebar when the teacher interacts with them.
+  if (isLectureToolPanel) {
+    return;
+  }
+
   const handleOutsideClick = (event: MouseEvent) => {
 
       const target = event.target as Node;
@@ -91,7 +112,7 @@ export default function RightSidebar(props: RightSidebarProps) {
       );
     };
 
-  }, [activePanel]);
+  }, [activePanel, isLectureToolPanel]);
 
 
 
@@ -110,7 +131,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           top-[80px]
           bottom-0
           z-40
-          w-[360px]
+          ${isLectureToolPanel ? "w-[460px] max-w-[92vw]" : "w-[360px]"}
           overflow-hidden
           border-l
           border-[#1E293B]
@@ -140,22 +161,42 @@ export default function RightSidebar(props: RightSidebarProps) {
                 <Users size={18} className="text-[#3B82F6]" />
               ))}
 
-            <h2 className="text-base font-semibold text-[#F8FAFC]">
-              {activePanel === "participants" &&
-                (props.role === "teacher" ? "Class Register" : "Participants")}
+            {activePanel === "notes" && (
+              <FileText size={18} className="text-[#3B82F6]" />
+            )}
+            {activePanel === "assignments" && (
+              <ClipboardList size={18} className="text-[#3B82F6]" />
+            )}
+            {activePanel === "quiz" && (
+              <ListChecks size={18} className="text-[#3B82F6]" />
+            )}
 
-              {activePanel === "attendance" && "Attendance"}
+            <div>
+              <h2 className="text-base font-semibold text-[#F8FAFC]">
+                {activePanel === "participants" &&
+                  (props.role === "teacher" ? "Class Register" : "Participants")}
 
-              {activePanel === "resources" && "Resources"}
+                {activePanel === "attendance" && "Attendance"}
 
-              {activePanel === "whiteboard" && "Whiteboard"}
+                {activePanel === "resources" && "Resources"}
 
-              {activePanel === "chat" && "Chat"}
+                {activePanel === "whiteboard" && "Whiteboard"}
 
-              {activePanel === "quiz" && "Quiz"}
+                {activePanel === "chat" && "Chat"}
 
-              {activePanel === "notes" && "Notes"}
-            </h2>
+                {activePanel === "quiz" && "Quizzes"}
+
+                {activePanel === "assignments" && "Assignments"}
+
+                {activePanel === "notes" && "Notes"}
+              </h2>
+
+              {isLectureToolPanel && props.lectureTitle ? (
+                <p className="max-w-[300px] truncate text-[11px] text-[#94A3B8]">
+                  {props.lectureTitle}
+                </p>
+              ) : null}
+            </div>
 
           </div>
 
@@ -172,7 +213,11 @@ export default function RightSidebar(props: RightSidebarProps) {
 
         {/* Panel Content */}
 
-        <div className="h-[calc(100%-65px)] overflow-hidden p-3">
+        <div
+          className={`h-[calc(100%-72px)] ${
+            isLectureToolPanel ? "overflow-y-auto scrollbar-thin bg-white" : "overflow-hidden p-3"
+          }`}
+        >
 
           {activePanel === "participants" && (
             <ParticipantsPanel
@@ -183,6 +228,24 @@ export default function RightSidebar(props: RightSidebarProps) {
               className={props.className as string}
               classId={props.classId}
             />
+          )}
+
+          {showLectureTools && props.lectureId && activePanel === "notes" && (
+            <div className="p-3 text-slate-900">
+              <LectureNotePanel lectureId={props.lectureId} />
+            </div>
+          )}
+
+          {showLectureTools && props.lectureId && activePanel === "assignments" && (
+            <div className="p-3 text-slate-900">
+              <LectureAssignmentPanel lectureId={props.lectureId} />
+            </div>
+          )}
+
+          {showLectureTools && props.lectureId && activePanel === "quiz" && (
+            <div className="p-3 text-slate-900">
+              <LectureQuizPanel lectureId={props.lectureId} />
+            </div>
           )}
 
           {/* Later */}
@@ -221,6 +284,7 @@ export default function RightSidebar(props: RightSidebarProps) {
         <SidebarNav
           activePanel={activePanel}
           onPanelChange={handlePanelChange}
+          showLectureTools={showLectureTools}
         />
 
       </div>

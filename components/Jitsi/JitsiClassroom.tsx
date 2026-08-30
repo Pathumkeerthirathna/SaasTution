@@ -59,6 +59,9 @@ const [classStudents, setClassStudents] =
   const [liveStartFailed, setLiveStartFailed] =
   useState(false);
 
+  const [youtubeReauthRequired, setYoutubeReauthRequired] =
+  useState(false);
+
   const [youtubePrivacy, setYoutubePrivacy] =
   useState<"public" | "unlisted" | "private">(
     "unlisted"
@@ -233,11 +236,17 @@ const [classStudents, setClassStudents] =
         data
       );
 
+      if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
+        setYoutubeReauthRequired(true);
+      }
+
       if (!response.ok || !data.success) {
         throw new Error(
           data.error ?? "Unable to start YouTube Live."
         );
       }
+
+      setYoutubeReauthRequired(false);
 
       if (!data.streamName) {
         throw new Error(
@@ -346,11 +355,17 @@ const [classStudents, setClassStudents] =
         data
       );
 
+      if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
+        setYoutubeReauthRequired(true);
+      }
+
       if (!data.success) {
         throw new Error(
           data.error ?? "Unable to start YouTube recording."
         );
       }
+
+      setYoutubeReauthRequired(false);
 
       if (!data.streamName) {
         throw new Error(
@@ -447,9 +462,13 @@ const [classStudents, setClassStudents] =
         youtubeChannelTitle={
           joinInfo.youtube?.channelTitle
         }
-        youtubeStatus={
-          joinInfo.youtube?.status
-        }
+        youtubeStatus={joinInfo.youtube?.status}
+        youtubeReauthRequired={youtubeReauthRequired}
+        onReconnectYoutube={() => {
+          const returnTo = `${window.location.pathname}${window.location.search}`;
+          window.location.href =
+            `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
+        }}
         onStartRecording={() => {
            console.log("🎥 RECORD BUTTON CLICKED");
 
@@ -852,6 +871,7 @@ const [classStudents, setClassStudents] =
         <RightSidebar
           classId={joinInfo.class.id}
           className={joinInfo.class.name}
+          lectureId={joinInfo.lecture?.id ?? null}
           lectureTitle={joinInfo.lecture?.title}
           teacherName={teacherName}
           role={role}

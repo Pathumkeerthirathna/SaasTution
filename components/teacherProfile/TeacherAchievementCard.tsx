@@ -11,16 +11,21 @@ import {
 } from "lucide-react";
 import { Achievement, AchievementForm } from "@/types/teacherProfileTypes/achievement/achievement-types";
 import TeacherAchievementDrawer from "./achievement/TeacherAchievementDrawer";
+import SectionVisibilityToggle from "./SectionVisibilityToggle";
 
 interface Props{
   teacherId:string;
   isPublic?: boolean;
+  sectionVisible?: boolean;
 }
 
 export default function TeacherAchievementCard({
   teacherId,
-  isPublic
+  isPublic,
+  sectionVisible = true
 }:Props) {
+
+  const [visible, setVisible] = useState(sectionVisible);
 
   const [achievements, setAchievements] =
     useState<Achievement[]>([]);
@@ -253,6 +258,10 @@ export default function TeacherAchievementCard({
 
   }
 
+  if (isPublic && !visible) {
+    return null;
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -292,16 +301,22 @@ export default function TeacherAchievementCard({
 
         </div>
 
-          {isPublic ? null : (<button
-          onClick={openAddDrawer}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
-        >
-
-          <Plus className="h-3.5 w-3.5" />
-
-          Add Achievement
-
-        </button>)}
+          {isPublic ? null : (
+          <div className="flex shrink-0 items-center gap-2">
+            <SectionVisibilityToggle
+              section="achievements"
+              initialVisible={visible}
+              onChange={setVisible}
+            />
+            <button
+              onClick={openAddDrawer}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Achievement
+            </button>
+          </div>
+        )}
 
       </div>
 

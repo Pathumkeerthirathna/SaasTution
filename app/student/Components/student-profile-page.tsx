@@ -14,6 +14,8 @@ import {
   Users,
 } from "lucide-react";
 
+import { formatStoredSriLankaDateTime } from "@/lib/time";
+
 type ClassItem = {
   id: string;
   name: string;
@@ -673,7 +675,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                       <div>
                         <p className="text-lg font-semibold text-slate-800">{classItem.name}</p>
                         <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600"><Clock3 size={13} />Schedule: {classItem.schedule}</p>
-                        <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600"><Calendar size={13} />Assigned: {formatDate(classItem.assignedAt)}</p>
+                        <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600"><Calendar size={13} />Assigned: {formatStoredSriLankaDateTime(classItem.assignedAt)}</p>
                       </div>
 
                       <div className="w-full max-w-sm">
@@ -866,7 +868,7 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                 <div key={classItem.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
                   <p className="text-sm font-semibold">{classItem.name}</p>
                   <p className="text-xs text-muted">Schedule: {classItem.schedule}</p>
-                  <p className="text-xs text-muted">Assigned: {formatDate(classItem.assignedAt)}</p>
+                  <p className="text-xs text-muted">Assigned: {formatStoredSriLankaDateTime(classItem.assignedAt)}</p>
                   <textarea
                     value={removeReasonByClassId[classItem.classId] ?? ""}
                     onChange={(event) =>
@@ -935,8 +937,8 @@ export function StudentProfilePage({ studentId }: { studentId: string }) {
                     {profile.assignmentHistory.map((entry) => (
                       <tr key={entry.id}>
                         <td className="px-3 py-2">{entry.name}</td>
-                        <td className="px-3 py-2 text-muted">{formatDate(entry.assignedAt)}</td>
-                        <td className="px-3 py-2 text-muted">{formatDate(entry.removedAt)}</td>
+                        <td className="px-3 py-2 text-muted">{formatStoredSriLankaDateTime(entry.assignedAt)}</td>
+                        <td className="px-3 py-2 text-muted">{formatStoredSriLankaDateTime(entry.removedAt)}</td>
                         <td className="px-3 py-2 text-muted">{entry.removeReason || "-"}</td>
                         <td className="px-3 py-2 text-muted">{entry.isActive ? "Active" : "Removed"}</td>
                       </tr>

@@ -1,7 +1,11 @@
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { nowInSriLanka } from "@/lib/time";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
+import { ClassPublicNote } from "@/types/teacherProfileTypes/ClassPublicNote";
 
 type ListClassesParams = {
   teacherId: string;
@@ -166,6 +170,15 @@ export async function getPublicClass(
     },
     include: {
       schedules: true,
+      teacher: {
+        select: {
+          profile: {
+            select: {
+              slug: true,
+            },
+          },
+        },
+      },
       students: {
         select: {
           id: true,
@@ -190,6 +203,7 @@ export async function getPublicClass(
     monthlyFee: classInfo.monthlyFee,
     paymentDueWeek: classInfo.paymentDueWeek,
     teacherId:classInfo.teacherId,
+    teacherSlug: classInfo.teacher?.profile?.slug ?? null,
     startDate: classInfo.startDate
   ? classInfo.startDate.toISOString()
   : null,
@@ -277,6 +291,125 @@ export async function getPublicClassSessions(
   }));
 }
 
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "—";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+  }
+
+  const mb = kb / 1024;
+  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+function fileTypeFromMime(mimeType: string, fileUrl: string): string {
+  const normalized = (mimeType || "").toLowerCase();
+
+  if (normalized.includes("pdf")) return "PDF";
+  if (normalized.includes("word") || normalized.includes("msword")) return "DOCX";
+  if (normalized.includes("zip") || normalized.includes("compressed")) return "ZIP";
+  if (normalized.startsWith("image/")) {
+    return normalized.replace("image/", "").toUpperCase();
+  }
+
+  const extension = fileUrl.split(".").pop();
+  if (extension && extension !== fileUrl) {
+    return extension.toUpperCase();
+  }
+
+  return "FILE";
+}
+
+/**
+ * Public lecture notes for a class: every note a teacher has marked as PUBLIC,
+ * grouped conceptually by lecture. Each note is returned with its parent
+ * lecture's title so the class page can show "Lecture 01 – Algebra" style
+ * entries. FREE notes can be previewed by anyone; LOCKED notes are still
+ * returned so the page can render them behind a lock.
+ */
+export async function getPublicClassNotes(
+  classId: string
+): Promise<ClassPublicNote[]> {
+  const notes = await prisma.note.findMany({
+    where: {
+      visibility: "PUBLIC",
+      lecture: {
+        classId,
+      },
+    },
+    orderBy: [
+      { lecture: { createdAt: "asc" } },
+      { lecture: { date: "asc" } },
+      { title: "asc" },
+    ],
+    select: {
+      id: true,
+      title: true,
+      fileUrl: true,
+      mimeType: true,
+      sizeBytes: true,
+      access: true,
+      lecture: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+    },
+  });
+
+  return notes.map((note) => {
+    const fileType = fileTypeFromMime(note.mimeType, note.fileUrl);
+    const isImage = (note.mimeType || "").toLowerCase().startsWith("image/");
+
+    return {
+      id: note.id,
+      lectureId: note.lecture.id,
+      lectureTitle: note.lecture.title,
+      title: note.title,
+      fileType,
+      fileSize: formatFileSize(note.sizeBytes),
+      isPdf: fileType === "PDF",
+      isImage,
+      access: note.access,
+    };
+  });
+}
+
+/**
+ * Fetch a single note for public consumption. Only notes that are both PUBLIC
+ * and FREE are returned; anything else is treated as not found so locked
+ * material never leaks through the public preview endpoint.
+ */
+export async function getPublicFreeNote(noteId: string) {
+  const note = await prisma.note.findFirst({
+    where: {
+      id: noteId,
+      visibility: "PUBLIC",
+      access: "FREE",
+    },
+    select: {
+      id: true,
+      title: true,
+      fileUrl: true,
+      mimeType: true,
+    },
+  });
+
+  if (!note) {
+    throw new AppError("Note not found.", 404, "NOT_FOUND");
+  }
+
+  return note;
+}
+
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {
 
   const scheduleSummary = input.schedule?.trim() || buildScheduleSummary(input.schedules);
@@ -293,6 +426,14 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
         create: input.schedules,
       },
       startDate: new Date(input.startDate),
+      // Open the first fee period from now; it stays open (effectiveTo = null)
+      // until the fee is changed.
+      feeHistory: {
+        create: {
+          amount: input.monthlyFee,
+          effectiveFrom: nowInSriLanka(),
+        },
+      },
     },
     select: {
       id: true,
@@ -313,6 +454,29 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       createdAt: true,
     },
   });
+}
+
+/**
+ * Guarantee a class has at least one fee-history row. Older classes created
+ * before fee history existed are back-filled with an open period covering their
+ * current fee.
+ */
+async function ensureInitialClassFee(
+  tx: Prisma.TransactionClient,
+  classId: string,
+  currentFee: number
+) {
+  const count = await tx.classFee.count({ where: { classId } });
+
+  if (count === 0) {
+    await tx.classFee.create({
+      data: {
+        classId,
+        amount: currentFee,
+        effectiveFrom: nowInSriLanka(),
+      },
+    });
+  }
 }
 
 export async function updateClassForTeacher(
@@ -336,7 +500,7 @@ export async function updateClassForTeacher(
       id: classId,
       teacherId,
     },
-    select: { id: true },
+    select: { id: true, monthlyFee: true },
   });
 
   if (!existingClass) {
@@ -348,6 +512,30 @@ export async function updateClassForTeacher(
       await tx.classSchedule.deleteMany({
         where: {
           classId,
+        },
+      });
+    }
+
+    // When the fee actually changes, close the current fee period and open a
+    // new one starting at the moment of the change.
+    if (
+      input.monthlyFee !== undefined &&
+      input.monthlyFee !== existingClass.monthlyFee
+    ) {
+      const changedAt = nowInSriLanka();
+
+      await ensureInitialClassFee(tx, classId, existingClass.monthlyFee);
+
+      await tx.classFee.updateMany({
+        where: { classId, effectiveTo: null },
+        data: { effectiveTo: changedAt },
+      });
+
+      await tx.classFee.create({
+        data: {
+          classId,
+          amount: input.monthlyFee,
+          effectiveFrom: changedAt,
         },
       });
     }
@@ -396,6 +584,52 @@ export async function updateClassForTeacher(
       },
     });
   });
+}
+
+export type ClassFeeHistoryEntry = {
+  id: string;
+  amount: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isCurrent: boolean;
+};
+
+/**
+ * Full fee history for a class, newest period first. The open period
+ * (effectiveTo = null) is flagged as current.
+ */
+export async function getClassFeeHistoryForTeacher(
+  classId: string,
+  teacherId: string
+): Promise<ClassFeeHistoryEntry[]> {
+  const classInfo = await prisma.class.findFirst({
+    where: {
+      id: classId,
+      teacherId,
+    },
+    select: { id: true, monthlyFee: true },
+  });
+
+  if (!classInfo) {
+    throw new AppError("Class not found.", 404, "CLASS_NOT_FOUND");
+  }
+
+  await prisma.$transaction((tx) =>
+    ensureInitialClassFee(tx, classId, classInfo.monthlyFee)
+  );
+
+  const rows = await prisma.classFee.findMany({
+    where: { classId },
+    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    amount: row.amount,
+    effectiveFrom: row.effectiveFrom.toISOString(),
+    effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString() : null,
+    isCurrent: row.effectiveTo === null,
+  }));
 }
 
 export async function deleteClassForTeacher(classId: string, teacherId: string) {

@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 const MaterialBundlePanel = dynamic(
   () => import("@/components/material-bundle-panel").then((mod) => mod.MaterialBundlePanel),
   {
-    loading: () => <div className="mt-6 text-sm text-muted">Loading monthly bundle management...</div>,
+    loading: () => <div className="mt-4 text-xs text-slate-400">Loading monthly materials…</div>,
   }
 );
 

@@ -2,6 +2,7 @@ import { Panel, StatusBadge } from "@/components/student-portal/student-ui";
 import { StudentClassPaymentsPanel } from "@/components/student-portal/student-class-payments-panel";
 import { requireStudentSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { formatStoredSriLankaDateTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function StudentClassesPage() {
                       <p className="text-sm text-slate-600">{enrollment.class.schedule}</p>
                       <p className="mt-1 text-sm font-semibold text-brand-700">Monthly fee: Rs {enrollment.class.monthlyFee.toLocaleString()}</p>
                       <p className="mt-1 text-xs text-slate-500">Payment due week: Week {enrollment.class.paymentDueWeek}</p>
-                      <p className="mt-1 text-xs text-slate-500">Joined: {new Date(enrollment.assignedAt).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-slate-500">Joined: {formatStoredSriLankaDateTime(enrollment.assignedAt)}</p>
                       {enrollment.class.description ? (
                         <p className="mt-1 text-sm text-slate-500 line-clamp-2">{enrollment.class.description}</p>
                       ) : null}
@@ -111,8 +112,8 @@ export default async function StudentClassesPage() {
                         <StatusBadge label="Past" tone="pending" />
                       </div>
                       <p className="mt-1 text-sm text-slate-600">{enrollment.class.schedule}</p>
-                      <p className="mt-1 text-xs text-slate-500">Joined: {new Date(enrollment.assignedAt).toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-slate-500">Removed: {enrollment.removedAt ? new Date(enrollment.removedAt).toLocaleString() : "-"}</p>
+                      <p className="mt-1 text-xs text-slate-500">Joined: {formatStoredSriLankaDateTime(enrollment.assignedAt)}</p>
+                      <p className="mt-1 text-xs text-slate-500">Removed: {enrollment.removedAt ? formatStoredSriLankaDateTime(enrollment.removedAt) : "-"}</p>
                       {enrollment.removeReason ? <p className="mt-1 text-xs text-slate-500">Reason: {enrollment.removeReason}</p> : null}
                       <p className="mt-2 text-sm font-semibold text-brand-700">Monthly fee at class: Rs {enrollment.class.monthlyFee.toLocaleString()}</p>
                       <p className="mt-1 text-xs text-slate-500">Configured due week: Week {enrollment.class.paymentDueWeek}</p>
