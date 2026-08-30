@@ -232,11 +232,6 @@ export function MaterialBundlePanel() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // The month grid drives a shared height; the class and year lists scroll
-  // within it (mirrors the payments fee-sheet selectors).
-  const monthGridRef = useRef<HTMLDivElement | null>(null);
-  const [selectorMaxHeight, setSelectorMaxHeight] = useState<number>();
-
   const currentYear = now.getFullYear();
   const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
 
@@ -298,17 +293,6 @@ export function MaterialBundlePanel() {
     };
   }, [isActionMenuOpen]);
 
-  useEffect(() => {
-    const element = monthGridRef.current;
-    if (!element) return;
-
-    const update = () => setSelectorMaxHeight(element.offsetHeight);
-    update();
-
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   async function loadBundles(nextPage = page) {
     setIsLoading(true);
@@ -737,30 +721,14 @@ export function MaterialBundlePanel() {
       ) : null}
 
       <div className="grid gap-3 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="flex flex-col gap-2 self-start">
-          {/* Card 1 — header */}
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
-                <p className="mt-1 text-sm text-slate-500">Select a monthly bundle to review recipients and content.</p>
-              </div>
-              <div className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-teal-100 px-2 text-xs font-semibold text-teal-700">
-                {bundles.length}
-              </div>
-            </div>
-          </section>
-
-          {/* Card 2 — filters (class / year / month tile pickers) */}
+        <aside className="self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto scrollbar-thin">
+          {/* Filters — class / year / month tile pickers */}
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               {/* Class */}
               <div>
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Class</p>
-                <div
-                  className="scrollbar-thin space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
-                  style={{ maxHeight: selectorMaxHeight }}
-                >
+                <div className="scrollbar-thin max-h-[220px] space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5">
                   <button
                     type="button"
                     onClick={() => setFilterClassId("")}
@@ -832,10 +800,7 @@ export function MaterialBundlePanel() {
               {/* Month — 4 per row */}
               <div>
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Month</p>
-                <div
-                  ref={monthGridRef}
-                  className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5"
-                >
+                <div className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5">
                   <button
                     type="button"
                     onClick={() => setFilterMonth("")}
@@ -870,10 +835,19 @@ export function MaterialBundlePanel() {
             </div>
           </section>
 
-          {/* Card 3 — bundle list */}
-          <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        </aside>
+
+        <div className="scrollbar-thin flex flex-col gap-3 self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
+          {/* Bundle list — compact strip */}
+          <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-100 px-2 text-[11px] font-semibold text-teal-700">
+                {bundles.length}
+              </span>
+            </div>
             {isLoading ? <p className="px-1 pb-2 text-xs font-medium text-slate-400">Loading...</p> : null}
-            <div className="space-y-2">
+            <div className="scrollbar-thin grid max-h-[260px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
               {bundles.map((bundle) => {
                 const selected = selectedBundleId === bundle.id;
                 return (
@@ -881,25 +855,25 @@ export function MaterialBundlePanel() {
                     key={bundle.id}
                     type="button"
                     onClick={() => void loadBundleDetails(bundle.id)}
-                    className={`w-full rounded-lg px-3 py-3 text-left transition ${
+                    className={`rounded-lg px-3 py-2.5 text-left transition ${
                       selected
                         ? "bg-teal-50 ring-1 ring-teal-300"
                         : "bg-slate-50 hover:bg-teal-50/60"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       <span
-                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                          selected ? "bg-white text-teal-700" : "bg-white text-slate-500"
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white ${
+                          selected ? "text-teal-700" : "text-slate-500"
                         }`}
                       >
-                        <FileText size={16} />
+                        <FileText size={14} />
                       </span>
-                      <p className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-900">
+                      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-900">
                         {bundle.title}
                       </p>
                       <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${
                           bundle.status === "SENT"
                             ? "bg-emerald-100 text-emerald-700"
                             : "bg-slate-200 text-slate-600"
@@ -909,25 +883,25 @@ export function MaterialBundlePanel() {
                       </span>
                     </div>
 
-                    <p className="mt-2 text-[13px] font-medium text-slate-500">
+                    <p className="mt-1.5 text-[12px] font-medium text-slate-500">
                       {monthLabel(bundle.month)} {bundle.year}
                     </p>
-                    <p className="mt-1 text-[12px] text-slate-400">
+                    <p className="mt-0.5 text-[11px] text-slate-400">
                       Created {new Date(bundle.createdAt).toLocaleDateString()}
                     </p>
 
-                    <div className="mt-2 flex items-center justify-end gap-3">
-                      <span className="text-[12px] text-slate-400">Student list</span>
-                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+                    <div className="mt-1.5 flex items-center justify-end gap-2">
+                      <span className="text-[11px] text-slate-400">Student list</span>
+                      <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-semibold text-white">
                         View more
-                        <ChevronRight size={12} />
+                        <ChevronRight size={11} />
                       </span>
                     </div>
                   </button>
                 );
               })}
               {!isLoading && bundles.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                <div className="col-span-full rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
                   <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
                     <Files size={18} />
                   </span>
@@ -937,67 +911,47 @@ export function MaterialBundlePanel() {
               ) : null}
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+            <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-slate-200 pt-2.5">
               <button
                 type="button"
                 onClick={() => void loadBundles(Math.max(1, page - 1))}
                 disabled={page <= 1 || isLoading}
-                className="btn-ghost h-9 gap-1.5 px-3 text-xs disabled:opacity-40"
+                className="btn-ghost h-8 gap-1.5 px-3 text-xs disabled:opacity-40"
               >
                 <ChevronLeft size={14} />
                 Prev
               </button>
-              <p className="text-[13px] font-medium text-slate-500">
+              <p className="text-[12px] font-medium text-slate-500">
                 {page} / {totalPages}
               </p>
               <button
                 type="button"
                 onClick={() => void loadBundles(Math.min(totalPages, page + 1))}
                 disabled={page >= totalPages || isLoading}
-                className="btn-ghost h-9 gap-1.5 px-3 text-xs disabled:opacity-40"
+                className="btn-ghost h-8 gap-1.5 px-3 text-xs disabled:opacity-40"
               >
                 Next
                 <ChevronRight size={14} />
               </button>
             </div>
           </section>
-        </aside>
 
-        <div className="grid gap-3">
           {!bundleDetail || isLoadingDetails ? (
-            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
-              <span className="inline-flex h-14 w-14 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
-                <FileText size={22} />
+            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
+                <FileText size={18} />
               </span>
-              <p className="mt-4 text-lg font-semibold text-slate-900">
+              <p className="mt-3 text-base font-semibold text-slate-900">
                 {isLoadingDetails ? "Loading bundle details..." : "Select a bundle to manage items and recipients."}
               </p>
-              <p className="mt-2 max-w-md text-[15px] leading-7 text-slate-500">
-                Choose a bundle from the left panel to review students, upload monthly learning materials, and track paper submissions.
+              <p className="mt-1.5 max-w-md text-[13px] leading-6 text-slate-500">
+                Choose a bundle above to review students, upload monthly learning materials, and track paper submissions.
               </p>
             </div>
           ) : (
             <>
-              <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-                <div className="flex items-start justify-between gap-6">
-
-                  <div className="flex min-w-0 flex-1 items-start gap-4">
-                    <span className="inline-flex h-14 w-14 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
-                      <FileText size={22} />
-                    </span>
-
-                    <div>
-                      
-
-                      <h3 className=" text-[30px] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[34px]">
-                        {bundleDetail.title}
-                      </h3>
-
-                      <p className="mt-2 text-[15px] font-medium text-slate-500">
-                        {bundleDetail.className} • {monthLabel(bundleDetail.month)} {bundleDetail.year}
-                      </p>
-                    </div>
-                  </div>
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-end gap-4">
 
                   <div className="relative shrink-0" ref={actionMenuRef}>
                     <button
@@ -1005,9 +959,9 @@ export function MaterialBundlePanel() {
                       onClick={() => setIsActionMenuOpen((prev) => !prev)}
                       aria-label="Open actions menu"
                       aria-expanded={isActionMenuOpen}
-                      className="btn-secondary h-10 w-10 rounded-xl p-0"
+                      className="btn-secondary h-9 w-9 rounded-xl p-0"
                     >
-                      <MoreHorizontal size={18} />
+                      <MoreHorizontal size={16} />
                     </button>
 
                     {isActionMenuOpen ? (
@@ -1051,65 +1005,65 @@ export function MaterialBundlePanel() {
 
                 </div>
 
-                <div className="mt-6 grid gap-3 xl:grid-cols-3">
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">Class students</p>
-                        <p className="mt-3 text-[30px] font-bold leading-none text-slate-900">{bundleDetail.summary.totalStudents}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Class students</p>
+                        <p className="mt-1 text-xl font-bold leading-none text-slate-900">{bundleDetail.summary.totalStudents}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700">
-                        <Users size={20} />
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-teal-700">
+                        <Users size={16} />
                       </span>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-emerald-50/80 p-5 shadow-sm">
+                  <div className="rounded-lg border border-slate-200 bg-emerald-50/80 p-3 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-emerald-700">Will receive</p>
-                        <p className="mt-3 text-[30px] font-bold leading-none text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-emerald-700">Will receive</p>
+                        <p className="mt-1 text-xl font-bold leading-none text-emerald-700">{bundleDetail.summary.willReceiveCount}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/80 text-emerald-700">
-                        <CheckCircle2 size={20} />
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/80 text-emerald-700">
+                        <CheckCircle2 size={16} />
                       </span>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-amber-50/80 p-5 shadow-sm">
+                  <div className="rounded-lg border border-slate-200 bg-amber-50/80 p-3 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-amber-700">Will not receive</p>
-                        <p className="mt-3 text-[30px] font-bold leading-none text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-amber-700">Will not receive</p>
+                        <p className="mt-1 text-xl font-bold leading-none text-amber-700">{bundleDetail.summary.willNotReceiveCount}</p>
                       </div>
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/80 text-amber-700">
-                        <AlertCircle size={20} />
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/80 text-amber-700">
+                        <AlertCircle size={16} />
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
-                        <Files size={18} />
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-teal-700 shadow-sm">
+                        <Files size={16} />
                       </span>
                       <div>
-                        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">Add tute / paper</p>
-                        <p className="mt-2 text-[15px] leading-6 text-slate-500">Open the side panel to add new items to this bundle.</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Add tute / paper</p>
+                        <p className="mt-1 text-[13px] leading-5 text-slate-500">Open the side panel to add new items to this bundle.</p>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={openAddItemPanel}
-                      className="btn-secondary h-11 gap-2.5 px-4 text-sm"
+                      className="btn-secondary h-9 gap-2 px-3 text-xs"
                     >
-                      <Plus size={18} />
+                      <Plus size={16} />
                       Add tute / paper
                     </button>
                   </div>
                 </div>
-                <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-5">
+                <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
                   <button
                     type="button"
                     onClick={() => setActiveItemTab("TUTE")}
@@ -1136,7 +1090,7 @@ export function MaterialBundlePanel() {
                   </button>
                   </div>
 
-                  <div className="p-5 sm:p-6">
+                  <div className="p-3.5 sm:p-4">
                   {activeItemTab === "TUTE" ? (
                     <div className="space-y-3">
                       {tuteItems.map((item) => (
@@ -1371,9 +1325,9 @@ export function MaterialBundlePanel() {
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-3 lg:auto-rows-fr lg:grid-cols-2">
-                  <div className="flex h-full min-h-[220px] flex-col rounded-xl border border-slate-200 bg-emerald-50/80 p-5 shadow-sm">
-                    <p className="text-base font-semibold text-emerald-700">
+                <div className="mt-4 grid gap-3 lg:auto-rows-fr lg:grid-cols-2">
+                  <div className="flex h-full min-h-[180px] flex-col rounded-lg border border-slate-200 bg-emerald-50/80 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-emerald-700">
                       {bundleDetail.status === "SENT" ? "Students this bundle was sent to" : "Students who will receive"}
                     </p>
                     <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
@@ -1398,8 +1352,8 @@ export function MaterialBundlePanel() {
                     </div>
                   </div>
 
-                  <div className="flex h-full min-h-[220px] flex-col rounded-xl border border-slate-200 bg-amber-50/80 p-5 shadow-sm">
-                    <p className="text-base font-semibold text-amber-700">Students who will not receive</p>
+                  <div className="flex h-full min-h-[180px] flex-col rounded-lg border border-slate-200 bg-amber-50/80 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-amber-700">Students who will not receive</p>
                     <div className="mt-4 flex flex-1 flex-col overflow-y-auto pr-1">
                       <div className="space-y-2">
                         {bundleDetail.students
