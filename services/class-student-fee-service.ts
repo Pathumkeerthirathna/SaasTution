@@ -91,7 +91,7 @@ function isCurrentPeriod(year: number, month: number) {
 
 async function assertTeacherOwnsClass(teacherId: string, classId: string) {
   const classInfo = await prisma.class.findFirst({
-    where: { id: classId, teacherId },
+    where: { id: classId, teacherId, status: 0 },
     select: { id: true, name: true, monthlyFee: true, paymentDueWeek: true },
   });
 
@@ -175,7 +175,7 @@ async function processCurrentMonthFees(params: {
   const classDueDatePassed = now.getTime() > dueDate.getTime();
 
   const activeStudents = await prisma.classStudent.findMany({
-    where: { classId, isActive: true },
+    where: { classId, isActive: true, student: { status: 0 } },
     select: { id: true },
   });
 
@@ -507,7 +507,7 @@ async function buildMonthlyFeeSheet(params: {
     where: {
       year,
       month,
-      classStudent: { classId },
+      classStudent: { classId, student: { status: 0 } },
     },
     orderBy: { createdAt: "asc" },
     select: {

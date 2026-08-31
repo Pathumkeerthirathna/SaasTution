@@ -6,9 +6,6 @@ export async function getCurrentDevice() {
   const fp = await FingerprintJS.load();
   const fingerprint = await fp.get();
 
-  console.log("Visitor ID:", fingerprint.visitorId);
-  console.log("Components:", fingerprint.components);
-
   // Parse browser information
   const parser = new UAParser();
   const result = parser.getResult();

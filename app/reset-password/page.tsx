@@ -1,7 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { CheckCircle2, IdCard, KeyRound, Send } from "lucide-react";
+
+import { AuthShell } from "@/components/auth-shell";
+import { AuthIllustration } from "@/components/auth-illustration";
 
 export default function ResetPasswordRequestPage() {
   const [loginId, setLoginId] = useState("");
@@ -48,54 +51,60 @@ export default function ResetPasswordRequestPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-10 sm:px-6">
-      <section className="w-full rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Password reset</p>
-        <h1 className="mt-3 text-2xl font-semibold">Request a reset link</h1>
-        <p className="mt-2 text-sm text-muted">
-          Enter teacher/guardian email or student registration number. We will send a reset link to the registered
-          email address.
-        </p>
-
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="loginId" className="mb-1 block text-sm font-medium">
-              Email or registration number
-            </label>
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your email or registration number and we'll send a reset link to the registered email address."
+      footerText="Remembered it?"
+      footerLinkHref="/login"
+      footerLinkLabel="Sign in"
+      icon={<KeyRound className="h-5 w-5" />}
+      illustration={<AuthIllustration />}
+      showBackToHome
+    >
+      <form className="space-y-3.5" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="loginId"
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+          >
+            Email or Registration Number
+          </label>
+          <div className="relative">
+            <IdCard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               id="loginId"
               type="text"
               required
               value={loginId}
               onChange={(event) => setLoginId(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               placeholder="teacher@school.com or ABC-2026-001"
             />
           </div>
-
-          {errorMessage ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
-          ) : null}
-
-          {message ? (
-            <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSubmitting ? "Sending link..." : "Send reset link"}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <Link href="/login" className="font-medium">
-            Back to login
-          </Link>
         </div>
-      </section>
-    </main>
+
+        {errorMessage ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        {message ? (
+          <p className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            {message}
+          </p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Send className="h-4 w-4" />
+          {isSubmitting ? "Sending link..." : "Send reset link"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

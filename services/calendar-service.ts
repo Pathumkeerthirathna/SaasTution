@@ -76,7 +76,7 @@ export async function getTeacherCalendar(
         orderBy: { startTime: "asc" },
       },
       lectures: {
-        where: { date: { gte: from, lte: to } },
+        where: { status: 0, date: { gte: from, lte: to } },
         select: { id: true, title: true, classStatus: true, date: true },
         orderBy: { date: "asc" },
       },
@@ -203,6 +203,7 @@ export async function getTeacherCalendar(
   const teacherEvents = await prisma.teacherCalendarEvent.findMany({
     where: {
       teacherId,
+      status: 0,
       startDateTime: { lte: to },
       endDateTime: { gte: from },
     },

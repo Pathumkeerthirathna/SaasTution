@@ -17,6 +17,7 @@ export default async function StudentLiveClassesPage() {
     where: {
       isActive: true,
       class: {
+        status: 0,
         students: {
           some: {
             studentId: studentSession.studentId,
@@ -24,6 +25,7 @@ export default async function StudentLiveClassesPage() {
           },
         },
       },
+      OR: [{ lectureId: null }, { lecture: { status: 0 } }],
     },
     orderBy: {
       startedAt: "desc",

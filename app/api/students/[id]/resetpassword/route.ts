@@ -10,7 +10,7 @@ export async function POST(
     params,
   }: {
     params: {
-      studentId: string;
+      id: string;
     };
   }
 ) {
@@ -21,7 +21,7 @@ export async function POST(
     const { password } =
       await request.json();
 
-    if (!password?.trim()) {
+    if (typeof password !== "string" || !password.trim()) {
       return NextResponse.json(
         {
           success: false,
@@ -33,10 +33,28 @@ export async function POST(
       );
     }
 
+    if (
+      password.length < 8 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Password must be at least 8 characters and include an uppercase letter, a lowercase letter and a number.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     const student =
       await prisma.student.findFirst({
         where: {
-          id: params.studentId,
+          id: params.id,
           teacherId: session.teacherId,
           status: {
             not: 2,

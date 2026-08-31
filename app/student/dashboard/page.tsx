@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   BookOpen,
+  Clock,
   Radio,
   ClipboardList,
   MessageSquare,
@@ -22,8 +23,10 @@ import { Weekday } from "@prisma/client";
 import { requireStudentSession } from "@/lib/auth-session";
 import { getCurrentMonthKey, getPaymentDueDate } from "@/lib/payment-validation";
 import { prisma } from "@/lib/prisma";
+import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
 import { verifySessionInviteToken } from "@/lib/session-invite";
 import { PaperCountdownList } from "@/components/student-portal/paper-countdown-list";
+import { LiveBroadcastCard } from "@/components/dashboard/live-broadcast-card";
 
 // helpers
 
@@ -79,7 +82,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   ] = await Promise.all([
 
     prisma.classStudent.findMany({
-      where: { studentId, isActive: true },
+      where: { studentId, isActive: true, class: { status: 0 } },
       select: {
         classId: true,
         class: {
@@ -99,7 +102,8 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     prisma.classSession.findMany({
       where: {
         isActive: true,
-        class: { students: { some: { studentId, isActive: true } } },
+        class: { status: 0, students: { some: { studentId, isActive: true } } },
+        OR: [{ lectureId: null }, { lecture: { status: 0 } }],
       },
       orderBy: { startedAt: "desc" },
       select: {
@@ -109,14 +113,14 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
         jitsiDomain: true,
         class: { select: { id: true, name: true, teacher: { select: { name: true } } } },
         lecture: { select: { title: true } },
-        _count: { select: { attendance: true } },
+        _count: { select: { attendance: { where: { student: { status: 0 } } } } },
       },
     }),
 
     prisma.classSchedule.findMany({
       where: {
         dayOfWeek: todayWeekday,
-        class: { students: { some: { studentId, isActive: true } } },
+        class: { status: 0, students: { some: { studentId, isActive: true } } },
       },
       select: {
         id: true,
@@ -139,7 +143,8 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
     prisma.assignment.findMany({
       where: {
-        lecture: { class: { students: { some: { studentId, isActive: true } } } },
+        status: 0,
+        lecture: { status: 0, class: { status: 0, students: { some: { studentId, isActive: true } } } },
         dueDate: { gte: now },
         submissions: { none: { studentId } },
       },
@@ -161,7 +166,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     }),
 
     prisma.quiz.findMany({
-      where: { lecture: { class: { students: { some: { studentId, isActive: true } } } } },
+      where: { status: 0, lecture: { status: 0, class: { status: 0, students: { some: { studentId, isActive: true } } } } },
       orderBy: { dueDate: "desc" },
       take: 8,
       select: {
@@ -179,7 +184,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     }),
 
     prisma.note.findMany({
-      where: { lecture: { class: { students: { some: { studentId, isActive: true } } } } },
+      where: { status: 0, lecture: { status: 0, class: { status: 0, students: { some: { studentId, isActive: true } } } } },
       orderBy: { lectureId: "desc" },
       take: 8,
       select: {
@@ -195,7 +200,8 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
     prisma.materialBundle.findMany({
       where: {
-        status: "SENT",
+        bundleStatus: "SENT",
+        status: 0,
         recipients: { some: { studentId, willReceive: true } },
       },
       orderBy: { sentAt: "desc" },
@@ -208,6 +214,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
         sentAt: true,
         class: { select: { name: true } },
         items: {
+          where: { status: 0 },
           select: {
             id: true,
             type: true,
@@ -252,6 +259,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     prisma.classPayment.findMany({
       where: {
         studentId,
+        class: { status: 0 },
         classStudentFee: { year: currentYearNum, month: currentMonthNum },
       },
       select: {
@@ -266,7 +274,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     prisma.attendance.findMany({
       where: {
         studentId,
-        classSession: { class: { students: { some: { studentId, isActive: true } } } },
+        classSession: { class: { status: 0, students: { some: { studentId, isActive: true } } } },
       },
       orderBy: { joinedAt: "desc" },
       take: 30,
@@ -284,7 +292,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
     prisma.classSession.count({
       where: {
-        class: { students: { some: { studentId, isActive: true } } },
+        class: { status: 0, students: { some: { studentId, isActive: true } } },
         isActive: false,
       },
     }),
@@ -292,9 +300,11 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     prisma.materialBundleItem.findMany({
       where: {
         type: "PAPER",
+        status: 0,
         paperStartAt: { not: null },
         bundle: {
-          status: "SENT",
+          bundleStatus: "SENT",
+          status: 0,
           recipients: { some: { studentId, willReceive: true } },
         },
       },
@@ -318,6 +328,30 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
       take: 20,
     }),
   ]);
+
+  const studentRecord = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      confirmationStatus: true,
+      status: true,
+      deactivationReason: true,
+      teacher: {
+        select: {
+          name: true,
+          profile: { select: { phone: true, whatsapp: true } },
+        },
+      },
+    },
+  });
+
+  const teacherContacts = [
+    studentRecord?.teacher?.profile?.phone,
+    studentRecord?.teacher?.profile?.whatsapp,
+  ]
+    .filter(Boolean)
+    .join(" / ");
+
+  const liveBroadcasts = await getActiveYouTubeLives({ studentId });
 
   // derived values
 
@@ -441,6 +475,67 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
             </div>
           </div>
         </section>
+
+        {/* Teacher confirmation pending / rejected */}
+        {studentRecord?.confirmationStatus === "PENDING" && (
+          <section className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Clock size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                Teacher confirmation is pending
+              </p>
+              <p className="mt-0.5 text-[13px] leading-5 text-amber-700">
+                Your teacher hasn&apos;t approved your registration yet. They will
+                confirm it soon &mdash; you&apos;ll get full access once they do.
+              </p>
+            </div>
+          </section>
+        )}
+        {studentRecord?.confirmationStatus === "REJECTED" && (
+          <section className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700">
+              <Clock size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-red-900">
+                Registration not approved
+              </p>
+              <p className="mt-0.5 text-[13px] leading-5 text-red-700">
+                Your teacher did not approve this registration. Please contact
+                your teacher for help.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {studentRecord?.status === 1 && (
+          <section className="flex items-start gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+              <Clock size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-orange-900">
+                Your teacher has deactivated your account
+              </p>
+              {studentRecord.deactivationReason && (
+                <p className="mt-0.5 text-[13px] leading-5 text-orange-800">
+                  <span className="font-medium">Reason:</span>{" "}
+                  {studentRecord.deactivationReason}
+                </p>
+              )}
+              <p className="mt-1 text-[13px] leading-5 text-orange-700">
+                Please contact{" "}
+                {studentRecord.teacher?.name ?? "your teacher"}
+                {teacherContacts ? ` on ${teacherContacts}` : ""} to resolve
+                this.
+              </p>
+            </div>
+          </section>
+        )}
+
+        <LiveBroadcastCard broadcasts={liveBroadcasts} tone="emerald" />
 
         {/* 2. Live Class NOW */}
         {liveSessions.length > 0 && (

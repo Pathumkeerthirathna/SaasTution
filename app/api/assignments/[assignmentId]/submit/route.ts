@@ -46,7 +46,9 @@ export async function GET(
     const assignment = await prisma.assignment.findFirst({
       where: {
         id: assignmentId,
+        status: 0,
         lecture: {
+          status: 0,
           class: {
             students: {
               some: {
@@ -129,7 +131,9 @@ export async function POST(
     const assignment = await prisma.assignment.findFirst({
       where: {
         id: assignmentId,
+        status: 0,
         lecture: {
+          status: 0,
           class: {
             students: {
               some: {

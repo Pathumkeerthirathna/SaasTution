@@ -7,83 +7,28 @@ import {
   Users,
   Radio,
   CalendarDays,
-  FileText,
   ClipboardList,
-  HelpCircle,
-  MessageSquare,
-  GraduationCap,
   CheckCircle2,
   Clock,
-  XCircle,
   ArrowRight,
   Play,
   UserCheck,
   AlertCircle,
   DollarSign,
-  Bell,
 } from "lucide-react";
 import { Weekday } from "@prisma/client";
 
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { getCurrentMonthKey, getPaymentDueDate } from "@/lib/payment-validation";
 import { prisma } from "@/lib/prisma";
+import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
+import { DashboardCountdown } from "@/components/dashboard/dashboard-countdown";
+import { LiveBroadcastCard } from "@/components/dashboard/live-broadcast-card";
+import { DashboardMetricCards } from "@/components/dashboard/dashboard-metric-cards";
+import { DashboardScheduleEvents } from "@/components/dashboard/dashboard-schedule-events";
+import { DashboardCoursework } from "@/components/dashboard/dashboard-coursework";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-type UpcomingEvent = {
-  id: string;
-  type: "LECTURE" | "ASSIGNMENT" | "LIVE_SESSION";
-  title: string;
-  when: Date;
-  secondary: string;
-  href: string;
-};
-
-function formatCompactDateTime(value: Date) {
-  return value.toLocaleString([], {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function buildRelativeLabel(value: Date) {
-  const now = Date.now();
-  const diffMs = value.getTime() - now;
-  const absMinutes = Math.round(Math.abs(diffMs) / (1000 * 60));
-
-  if (absMinutes < 1) return "now";
-
-  const units: Array<{ limit: number; divisor: number; name: string }> = [
-    { limit: 60, divisor: 1, name: "minute" },
-    { limit: 60 * 24, divisor: 60, name: "hour" },
-    { limit: 60 * 24 * 30, divisor: 60 * 24, name: "day" },
-  ];
-
-  for (const unit of units) {
-    if (absMinutes < unit.limit) {
-      const amount = Math.max(1, Math.round(absMinutes / unit.divisor));
-      const s = amount === 1 ? unit.name : `${unit.name}s`;
-      return diffMs >= 0 ? `in ${amount} ${s}` : `${amount} ${s} ago`;
-    }
-  }
-
-  const months = Math.max(1, Math.round(absMinutes / (60 * 24 * 30)));
-  return diffMs >= 0 ? `in ${months} month${months === 1 ? "" : "s"}` : `${months} month${months === 1 ? "" : "s"} ago`;
-}
-
-function getEventTone(type: UpcomingEvent["type"]) {
-  if (type === "LIVE_SESSION") return "bg-rose-100 text-rose-700";
-  if (type === "ASSIGNMENT") return "bg-amber-100 text-amber-700";
-  return "bg-blue-100 text-blue-700";
-}
-
-function getEventLabel(type: UpcomingEvent["type"]) {
-  if (type === "LIVE_SESSION") return "Live";
-  if (type === "ASSIGNMENT") return "Deadline";
-  return "Lecture";
-}
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
@@ -129,58 +74,37 @@ export default async function DashboardPage() {
     .map(Number);
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-  const next14Days = new Date(now);
-  next14Days.setDate(next14Days.getDate() + 14);
   const todayWeekday = WEEKDAY_NAMES[now.getDay()] as Weekday;
 
   const [
     classCount,
-    lectureCount,
-    noteCount,
-    assignmentCount,
-    quizCount,
-    messageCount,
     activeSessionCount,
     pendingAssignmentReviews,
     classesWithStudents,
     monthPayments,
-    upcomingLectures,
-    upcomingAssignments,
     activeSessionsFull,
-    deliveryStats,
     paperSupportMessages,
     todaySchedules,
-    recentLectures,
-    recentAssignments,
-    recentQuizzes,
-    todayAttendees,
+    studentsTotalCount,
+    studentsPendingCount,
   ] = await Promise.all([
     // classCount
-    prisma.class.count({ where: { teacherId: teacher.id } }),
-
-    // lectureCount
-    prisma.lecture.count({ where: { class: { teacherId: teacher.id } } }),
-
-    // noteCount
-    prisma.note.count({ where: { lecture: { class: { teacherId: teacher.id } } } }),
-
-    // assignmentCount
-    prisma.assignment.count({ where: { lecture: { class: { teacherId: teacher.id } } } }),
-
-    // quizCount
-    prisma.quiz.count({ where: { lecture: { class: { teacherId: teacher.id } } } }),
-
-    // messageCount
-    prisma.message.count({ where: { class: { teacherId: teacher.id } } }),
+    prisma.class.count({ where: { teacherId: teacher.id, status: 0 } }),
 
     // activeSessionCount
-    prisma.classSession.count({ where: { isActive: true, class: { teacherId: teacher.id } } }),
+    prisma.classSession.count({
+      where: {
+        isActive: true,
+        class: { teacherId: teacher.id, status: 0 },
+        OR: [{ lectureId: null }, { lecture: { status: 0 } }],
+      },
+    }),
 
     // pendingAssignmentReviews: past-due assignments with ≥1 submission
     prisma.assignment.count({
       where: {
-        lecture: { class: { teacherId: teacher.id } },
+        status: 0,
+        lecture: { status: 0, class: { teacherId: teacher.id, status: 0 } },
         dueDate: { lt: now },
         submissions: { some: {} },
       },
@@ -188,14 +112,14 @@ export default async function DashboardPage() {
 
     // classesWithStudents
     prisma.class.findMany({
-      where: { teacherId: teacher.id },
+      where: { teacherId: teacher.id, status: 0 },
       select: {
         id: true,
         name: true,
         monthlyFee: true,
         paymentDueWeek: true,
         students: {
-          where: { isActive: true },
+          where: { isActive: true, student: { status: 0 } },
           select: {
             studentId: true,
             student: { select: { name: true, registrationNumber: true } },
@@ -207,36 +131,19 @@ export default async function DashboardPage() {
     // monthPayments
     prisma.classPayment.findMany({
       where: {
-        class: { teacherId: teacher.id },
+        class: { teacherId: teacher.id, status: 0 },
         classStudentFee: { year: currentYearNum, month: currentMonthNum },
       },
       select: { classId: true, studentId: true, amount: true, status: true },
     }),
 
-    // upcomingLectures (next 14 days)
-    prisma.lecture.findMany({
-      where: { class: { teacherId: teacher.id }, date: { gte: now, lte: next14Days } },
-      orderBy: { date: "asc" },
-      take: 6,
-      select: { id: true, title: true, date: true, class: { select: { name: true } } },
-    }),
-
-    // upcomingAssignments (next 14 days)
-    prisma.assignment.findMany({
-      where: { dueDate: { gte: now, lte: next14Days }, lecture: { class: { teacherId: teacher.id } } },
-      orderBy: { dueDate: "asc" },
-      take: 6,
-      select: {
-        id: true,
-        title: true,
-        dueDate: true,
-        lecture: { select: { title: true, class: { select: { name: true } } } },
-      },
-    }),
-
     // activeSessionsFull with live attendance count
     prisma.classSession.findMany({
-      where: { isActive: true, class: { teacherId: teacher.id } },
+      where: {
+        isActive: true,
+        class: { teacherId: teacher.id, status: 0 },
+        OR: [{ lectureId: null }, { lecture: { status: 0 } }],
+      },
       orderBy: { startedAt: "desc" },
       take: 6,
       select: {
@@ -246,15 +153,8 @@ export default async function DashboardPage() {
         jitsiDomain: true,
         class: { select: { id: true, name: true } },
         lecture: { select: { title: true } },
-        _count: { select: { attendance: true } },
+        _count: { select: { attendance: { where: { student: { status: 0 } } } } },
       },
-    }),
-
-    // deliveryStats
-    prisma.messageDelivery.groupBy({
-      by: ["status"],
-      where: { message: { class: { teacherId: teacher.id } } },
-      _count: { status: true },
     }),
 
     // paperSupportMessages
@@ -274,7 +174,7 @@ export default async function DashboardPage() {
 
     // todaySchedules
     prisma.classSchedule.findMany({
-      where: { class: { teacherId: teacher.id }, dayOfWeek: todayWeekday },
+      where: { class: { teacherId: teacher.id, status: 0 }, dayOfWeek: todayWeekday },
       orderBy: { startTime: "asc" },
       select: {
         id: true,
@@ -284,60 +184,166 @@ export default async function DashboardPage() {
       },
     }),
 
-    // recentLectures (last 6 past lectures)
-    prisma.lecture.findMany({
-      where: { class: { teacherId: teacher.id }, date: { lte: now } },
-      orderBy: { date: "desc" },
-      take: 6,
-      select: {
-        id: true,
-        title: true,
-        date: true,
-        class: { select: { name: true } },
-        _count: { select: { notes: true, assignments: true, quizzes: true } },
-      },
-    }),
+    // studentsTotalCount (active)
+    prisma.student.count({ where: { teacherId: teacher.id, status: 0 } }),
 
-    // recentAssignments with submission count
-    prisma.assignment.findMany({
-      where: { lecture: { class: { teacherId: teacher.id } } },
-      orderBy: { dueDate: "desc" },
-      take: 6,
-      select: {
-        id: true,
-        title: true,
-        dueDate: true,
-        lecture: { select: { title: true, class: { select: { name: true } } } },
-        _count: { select: { submissions: true } },
-      },
-    }),
-
-    // recentQuizzes with submission stats
-    prisma.quiz.findMany({
-      where: { lecture: { class: { teacherId: teacher.id } } },
-      orderBy: { dueDate: "desc" },
-      take: 5,
-      select: {
-        id: true,
-        title: true,
-        dueDate: true,
-        lecture: { select: { class: { select: { name: true } } } },
-        submissions: { select: { score: true, totalQuestions: true } },
-      },
-    }),
-
-    // unique students who attended a session today
-    prisma.attendance.findMany({
+    // studentsPendingCount (active, awaiting confirmation)
+    prisma.student.count({
       where: {
-        classSession: {
-          startedAt: { gte: todayStart, lt: todayEnd },
-          class: { teacherId: teacher.id },
-        },
+        teacherId: teacher.id,
+        status: 0,
+        confirmationStatus: "PENDING",
       },
-      select: { studentId: true },
-      distinct: ["studentId"],
     }),
   ]);
+
+  // ─── "starts within 8 hours" countdown ────────────────────────────────────
+
+  const COUNTDOWN_WINDOW_MS = 8 * 60 * 60 * 1000;
+  const countdownWindowEnd = new Date(now.getTime() + COUNTDOWN_WINDOW_MS);
+
+  const [countdownLectures, teacherSchedules, calendarEvents, nearbyLectures] =
+    await Promise.all([
+      prisma.lecture.findMany({
+        where: {
+          status: 0,
+          class: { teacherId: teacher.id, status: 0 },
+          date: { gt: now, lte: countdownWindowEnd },
+        },
+        orderBy: { date: "asc" },
+        select: {
+          id: true,
+          title: true,
+          date: true,
+          classId: true,
+          class: { select: { name: true } },
+        },
+      }),
+      prisma.classSchedule.findMany({
+        where: { class: { teacherId: teacher.id, status: 0 } },
+        select: {
+          id: true,
+          dayOfWeek: true,
+          startTime: true,
+          endTime: true,
+          classId: true,
+          class: { select: { name: true } },
+        },
+      }),
+      prisma.teacherCalendarEvent.findMany({
+        where: {
+          teacherId: teacher.id,
+          status: 0,
+          startDateTime: { gt: now, lte: countdownWindowEnd },
+        },
+        orderBy: { startDateTime: "asc" },
+        select: {
+          id: true,
+          title: true,
+          startDateTime: true,
+          eventType: { select: { name: true } },
+        },
+      }),
+      // Lectures on today / tomorrow — used to tell if a schedule occurrence
+      // already has a lecture attached.
+      prisma.lecture.findMany({
+        where: {
+          status: 0,
+          class: { teacherId: teacher.id, status: 0 },
+          date: {
+            gte: todayStart,
+            lte: new Date(now.getTime() + COUNTDOWN_WINDOW_MS + 24 * 60 * 60 * 1000),
+          },
+        },
+        select: { classId: true, date: true },
+      }),
+    ]);
+
+  function nextScheduleOccurrence(dayOfWeek: string, timeStr: string) {
+    const targetDow = WEEKDAY_NAMES.indexOf(dayOfWeek as (typeof WEEKDAY_NAMES)[number]);
+    if (targetDow < 0) return null;
+    const [h, m] = timeStr.split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+
+    const occ = new Date(now);
+    occ.setHours(0, 0, 0, 0);
+    occ.setDate(occ.getDate() + ((targetDow - occ.getDay() + 7) % 7));
+    occ.setHours(h, m, 0, 0);
+    if (occ.getTime() <= now.getTime()) {
+      occ.setDate(occ.getDate() + 7);
+    }
+    return occ;
+  }
+
+  function isSameDay(a: Date, b: Date) {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  const countdownItems: {
+    id: string;
+    kind: "LECTURE" | "SCHEDULE" | "EVENT";
+    title: string;
+    subtitle: string;
+    startsAt: string;
+    needsLecture: boolean;
+    actionHref: string;
+    actionLabel: string;
+  }[] = [];
+
+  for (const lecture of countdownLectures) {
+    countdownItems.push({
+      id: `lecture-${lecture.id}`,
+      kind: "LECTURE",
+      title: lecture.title,
+      subtitle: lecture.class.name,
+      startsAt: lecture.date.toISOString(),
+      needsLecture: false,
+      actionHref: "/dashboard/lectures",
+      actionLabel: "Open lectures",
+    });
+  }
+
+  for (const schedule of teacherSchedules) {
+    const start = nextScheduleOccurrence(schedule.dayOfWeek, schedule.startTime);
+    if (!start || start.getTime() > countdownWindowEnd.getTime()) continue;
+
+    const hasLecture = nearbyLectures.some(
+      (lecture) =>
+        lecture.classId === schedule.classId && isSameDay(lecture.date, start)
+    );
+
+    // A lecture is already attached for this occurrence — the lecture entry
+    // (or nothing) handles it; no need to nag.
+    if (hasLecture) continue;
+
+    countdownItems.push({
+      id: `schedule-${schedule.id}`,
+      kind: "SCHEDULE",
+      title: schedule.class.name,
+      subtitle: `${schedule.startTime}–${schedule.endTime}`,
+      startsAt: start.toISOString(),
+      needsLecture: true,
+      actionHref: "/dashboard/lectures",
+      actionLabel: "Add lecture",
+    });
+  }
+
+  for (const event of calendarEvents) {
+    countdownItems.push({
+      id: `event-${event.id}`,
+      kind: "EVENT",
+      title: event.title,
+      subtitle: event.eventType?.name ?? "Event",
+      startsAt: event.startDateTime.toISOString(),
+      needsLecture: false,
+      actionHref: "/dashboard/calendar",
+      actionLabel: "Open calendar",
+    });
+  }
 
   // ─── derived values ───────────────────────────────────────────────────────
 
@@ -382,70 +388,9 @@ export default async function DashboardPage() {
 
   const pendingPaymentsTotal = dueStudentsFlat.length;
 
-  const deliveryCountByStatus = { QUEUED: 0, SENT: 0, FAILED: 0 };
-  for (const row of deliveryStats) {
-    deliveryCountByStatus[row.status] = row._count.status;
-  }
-
-  const upcomingEvents: UpcomingEvent[] = [
-    ...upcomingLectures.map((l) => ({
-      id: l.id,
-      type: "LECTURE" as const,
-      title: l.title,
-      when: l.date,
-      secondary: l.class.name,
-      href: "/dashboard/lectures",
-    })),
-    ...upcomingAssignments.map((a) => ({
-      id: a.id,
-      type: "ASSIGNMENT" as const,
-      title: a.title,
-      when: a.dueDate,
-      secondary: `${a.lecture.class.name} • ${a.lecture.title}`,
-      href: "/dashboard/lectures",
-    })),
-    ...activeSessionsFull.map((s) => ({
-      id: s.id,
-      type: "LIVE_SESSION" as const,
-      title: s.lecture?.title ?? "Live class in progress",
-      when: s.startedAt,
-      secondary: s.class.name,
-      href: "/dashboard/sessions",
-    })),
-  ]
-    .sort((a, b) => a.when.getTime() - b.when.getTime())
-    .slice(0, 10);
-
-  const attendanceTodayCount = todayAttendees.length;
-  const attendanceTodayPct =
-    activeStudentCount > 0
-      ? Math.round((attendanceTodayCount / activeStudentCount) * 100)
-      : 0;
-
-  const quizStatsData = recentQuizzes.map((quiz) => {
-    const count = quiz.submissions.length;
-    const avgPct =
-      count > 0
-        ? Math.round(
-            (quiz.submissions.reduce(
-              (s, sub) => s + (sub.totalQuestions > 0 ? sub.score / sub.totalQuestions : 0),
-              0
-            ) /
-              count) *
-              100
-          )
-        : null;
-    return {
-      id: quiz.id,
-      title: quiz.title,
-      className: quiz.lecture.class.name,
-      submissionCount: count,
-      avgPct,
-    };
-  });
-
-  const activeClassIds = new Set(activeSessionsFull.map((s) => s.class.id));
   const todayLabel = `${WEEKDAY_LABELS[now.getDay()]}, ${now.toLocaleDateString([], { month: "long", day: "numeric" })}`;
+
+  const liveBroadcasts = await getActiveYouTubeLives({ teacherId: teacher.id });
 
   // ─── render ───────────────────────────────────────────────────────────────
 
@@ -453,16 +398,16 @@ export default async function DashboardPage() {
     <div className="flex w-full flex-col gap-6 pb-6">
 
       {/* ── 1. Hero + Top Summary ──────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-900 p-6 text-white shadow-panel sm:p-8">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-6 text-white shadow-panel sm:p-8">
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute -bottom-8 right-24 h-28 w-28 rounded-full bg-white/5" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-brand-200">Teacher Dashboard</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-100">Teacher Dashboard</p>
             <h1 className="mt-2 text-2xl font-bold sm:text-3xl">
               Welcome back, {teacher.name.split(" ")[0]}
             </h1>
-            <p className="mt-1.5 text-sm text-brand-200">
+            <p className="mt-1.5 text-sm text-emerald-100">
               {todayLabel} · Full control of your teaching workspace.
             </p>
           </div>
@@ -489,6 +434,10 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
+
+      <DashboardCountdown items={countdownItems} />
+
+      <LiveBroadcastCard broadcasts={liveBroadcasts} tone="rose" />
 
       {/* ── 2. LIVE CLASS NOW (high-priority, only when active) ───────────── */}
       {activeSessionsFull.length > 0 && (
@@ -537,132 +486,30 @@ export default async function DashboardPage() {
                     <span>{liveSession._count.attendance} joined</span>
                   </div>
                 </div>
-                <Link
-                  href="/dashboard/sessions"
+                <a
+                  href={`/session/join?sessionId=${liveSession.id}&role=teacher`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 py-2 text-xs font-semibold text-white transition hover:bg-rose-700"
                 >
-                  <Play size={12} /> Join / Manage
-                </Link>
+                  <Play size={12} /> Join session
+                </a>
               </article>
             ))}
           </div>
         </section>
       )}
 
-      {/* ── 3. Today's Schedule | Attendance Today ───────────────────────── */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <DashboardMetricCards
+        studentsPending={studentsPendingCount}
+        studentsTotal={studentsTotalCount}
+      />
 
-        {/* Today's Schedule */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-sky-50 to-white px-5 py-4">
-            <div>
-              <h2 className="font-bold text-foreground">Today&apos;s Schedule</h2>
-              <p className="mt-0.5 text-xs text-muted">{todayLabel}</p>
-            </div>
-            <CalendarDays size={18} className="text-sky-500" />
-          </div>
-          <div className="p-5">
-            {todaySchedules.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-sky-200 bg-sky-50 px-4 py-4 text-sm text-muted">
-                No classes scheduled for today.
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                {todaySchedules.map((sched) => {
-                  const isLive = activeClassIds.has(sched.class.id);
-                  return (
-                    <div
-                      key={sched.id}
-                      className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                        isLive ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50/50"
-                      }`}
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{sched.class.name}</p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {sched.startTime} – {sched.endTime}
-                        </p>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                          isLive ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"
-                        }`}
-                      >
-                        {isLive ? "LIVE" : "Upcoming"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </article>
+      {/* ── 3. Schedule | Events (range-selectable) ──────────────────────── */}
+      <DashboardScheduleEvents />
 
-        {/* Attendance Today */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-4">
-            <div>
-              <h2 className="font-bold text-foreground">Attendance Today</h2>
-              <p className="mt-0.5 text-xs text-muted">Based on today&apos;s live sessions</p>
-            </div>
-            <UserCheck size={18} className="text-emerald-500" />
-          </div>
-          <div className="space-y-4 p-5">
-            <div className="flex items-end gap-4">
-              <p className="text-5xl font-bold text-emerald-700">{attendanceTodayPct}%</p>
-              <div className="mb-1 text-sm text-muted">
-                <p>{attendanceTodayCount} unique student{attendanceTodayCount !== 1 ? "s" : ""} attended</p>
-                <p>out of {activeStudentCount} enrolled</p>
-              </div>
-            </div>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100">
-              <div
-                className="h-3 rounded-full bg-emerald-500 transition-all duration-500"
-                style={{ width: `${attendanceTodayPct}%` }}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-2.5 pt-1">
-              {[
-                { label: "Attended", value: attendanceTodayCount, cls: "border-emerald-200 bg-emerald-50", valCls: "text-emerald-700", labelCls: "text-emerald-600" },
-                { label: "Enrolled", value: activeStudentCount,   cls: "border-sky-200 bg-sky-50",         valCls: "text-sky-700",     labelCls: "text-sky-600"     },
-                { label: "Live Now", value: activeSessionCount,   cls: "border-brand-200 bg-brand-50",     valCls: "text-brand-700",   labelCls: "text-brand-600"   },
-              ].map(({ label, value, cls, valCls, labelCls }) => (
-                <div key={label} className={`rounded-xl border ${cls} px-3 py-2.5 text-center`}>
-                  <p className={`text-xl font-bold ${valCls}`}>{formatNumber(value)}</p>
-                  <p className={`mt-0.5 text-[11px] font-semibold uppercase tracking-wide ${labelCls}`}>{label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </article>
-      </section>
-
-      {/* ── 4. Stat cards ─────────────────────────────────────────────────── */}
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        {[
-          { label: "Lectures",    value: lectureCount,            icon: GraduationCap, bg: "bg-violet-50",  iconCls: "bg-violet-100 text-violet-600",  valCls: "text-violet-700",  border: "border-violet-200" },
-          { label: "Notes",       value: noteCount,               icon: FileText,      bg: "bg-sky-50",     iconCls: "bg-sky-100 text-sky-600",        valCls: "text-sky-700",     border: "border-sky-200"    },
-          { label: "Assignments", value: assignmentCount,         icon: ClipboardList, bg: "bg-amber-50",   iconCls: "bg-amber-100 text-amber-600",    valCls: "text-amber-700",   border: "border-amber-200"  },
-          { label: "Quizzes",     value: quizCount,               icon: HelpCircle,    bg: "bg-emerald-50", iconCls: "bg-emerald-100 text-emerald-600", valCls: "text-emerald-700", border: "border-emerald-200"},
-          { label: "Messages",    value: messageCount,            icon: MessageSquare, bg: "bg-rose-50",    iconCls: "bg-rose-100 text-rose-600",      valCls: "text-rose-700",    border: "border-rose-200"   },
-          { label: "To Review",   value: pendingAssignmentReviews,icon: Bell,          bg: "bg-orange-50",  iconCls: "bg-orange-100 text-orange-600",  valCls: "text-orange-700",  border: "border-orange-200" },
-        ].map(({ label, value, icon: Icon, bg, iconCls, valCls, border }) => (
-          <article
-            key={label}
-            className={`relative overflow-hidden rounded-2xl border ${border} ${bg} p-5 shadow-card transition hover:-translate-y-[1px] hover:shadow-md`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted">{label}</p>
-                <p className={`mt-2 text-3xl font-bold ${valCls}`}>{formatNumber(value)}</p>
-              </div>
-              <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconCls}`}>
-                <Icon size={18} />
-              </div>
-            </div>
-          </article>
-        ))}
-      </section>
+      {/* ── 3b. Assignments & Quizzes with submissions (range-selectable) ── */}
+      <DashboardCoursework />
 
       {/* ── 5. Monthly Revenue ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -691,239 +538,6 @@ export default async function DashboardPage() {
             <p className="mt-1.5 text-xs text-muted">{item.count} {item.countLabel}</p>
           </article>
         ))}
-      </section>
-
-      {/* ── 6. Assignments to Review | Quiz Performance ───────────────────── */}
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-
-        {/* Assignments */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-amber-50 to-white px-5 py-4">
-            <div>
-              <h2 className="font-bold text-foreground">Assignments</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                {pendingAssignmentReviews} past-due with submissions to review
-              </p>
-            </div>
-            <Link href="/dashboard/lectures" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
-              View all <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="p-5">
-            {recentAssignments.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-4 text-sm text-muted">
-                No assignments yet.
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                {recentAssignments.map((a) => {
-                  const isPast = a.dueDate < now;
-                  const subCount = a._count.submissions;
-                  return (
-                    <div
-                      key={a.id}
-                      className="flex items-start justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{a.title}</p>
-                        <p className="mt-0.5 text-xs text-muted">{a.lecture.class.name}</p>
-                        <p className="mt-0.5 text-xs text-muted">Due: {a.dueDate.toLocaleDateString()}</p>
-                      </div>
-                      <div className="flex flex-shrink-0 flex-col items-end gap-1">
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${subCount > 0 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
-                          {subCount} sub{subCount !== 1 ? "s" : ""}
-                        </span>
-                        {isPast && subCount > 0 && (
-                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">Review</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </article>
-
-        {/* Quiz Performance */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-violet-50 to-white px-5 py-4">
-            <div>
-              <h2 className="font-bold text-foreground">Quiz Performance</h2>
-              <p className="mt-0.5 text-xs text-muted">Recent quizzes with average student scores</p>
-            </div>
-            <Link href="/dashboard/lectures" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
-              View all <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="p-5">
-            {quizStatsData.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-violet-200 bg-violet-50 px-4 py-4 text-sm text-muted">
-                No quizzes yet.
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                {quizStatsData.map((quiz) => (
-                  <div key={quiz.id} className="rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{quiz.title}</p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {quiz.className} · {quiz.submissionCount} attempt{quiz.submissionCount !== 1 ? "s" : ""}
-                        </p>
-                      </div>
-                      <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                        quiz.avgPct === null ? "bg-gray-100 text-gray-500"
-                        : quiz.avgPct >= 70 ? "bg-emerald-100 text-emerald-700"
-                        : quiz.avgPct >= 40 ? "bg-amber-100 text-amber-700"
-                        : "bg-rose-100 text-rose-700"
-                      }`}>
-                        {quiz.avgPct !== null ? `${quiz.avgPct}% avg` : "No attempts"}
-                      </span>
-                    </div>
-                    {quiz.avgPct !== null && (
-                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className={`h-1.5 rounded-full ${quiz.avgPct >= 70 ? "bg-emerald-500" : quiz.avgPct >= 40 ? "bg-amber-500" : "bg-rose-500"}`}
-                          style={{ width: `${quiz.avgPct}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </article>
-      </section>
-
-      {/* ── 7. Recent Lectures & Materials ────────────────────────────────── */}
-      <section className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-        <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
-          <div>
-            <h2 className="font-bold text-foreground">Recent Lectures &amp; Materials</h2>
-            <p className="mt-0.5 text-xs text-muted">Latest past lectures with attached notes, assignments &amp; quizzes</p>
-          </div>
-          <Link href="/dashboard/lectures" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
-            All lectures <ArrowRight size={12} />
-          </Link>
-        </div>
-        <div className="p-5">
-          {recentLectures.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-brand-200 bg-brand-50 px-4 py-4 text-sm text-muted">
-              No past lectures yet.
-            </p>
-          ) : (
-            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-              {recentLectures.map((lecture) => (
-                <article key={lecture.id} className="rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3">
-                  <p className="truncate text-sm font-semibold text-foreground">{lecture.title}</p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    {lecture.class.name} · {lecture.date.toLocaleDateString()}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {lecture._count.notes > 0 && (
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
-                        {lecture._count.notes} note{lecture._count.notes !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {lecture._count.assignments > 0 && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                        {lecture._count.assignments} assignment{lecture._count.assignments !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {lecture._count.quizzes > 0 && (
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
-                        {lecture._count.quizzes} quiz{lecture._count.quizzes !== 1 ? "zes" : ""}
-                      </span>
-                    )}
-                    {lecture._count.notes === 0 && lecture._count.assignments === 0 && lecture._count.quizzes === 0 && (
-                      <span className="text-[11px] text-muted">No resources attached</span>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── 8. Upcoming Events | Communication Insights ───────────────────── */}
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
-
-        {/* Upcoming events */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
-            <h2 className="font-bold text-foreground">Upcoming events</h2>
-            <Link href="/dashboard/lectures" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
-              View all <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="p-5">
-            {upcomingEvents.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-brand-200 bg-brand-50 px-4 py-4 text-sm text-muted">
-                No upcoming lectures, deadlines, or active sessions in the next 14 days.
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                {upcomingEvents.map((event) => (
-                  <Link
-                    key={`${event.type}-${event.id}`}
-                    href={event.href}
-                    className="flex items-start justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-foreground">{event.title}</p>
-                      <p className="mt-0.5 text-xs text-muted">{event.secondary}</p>
-                      <p className="mt-1 text-xs text-muted">
-                        {formatCompactDateTime(event.when)} · {buildRelativeLabel(event.when)}
-                      </p>
-                    </div>
-                    <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getEventTone(event.type)}`}>
-                      {getEventLabel(event.type)}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </article>
-
-        {/* Communication insights */}
-        <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
-            <h2 className="font-bold text-foreground">Communication insights</h2>
-            <p className="mt-0.5 text-xs text-muted">Message pipeline from your classes</p>
-          </div>
-          <div className="space-y-3 p-5">
-            <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
-                  <MessageSquare size={16} />
-                </div>
-                <p className="text-sm font-medium text-foreground">Total messages</p>
-              </div>
-              <p className="text-2xl font-bold text-brand-700">{formatNumber(messageCount)}</p>
-            </div>
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-center">
-                <CheckCircle2 size={14} className="mx-auto text-emerald-600" />
-                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">Sent</p>
-                <p className="mt-1 text-xl font-bold text-emerald-800">{formatNumber(deliveryCountByStatus.SENT)}</p>
-              </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-center">
-                <Clock size={14} className="mx-auto text-amber-600" />
-                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700">Queued</p>
-                <p className="mt-1 text-xl font-bold text-amber-800">{formatNumber(deliveryCountByStatus.QUEUED)}</p>
-              </div>
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-center">
-                <XCircle size={14} className="mx-auto text-rose-600" />
-                <p className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">Failed</p>
-                <p className="mt-1 text-xl font-bold text-rose-800">{formatNumber(deliveryCountByStatus.FAILED)}</p>
-              </div>
-            </div>
-          </div>
-        </article>
       </section>
 
       {/* ── 9. Payment Tracking ───────────────────────────────────────────── */}
@@ -1038,40 +652,6 @@ export default async function DashboardPage() {
               ))}
             </div>
           )}
-        </div>
-      </section>
-
-      {/* ── 11. Quick Actions ─────────────────────────────────────────────── */}
-      <section className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-5 py-4">
-          <h2 className="font-bold text-foreground">Quick Actions</h2>
-          <p className="mt-0.5 text-xs text-muted">Jump to any section instantly</p>
-        </div>
-        <div className="p-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-            {[
-              { href: "/dashboard/classes",  label: "Manage Classes",  icon: BookOpen      },
-              { href: "/dashboard/sessions", label: "Live Sessions",   icon: Radio         },
-              { href: "/dashboard/lectures", label: "Lectures",        icon: GraduationCap },
-              { href: "/dashboard/students", label: "Students",        icon: Users         },
-              { href: "/dashboard/messages", label: "Announcements",   icon: MessageSquare },
-              { href: "/dashboard/classes",  label: "Payments",        icon: DollarSign    },
-            ].map(({ href, label, icon: Icon }) => (
-              <Link
-                key={label}
-                href={href}
-                className="btn-primary flex items-center justify-center gap-2 py-3"
-              >
-                <Icon size={14} />
-                <span className="text-xs">{label}</span>
-              </Link>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3 border-t border-brand-100 pt-3">
-            <Link href="/guardian/login"   className="btn-secondary">Guardian portal</Link>
-            <Link href="/account/security" className="btn-secondary">Account security</Link>
-            <Link href="/"                 className="btn-secondary">Back to home</Link>
-          </div>
         </div>
       </section>
 

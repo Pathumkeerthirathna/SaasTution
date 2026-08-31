@@ -8,6 +8,7 @@ import {
   updateMaterialBundleForTeacher,
 } from "@/services/material-bundle-service";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -42,8 +43,10 @@ export async function PUT(
     }
 
     const body = (await request.json()) as {
+      title?: string;
       year?: number;
       month?: number;
+      bundleStatus?: "DRAFT" | "SENT";
     };
 
     const parsed = updateMaterialBundleSchema.safeParse(body);

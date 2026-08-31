@@ -43,8 +43,10 @@ export async function GET(
             title: true,
             maxAttempts: true,
             dueDate: true,
+            status: true,
             lecture: {
               select: {
+                status: true,
                 class: {
                   select: {
                     students: {
@@ -87,6 +89,10 @@ export async function GET(
 
     const enrolled = submission.quiz.lecture.class.students.length > 0;
     if (!enrolled) {
+      throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
+    }
+
+    if (submission.quiz.status !== 0 || submission.quiz.lecture.status !== 0) {
       throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
     }
 

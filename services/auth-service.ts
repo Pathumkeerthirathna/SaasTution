@@ -133,16 +133,72 @@ export async function loginTeacher(email: string, password: string) {
 }
 
 export async function loginStudent(registrationNumber: string, password: string) {
+
   const student = await findStudentByRegistrationNumber(registrationNumber);
 
   if (!student || !student.password || !student.email) {
-    throw new AppError("Invalid registration number or password.", 401, "INVALID_CREDENTIALS");
+    throw new AppError("Invalid registration number or password. If you are new click forogt password and reset the password first", 401, "INVALID_CREDENTIALS");
   }
 
   const isPasswordValid = await bcrypt.compare(password, student.password);
 
   if (!isPasswordValid) {
     throw new AppError("Invalid registration number or password.", 401, "INVALID_CREDENTIALS");
+  }
+
+  if (student.confirmationStatus === StudentConfirmationStatus.PENDING) {
+    const profile = await prisma.teacherProfile.findUnique({
+      where: { teacherId: student.teacherId },
+      select: {
+        phone: true,
+        whatsapp: true,
+        teacher: { select: { name: true } },
+      },
+    });
+
+    throw new AppError(
+      "Your registration is waiting for your teacher's approval. You'll be able to sign in once they confirm it.",
+      403,
+      "STUDENT_PENDING_APPROVAL",
+      {
+        teacherName: profile?.teacher.name ?? null,
+        phone: profile?.phone ?? null,
+        whatsapp: profile?.whatsapp ?? null,
+      }
+    );
+  }
+
+  if (student.confirmationStatus === StudentConfirmationStatus.REJECTED) {
+    throw new AppError(
+      "Your registration was not approved. Please contact your teacher for help.",
+      403,
+      "STUDENT_REGISTRATION_REJECTED"
+    );
+  }
+
+  if (student.status === 1) {
+    const profile = await prisma.teacherProfile.findUnique({
+      where: { teacherId: student.teacherId },
+      select: {
+        phone: true,
+        whatsapp: true,
+        teacher: { select: { name: true } },
+      },
+    });
+
+    throw new AppError(
+      student.deactivationReason
+        ? `Your teacher has deactivated your account. Reason: ${student.deactivationReason}`
+        : "Your teacher has deactivated your account.",
+      403,
+      "STUDENT_DEACTIVATED",
+      {
+        reason: student.deactivationReason ?? null,
+        teacherName: profile?.teacher.name ?? null,
+        phone: profile?.phone ?? null,
+        whatsapp: profile?.whatsapp ?? null,
+      }
+    );
   }
 
   return {

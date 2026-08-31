@@ -31,17 +31,18 @@ export async function POST(
         receivedAt: true,
         bundle: {
           select: {
+            bundleStatus: true,
             status: true,
           },
         },
       },
     });
 
-    if (!recipient || !recipient.willReceive) {
+    if (!recipient || !recipient.willReceive || recipient.bundle.status !== 0) {
       return apiError("Bundle not found.", 404, "BUNDLE_NOT_FOUND");
     }
 
-    if (recipient.bundle.status !== "SENT") {
+    if (recipient.bundle.bundleStatus !== "SENT") {
       return apiError("Bundle is not marked as sent yet.", 400, "BUNDLE_NOT_SENT");
     }
 

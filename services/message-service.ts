@@ -14,6 +14,7 @@ async function assertTeacherOwnsClass(classId: string, teacherId: string) {
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -39,7 +40,7 @@ export async function sendMessageToClassStudents(params: {
 
   if (channel === "whatsapp") {
     const classStudents = await prisma.classStudent.findMany({
-      where: { classId: params.classId, isActive: true },
+      where: { classId: params.classId, isActive: true, student: { status: 0 } },
       select: { student: { select: { id: true, contact: true } } },
     });
 
@@ -80,7 +81,7 @@ export async function sendMessageToClassStudents(params: {
 
   // Email channel
   const classStudents = await prisma.classStudent.findMany({
-    where: { classId: params.classId, isActive: true },
+    where: { classId: params.classId, isActive: true, student: { status: 0 } },
     select: {
       student: {
         select: { id: true, name: true, email: true },

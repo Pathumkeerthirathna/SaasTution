@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
     const now = new Date();
 
     const where = {
-      status: "SENT" as const,
+      bundleStatus: "SENT" as const,
+      status: 0,
       ...(classId ? { classId } : {}),
       ...(fromDate || toDate
         ? {
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
             take: 1,
           },
           items: {
+            where: { status: 0 },
             orderBy: [{ type: "asc" }, { createdAt: "desc" }],
             select: {
               id: true,

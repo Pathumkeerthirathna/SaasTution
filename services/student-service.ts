@@ -26,6 +26,7 @@ async function assertTeacherOwnsClass(classId: string, teacherId: string) {
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -204,9 +205,11 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
 export async function assignStudentToClass(teacherId: string, classId: string, studentId: string) {
   await assertTeacherOwnsClass(classId, teacherId);
 
-  const student = await prisma.student.findUnique({
+  const student = await prisma.student.findFirst({
     where: {
       id: studentId,
+      teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -403,6 +406,7 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
         id: true,
         name: true,
         status: true,
+        deactivationReason: true,
         gradeId: true,
         grade: {
           select: {
@@ -450,6 +454,7 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
       id: student.id,
       name: student.name,
       status: student.status,
+      deactivationReason: student.deactivationReason ?? null,
       gradeId: student.gradeId,
       grade: student.grade,
 
@@ -602,14 +607,26 @@ export async function activateStudentForTeacher(
     data: {
       status: 0,
       actionTakenDate: new Date(),
+      deactivationReason: null,
     },
   });
 }
 
 export async function deactivateStudentForTeacher(
   teacherId: string,
-  studentId: string
+  studentId: string,
+  reason: string
 ) {
+  const trimmedReason = reason.trim();
+
+  if (trimmedReason.length < 3) {
+    throw new AppError(
+      "A reason is required to deactivate a student.",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+
   return prisma.student.updateMany({
     where: {
       id: studentId,
@@ -618,6 +635,7 @@ export async function deactivateStudentForTeacher(
     data: {
       status: 1,
       actionTakenDate: new Date(),
+      deactivationReason: trimmedReason.slice(0, 500),
     },
   });
 }
@@ -1084,6 +1102,7 @@ export async function listStudentsByClassForTeacher(params: {
       where: {
         classId: params.classId,
         isActive: true,
+        student: { status: 0 },
       },
       skip: params.skip,
       take: params.take,
@@ -1119,6 +1138,7 @@ export async function listStudentsByClassForTeacher(params: {
       where: {
         classId: params.classId,
         isActive: true,
+        student: { status: 0 },
       },
     }),
   ]);
@@ -1205,6 +1225,8 @@ export async function getStudentClassAttendance(
   const lectures = await prisma.lecture.findMany({
     where: {
       classId,
+      status: 0,
+      class: { status: 0 },
     },
     orderBy: {
       date: "desc",
@@ -1263,8 +1285,10 @@ export async function getStudentQuizResults(
 ) {
   const quizzes = await prisma.quiz.findMany({
     where: {
+      status: 0,
       lecture: {
         classId,
+        status: 0,
       },
     },
     orderBy: {
@@ -1382,12 +1406,14 @@ export async function getStudentAttendanceSummary(
       const totalLectures = await prisma.lecture.count({
         where: {
           classId: studentClass.classId,
+          status: 0,
         },
       });
 
       const attendedLectures = await prisma.lecture.count({
         where: {
           classId: studentClass.classId,
+          status: 0,
           sessions: {
             some: {
               attendance: {
@@ -1614,8 +1640,10 @@ export async function getStudentQuizSummary(
     studentClasses.map(async (studentClass) => {
       const quizzes = await prisma.quiz.findMany({
         where: {
+          status: 0,
           lecture: {
             classId: studentClass.classId,
+            status: 0,
           },
         },
         select: {
@@ -1715,8 +1743,10 @@ export async function getStudentClassQuizResults(
 ) {
   const quizzes = await prisma.quiz.findMany({
     where: {
+      status: 0,
       lecture: {
         classId,
+        status: 0,
       },
     },
     orderBy: {
@@ -1857,12 +1887,31 @@ export async function getStudentClassQuizResults(
 export async function RegisterStudentViaPublicClasses(
   request: RegisterStudentRequest
 ) {
-  const cls = await prisma.class.findUnique({
-    where: { id: request.classId },
+  const cls = await prisma.class.findFirst({
+    where: { id: request.classId, status: 0 },
   });
 
   if (!cls) {
-    throw new Error("Class not found");
+    throw new AppError("Class not found.", 404, "CLASS_NOT_FOUND");
+  }
+
+  const emailValue = request.email?.trim();
+  if (emailValue) {
+    const existingByEmail = await prisma.student.findFirst({
+      where: {
+        teacherId: cls.teacherId,
+        email: { equals: emailValue, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+
+    if (existingByEmail) {
+      throw new AppError(
+        "A student is already registered with this email address.",
+        409,
+        "EMAIL_EXISTS"
+      );
+    }
   }
 
   const teacher = await prisma.teacher.findUnique({
@@ -1884,7 +1933,7 @@ export async function RegisterStudentViaPublicClasses(
         contact01: request.mobileNumber,
         contact02: request.parentMobileNumber,
         gradeId: request.gradeId,
-        email: request.email ?? "",
+        email: emailValue ? emailValue.toLowerCase() : "",
 
         registrationSource: "PUBLIC_CLASS",
         publicClassId: cls.id,
@@ -2001,7 +2050,8 @@ export async function checkIfEmailExists(
 export async function checkIfNameExists(
   name: string,
   studentId: string | undefined,
-  teacherId: string
+  teacherId: string,
+  gradeId?: number | null
 ) {
   const normalizedName = name.trim();
 
@@ -2012,6 +2062,8 @@ export async function checkIfNameExists(
         equals: normalizedName,
         mode: "insensitive",
       },
+      // A name is only a clash within the same grade.
+      ...(gradeId ? { gradeId } : {}),
       ...(studentId && {
         NOT: {
           id: studentId,
@@ -2118,6 +2170,7 @@ export async function listStudentsForClassroom(params: {
     where: {
       classId: params.classId,
       isActive: true,
+      student: { status: 0 },
     },
     orderBy: {
       assignedAt: "asc",
@@ -2236,7 +2289,7 @@ export async function getStudentAttendanceAnalytics(
   if (classIds.length === 0) return emptyResult;
 
   const lectures = await prisma.lecture.findMany({
-    where: { classId: { in: classIds } },
+    where: { classId: { in: classIds }, status: 0 },
     select: {
       id: true,
       date: true,
@@ -2455,7 +2508,7 @@ export async function getStudentQuizAnalytics(
   if (classIds.length === 0) return emptyResult;
 
   const quizzes = await prisma.quiz.findMany({
-    where: { lecture: { classId: { in: classIds } } },
+    where: { status: 0, lecture: { classId: { in: classIds }, status: 0 } },
     select: {
       id: true,
       title: true,

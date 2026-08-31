@@ -1,6 +1,3 @@
-import { unlink } from "node:fs/promises";
-import path from "node:path";
-
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
@@ -9,14 +6,6 @@ import { deleteNoteForTeacher, updateNoteForTeacher } from "@/services/lecture-s
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function resolveNoteFilePath(fileUrl: string) {
-  if (fileUrl.startsWith("/uploads/")) {
-    return path.join(process.cwd(), "public", fileUrl);
-  }
-
-  return path.join(process.cwd(), "storage", fileUrl);
-}
 
 export async function PUT(
   request: Request,
@@ -77,10 +66,8 @@ export async function DELETE(
       throw new AppError("Lecture id and note id are required.", 400, "VALIDATION_ERROR");
     }
 
-    const deletedNote = await deleteNoteForTeacher(session.teacherId, lectureId, noteId);
-
-    const notePath = resolveNoteFilePath(deletedNote.fileUrl);
-    await unlink(notePath).catch(() => undefined);
+    // Soft delete only — keep the file on disk so the note can be restored.
+    await deleteNoteForTeacher(session.teacherId, lectureId, noteId);
 
     return apiSuccess(
       {

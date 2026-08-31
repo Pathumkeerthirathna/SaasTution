@@ -75,13 +75,16 @@ model TeacherCalendarEvent {
   location   String?
   meetingUrl String?
 
+  // 0 = active, 1 = removed (soft-deleted). Removed events are hidden everywhere.
+  status Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   eventType TeacherEventType @relation(fields: [eventTypeId], references: [id])
 
-  @@index([teacherId, startDateTime])
+  @@index([teacherId, status, startDateTime])
   @@index([eventTypeId])
 }
 
@@ -421,8 +424,9 @@ model Student {
   contact            String
   registrationNumber String?
 
-  status          Int       @default(0) // 0=Active, 1=Inactive, 2=Deleted
-  actionTakenDate DateTime?
+  status             Int       @default(0) // 0=Active, 1=Inactive, 2=Deleted
+  actionTakenDate    DateTime?
+  deactivationReason String?
 
   gradeId Int?   @default(6)
   grade   Grade? @relation(fields: [gradeId], references: [id])
@@ -641,7 +645,9 @@ model MaterialBundle {
   classId              String
   year                 Int
   month                Int
-  status               MaterialBundleStatus      @default(DRAFT)
+  bundleStatus         BundleStatus              @default(DRAFT)
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status               Int                       @default(0)
   sentAt               DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
@@ -652,7 +658,8 @@ model MaterialBundle {
   paperSupportMessages PaperSupportMessage[]
 
   @@index([classId, year, month])
-  @@index([status, sentAt])
+  @@index([bundleStatus, sentAt])
+  @@index([classId, status])
 }
 
 model MaterialBundleItem {
@@ -667,6 +674,8 @@ model MaterialBundleItem {
   sizeBytes            Int?
   paperStartAt         DateTime?
   paperEndAt           DateTime?
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status               Int                            @default(0)
   createdAt            DateTime                       @default(now())
   updatedAt            DateTime                       @updatedAt
   bundle               MaterialBundle                 @relation(fields: [bundleId], references: [id], onDelete: Cascade)
@@ -674,6 +683,7 @@ model MaterialBundleItem {
   paperSupportMessages PaperSupportMessage[]
 
   @@index([bundleId, type, createdAt])
+  @@index([bundleId, status])
 }
 
 model PaperSupportMessage {
@@ -828,6 +838,9 @@ model Lecture {
   classStatus ClassStatus    @default(SCHEDULED)
   createdAt   DateTime       @default(now())
 
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
   assignments Assignment[]
   sessions    ClassSession[]
   class       Class          @relation(fields: [classId], references: [id])
@@ -837,7 +850,7 @@ model Lecture {
   youtubeRecordings YouTubeRecording[]
   youtubeLives      YouTubeLiveBroadcast[]
 
-  @@index([classId, date])
+  @@index([classId, status, date])
 }
 
 enum ClassStatus {
@@ -933,9 +946,12 @@ model Note {
   visibility RecordingVisibility @default(PRIVATE)
   access     RecordingAccess     @default(LOCKED)
 
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
   lecture          Lecture   @relation(fields: [lectureId], references: [id])
 
-  @@index([lectureId])
+  @@index([lectureId, status])
 }
 
 model Assignment {
@@ -944,10 +960,14 @@ model Assignment {
   description String
   dueDate     DateTime
   lectureId   String
+
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
   lecture     Lecture                @relation(fields: [lectureId], references: [id])
   submissions AssignmentSubmission[]
 
-  @@index([lectureId, dueDate])
+  @@index([lectureId, status, dueDate])
 }
 
 model AssignmentSubmission {
@@ -974,11 +994,15 @@ model Quiz {
   lectureId   String
   dueDate     DateTime?
   maxAttempts Int?
+
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
   lecture     Lecture          @relation(fields: [lectureId], references: [id])
   questions   QuizQuestion[]
   submissions QuizSubmission[]
 
-  @@index([lectureId])
+  @@index([lectureId, status])
 }
 
 model QuizQuestion {
@@ -1183,7 +1207,7 @@ enum QuizAnswerType {
   MULTIPLE
 }
 
-enum MaterialBundleStatus {
+enum BundleStatus {
   DRAFT
   SENT
 }

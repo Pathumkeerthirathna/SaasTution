@@ -60,7 +60,33 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-brand-200 bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
-          <div className="flex items-center gap-3">
+          {/* decorative curved sweep, right side — muted emerald → muted gold */}
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+            <svg
+              className="absolute right-0 top-0 h-full w-[64%] min-w-[440px]"
+              viewBox="0 0 440 96"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <linearGradient id="student-hdr-sweep" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#8fd0ac" stopOpacity="0" />
+                  <stop offset="34%" stopColor="#8fd0ac" stopOpacity="0.28" />
+                  <stop offset="68%" stopColor="#bfd8a6" stopOpacity="0.30" />
+                  <stop offset="100%" stopColor="#dda06c" stopOpacity="0.38" />
+                </linearGradient>
+              </defs>
+              <path d="M172 0 C 122 34 98 60 46 96 L 440 96 L 440 0 Z" fill="url(#student-hdr-sweep)" />
+              <path
+                d="M188 0 C 138 34 114 60 62 96"
+                fill="none"
+                stroke="#ffffff"
+                strokeOpacity="0.45"
+                strokeWidth="1.5"
+              />
+            </svg>
+          </div>
+
+          <div className="relative flex items-center gap-3">
             <button
               type="button"
               aria-label="Toggle sidebar"
@@ -128,7 +154,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
           </div>
         </header>
 
-        <main className="flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</main>
+        <main className="flex-1 space-y-5 px-3 py-4 sm:px-4 lg:px-5 lg:py-5">{children}</main>
       </div>
     </div>
   );

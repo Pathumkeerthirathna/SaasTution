@@ -269,7 +269,7 @@ export async function updateTeacherCalendarEvent(
   input: Partial<CalendarEventInput>
 ) {
   const owned = await prisma.teacherCalendarEvent.findFirst({
-    where: { id, teacherId },
+    where: { id, teacherId, status: 0 },
     select: { id: true, startDateTime: true, endDateTime: true },
   });
 
@@ -313,7 +313,7 @@ export async function updateTeacherCalendarEvent(
 
 export async function deleteTeacherCalendarEvent(teacherId: string, id: number) {
   const owned = await prisma.teacherCalendarEvent.findFirst({
-    where: { id, teacherId },
+    where: { id, teacherId, status: 0 },
     select: { id: true },
   });
 
@@ -321,6 +321,10 @@ export async function deleteTeacherCalendarEvent(teacherId: string, id: number) 
     throw new AppError("Event not found.", 404, "NOT_FOUND");
   }
 
-  await prisma.teacherCalendarEvent.delete({ where: { id } });
+  // Soft delete: status 1 hides the event from every calendar view.
+  await prisma.teacherCalendarEvent.update({
+    where: { id },
+    data: { status: 1 },
+  });
   return { success: true };
 }

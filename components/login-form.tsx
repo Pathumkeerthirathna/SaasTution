@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
+import { IdCard, Lock, LogIn, ShieldCheck } from "lucide-react";
 
 import { AuthShell } from "@/components/auth-shell";
+import { AuthIllustration } from "@/components/auth-illustration";
 import { getCurrentDevice } from "@/lib/current-device";
 import { RejectedDeviceCard } from "./RejectedDeviceCard";
 import toast from "react-hot-toast";
@@ -59,9 +61,6 @@ export function LoginForm() {
 
     const device = await getCurrentDevice();
 
-    console.log(device);
-
-
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -76,10 +75,6 @@ export function LoginForm() {
         }),
       });
 
-      
-
-      console.log(device);
-
       // const payload = (await response.json()) as {
       //   success: boolean;
       //   data?: {
@@ -88,24 +83,44 @@ export function LoginForm() {
       //   error?: { message?: string };
       // };
 
-      const payload = await response.json();
+      if (response.status >= 500) {
+        setErrorMessage(
+          "Something went wrong on our end. Please contact your administrator."
+        );
+        return;
+      }
 
-      console.log(payload);
+      const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setErrorMessage(payload.error?.message ?? "Unable to sign in.");
+        const err = payload.error ?? {};
+        let message = err.message ?? "Unable to sign in.";
 
         if (
-          payload.error?.code === "DEVICE_REJECTED" ||
-          payload.error?.code === "DEVICE_PENDING"
+          err.code === "STUDENT_PENDING_APPROVAL" ||
+          err.code === "STUDENT_DEACTIVATED"
         ) {
-          setDeviceApproval(payload.error.details);
+          const d = err.details ?? {};
+          const contacts = [d.phone, d.whatsapp].filter(Boolean).join(" / ");
+          const who = d.teacherName ?? "your teacher";
+          message += contacts
+            ? `\n\nContact your teacher: ${who} — ${contacts}`
+            : `\n\nPlease contact your teacher (${who}).`;
+        }
+
+        setErrorMessage(message);
+
+        if (
+          err.code === "DEVICE_REJECTED" ||
+          err.code === "DEVICE_PENDING"
+        ) {
+          setDeviceApproval(err.details);
         }
 
         return;
       }
 
-      if (!response.ok || !payload.success) {
+      if (!payload.success) {
         setErrorMessage(payload.error?.message ?? "Unable to sign in. Please try again.");
         return;
       }
@@ -165,6 +180,122 @@ export function LoginForm() {
     }
   };
 
+  const status = deviceApproval?.currentDevice?.status;
+
+  const deviceAside =
+    status === "PENDING" ? (
+      <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
+        {/* Header */}
+        <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 p-3.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-base">
+            ⏳
+          </div>
+          <div>
+            <h2 className="text-[13px] font-bold text-slate-900">
+              New device pending approval
+            </h2>
+            <p className="mt-0.5 text-[11px] leading-4 text-slate-600">
+              Your request has been sent to your teacher. Until it&apos;s approved,
+              keep using one of your approved devices below.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3.5 p-3.5">
+          {/* Current Device */}
+          <div>
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Current device
+            </h3>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Device</p>
+                <p className="mt-0.5 font-medium text-slate-800">{deviceApproval?.currentDevice?.deviceName}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Browser</p>
+                <p className="mt-0.5 font-medium text-slate-800">{deviceApproval?.currentDevice?.browser}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Operating system</p>
+                <p className="mt-0.5 font-medium text-slate-800">{deviceApproval?.currentDevice?.os}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                <span className="mt-0.5 inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">
+                  Pending approval
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Approved Devices */}
+          {deviceApproval?.approvedDevices?.length ? (
+            <div>
+              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Approved devices
+              </h3>
+              <div className="space-y-2">
+                {deviceApproval.approvedDevices.map((device) => (
+                  <div
+                    key={device.id}
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-900">{device.deviceName}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-600">
+                          {device.browser} • {device.os}
+                        </p>
+                        {device.lastLoginAt && (
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            Last login: {new Date(device.lastLoginAt).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                        Approved
+                      </span>
+                    </div>
+                    <p className="mt-2 rounded-md border border-green-100 bg-white p-2 text-[11px] leading-4 text-slate-700">
+                      You can keep using this device while your teacher reviews the new one.
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-slate-700">
+              This is your first device request. Your teacher must approve it before you can sign in.
+            </p>
+          )}
+
+          {/* Information */}
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <h4 className="text-[11px] font-semibold text-slate-900">What happens next?</h4>
+            <ul className="mt-1.5 space-y-1 text-[11px] leading-4 text-slate-600">
+              <li>• Your teacher has received your request.</li>
+              <li>• They will review this device.</li>
+              <li>• You can use this device once approved.</li>
+              {deviceApproval?.approvedDevices?.length ? (
+                <li>• Until then, sign in from an approved device above.</li>
+              ) : (
+                <li>• Please wait for your teacher to approve your first device.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      </div>
+    ) : status === "BLOCKED" && deviceApproval ? (
+      <RejectedDeviceCard
+        deviceApproval={deviceApproval}
+        requestMessage={requestMessage}
+        setRequestMessage={setRequestMessage}
+        onRequestAgain={handleRequestAgain}
+        setDeviceApproval={setDeviceApproval}
+      />
+    ) : undefined;
+
   return (
     <AuthShell
       title="Welcome back"
@@ -172,117 +303,61 @@ export function LoginForm() {
       footerText="Need a teacher account?"
       footerLinkHref="/register"
       footerLinkLabel="Register"
+      icon={<ShieldCheck className="h-5 w-5" />}
+      illustration={<AuthIllustration />}
+      aside={deviceAside}
+      showBackToHome
     >
-      <form
-        className="space-y-5 max-w-xl" 
-        onSubmit={handleSubmit}
-      >
+      <form className="space-y-3.5" onSubmit={handleSubmit}>
         {/* Login */}
+        <div>
+          <label
+            htmlFor="loginId"
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+          >
+            Email or Registration Number
+          </label>
 
-         <div>
-    <label
-      htmlFor="loginId"
-      className="mb-2 block text-sm font-semibold text-slate-700"
-    >
-      Email or Registration Number
-    </label>
-
-    <div className="relative">
-
-      <svg
-        className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M16 12H8m8-4H8m8 8H8"
-        />
-      </svg>
-
-      <input
-        id="loginId"
-        type="text"
-        required
-        autoComplete="username"
-        value={formState.loginId}
-        onChange={(event) =>
-          setFormState((prev) => ({
-            ...prev,
-            loginId: event.target.value,
-          }))
-        }
-        className="
-          w-full
-          rounded-2xl
-          border
-          border-slate-200
-          bg-slate-50
-          py-3.5
-          pl-12
-          pr-4
-          text-sm
-          transition-all
-          outline-none
-          placeholder:text-slate-400
-          focus:border-emerald-500
-          focus:bg-white
-          focus:ring-4
-          focus:ring-emerald-100
-        "
-        placeholder="teacher@mail.com or ST20260001"
-      />
-    </div>
+          <div className="relative">
+            <IdCard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              id="loginId"
+              type="text"
+              required
+              autoComplete="username"
+              value={formState.loginId}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  loginId: event.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              placeholder="teacher@mail.com or ST20260001"
+            />
+          </div>
         </div>
 
         {/* Password */}
-
         <div>
-
-          <div className="mb-2 flex items-center justify-between">
-
+          <div className="mb-1 flex items-center justify-between">
             <label
               htmlFor="password"
-              className="text-sm font-semibold text-slate-700"
+              className="text-[11px] font-semibold uppercase tracking-wide text-slate-500"
             >
               Password
             </label>
 
             <Link
               href="/reset-password"
-              className="text-xs font-semibold text-orange-600 transition hover:text-orange-700"
+              className="text-[11px] font-semibold text-emerald-700 transition hover:text-emerald-800"
             >
-              Forgot Password?
+              Forgot password?
             </Link>
-
           </div>
 
           <div className="relative">
-
-            <svg
-              className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 15v2m-6-6V9a6 6 0 1112 0v2"
-              />
-              <rect
-                x="4"
-                y="11"
-                width="16"
-                height="10"
-                rx="2"
-              />
-            </svg>
-
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               id="password"
               type="password"
@@ -295,333 +370,34 @@ export function LoginForm() {
                   password: event.target.value,
                 }))
               }
-              className="
-                w-full
-                rounded-2xl
-                border
-                border-slate-200
-                bg-slate-50
-                py-3.5
-                pl-12
-                pr-4
-                text-sm
-                transition-all
-                outline-none
-                placeholder:text-slate-400
-                focus:border-emerald-500
-                focus:bg-white
-                focus:ring-4
-                focus:ring-emerald-100
-              "
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               placeholder="Enter your password"
             />
-
           </div>
-
         </div>
 
         {/* Error */}
-
-       {deviceApproval?.currentDevice?.status === "PENDING" && (
-          <div className="mt-6 overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-lg">
-
-            {/* Header */}
-            <div className="border-b border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 p-6">
-
-              <div className="flex items-center gap-4">
-
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-                  <span className="text-3xl">⏳</span>
-                </div>
-
-                <div>
-
-                  <h2 className="text-xl font-bold text-slate-900">
-                    New Device Pending Approval
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-600">
-                    Your request has been sent to your teacher.
-                    Until this device is approved you can continue using one of your
-                    approved devices below.
-                  </p>
-
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="space-y-6 p-6">
-
-              {/* Current Device */}
-
-              <div>
-
-                <div className="mb-3 flex items-center gap-2">
-
-                  <span className="text-xl">📱</span>
-
-                  <h3 className="font-semibold">
-                    Current Device
-                  </h3>
-
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-
-                  <div className="grid grid-cols-2 gap-4">
-
-                    <div>
-
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Device
-                      </p>
-
-                      <p className="mt-1 font-medium">
-                        {deviceApproval.currentDevice?.deviceName}
-                      </p>
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Browser
-                      </p>
-
-                      <p className="mt-1 font-medium">
-                        {deviceApproval.currentDevice?.browser}
-                      </p>
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Operating System
-                      </p>
-
-                      <p className="mt-1 font-medium">
-                        {deviceApproval.currentDevice?.os}
-                      </p>
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Status
-                      </p>
-
-                      <span className="mt-1 inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
-                        Pending Approval
-                      </span>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* Approved Devices */}
-
-              {deviceApproval.approvedDevices?.length ? (
-
-                <div>
-
-                  <div className="mb-3 flex items-center gap-2">
-
-                    <span className="text-xl">💻</span>
-
-                    <h3 className="font-semibold">
-                      Approved Devices
-                    </h3>
-
-                  </div>
-
-                  <div className="space-y-4">
-
-                    {deviceApproval.approvedDevices.map((device) => (
-
-                      <div
-                        key={device.id}
-                        className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"
-                      >
-
-                        <div className="flex items-start justify-between">
-
-                          <div>
-
-                            <h4 className="font-semibold text-slate-900">
-                              {device.deviceName}
-                            </h4>
-
-                            <p className="mt-1 text-sm text-slate-600">
-                              {device.browser} • {device.os}
-                            </p>
-
-                            {device.lastLoginAt && (
-                              <p className="mt-2 text-xs text-slate-500">
-                                Last login:
-                                {" "}
-                                {new Date(device.lastLoginAt).toLocaleString()}
-                              </p>
-                            )}
-
-                          </div>
-
-                          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                            Approved
-                          </span>
-
-                        </div>
-
-                        <div className="mt-4 rounded-xl border border-green-100 bg-white p-4">
-
-                          <p className="text-sm text-slate-700">
-
-                            ✅ <strong>You can continue using this approved device</strong>
-                            {" "}
-                            while your teacher reviews your new device request.
-
-                          </p>
-
-                        </div>
-
-                      </div>
-
-                    ))}
-
-                  </div>
-
-                </div>
-
-              ) : (
-
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-
-                  <p className="text-sm text-slate-700">
-                    This is your first device request.
-                    Your teacher must approve it before you can sign in.
-                  </p>
-
-                </div>
-
-              )}
-
-              {/* Information */}
-
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-
-                <h4 className="font-semibold text-slate-900">
-                  ℹ What happens next?
-                </h4>
-
-                <ul className="mt-3 space-y-2 text-sm text-slate-600">
-
-                  <li>• Your teacher has received your request.</li>
-
-                  <li>• They will review this device.</li>
-
-                  <li>• You will be able to use this device after approval.</li>
-
-                  {deviceApproval.approvedDevices?.length ? (
-                    <li>
-                      • Until then, sign in using one of your approved devices shown above.
-                    </li>
-                  ) : (
-                    <li>
-                      • Please wait for your teacher to approve your first device.
-                    </li>
-                  )}
-
-                </ul>
-
-              </div>
-
-            </div>
-
-          </div>
+        {errorMessage && !deviceApproval && (
+          <p className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+            {errorMessage}
+          </p>
         )}
-
-
-        {deviceApproval?.currentDevice?.status === "BLOCKED" && (
-          <RejectedDeviceCard
-            deviceApproval={deviceApproval}
-            requestMessage={requestMessage}
-            setRequestMessage={setRequestMessage}
-            onRequestAgain={handleRequestAgain}
-            setDeviceApproval={setDeviceApproval}
-          />
-        )}
-
 
         {/* Button */}
-
         <button
           type="submit"
           disabled={isSubmitting}
-          className="
-            w-full
-            rounded-2xl
-            bg-gradient-to-r
-            from-emerald-600
-            via-emerald-600
-            to-orange-500
-            px-5
-            py-3.5
-            text-base
-            font-semibold
-            text-white
-            shadow-lg
-            transition-all
-            duration-300
-            hover:-translate-y-0.5
-            hover:shadow-2xl
-            disabled:cursor-not-allowed
-            disabled:opacity-60
-          "
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting
-            ? "Signing in..."
-            : "Sign In"}
+          <LogIn className="h-4 w-4" />
+          {isSubmitting ? "Signing in..." : "Sign In"}
         </button>
 
-        {/* Divider */}
-
-        <div className="relative py-2">
-
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200" />
-          </div>
-
-          <div className="relative flex justify-center">
-            <span className="rounded-full bg-white px-4 text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-              Secure Login
-            </span>
-          </div>
-
-        </div>
-
-        {/* Info */}
-
-       
-
+        <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400">
+          <ShieldCheck className="h-3 w-3 text-emerald-500" />
+          Secure, encrypted sign-in
+        </p>
       </form>
-
-      <div className="mt-8 border-t border-slate-200 pt-6 text-center">
-
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-emerald-600"
-        >
-          ← Back to Home
-        </Link>
-
-      </div>
     </AuthShell>
   );
 }

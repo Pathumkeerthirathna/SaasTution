@@ -167,6 +167,16 @@ export async function POST(
                     );
             }
 
+        // Keep our row in sync so the broadcast stops showing as live
+        // on the dashboards.
+        await prisma.youTubeLiveBroadcast.update({
+            where: { id: liveBroadcast.id },
+            data: {
+                status: YouTubeBroadcastStatus.COMPLETE,
+                endedAt: new Date(),
+            },
+        });
+
         return NextResponse.json({
             success: true,
 

@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   User,
@@ -13,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useState } from "react";
+import toast from "react-hot-toast";
 
 interface Student {
   id: string;
@@ -57,14 +60,23 @@ export function StudentProfileHeader({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isResettingPassword, setIsResettingPassword] = useState(false);
 
-  async function handleResetPassword() {
-    if (!password.trim()) {
-      alert("Password is required.");
-      return;
-    }
+  function validatePassword(): string | null {
+    if (!password.trim()) return "Password is required.";
+    if (password !== confirmPassword) return "Passwords do not match.";
+    if (password.length < 8) return "Password must be at least 8 characters.";
+    if (!/[a-z]/.test(password))
+      return "Password must include at least one lowercase letter.";
+    if (!/[A-Z]/.test(password))
+      return "Password must include at least one uppercase letter.";
+    if (!/[0-9]/.test(password))
+      return "Password must include at least one number.";
+    return null;
+  }
 
-    if (password !== confirmPassword) {
-      alert("Passwords do not match.");
+  async function handleResetPassword() {
+    const validationError = validatePassword();
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
@@ -86,19 +98,19 @@ export function StudentProfileHeader({
 
       const result = await response.json();
 
-      if (!result.success) {
-        alert(result.message);
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to reset password.");
         return;
       }
 
-      alert("Password reset successfully.");
+      toast.success("Password reset successfully.");
 
       setPassword("");
       setConfirmPassword("");
       setIsPasswordPanelOpen(false);
     } catch (error) {
       console.error(error);
-      alert("Failed to reset password.");
+      toast.error("Failed to reset password.");
     } finally {
       setIsResettingPassword(false);
     }
@@ -268,6 +280,11 @@ export function StudentProfileHeader({
               }
               className="control-input"
             />
+
+            <p className="mt-1 text-[11px] text-slate-500">
+              At least 8 characters, with one uppercase letter, one lowercase
+              letter and a number.
+            </p>
           </div>
 
           <div>
@@ -283,6 +300,12 @@ export function StudentProfileHeader({
               }
               className="control-input"
             />
+
+            {confirmPassword.length > 0 && confirmPassword !== password && (
+              <p className="mt-1 text-[11px] font-medium text-rose-600">
+                Passwords do not match.
+              </p>
+            )}
           </div>
 
           <button

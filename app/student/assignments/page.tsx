@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { AssignmentSubmitButton } from "@/components/student-portal/assignment-submit-button";
 import { Panel } from "@/components/student-portal/student-ui";
@@ -29,13 +30,23 @@ type AssignmentRecord = {
 const PAGE_SIZE = 10;
 
 export default function StudentAssignmentsPage() {
+  return (
+    <Suspense fallback={null}>
+      <StudentAssignmentsPageInner />
+    </Suspense>
+  );
+}
+
+function StudentAssignmentsPageInner() {
+  const searchParams = useSearchParams();
+
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [records, setRecords] = useState<AssignmentRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [classId, setClassId] = useState("");
+  const [classId, setClassId] = useState(() => searchParams.get("classId") ?? "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);

@@ -46,7 +46,9 @@ export async function GET(
         itemId,
         item: {
           bundleId,
+          status: 0,
           bundle: {
+            status: 0,
             class: {
               teacherId: session.teacherId,
             },

@@ -44,8 +44,10 @@ export async function GET(
       where: {
         id: itemId,
         bundleId,
+        status: 0,
         bundle: {
-          status: "SENT",
+          bundleStatus: "SENT",
+          status: 0,
           recipients: {
             some: {
               studentId: session.studentId,

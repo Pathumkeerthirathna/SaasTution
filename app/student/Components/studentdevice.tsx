@@ -18,6 +18,7 @@ import {
   MonitorSmartphone,
   MoreVertical,
   ChevronDown,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { StudentDeviceStatus } from "@prisma/client";
@@ -111,6 +112,7 @@ export function StudentDevices({
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<StudentDevice | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const loadDevices = useCallback(async () => {
@@ -181,6 +183,31 @@ export function StudentDevices({
     mutate(id, "approve", "Device approved.", "Unable to approve device.");
   const handleReject = (id: string) =>
     mutate(id, "reject", "Device rejected.", "Unable to reject device.");
+
+  async function performDelete(device: StudentDevice) {
+    try {
+      setProcessingId(device.id);
+      const response = await fetch(`/api/student/devices/${device.id}`, {
+        method: "DELETE",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.error?.message ?? result?.message);
+      }
+      toast.success(result?.message ?? "Device removed.");
+      setConfirmDelete(null);
+      await refresh();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to remove device."
+      );
+    } finally {
+      setProcessingId(null);
+    }
+  }
 
   function startEdit(device: StudentDevice) {
     setMenuId(null);
@@ -258,7 +285,10 @@ export function StudentDevices({
     );
   }
 
+  const confirmBusy = confirmDelete ? processingId === confirmDelete.id : false;
+
   return (
+    <>
     <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {devices.map((device) => {
         const theme = themeFor(device.status);
@@ -315,7 +345,7 @@ export function StudentDevices({
                 </button>
 
                 {menuId === device.id && (
-                  <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-[11px] shadow-lg">
+                  <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-[11px] shadow-lg">
                     {device.status === "PENDING" && (
                       <>
                         <MenuItem onClick={() => void handleApprove(device.id)}>
@@ -347,6 +377,20 @@ export function StudentDevices({
                         </MenuItem>
                       </>
                     )}
+
+                    <div className="my-1 border-t border-slate-100" />
+                    <MenuItem
+                      tone="danger"
+                      onClick={() => {
+                        setMenuId(null);
+                        setConfirmDelete(device);
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Trash2 size={11} />
+                        Delete device
+                      </span>
+                    </MenuItem>
                   </div>
                 )}
               </div>
@@ -485,6 +529,59 @@ export function StudentDevices({
         );
       })}
     </div>
+
+    {confirmDelete && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px]"
+          onClick={() => {
+            if (!confirmBusy) setConfirmDelete(null);
+          }}
+        />
+        <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-start gap-3 p-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+              <Trash2 size={16} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-bold text-slate-900">
+                Delete this device?
+              </h3>
+              <p className="mt-1 text-[12px] leading-4 text-slate-600">
+                <span className="font-semibold text-slate-800">
+                  {confirmDelete.deviceName ??
+                    confirmDelete.deviceModel ??
+                    "This device"}
+                </span>{" "}
+                will be removed from the database. If the student signs in from it
+                again it will be treated as a brand-new device needing approval.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(null)}
+              disabled={confirmBusy}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void performDelete(confirmDelete)}
+              disabled={confirmBusy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+            >
+              <Trash2 size={12} />
+              {confirmBusy ? "Removing..." : "Delete device"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

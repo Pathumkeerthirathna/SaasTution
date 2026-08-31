@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
     const toDate = to ? new Date(`${to}T23:59:59.999`) : undefined;
 
     const where = {
-      ...(classId ? { lecture: { class: { id: classId } } } : {}),
+      status: 0,
+      lecture: {
+        status: 0,
+        ...(classId ? { class: { id: classId } } : {}),
+      },
       OR: [
         {
           submissions: {

@@ -50,7 +50,9 @@ export async function GET(
       where: {
         id: noteId,
         lectureId,
+        status: 0,
         lecture: {
+          status: 0,
           class: {
             students: {
               some: {

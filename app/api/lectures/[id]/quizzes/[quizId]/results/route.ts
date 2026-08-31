@@ -22,7 +22,9 @@ export async function GET(
       where: {
         id: quizId,
         lectureId,
+        status: 0,
         lecture: {
+          status: 0,
           class: {
             teacherId: session.teacherId,
           },

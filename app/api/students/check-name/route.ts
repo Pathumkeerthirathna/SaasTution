@@ -16,6 +16,12 @@ export async function GET(request: NextRequest) {
 
   const studentId = searchParams.get("studentId") ?? undefined;
 
+  const gradeIdParam = searchParams.get("gradeId");
+  const gradeId =
+    gradeIdParam && Number.isFinite(Number(gradeIdParam))
+      ? Number(gradeIdParam)
+      : undefined;
+
   // Optional teacherId
   let teacherId = searchParams.get("teacherId");
 
@@ -27,7 +33,8 @@ export async function GET(request: NextRequest) {
   const result = await checkIfNameExists(
     registrationNumber,
     studentId,
-    teacherId
+    teacherId,
+    gradeId
   );
 
   return NextResponse.json(result);

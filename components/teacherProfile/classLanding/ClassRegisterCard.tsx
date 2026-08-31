@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  CheckCircle2,
+  Clock,
   GraduationCap,
+  Mail,
   Phone,
   ShieldCheck,
 } from "lucide-react";
@@ -35,6 +38,9 @@ export default function ClassRegisterCard({
   const [NameError, setNameError] = useState("");
 
   const [isRegistering, setIsRegistering] = useState(false);
+  const [registeredStudentName, setRegisteredStudentName] = useState<
+    string | null
+  >(null);
 
   const [isCheckingEmail, setIsCheckinEmail] =
   useState(false);
@@ -178,6 +184,8 @@ export default function ClassRegisterCard({
 
     if (hasError) return;
 
+    if (EmailError || NameError) return;
+
     // Call API
 
     setIsRegistering(true);
@@ -203,30 +211,39 @@ export default function ClassRegisterCard({
 
       const result = await response.json();
 
-      console.log(result);
+      if (!response.ok || result?.success === false) {
+        const message =
+          result?.error?.message ??
+          result?.message ??
+          "Registration failed. Please try again.";
 
-      if (!response.ok) {
-        alert(result.message ?? "Registration failed.");
-        // Optional: clear form
-        setStudentName("");
-        setMobileNumber("");
-        setParentMobileNumber(""),
-        setEmail("");
-        setSelectedGrade("");
+        if (result?.error?.code === "EMAIL_EXISTS") {
+          setEmailError(message);
+        } else if (result?.error?.code === "NAME_EXISTS") {
+          setNameError(message);
+        } else {
+          toast.error(message);
+        }
         return;
       }
 
-      toast.success("Student registered successfully!",{duration:50000});
+      toast.success("Registered! Check your email for login details.", {
+        duration: 6000,
+      });
 
-      // Optional: clear form
+      setRegisteredStudentName(studentName.trim());
+
+      // Clear form
       setStudentName("");
       setMobileNumber("");
-      setParentMobileNumber(""),
+      setParentMobileNumber("");
       setEmail("");
       setSelectedGrade("");
+      setEmailError("");
+      setNameError("");
     } catch (error) {
       console.error(error);
-      alert("Something went wrong. Please try again.");
+      toast.error("Something went wrong. Please try again.");
     }
 
     setIsRegistering(false);
@@ -263,8 +280,47 @@ export default function ClassRegisterCard({
 
       </div>
 
-      {/* Form */}
+      {/* Form / success */}
 
+      {registeredStudentName ? (
+        <div className="space-y-3 p-5">
+          <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <div>
+              <p className="text-[14px] font-semibold text-emerald-800">
+                {registeredStudentName} registered successfully!
+              </p>
+              <p className="mt-0.5 text-[12px] leading-5 text-emerald-700">
+                Your registration was received.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p className="text-[12px] leading-5 text-amber-800">
+              You are now{" "}
+              <span className="font-semibold">waiting for the teacher&apos;s confirmation</span>.
+              You will be enrolled once they approve your request.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <p className="text-[12px] leading-5 text-slate-700">
+              <span className="font-semibold">Check your email</span> for your login details.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setRegisteredStudentName(null)}
+            className="w-full rounded-lg border border-slate-300 bg-white py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Register another student
+          </button>
+        </div>
+      ) : (
       <div className="space-y-2.5 p-5">
 
         <div>
@@ -387,13 +443,13 @@ export default function ClassRegisterCard({
             }`}
             placeholder="example@email.com"
           />
+          {(EmailError || errors.email) && (
+            <p className="mt-1 text-[12px] text-red-600">
+              {EmailError || errors.email}
+            </p>
+          )}
         </div>
 
-        {errors.email && (
-          <p className="mt-1 text-[12px] text-red-600">
-            {errors.email}
-          </p>
-        )}
 
         {/* <div>
           <label className="mb-1 block text-[13px] font-semibold text-slate-700">
@@ -511,6 +567,7 @@ export default function ClassRegisterCard({
         </button>
 
       </div>
+      )}
 
       {/* Included */}
 

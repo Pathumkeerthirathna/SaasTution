@@ -93,10 +93,16 @@ export type ClassItem = {
       id: string;
       name: string;
       registrationNumber: string | null;
+      grade: { id: number; GradeDesc: string } | null;
     };
   }[];
   createdAt: string;
 };
+
+function formatGrade(gradeDesc: string | null | undefined) {
+  if (!gradeDesc) return null;
+  return gradeDesc.replace("GRADE_0", "Grade ").replace("GRADE_", "Grade ");
+}
 
 type ApiError = {
   message?: string;
@@ -356,6 +362,10 @@ const isAllSelected =
   selectableStudents.every((student) =>
     selectedStudentIds.has(student.id)
   );
+
+const hasStudentFilter = Boolean(
+  filters.registrationNumber || filters.name || filters.email || filters.grade
+);
   // const filteredAvailableStudents = useMemo(() => {
   //   if (!studentSearchQuery.trim()) return availableStudents;
   //   const q = studentSearchQuery.toLowerCase();
@@ -389,7 +399,7 @@ const isAllSelected =
 
    const router = useRouter();
 
-  const loadClasses = useCallback(async (nextPage = 1, appliedFilters: FilterState) => {
+  const loadClasses = useCallback(async (nextPage = 1) => {
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -398,14 +408,6 @@ const isAllSelected =
         page: String(nextPage),
         pageSize: String(PAGE_SIZE),
       });
-
-      if (appliedFilters.name.trim()) {
-        query.set("name", appliedFilters.name.trim());
-      }
-
-      // if (appliedFilters.schedule.trim()) {
-      //   query.set("schedule", appliedFilters.schedule.trim());
-      // }
 
       const response = await fetch(`/api/classes?${query.toString()}`);
       const payload = (await response.json()) as PaginatedResponse;
@@ -430,12 +432,7 @@ const isAllSelected =
   }, []);
 
   useEffect(() => {
-  void loadClasses(1, {
-    registrationNumber: "",
-    name: "",
-    email: "",
-    grade: "",
-  });
+  void loadClasses(1);
 }, [loadClasses]);
 
   useEffect(() => {
@@ -489,7 +486,7 @@ const isAllSelected =
       });
       setIsCreatePanelOpen(false);
       setSuccessMessage("Class created successfully.");
-      await loadClasses(1, filters);
+      await loadClasses(1);
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
     } catch {
       setErrorMessage("Unable to create class right now.");
@@ -578,7 +575,7 @@ const isAllSelected =
       setIsEditPanelOpen(false);
       setSuccessMessage("Class updated successfully.");
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
-      await loadClasses(page, filters);
+      await loadClasses(page);
     } catch {
       setErrorMessage("Unable to update class right now.");
     } finally {
@@ -622,7 +619,7 @@ const isAllSelected =
 
       const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
 
-      await loadClasses(nextPage, filters);
+      await loadClasses(nextPage);
 
     } catch {
       setErrorMessage("Unable to delete class right now.");
@@ -770,23 +767,53 @@ const isAllSelected =
   async function handleAssignStudents() {
     if (!studentsPanelClassId || selectedStudentIds.size === 0) return;
     setIsAssigning(true);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
+    const ids = Array.from(selectedStudentIds);
+    const className = studentsPanelClass?.name ?? "the class";
+    let assigned = 0;
+    let firstError: string | null = null;
+
     try {
-      await Promise.all(
-        Array.from(selectedStudentIds).map((studentId) =>
-          fetch("/api/students/assign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ classId: studentsPanelClassId, studentId }),
-          })
-        )
+      const results = await Promise.all(
+        ids.map(async (studentId) => {
+          try {
+            const response = await fetch("/api/students/assign", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ classId: studentsPanelClassId, studentId }),
+            });
+            const payload = (await response.json()) as {
+              success: boolean;
+              error?: { message?: string };
+            };
+            return { ok: response.ok && payload.success, message: payload.error?.message };
+          } catch {
+            return { ok: false, message: "Network error." };
+          }
+        })
       );
-      setIsAddStudentsOpen(false);
-      setSelectedStudentIds(new Set());
-  
-      await loadClasses(page, filters);
-      window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+
+      for (const r of results) {
+        if (r.ok) assigned += 1;
+        else if (!firstError) firstError = r.message ?? "Failed to assign a student.";
+      }
+
+      if (assigned > 0) {
+        await loadClasses(page);
+        window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+        setSelectedStudentIds(new Set());
+        setIsAddStudentsOpen(false);
+        setSuccessMessage(
+          `${assigned} student${assigned !== 1 ? "s" : ""} assigned to ${className}.` +
+            (firstError ? " Some students could not be added." : "")
+        );
+      } else {
+        setErrorMessage(firstError ?? "Could not assign the selected students.");
+      }
     } catch {
-      // silently fail
+      setErrorMessage("Could not assign the selected students.");
     } finally {
       setIsAssigning(false);
     }
@@ -795,8 +822,13 @@ const isAllSelected =
   async function handleRemoveStudent() {
     if (!studentsPanelClassId || !removingEntry) return;
     setIsRemoving(true);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
+    const removedName = removingEntry.name;
+
     try {
-      await fetch("/api/students/remove-from-class", {
+      const response = await fetch("/api/students/remove-from-class", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -805,12 +837,23 @@ const isAllSelected =
           reason: removeReason.trim() || undefined,
         }),
       });
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: { message?: string };
+      };
+
+      if (!response.ok || !payload.success) {
+        setErrorMessage(payload.error?.message ?? "Could not remove the student.");
+        return;
+      }
+
       setRemovingEntry(null);
       setRemoveReason("");
-      await loadClasses(page, filters);
+      await loadClasses(page);
       window.dispatchEvent(new CustomEvent(CLASS_CONFIG_UPDATED_EVENT));
+      setSuccessMessage(`${removedName} removed from the class.`);
     } catch {
-      // silently fail
+      setErrorMessage("Could not remove the student.");
     } finally {
       setIsRemoving(false);
     }
@@ -949,12 +992,14 @@ const isAllSelected =
 
               <div className="flex-1">
                 <p className="text-sm font-semibold text-slate-900">
-                  Class created successfully
+                  {successMessage}
                 </p>
 
-                <p className="text-xs text-slate-500">
-                  Students can now be assigned to this class.
-                </p>
+                {successMessage === "Class created successfully." && (
+                  <p className="text-xs text-slate-500">
+                    Students can now be assigned to this class.
+                  </p>
+                )}
               </div>
 
               <button
@@ -1090,7 +1135,7 @@ const isAllSelected =
                           Students
                         </p>
                         <p className="truncate text-sm font-bold text-slate-900">
-                          {overview.activeStudents}
+                          {item.students.filter((entry) => entry.isActive).length}
                         </p>
                       </div>
                     </div>
@@ -1228,7 +1273,7 @@ const isAllSelected =
             <button
               type="button"
               disabled={page <= 1 || isLoading}
-              onClick={() => void loadClasses(page - 1, filters)}
+              onClick={() => void loadClasses(page - 1)}
               className="btn-ghost"
             >
               Previous
@@ -1238,7 +1283,7 @@ const isAllSelected =
                 key={p}
                 type="button"
                 disabled={isLoading}
-                onClick={() => void loadClasses(p, filters)}
+                onClick={() => void loadClasses(p)}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold transition-colors ${
                   p === page
                     ? "bg-brand-700 text-white"
@@ -1251,7 +1296,7 @@ const isAllSelected =
             <button
               type="button"
               disabled={page >= totalPages || isLoading}
-              onClick={() => void loadClasses(page + 1, filters)}
+              onClick={() => void loadClasses(page + 1)}
               className="btn-ghost"
             >
               Next
@@ -1323,7 +1368,7 @@ const isAllSelected =
 
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-slate-900">
-                        Validation Error
+                        Something went wrong
                       </p>
 
                       <p className="text-xs text-slate-500">
@@ -2027,6 +2072,11 @@ const isAllSelected =
                           {entry.student.registrationNumber ? (
                             <span className="text-[11px] text-muted">{entry.student.registrationNumber}</span>
                           ) : null}
+                          {formatGrade(entry.student.grade?.GradeDesc) ? (
+                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                              {formatGrade(entry.student.grade?.GradeDesc)}
+                            </span>
+                          ) : null}
                           <span className="flex items-center gap-1 text-[11px] text-muted">
                             <Calendar size={10} />
                             {formatStoredSriLankaDate(entry.assignedAt)}
@@ -2089,9 +2139,16 @@ const isAllSelected =
                             Removed
                           </span>
                         </div>
-                        {entry.student.registrationNumber ? (
-                          <p className="text-[11px] text-muted">{entry.student.registrationNumber}</p>
-                        ) : null}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {entry.student.registrationNumber ? (
+                            <span className="text-[11px] text-muted">{entry.student.registrationNumber}</span>
+                          ) : null}
+                          {formatGrade(entry.student.grade?.GradeDesc) ? (
+                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                              {formatGrade(entry.student.grade?.GradeDesc)}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="mt-1 space-y-0.5">
                           <p className="flex items-center gap-1.5 text-[11px] text-muted">
                             <Calendar size={10} className="text-emerald-500" />
@@ -2217,27 +2274,8 @@ const isAllSelected =
             <div className="flex items-center justify-center py-16">
               <p className="text-xs text-muted">Loading students...</p>
             </div>
-          ) : availableStudents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
-                <Users size={20} />
-              </div>
-              <h3 className="mt-3 text-sm font-semibold text-foreground">No Students Available</h3>
-              <p className="mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
-                There are no students available to assign to this class.
-                Create a student first and then return here to enroll them.
-              </p>
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/students")}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
-              >
-                <RotateCcw size={13} />
-                Go to Students
-              </button>
-            </div>
           ) : (
-            <ul className="divide-y divide-gray-100">
+            <>
               <div className="mb-2.5 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <label className="flex shrink-0 cursor-pointer items-center gap-2">
                   <input
@@ -2389,6 +2427,46 @@ const isAllSelected =
                   <span className="shrink-0 text-[11px] text-slate-500">{selectableStudents.length} students</span>
                 </div>
               </div>
+
+              {availableStudents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                    <Users size={20} />
+                  </div>
+                  <h3 className="mt-3 text-sm font-semibold text-foreground">
+                    {hasStudentFilter ? "No matching students" : "No Students Available"}
+                  </h3>
+                  <p className="mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
+                    {hasStudentFilter
+                      ? "No students match your current search. Adjust the filters above and try again."
+                      : "There are no students available to assign to this class. Create a student first and then return here to enroll them."}
+                  </p>
+                  {hasStudentFilter ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reset = { registrationNumber: "", name: "", email: "", grade: "" };
+                        setFilters(reset);
+                        void loadStudentList(1, reset);
+                      }}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <RotateCcw size={13} />
+                      Clear filters
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/dashboard/students")}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <RotateCcw size={13} />
+                      Go to Students
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
               {sortedAvailableStudents.map((student) => {
                 const isEnrolled = activeStudentIdSet.has(student.id);
                 const isSelected = selectedStudentIds.has(student.id);
@@ -2460,7 +2538,9 @@ const isAllSelected =
                   </li>
                 );
               })}
-            </ul>
+                </ul>
+              )}
+            </>
           )}
         </div>
 

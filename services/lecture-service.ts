@@ -15,6 +15,7 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -34,6 +35,7 @@ async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
   const lecture = await prisma.lecture.findFirst({
     where: {
       id: lectureId,
+      status: 0,
       class: {
         teacherId,
       },
@@ -64,7 +66,9 @@ async function assertTeacherOwnsAssignment(teacherId: string, lectureId: string,
     where: {
       id: assignmentId,
       lectureId,
+      status: 0,
       lecture: {
+        status: 0,
         class: {
           teacherId,
         },
@@ -91,7 +95,9 @@ async function assertTeacherOwnsQuiz(teacherId: string, lectureId: string, quizI
     where: {
       id: quizId,
       lectureId,
+      status: 0,
       lecture: {
+        status: 0,
         class: {
           teacherId,
         },
@@ -146,7 +152,9 @@ async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteI
     where: {
       id: noteId,
       lectureId,
+      status: 0,
       lecture: {
+        status: 0,
         class: {
           teacherId,
         },
@@ -260,9 +268,14 @@ export async function updateLectureClassStatusForTeacher(
 export async function deleteLectureForTeacher(teacherId: string, lectureId: string) {
   await assertTeacherOwnsLecture(teacherId, lectureId);
 
-  await prisma.lecture.delete({
+  // Soft delete: status 1 hides the lecture (and, via lecture.status filters, its
+  // notes / assignments / quizzes) from every view while keeping history intact.
+  await prisma.lecture.update({
     where: {
       id: lectureId,
+    },
+    data: {
+      status: 1,
     },
   });
 }
@@ -283,8 +296,10 @@ export async function listLecturesForTeacher(params: {
   }
 
   const where = {
+    status: 0,
     class: {
       teacherId: params.teacherId,
+      status: 0,
     },
     ...(params.lectureId
       ? {
@@ -337,9 +352,9 @@ export async function listLecturesForTeacher(params: {
         },
         _count: {
           select: {
-            notes: true,
-            assignments: true,
-            quizzes: true,
+            notes: { where: { status: 0 } },
+            assignments: { where: { status: 0 } },
+            quizzes: { where: { status: 0 } },
           },
         },
       },
@@ -361,6 +376,7 @@ export async function listNotesForLectureForTeacher(teacherId: string, lectureId
   return prisma.note.findMany({
     where: {
       lectureId,
+      status: 0,
     },
     orderBy: {
       id: "desc",
@@ -389,6 +405,7 @@ export async function listAssignmentsForLectureForTeacher(teacherId: string, lec
   return prisma.assignment.findMany({
     where: {
       lectureId,
+      status: 0,
     },
     orderBy: {
       dueDate: "asc",
@@ -408,6 +425,7 @@ export async function listQuizzesForLectureForTeacher(teacherId: string, lecture
   return prisma.quiz.findMany({
     where: {
       lectureId,
+      status: 0,
     },
     orderBy: [{ id: "desc" }],
     select: quizWithQuestionsSelect,
@@ -459,7 +477,7 @@ export async function listSessionsForLectureForTeacher(teacherId: string, lectur
       createdAt: true,
       _count: {
         select: {
-          attendance: true,
+          attendance: { where: { student: { status: 0 } } },
         },
       },
     },
@@ -596,9 +614,13 @@ export async function updateAssignmentForTeacher(
 export async function deleteAssignmentForTeacher(teacherId: string, lectureId: string, assignmentId: string) {
   await assertTeacherOwnsAssignment(teacherId, lectureId, assignmentId);
 
-  await prisma.assignment.delete({
+  // Soft delete — keep submissions and history.
+  await prisma.assignment.update({
     where: {
       id: assignmentId,
+    },
+    data: {
+      status: 1,
     },
   });
 }
@@ -674,9 +696,13 @@ export async function updateQuizForTeacher(
 export async function deleteQuizForTeacher(teacherId: string, lectureId: string, quizId: string) {
   await assertTeacherOwnsQuiz(teacherId, lectureId, quizId);
 
-  await prisma.quiz.delete({
+  // Soft delete — keep questions and submissions.
+  await prisma.quiz.update({
     where: {
       id: quizId,
+    },
+    data: {
+      status: 1,
     },
   });
 }
@@ -730,9 +756,13 @@ export async function updateNoteForTeacher(
 export async function deleteNoteForTeacher(teacherId: string, lectureId: string, noteId: string) {
   const note = await assertTeacherOwnsNote(teacherId, lectureId, noteId);
 
-  await prisma.note.delete({
+  // Soft delete — keep the file record and download history.
+  await prisma.note.update({
     where: {
       id: noteId,
+    },
+    data: {
+      status: 1,
     },
   });
 
@@ -743,7 +773,9 @@ export async function getAndTrackNoteDownloadForTeacher(teacherId: string, noteI
   const note = await prisma.note.findFirst({
     where: {
       id: noteId,
+      status: 0,
       lecture: {
+        status: 0,
         class: {
           teacherId,
         },

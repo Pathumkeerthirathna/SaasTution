@@ -19,6 +19,8 @@ export const createMaterialBundleSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
+export const bundleStatusSchema = z.enum(["DRAFT", "SENT"]);
+
 export const updateMaterialBundleSchema = z
   .object({
     title: z
@@ -29,10 +31,18 @@ export const updateMaterialBundleSchema = z
       .optional(),
     year: z.coerce.number().int().min(2020).max(2100).optional(),
     month: z.coerce.number().int().min(1).max(12).optional(),
+    bundleStatus: bundleStatusSchema.optional(),
   })
-  .refine((value) => value.title !== undefined || value.year !== undefined || value.month !== undefined, {
-    message: "At least one field is required.",
-  });
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.year !== undefined ||
+      value.month !== undefined ||
+      value.bundleStatus !== undefined,
+    {
+      message: "At least one field is required.",
+    }
+  );
 
 export const materialBundleItemTypeSchema = z.enum(["TUTE", "PAPER"]);
 
@@ -88,16 +98,6 @@ export const updateMaterialBundleItemSchema = z
     paperStartAt: z.coerce.date().nullable().optional(),
     paperEndAt: z.coerce.date().nullable().optional(),
   })
-  .refine(
-    (value) =>
-      value.title !== undefined ||
-      value.description !== undefined ||
-      value.paperStartAt !== undefined ||
-      value.paperEndAt !== undefined,
-    {
-      message: "At least one field is required.",
-    }
-  )
   .refine(
     (value) =>
       value.paperStartAt === undefined ||

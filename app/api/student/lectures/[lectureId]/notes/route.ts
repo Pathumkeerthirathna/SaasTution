@@ -22,6 +22,7 @@ export async function GET(
     const lecture = await prisma.lecture.findFirst({
       where: {
         id: lectureId,
+        status: 0,
         class: {
           students: {
             some: {
@@ -39,6 +40,7 @@ export async function GET(
           select: { id: true, name: true },
         },
         notes: {
+          where: { status: 0 },
           orderBy: [{ kind: "asc" }, { title: "asc" }],
           select: {
             id: true,

@@ -1,4 +1,5 @@
 import { AppError } from "@/lib/error-handler";
+import { removeBundleItemFile } from "@/lib/material-bundle-file";
 import { prisma } from "@/lib/prisma";
 import type {
   CreateMaterialBundleInput,
@@ -13,6 +14,7 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -31,6 +33,7 @@ async function assertTeacherOwnsBundle(teacherId: string, bundleId: string) {
   const bundle = await prisma.materialBundle.findFirst({
     where: {
       id: bundleId,
+      status: 0,
       class: {
         teacherId,
       },
@@ -38,7 +41,7 @@ async function assertTeacherOwnsBundle(teacherId: string, bundleId: string) {
     select: {
       id: true,
       classId: true,
-      status: true,
+      bundleStatus: true,
     },
   });
 
@@ -54,7 +57,9 @@ async function assertTeacherOwnsBundleItem(teacherId: string, bundleId: string, 
     where: {
       id: itemId,
       bundleId,
+      status: 0,
       bundle: {
+        status: 0,
         class: {
           teacherId,
         },
@@ -64,6 +69,7 @@ async function assertTeacherOwnsBundleItem(teacherId: string, bundleId: string, 
       id: true,
       bundleId: true,
       type: true,
+      fileUrl: true,
     },
   });
 
@@ -87,6 +93,7 @@ export async function listMaterialBundlesForTeacher(params: {
   }
 
   const where = {
+    status: 0,
     class: {
       teacherId: params.teacherId,
     },
@@ -107,7 +114,7 @@ export async function listMaterialBundlesForTeacher(params: {
         title: true,
         year: true,
         month: true,
-        status: true,
+        bundleStatus: true,
         sentAt: true,
         createdAt: true,
         class: {
@@ -118,7 +125,7 @@ export async function listMaterialBundlesForTeacher(params: {
         },
         _count: {
           select: {
-            items: true,
+            items: { where: { status: 0 } },
             recipients: true,
           },
         },
@@ -151,6 +158,7 @@ export async function listActiveClassStudentsForMonthForTeacher(params: {
   const rows = await prisma.classStudent.findMany({
     where: {
       classId: params.classId,
+      student: { status: 0 },
       assignedAt: { lte: monthEnd },
       OR: [{ removedAt: null }, { removedAt: { gte: monthStart } }],
     },
@@ -186,7 +194,7 @@ export async function createMaterialBundleForTeacher(teacherId: string, input: C
       title: true,
       year: true,
       month: true,
-      status: true,
+      bundleStatus: true,
       sentAt: true,
       createdAt: true,
     },
@@ -208,6 +216,12 @@ export async function updateMaterialBundleForTeacher(
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.year !== undefined ? { year: input.year } : {}),
       ...(input.month !== undefined ? { month: input.month } : {}),
+      ...(input.bundleStatus !== undefined
+        ? {
+            bundleStatus: input.bundleStatus,
+            sentAt: input.bundleStatus === "SENT" ? new Date() : null,
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -215,7 +229,7 @@ export async function updateMaterialBundleForTeacher(
       title: true,
       year: true,
       month: true,
-      status: true,
+      bundleStatus: true,
       sentAt: true,
       createdAt: true,
     },
@@ -225,9 +239,14 @@ export async function updateMaterialBundleForTeacher(
 export async function deleteMaterialBundleForTeacher(teacherId: string, bundleId: string) {
   await assertTeacherOwnsBundle(teacherId, bundleId);
 
-  await prisma.materialBundle.delete({
+  // Soft delete: status 1 hides the bundle (and its items) everywhere while
+  // keeping the row and its files intact.
+  await prisma.materialBundle.update({
     where: {
       id: bundleId,
+    },
+    data: {
+      status: 1,
     },
   });
 }
@@ -236,6 +255,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
   const bundle = await prisma.materialBundle.findFirst({
     where: {
       id: bundleId,
+      status: 0,
       class: {
         teacherId,
       },
@@ -246,7 +266,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
       title: true,
       year: true,
       month: true,
-      status: true,
+      bundleStatus: true,
       sentAt: true,
       createdAt: true,
       class: {
@@ -256,6 +276,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
         },
       },
       items: {
+        where: { status: 0 },
         orderBy: [{ type: "asc" }, { createdAt: "desc" }],
         select: {
           id: true,
@@ -298,6 +319,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
   const classStudents = await prisma.classStudent.findMany({
     where: {
       classId: bundle.classId,
+      student: { status: 0 },
       assignedAt: { lte: monthEnd },
       OR: [{ removedAt: null }, { removedAt: { gte: monthStart } }],
     },
@@ -348,7 +370,7 @@ export async function getMaterialBundleDetailsForTeacher(teacherId: string, bund
     title: bundle.title,
     year: bundle.year,
     month: bundle.month,
-    status: bundle.status,
+    bundleStatus: bundle.bundleStatus,
     sentAt: bundle.sentAt,
     createdAt: bundle.createdAt,
     items: bundle.items,
@@ -409,7 +431,13 @@ export async function updateMaterialBundleItemForTeacher(
   teacherId: string,
   bundleId: string,
   itemId: string,
-  input: UpdateMaterialBundleItemInput
+  input: UpdateMaterialBundleItemInput,
+  file?: {
+    fileName: string;
+    fileUrl: string;
+    mimeType: string;
+    sizeBytes: number;
+  }
 ) {
   const item = await assertTeacherOwnsBundleItem(teacherId, bundleId, itemId);
 
@@ -417,7 +445,7 @@ export async function updateMaterialBundleItemForTeacher(
     throw new AppError("Only paper items can have start/end times.", 400, "VALIDATION_ERROR");
   }
 
-  return prisma.materialBundleItem.update({
+  const updated = await prisma.materialBundleItem.update({
     where: {
       id: itemId,
     },
@@ -426,6 +454,14 @@ export async function updateMaterialBundleItemForTeacher(
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.paperStartAt !== undefined ? { paperStartAt: input.paperStartAt } : {}),
       ...(input.paperEndAt !== undefined ? { paperEndAt: input.paperEndAt } : {}),
+      ...(file
+        ? {
+            fileName: file.fileName,
+            fileUrl: file.fileUrl,
+            mimeType: file.mimeType,
+            sizeBytes: file.sizeBytes,
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -442,14 +478,24 @@ export async function updateMaterialBundleItemForTeacher(
       createdAt: true,
     },
   });
+
+  if (file && item.fileUrl && item.fileUrl !== updated.fileUrl) {
+    await removeBundleItemFile(item.fileUrl);
+  }
+
+  return updated;
 }
 
 export async function deleteMaterialBundleItemForTeacher(teacherId: string, bundleId: string, itemId: string) {
   await assertTeacherOwnsBundleItem(teacherId, bundleId, itemId);
 
-  await prisma.materialBundleItem.delete({
+  // Soft delete — keep the row, its file, and any submissions.
+  await prisma.materialBundleItem.update({
     where: {
       id: itemId,
+    },
+    data: {
+      status: 1,
     },
   });
 }
@@ -491,27 +537,21 @@ export async function saveMaterialBundleRecipientsForTeacher(
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const studentId of classStudentIds) {
-      const willReceive = input.selectedStudentIds.includes(studentId);
+  const selectedStudentIdSet = new Set(input.selectedStudentIds);
 
-      await tx.materialBundleRecipient.upsert({
-        where: {
-          bundleId_studentId: {
-            bundleId,
-            studentId,
-          },
-        },
-        create: {
+  // Rebuild the recipient set in a few bulk queries instead of one upsert per
+  // student — a per-student loop blew past the 5s interactive transaction
+  // timeout for larger classes.
+  await prisma.$transaction(async (tx) => {
+    await tx.materialBundleRecipient.deleteMany({ where: { bundleId } });
+
+    if (classStudentIds.length > 0) {
+      await tx.materialBundleRecipient.createMany({
+        data: classStudentIds.map((studentId) => ({
           bundleId,
           studentId,
-          willReceive,
-          receivedAt: null,
-        },
-        update: {
-          willReceive,
-          receivedAt: null,
-        },
+          willReceive: selectedStudentIdSet.has(studentId),
+        })),
       });
     }
 
@@ -520,7 +560,7 @@ export async function saveMaterialBundleRecipientsForTeacher(
         id: bundleId,
       },
       data: {
-        status: "SENT",
+        bundleStatus: "SENT",
         sentAt: new Date(),
       },
     });

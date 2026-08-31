@@ -21,9 +21,10 @@ export async function startYouTubeLecture(
     privacy: "public" | "unlisted" | "private"
 ) {
     // 1. Get lecture
-    const lecture = await prisma.lecture.findUnique({
+    const lecture = await prisma.lecture.findFirst({
         where: {
             id: lectureId,
+            status: 0,
         },
         include: {
             class: {
@@ -803,9 +804,10 @@ export async function startYouTubeRecording(
         "======================================================="
     );
 
-    const lecture = await prisma.lecture.findUnique({
+    const lecture = await prisma.lecture.findFirst({
         where: {
             id: lectureId,
+            status: 0,
         },
         include: {
             class: {
@@ -1136,9 +1138,10 @@ export async function checkYouTubeRecordingStatus(
     }
 
     const lecture =
-        await prisma.lecture.findUnique({
+        await prisma.lecture.findFirst({
             where: {
                 id: lectureId,
+                status: 0,
             },
             select: {
                 id: true,

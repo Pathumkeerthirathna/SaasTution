@@ -34,8 +34,10 @@ export async function POST(
         id: itemId,
         bundleId,
         type: "PAPER",
+        status: 0,
         bundle: {
-          status: "SENT",
+          bundleStatus: "SENT",
+          status: 0,
           recipients: {
             some: {
               studentId: session.studentId,

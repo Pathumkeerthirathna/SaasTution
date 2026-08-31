@@ -55,11 +55,11 @@ export type AnnouncementItem = {
 export const studentNavItems: StudentNavItem[] = [
   { href: "/student/dashboard",        label: "Dashboard",             icon: "dashboard" },
   { href: "/student/classes",          label: "My Classes",            icon: "classes" },
+  { href: "/student/lectures",         label: "Lecture / Schedules",   icon: "lectures" },
   { href: "/student/live-classes",     label: "Live Classes",          icon: "live" },
   { href: "/student/material-bundles", label: "Tutes / Papers",        icon: "folder" },
   { href: "/student/assignments",      label: "Assignments",           icon: "assignments" },
   { href: "/student/quizzes",          label: "Quizzes",               icon: "quizzes" },
-  { href: "/student/lectures",         label: "Lectures / Notes",      icon: "lectures" },
   { href: "/student/attendance",       label: "Attendance / History",  icon: "attendance" },
   { href: "/student/messages",         label: "Messages",              icon: "messages" },
   { href: "/student/settings",         label: "Settings",              icon: "settings" },

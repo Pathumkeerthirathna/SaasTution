@@ -130,33 +130,12 @@ export async function POST(request: Request) {
 
     const inviteToken = body.inviteToken?.trim();
 
-    console.log("inviteToken");
-    console.log(inviteToken);
-    
-    console.log("loginResult");
-    console.log(loginResult);
-
     if (inviteToken && loginResult.role === "STUDENT") {
-      
       const invitePayload = await verifySessionInviteToken(inviteToken);
 
-      console.log("invitePayload");
-      console.log(invitePayload);
-
       if (invitePayload && invitePayload.studentId === loginResult.user.id) {
-          
         redirectTo = `/student/dashboard?invite=${encodeURIComponent(inviteToken)}`;
-
       }
-
-      if(loginResult.studentStatus.isActive == false){
-
-      }
-
-      if(loginResult.studentStatus.isConfirmed==false){
-
-      }
-      
     }
 
     if (loginResult.role === "TEACHER") {

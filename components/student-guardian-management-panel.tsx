@@ -55,6 +55,7 @@ export type StudentListItem = {
   id: string;
   name: string;
   status: number;
+  deactivationReason: string | null;
   grade: Grade | null;
   contact01: string | null;
   contact02: string | null;
@@ -234,10 +235,27 @@ export function StudentGuardianManagementPanel() {
   const [isConfirmingAll, setIsConfirmingAll] = useState(false);
 
   const [pendingAction, setPendingAction] = useState<{
-    type: "delete" | "deactivate";
+    type: "delete" | "activate";
     studentId: string;
     rect: DOMRect;
   } | null>(null);
+
+  const [deactivateStudentId, setDeactivateStudentId] = useState<string | null>(
+    null
+  );
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [isDeactivating, setIsDeactivating] = useState(false);
+
+  function askActivateStudent(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    studentId: string
+  ) {
+    setPendingAction({
+      type: "activate",
+      studentId,
+      rect: event.currentTarget.getBoundingClientRect(),
+    });
+  }
 
   function askDeleteStudent(
     event: ReactMouseEvent<HTMLButtonElement>,
@@ -251,14 +269,19 @@ export function StudentGuardianManagementPanel() {
   }
 
   function askDeactivateStudent(
-    event: ReactMouseEvent<HTMLButtonElement>,
+    _event: ReactMouseEvent<HTMLButtonElement>,
     studentId: string
   ) {
-    setPendingAction({
-      type: "deactivate",
-      studentId,
-      rect: event.currentTarget.getBoundingClientRect(),
-    });
+    setDeactivateReason("");
+    setDeactivateStudentId(studentId);
+  }
+
+  function askEditDeactivationReason(
+    studentId: string,
+    currentReason: string | null
+  ) {
+    setDeactivateReason(currentReason ?? "");
+    setDeactivateStudentId(studentId);
   }
 
     const loadRegistrationNumber = useCallback(async () => {
@@ -295,9 +318,14 @@ export function StudentGuardianManagementPanel() {
     ) {
       event.preventDefault();
 
+      if (isSubmitting) return;
+
+      if (registrationNumberError || EmailError || NameError) {
+        toast.error("Please fix the highlighted fields before saving.");
+        return;
+      }
+
       setIsSubmitting(true);
-      setErrorMessage(null);
-      setSuccessMessage(null);
 
       try {
         const response = await fetch(
@@ -321,7 +349,7 @@ export function StudentGuardianManagementPanel() {
         const payload = await response.json();
 
         if (!response.ok || !payload.success) {
-          setErrorMessage(
+          toast.error(
             payload.error?.message ??
             "Failed to update student."
           );
@@ -350,7 +378,6 @@ export function StudentGuardianManagementPanel() {
 
         setTimeout(() => {
           setIsEditPanelOpen(false);
-          setSuccessMessage(null);
         }, 800);
 
       } catch {
@@ -374,7 +401,7 @@ export function StudentGuardianManagementPanel() {
         const payload = await response.json();
 
         if (!response.ok || !payload.success) {
-          setErrorMessage(
+          toast.error(
             payload.error?.message ?? "Failed to activate student."
           );
           return;
@@ -386,37 +413,46 @@ export function StudentGuardianManagementPanel() {
 
         await loadStudentList(page, filters);
       } catch {
-        setErrorMessage("Unable to activate student.");
+        toast.error("Unable to activate student.");
       }
     }
 
-    async function handleDeactivateStudent(studentId: string) {
+    async function handleDeactivateStudent(
+      studentId: string,
+      reason: string,
+      isReasonEdit = false
+    ) {
+      setIsDeactivating(true);
       try {
         const response = await fetch(
           `/api/students/${studentId}/deactivate`,
           {
             method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason }),
           }
         );
 
         const payload = await response.json();
 
-        console.log("Deactivate response:", payload);
-
         if (!response.ok || !payload.success) {
-          setErrorMessage(
-            payload.error?.message ?? "Failed to deactivate student."
+          toast.error(
+            payload.error?.message ??
+              (isReasonEdit
+                ? "Failed to update reason."
+                : "Failed to deactivate student.")
           );
           return;
         }
 
-        toast.success("Student deactivated successfully.");
-
-        //setOpenActionMenu(null);
-
+        toast.success(isReasonEdit ? "Reason updated." : "Student deactivated.");
+        setDeactivateStudentId(null);
+        setDeactivateReason("");
         await loadStudentList(page, filters);
       } catch {
-        setErrorMessage("Unable to deactivate student.");
+        toast.error("Unable to deactivate student.");
+      } finally {
+        setIsDeactivating(false);
       }
     }
 
@@ -432,19 +468,19 @@ export function StudentGuardianManagementPanel() {
         const payload = await response.json();
 
         if (!response.ok || !payload.success) {
-          setErrorMessage(
+          toast.error(
             payload.error?.message ?? "Failed to delete student."
           );
           return;
         }
 
-        setSuccessMessage("Student deleted successfully.");
+        toast.success("Student deleted successfully.");
 
         //setOpenActionMenu(null);
 
         await loadStudentList(page, filters);
       } catch {
-        setErrorMessage("Unable to delete student.");
+        toast.error("Unable to delete student.");
       }
     }
 
@@ -452,8 +488,6 @@ export function StudentGuardianManagementPanel() {
 
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -538,7 +572,6 @@ const pendingCount = pendingStudents.length;
       currentStatusFilter = statusFilter
     ) => {
         setIsLoadingList(true);
-        setErrorMessage(null);
 
         try {
           const query = new URLSearchParams({
@@ -592,7 +625,7 @@ const pendingCount = pendingStudents.length;
             (await response.json()) as PaginatedStudentsResponse;
 
           if (!response.ok || !payload.success) {
-            setErrorMessage(
+            toast.error(
               payload.error?.message ??
                 "Failed to load students."
             );
@@ -610,7 +643,7 @@ const pendingCount = pendingStudents.length;
             payload.pagination?.totalItems ?? 0
           );
         } catch {
-          setErrorMessage(
+          toast.error(
             "Unable to load students right now."
           );
         } finally {
@@ -649,6 +682,26 @@ const pendingCount = pendingStudents.length;
     (previewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE,
     previewPage * IMPORT_PREVIEW_PAGE_SIZE
   );
+
+  function updateImportStudent(
+    globalIndex: number,
+    patch: Partial<ImportStudentRow>
+  ) {
+    setImportStudents((prev) =>
+      prev.map((row, i) => (i === globalIndex ? { ...row, ...patch } : row))
+    );
+  }
+
+  function removeImportStudent(globalIndex: number) {
+    setImportStudents((prev) => prev.filter((_, i) => i !== globalIndex));
+    setPreviewPage((prev) => {
+      const nextTotal = Math.max(
+        1,
+        Math.ceil((importStudents.length - 1) / IMPORT_PREVIEW_PAGE_SIZE)
+      );
+      return Math.min(prev, nextTotal);
+    });
+  }
 
   const loadGrades = useCallback(async () => {
     try {
@@ -704,12 +757,51 @@ const pendingCount = pendingStudents.length;
 
  
  async function downloadTemplate() {
+    // The grade dropdown needs the grade list. Fall back to a fresh fetch in
+    // case the initial load has not finished (or returned nothing) yet.
+    let gradeList = grades;
+    if (gradeList.length === 0) {
+      try {
+        const response = await fetch("/api/Grade");
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) gradeList = data as Grade[];
+        }
+      } catch {
+        // ignore; handled by the guard below
+      }
+    }
+
+    if (gradeList.length === 0) {
+      alert(
+        "No grades are configured yet. Add grades before downloading the import template."
+      );
+      return;
+    }
+
     const workbook = new ExcelJS.Workbook();
 
     // ==========================
-    // Grades Sheet (Master Data)
+    // Grades Sheet (Master Data) — created first so the dropdown can point at it
     // ==========================
-    
+    const gradesSheet = workbook.addWorksheet("Grades");
+    gradesSheet.columns = [
+      { header: "GradeId", key: "gradeId", width: 15 },
+      { header: "GradeName", key: "gradeName", width: 25 },
+    ];
+    gradeList.forEach((grade) => {
+      gradesSheet.addRow({ gradeId: grade.id, gradeName: grade.GradeDesc });
+    });
+    gradesSheet.state = "hidden";
+
+    const lastGradeRow = gradeList.length + 1;
+
+    // ExcelJS data validation does not reliably resolve cross-sheet range
+    // references, but it does resolve workbook-level defined names.
+    workbook.definedNames.add(
+      `Grades!$B$2:$B$${lastGradeRow}`,
+      "GradeNameList"
+    );
 
     // ==========================
     // Students Sheet
@@ -737,60 +829,33 @@ const pendingCount = pendingStudents.length;
       "nethmi@gmail.com",
     ]);
 
-    const lastGradeRow = grades.length + 1;
-
     // Apply dropdowns + formulas for first 500 rows
     for (let row = 2; row <= 500; row++) {
-      // ==========================
-      // Grade Dropdown (Column C)
-      // ==========================
+      // Grade dropdown (Column C) — reads from the GradeNameList defined name
       studentSheet.getCell(`C${row}`).dataValidation = {
         type: "list",
         allowBlank: true,
-        formulae: [`Grades!$B$2:$B$${lastGradeRow}`],
+        formulae: ["GradeNameList"],
         showErrorMessage: true,
         errorTitle: "Invalid Grade",
         error: "Please select a grade from the dropdown",
       };
 
-      // ==========================
       // Auto GradeId (Column D)
-      // ==========================
       studentSheet.getCell(`D${row}`).value = {
-        formula: `IFERROR(INDEX(Grades!$A$2:$A$${lastGradeRow},MATCH(C${row},Grades!$B$2:$B$${lastGradeRow},0)),"")`,
+        formula: `IFERROR(INDEX(Grades!$A$2:$A$${lastGradeRow},MATCH(C${row},GradeNameList,0)),"")`,
       };
 
       // Make GradeId readonly
-      studentSheet.getCell(`D${row}`).protection = {
-        locked: true,
-      };
+      studentSheet.getCell(`D${row}`).protection = { locked: true };
     }
-
-    const gradesSheet = workbook.addWorksheet("Grades");
-
-    gradesSheet.columns = [
-      { header: "GradeId", key: "gradeId", width: 15 },
-      { header: "GradeName", key: "gradeName", width: 25 },
-    ];
-
-    grades.forEach((grade) => {
-      gradesSheet.addRow({
-        gradeId: grade.id,
-        gradeName: grade.GradeDesc,
-      });
-    });
-
-    // Hide Grades sheet
-    gradesSheet.state = "hidden";
 
     // ==========================
     // Unlock editable columns
     // ==========================
     ["A", "B", "C", "E", "F", "G"].forEach((col) => {
       for (let row = 2; row <= 500; row++) {
-        studentSheet.getCell(`${col}${row}`).protection = {
-          locked: false,
-        };
+        studentSheet.getCell(`${col}${row}`).protection = { locked: false };
       }
     });
 
@@ -798,26 +863,13 @@ const pendingCount = pendingStudents.length;
     // Header styling
     // ==========================
     const headerRow = studentSheet.getRow(1);
-
-    headerRow.font = {
-      bold: true,
-    };
-
+    headerRow.font = { bold: true };
     headerRow.height = 22;
 
-    // ==========================
     // Freeze header row
-    // ==========================
-    studentSheet.views = [
-      {
-        state: "frozen",
-        ySplit: 1,
-      },
-    ];
+    studentSheet.views = [{ state: "frozen", ySplit: 1 }];
 
-    // ==========================
     // Protect sheet
-    // ==========================
     await studentSheet.protect("student-template", {
       selectLockedCells: true,
       selectUnlockedCells: true,
@@ -829,9 +881,7 @@ const pendingCount = pendingStudents.length;
     const buffer = await workbook.xlsx.writeBuffer();
 
     saveAs(
-      new Blob([
-        buffer as ArrayBuffer,
-      ]),
+      new Blob([buffer as ArrayBuffer]),
       "StudentTemplate.xlsx"
     );
  }
@@ -950,7 +1000,7 @@ const pendingCount = pendingStudents.length;
 
         await loadStudentList(page, filters);
 
-        setSuccessMessage(
+        toast.success(
           `${result.count} students imported successfully.`
         );
       }
@@ -993,11 +1043,15 @@ const pendingCount = pendingStudents.length;
 
   async function handleCreateStudent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
 
-    console.log("Creating student with data:", studentForm);
+    if (isSubmitting) return;
+
+    if (registrationNumberError || EmailError || NameError) {
+      toast.error("Please fix the highlighted fields before saving.");
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
       const response = await fetch("/api/students", {
@@ -1014,7 +1068,7 @@ const pendingCount = pendingStudents.length;
       };
 
       if (!response.ok || !payload.success) {
-        setErrorMessage(payload.error?.message ?? "Failed to add student.");
+        toast.error(payload.error?.message ?? "Failed to add student.");
         return;
       }
 
@@ -1029,11 +1083,11 @@ const pendingCount = pendingStudents.length;
 
       await loadRegistrationNumber();
 
-      setSuccessMessage("Student added successfully.");
+      toast.success("Student added successfully.");
       await loadStudentList(1, filters);
       setIsAddPanelOpen(false);
     } catch {
-      setErrorMessage("Unable to add student right now.");
+      toast.error("Unable to add student right now.");
     } finally {
       setIsSubmitting(false);
     }
@@ -1068,11 +1122,10 @@ const pendingCount = pendingStudents.length;
       } else {
         setRegistrationNumberError("");
       }
-
-      setIsCheckingRegistrationNumber(false);
-
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCheckingRegistrationNumber(false);
     }
   };
 
@@ -1101,54 +1154,56 @@ const pendingCount = pendingStudents.length;
       } else {
         setEmailError("");
       }
-
-      setIsCheckinEmail(false);
-
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCheckinEmail(false);
     }
   };
 
   const checkName = async (
-    registrationNumber: string,
-    selectedStudentId: string
+    name: string,
+    selectedStudentId: string,
+    gradeId: number | null | undefined
   ) => {
-    const regNo = registrationNumber.trim();
+    const value = name.trim();
 
-    if (!regNo) {
+    // Only meaningful once a grade is chosen — a name clash is per grade.
+    if (!value || !gradeId) {
       setNameError("");
       return;
     }
 
     try {
-
       setIsCheckingName(true);
 
-      const response = await fetch(`/api/students/check-name?registrationNumber=${encodeURIComponent(regNo)}&studentId=${selectedStudentId}`
+      const response = await fetch(
+        `/api/students/check-name?registrationNumber=${encodeURIComponent(
+          value
+        )}&studentId=${selectedStudentId}&gradeId=${gradeId}`
       );
 
       const result = await response.json();
 
-      if (result.exists) {
-        setNameError("Name already exists.");
-      } else {
-        setNameError("");
-      }
-
-      setIsCheckingName(false);
-
+      setNameError(
+        result.exists
+          ? "A student with this name already exists in this grade."
+          : ""
+      );
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCheckingName(false);
     }
   };
 
+  // Only the actual field errors gate the submit button. The "checking…"
+  // flags must NOT disable it — an onBlur check fired by the button click
+  // itself would otherwise swallow that first click.
   const hasValidationErrors =
   !!registrationNumberError ||
   !!EmailError ||
-  !!NameError ||
-  isCheckingRegistrationNumber ||
-  isCheckingEmail ||
-  isCheckingName;
+  !!NameError;
 
  const handleConfirmStudent = async (student: StudentListItem) => {
 
@@ -1304,39 +1359,39 @@ const handleConfirmAllStudents = async () => {
 
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
 
             <button
               type="button"
               onClick={downloadStudents}
-              className="btn-secondary border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <FileSpreadsheet size={14} />
+              <FileSpreadsheet size={12} />
               Export Excel
             </button>
 
             <button
               type="button"
               onClick={() => setIsHelpOpen(true)}
-              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <CircleHelp size={14} />
+              <CircleHelp size={12} />
               Help
             </button>
 
             <button
               type="button"
               onClick={downloadTemplate}
-              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <Download size={14} />
+              <Download size={12} />
               Download Template
             </button>
 
             <label
-              className="btn-secondary cursor-pointer gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 cursor-pointer gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <Upload size={14} />
+              <Upload size={12} />
               Upload Student List
 
               <input
@@ -1350,9 +1405,9 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsAddPanelOpen(true)}
-              className="btn-primary gap-1.5 bg-orange-500 text-white hover:bg-orange-600 border-orange-500 shadow-sm hover:shadow-md"
+              className="btn-primary h-7 gap-1 rounded-lg border-orange-500 bg-orange-500 px-2.5 text-[11px] text-white shadow-sm hover:bg-orange-600 hover:shadow-md"
             >
-              <Plus size={14} />
+              <Plus size={12} />
               Add Student
             </button>
 
@@ -1364,9 +1419,9 @@ const handleConfirmAllStudents = async () => {
                 );
                 setIsFilterPanelOpen(true);
               }}
-              className="btn-secondary gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
             >
-              <Search size={14} />
+              <Search size={12} />
               Search By
             </button>
 
@@ -1648,9 +1703,9 @@ const handleConfirmAllStudents = async () => {
                       </td>
 
                       {/* Status: Active / Inactive / Deleted */}
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                          className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-medium ${
                             student.status === 0
                               ? "bg-emerald-50 text-emerald-700"
                               : student.status === 1
@@ -1664,6 +1719,29 @@ const handleConfirmAllStudents = async () => {
                             ? "Inactive"
                             : "Deleted"}
                         </span>
+
+                        {student.status === 1 && (
+                          <div className="mt-1 flex max-w-[200px] items-start gap-1 text-[10px] leading-4 text-slate-500">
+                            <span className="line-clamp-2">
+                              {student.deactivationReason || "No reason recorded"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                askEditDeactivationReason(
+                                  student.id,
+                                  student.deactivationReason
+                                );
+                              }}
+                              title="Edit reason"
+                              aria-label="Edit deactivation reason"
+                              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Registered At */}
@@ -1707,7 +1785,7 @@ const handleConfirmAllStudents = async () => {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleActivateStudent(student.id)}
+                              onClick={(event) => askActivateStudent(event, student.id)}
                               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
                             >
                               <CheckCircle size={13} />
@@ -1909,6 +1987,29 @@ const handleConfirmAllStudents = async () => {
                           : "Deleted"}
                       </span>
 
+                      {student.status === 1 && (
+                        <div className="mt-1 flex items-start gap-1 text-[10px] leading-4 text-slate-500">
+                          <span className="line-clamp-2">
+                            {student.deactivationReason || "No reason recorded"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              askEditDeactivationReason(
+                                student.id,
+                                student.deactivationReason
+                              );
+                            }}
+                            title="Edit reason"
+                            aria-label="Edit deactivation reason"
+                            className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
+                      )}
+
                     </div>
                   </div>
 
@@ -2106,7 +2207,7 @@ const handleConfirmAllStudents = async () => {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleActivateStudent(student.id)}
+                      onClick={(event) => askActivateStudent(event, student.id)}
                       className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50"
                     >
                       <CheckCircle size={13} />
@@ -2310,8 +2411,6 @@ const handleConfirmAllStudents = async () => {
           className="space-y-4 p-4"
         >
 
-           {errorMessage ? <p className="notice-error">{errorMessage}</p> : null}
-           {successMessage ? <p className="notice-success">{successMessage}</p> : null}
 
           {/* Basic Details */}
           <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -2378,7 +2477,11 @@ const handleConfirmAllStudents = async () => {
                         setNameError("");
                       }
 
-                      checkName(event.target.value, "");
+                      void checkName(
+                        event.target.value,
+                        "",
+                        studentForm.gradeId
+                      );
                     }}
                     className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
                       NameError
@@ -2410,14 +2513,16 @@ const handleConfirmAllStudents = async () => {
                   <select
                       required
                       value={studentForm.gradeId ?? ""}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const nextGradeId = event.target.value
+                          ? Number(event.target.value)
+                          : null;
                         setStudentForm((prev) => ({
                           ...prev,
-                          gradeId: event.target.value
-                            ? Number(event.target.value)
-                            : null,
-                        }))
-                      }
+                          gradeId: nextGradeId,
+                        }));
+                        void checkName(studentForm.name, "", nextGradeId);
+                      }}
                     >
                       <option value="">Select Grade</option>
 
@@ -2561,13 +2666,14 @@ const handleConfirmAllStudents = async () => {
               <button
                 type="submit"
                 disabled={isSubmitting || hasValidationErrors}
-                className={`h-8 flex-1 rounded-lg text-sm font-medium text-white transition ${
+                className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white transition ${
                   isSubmitting || hasValidationErrors
                     ? "cursor-not-allowed bg-slate-400"
                     : "bg-brand-700 hover:bg-brand-800"
                 }`}
               >
-                {isSubmitting ? "Creating..." : "Create Student"}
+                {isSubmitting && <Loader2 size={14} className="animate-spin" />}
+                {isSubmitting ? "Creating student..." : "Create Student"}
               </button>
             </div>
           </div>
@@ -2657,8 +2763,6 @@ const handleConfirmAllStudents = async () => {
           className="space-y-4 p-4"
         >
 
-           {errorMessage ? <p className="notice-error">{errorMessage}</p> : null}
-           {successMessage ? <p className="notice-success">{successMessage}</p> : null}
 
           {/* Basic Details */}
           <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -2741,7 +2845,8 @@ const handleConfirmAllStudents = async () => {
                     onBlur={() =>
                       void checkName(
                         editStudentForm.name,
-                        editStudentForm.id
+                        editStudentForm.id,
+                        editStudentForm.gradeId
                       )
                     }
                     className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
@@ -2777,14 +2882,20 @@ const handleConfirmAllStudents = async () => {
                   <select
                       required
                       value={editStudentForm.gradeId ?? ""}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const nextGradeId = event.target.value
+                          ? Number(event.target.value)
+                          : null;
                         setEditStudentForm((prev) => ({
                           ...prev,
-                          gradeId: event.target.value
-                            ? Number(event.target.value)
-                            : null,
-                        }))
-                      }
+                          gradeId: nextGradeId,
+                        }));
+                        void checkName(
+                          editStudentForm.name,
+                          editStudentForm.id,
+                          nextGradeId
+                        );
+                      }}
                     >
                       <option value="">Select Grade</option>
 
@@ -2934,13 +3045,14 @@ const handleConfirmAllStudents = async () => {
               <button
                 type="submit"
                 disabled={isSubmitting || hasValidationErrors}
-                className={`h-8 flex-1 rounded-lg text-sm font-medium text-white ${
+                className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white ${
                   isSubmitting || hasValidationErrors
                     ? "cursor-not-allowed bg-slate-400"
                     : "bg-brand-700 hover:bg-brand-800"
                 }`}
               >
-                {isSubmitting ? "Updating..." : "Update Student"}
+                {isSubmitting && <Loader2 size={14} className="animate-spin" />}
+                {isSubmitting ? "Updating student..." : "Update Student"}
               </button>
             </div>
           </div>
@@ -2961,51 +3073,48 @@ const handleConfirmAllStudents = async () => {
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-7xl overflow-y-auto bg-slate-50 shadow-2xl transition-transform duration-300 ${
-          isImportPreviewOpen
-            ? "translate-x-0"
-            : "translate-x-full"
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-5xl flex-col bg-slate-50 shadow-2xl transition-transform duration-300 ${
+          isImportPreviewOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
-          <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+              <FileSpreadsheet size={16} />
+            </span>
             <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                Import Student Preview
-              </h2>
-
-              <p className="mt-0.5 text-xs text-slate-500">
-                Review uploaded students before importing.
+              <h2 className="text-[14px] font-semibold text-slate-900">Import Student Preview</h2>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Review and edit the uploaded students before importing.
               </p>
-
-              <div className="mt-2">
-                <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                  Total Records: {importStudents.length}
-                </span>
-              </div>
+              <span className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                <Users size={10} />
+                {importStudents.length} record{importStudents.length === 1 ? "" : "s"}
+              </span>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIsImportPreviewOpen(false)}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Close
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsImportPreviewOpen(false)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+          >
+            <X size={12} />
+            Close
+          </button>
         </div>
 
         {importErrors.length > 0 && (
-          <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3">
-            <h3 className="mb-1.5 text-sm font-semibold text-red-700">
-              Validation Errors
-            </h3>
-
-            <ul className="space-y-1 text-xs text-red-600">
+          <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 p-2.5">
+            <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-rose-700">
+              <XCircle size={12} />
+              Validation errors
+            </p>
+            <ul className="space-y-0.5 text-[10px] leading-4 text-rose-600">
               {importErrors.map((error, index) => (
                 <li key={index}>
-                  Row {error.row} - {error.message}
+                  Row {error.row} &mdash; {error.message}
                 </li>
               ))}
             </ul>
@@ -3013,132 +3122,233 @@ const handleConfirmAllStudents = async () => {
         )}
 
         {/* Table */}
-        <div className="p-4">
+        <div className="flex-1 overflow-auto px-4 py-3">
           <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[860px] text-[11px]">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="px-3 py-2 text-left">Reg No</th>
-                  <th className="px-3 py-2 text-left">Student Name</th>
-                  <th className="px-3 py-2 text-left">Grade</th>
-                  <th className="px-3 py-2 text-left">Grade Id</th>
-                  <th className="px-3 py-2 text-left">Primary Contact</th>
-                  <th className="px-3 py-2 text-left">Secondary Contact</th>
-                  <th className="px-3 py-2 text-left">Email</th>
+                <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><Hash size={11} />Reg No</span>
+                  </th>
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><User size={11} />Student Name</span>
+                  </th>
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><GraduationCap size={11} />Grade</span>
+                  </th>
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><Phone size={11} />Primary Contact</span>
+                  </th>
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><PhoneCall size={11} />Secondary Contact</span>
+                  </th>
+                  <th className="px-2.5 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1"><Mail size={11} />Email</span>
+                  </th>
+                  <th className="w-8 px-2 py-2" />
                 </tr>
               </thead>
 
               <tbody>
-                {paginatedStudents.map(
-                  (student: ImportStudentRow, index: number) => (
+                {paginatedStudents.map((student: ImportStudentRow, index: number) => {
+                  const globalIndex =
+                    (previewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE + index;
+                  const inputClass =
+                    "w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-brand-500";
+                  return (
                     <tr
-                      key={`${student.registrationNumber}-${index}`}
-                      className="border-b border-slate-100"
+                      key={globalIndex}
+                      className="border-b border-slate-100 last:border-0"
                     >
-                      <td className="px-3 py-2">
-                        {student.registrationNumber}
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          value={student.registrationNumber}
+                          onChange={(e) =>
+                            updateImportStudent(globalIndex, {
+                              registrationNumber: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-w-[96px]`}
+                        />
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.studentName}
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          value={student.studentName}
+                          onChange={(e) =>
+                            updateImportStudent(globalIndex, {
+                              studentName: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-w-[150px]`}
+                        />
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.grade}
+                      <td className="px-2 py-1.5 align-top">
+                        <select
+                          value={student.gradeId ?? ""}
+                          onChange={(e) => {
+                            const id = e.target.value
+                              ? Number(e.target.value)
+                              : null;
+                            const match = grades.find((g) => g.id === id);
+                            updateImportStudent(globalIndex, {
+                              gradeId: id,
+                              grade: match?.GradeDesc ?? "",
+                            });
+                          }}
+                          className={`${inputClass} min-w-[130px] ${
+                            student.gradeId ? "" : "text-slate-400"
+                          }`}
+                        >
+                          <option value="">Select grade</option>
+                          {grades.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.GradeDesc}
+                            </option>
+                          ))}
+                        </select>
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.gradeId}
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          type="tel"
+                          value={student.primaryContact}
+                          onChange={(e) =>
+                            updateImportStudent(globalIndex, {
+                              primaryContact: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-w-[120px]`}
+                        />
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.primaryContact}
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          type="tel"
+                          value={student.secondaryContact}
+                          onChange={(e) =>
+                            updateImportStudent(globalIndex, {
+                              secondaryContact: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-w-[120px]`}
+                        />
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.secondaryContact}
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          type="email"
+                          value={student.email}
+                          onChange={(e) =>
+                            updateImportStudent(globalIndex, {
+                              email: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-w-[160px]`}
+                        />
                       </td>
 
-                      <td className="px-3 py-2">
-                        {student.email}
+                      <td className="px-2 py-1.5 text-center align-top">
+                        <button
+                          type="button"
+                          onClick={() => removeImportStudent(globalIndex)}
+                          title="Remove row"
+                          aria-label="Remove row"
+                          className="rounded-md p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </td>
                     </tr>
-                  )
+                  );
+                })}
+
+                {importStudents.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-8 text-center text-[11px] text-slate-400"
+                    >
+                      No students to import.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination */}
-          <div className="mt-4 flex items-center justify-center gap-1.5">
-            <button
-              type="button"
-              disabled={previewPage <= 1}
-              onClick={() =>
-                setPreviewPage((prev) => prev - 1)
-              }
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs disabled:opacity-40"
-            >
-              Previous
-            </button>
-
-            {Array.from(
-              { length: totalPreviewPages },
-              (_, i) => i + 1
-            ).map((pageNo) => (
+          {totalPreviewPages > 1 && (
+            <div className="mt-3 flex items-center justify-center gap-1">
               <button
-                key={pageNo}
                 type="button"
-                onClick={() =>
-                  setPreviewPage(pageNo)
-                }
-                className={`h-7 w-7 rounded-lg text-xs ${
-                  previewPage === pageNo
-                    ? "bg-brand-700 text-white"
-                    : "border border-slate-300"
-                }`}
+                disabled={previewPage <= 1}
+                onClick={() => setPreviewPage((prev) => prev - 1)}
+                className="inline-flex items-center gap-0.5 rounded-md border border-slate-300 px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
               >
-                {pageNo}
+                <ChevronLeft size={12} />
+                Prev
               </button>
-            ))}
 
-            <button
-              type="button"
-              disabled={
-                previewPage >= totalPreviewPages
-              }
-              onClick={() =>
-                setPreviewPage((prev) => prev + 1)
-              }
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
+              {Array.from({ length: totalPreviewPages }, (_, i) => i + 1).map(
+                (pageNo) => (
+                  <button
+                    key={pageNo}
+                    type="button"
+                    onClick={() => setPreviewPage(pageNo)}
+                    className={`h-6 w-6 rounded-md text-[11px] font-medium transition ${
+                      previewPage === pageNo
+                        ? "bg-brand-700 text-white"
+                        : "border border-slate-300 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {pageNo}
+                  </button>
+                )
+              )}
+
+              <button
+                type="button"
+                disabled={previewPage >= totalPreviewPages}
+                onClick={() => setPreviewPage((prev) => prev + 1)}
+                className="inline-flex items-center gap-0.5 rounded-md border border-slate-300 px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+                <ChevronRight size={12} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 border-t border-slate-200 bg-white p-3">
-          <div className="flex gap-3">
+        <div className="border-t border-slate-200 bg-white px-4 py-2.5">
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={() =>
-                setIsImportPreviewOpen(false)
-              }
-              className="flex-1 rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-medium"
+              onClick={() => setIsImportPreviewOpen(false)}
+              className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white py-1.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
             >
+              <X size={12} />
               Cancel
             </button>
 
             <button
               type="button"
-              disabled={isImporting}
+              disabled={isImporting || importStudents.length === 0}
               onClick={handleConfirmImport}
-              className="flex-1 rounded-lg bg-brand-700 py-1.5 text-xs font-medium text-white"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-700 py-1.5 text-[11px] font-semibold text-white transition hover:bg-brand-800 disabled:opacity-50"
             >
-              {isImporting
-                ? "Importing..."
-                : `Confirm Import (${importStudents.length})`}
+              {isImporting ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={12} />
+                  Confirm import ({importStudents.length})
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -3196,11 +3406,12 @@ const handleConfirmAllStudents = async () => {
           message={
             pendingAction.type === "delete"
               ? "Are you sure you want to delete this student?"
-              : "Are you sure you want to deactivate this student?"
+              : "Are you sure you want to activate this student?"
           }
           confirmLabel={
-            pendingAction.type === "delete" ? "Delete" : "Deactivate"
+            pendingAction.type === "delete" ? "Delete" : "Activate"
           }
+          tone={pendingAction.type === "activate" ? "positive" : "danger"}
           onCancel={() => setPendingAction(null)}
           onConfirm={() => {
             const { type, studentId } = pendingAction;
@@ -3210,11 +3421,91 @@ const handleConfirmAllStudents = async () => {
             if (type === "delete") {
               void handleDeleteStudent(studentId);
             } else {
-              void handleDeactivateStudent(studentId);
+              void handleActivateStudent(studentId);
             }
           }}
         />
       )}
+
+      {deactivateStudentId &&
+        (() => {
+          const isReasonEdit =
+            students.find((s) => s.id === deactivateStudentId)?.status === 1;
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
+              <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+                    {isReasonEdit ? <Pencil size={15} /> : <Ban size={16} />}
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {isReasonEdit
+                        ? "Edit deactivation reason"
+                        : "Deactivate this student?"}
+                    </h3>
+                    <p className="mt-0.5 text-[12px] leading-5 text-slate-500">
+                      {isReasonEdit
+                        ? "Update the reason the student sees on their account."
+                        : "They won't be able to sign in. The student will see the reason you enter below."}
+                    </p>
+                  </div>
+                </div>
+
+                <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  autoFocus
+                  value={deactivateReason}
+                  onChange={(e) => setDeactivateReason(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="e.g. August payment is overdue"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                />
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeactivateStudentId(null);
+                      setDeactivateReason("");
+                    }}
+                    disabled={isDeactivating}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDeactivateStudent(
+                        deactivateStudentId,
+                        deactivateReason,
+                        isReasonEdit
+                      )
+                    }
+                    disabled={
+                      isDeactivating || deactivateReason.trim().length < 3
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {isDeactivating && (
+                      <Loader2 size={13} className="animate-spin" />
+                    )}
+                    {isDeactivating
+                      ? "Saving..."
+                      : isReasonEdit
+                      ? "Update reason"
+                      : "Deactivate"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </section>
   );
 }
@@ -3223,6 +3514,7 @@ type ConfirmActionPopoverProps = {
   rect: DOMRect;
   message: string;
   confirmLabel: string;
+  tone?: "danger" | "positive";
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -3451,6 +3743,7 @@ function ConfirmActionPopover({
   rect,
   message,
   confirmLabel,
+  tone = "danger",
   onConfirm,
   onCancel,
 }: ConfirmActionPopoverProps) {
@@ -3545,7 +3838,11 @@ function ConfirmActionPopover({
         <button
           type="button"
           onClick={onConfirm}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
+            tone === "positive"
+              ? "bg-emerald-600 hover:bg-emerald-700"
+              : "bg-red-600 hover:bg-red-700"
+          }`}
         >
           {confirmLabel}
         </button>

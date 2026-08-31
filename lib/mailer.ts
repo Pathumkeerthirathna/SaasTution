@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 
 import { AppError } from "@/lib/error-handler";
+import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 
 type PasswordResetEmailInput = {
@@ -406,19 +407,9 @@ export async function sendPasswordResetEmail(
 ) {
   await sendEmail(
     input.to,
-    "Reset your SaasTution password",
-    `
-      <p>Use this link to reset your password:</p>
-
-      <p>
-        <a href="${input.resetLink}">
-          ${input.resetLink}
-        </a>
-      </p>
-
-      <p>If you did not request this, please ignore this email.</p>
-    `,
-    `Use this link to reset your password:\n${input.resetLink}`
+    "Reset your SLClassroom password",
+    getPasswordResetEmail({ resetLink: input.resetLink, expiresIn: "30 minutes" }),
+    `Reset your SLClassroom password by opening this link:\n${input.resetLink}\n\nIf you did not request this, you can ignore this email.`
   );
 }
 

@@ -29,6 +29,7 @@ export async function GET(
       where: {
         id: classId,
         teacherId: session.teacherId,
+        status: 0,
       },
       select: {
         id: true,

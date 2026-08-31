@@ -16,6 +16,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const classes = await prisma.class.findMany({
       where: {
         teacherId: context.params.teacherId,
+        status: 0,
       },
       orderBy: {
         createdAt: "desc",
@@ -28,7 +29,7 @@ export async function GET(_request: Request, context: RouteContext) {
         createdAt: true,
         _count: {
           select: {
-            students: true,
+            students: { where: { isActive: true, student: { status: 0 } } },
           },
         },
       },

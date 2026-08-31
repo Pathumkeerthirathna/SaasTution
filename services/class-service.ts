@@ -54,7 +54,7 @@ function buildScheduleSummary(schedules: ClassWriteInput["schedules"]) {
 
 export async function listClassesByTeacher(params: ListClassesParams) {
   const where = {
-    status:0,
+    status: 0,
     teacherId: params.teacherId,
     ...(params.name
       ? {
@@ -99,6 +99,7 @@ export async function listClassesByTeacher(params: ListClassesParams) {
         },
         createdAt: true,
         students: {
+          where: { student: { status: 0 } },
           select: {
             id: true,
             studentId:true,
@@ -111,6 +112,7 @@ export async function listClassesByTeacher(params: ListClassesParams) {
                 id: true,
                 name: true,
                 registrationNumber: true,
+                grade: { select: { id: true, GradeDesc: true } },
               },
             },
           },
@@ -142,6 +144,7 @@ export async function getClassByIdForTeacher(
     include: {
       schedules: true,
       students: {
+        where: { student: { status: 0 } },
         include: {
           student: true,
         },
@@ -238,6 +241,8 @@ export async function getPublicClassSessions(
   const lectures = await prisma.lecture.findMany({
     where: {
       classId,
+      status: 0,
+      class: { status: 0 },
       youtubeRecordings: {
         some: {
           visibility: "PUBLIC",
@@ -340,8 +345,11 @@ export async function getPublicClassNotes(
   const notes = await prisma.note.findMany({
     where: {
       visibility: "PUBLIC",
+      status: 0,
       lecture: {
         classId,
+        status: 0,
+        class: { status: 0 },
       },
     },
     orderBy: [
@@ -394,6 +402,8 @@ export async function getPublicFreeNote(noteId: string) {
       id: noteId,
       visibility: "PUBLIC",
       access: "FREE",
+      status: 0,
+      lecture: { status: 0 },
     },
     select: {
       id: true,
@@ -499,6 +509,7 @@ export async function updateClassForTeacher(
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: { id: true, monthlyFee: true },
   });
@@ -606,6 +617,7 @@ export async function getClassFeeHistoryForTeacher(
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: { id: true, monthlyFee: true },
   });

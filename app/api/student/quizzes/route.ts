@@ -11,7 +11,9 @@ export async function GET() {
 
     const quizzes = await prisma.quiz.findMany({
       where: {
+        status: 0,
         lecture: {
+          status: 0,
           class: {
             students: {
               some: {

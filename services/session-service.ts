@@ -39,6 +39,7 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
     where: {
       id: classId,
       teacherId,
+      status: 0,
     },
     select: {
       id: true,
@@ -59,6 +60,7 @@ async function assertTeacherOwnsLectureInClass(teacherId: string, classId: strin
     where: {
       id: lectureId,
       classId,
+      status: 0,
       class: {
         teacherId,
       },
@@ -145,6 +147,7 @@ export async function startSessionForLectureForTeacher(teacherId: string, lectur
   const lecture = await prisma.lecture.findFirst({
     where: {
       id: lectureId,
+      status: 0,
       class: {
         teacherId,
       },
@@ -292,7 +295,7 @@ export async function listClassSessionHistoryForTeacher(params: {
         },
         _count: {
           select: {
-            attendance: true,
+            attendance: { where: { student: { status: 0 } } },
           },
         },
       },
@@ -502,6 +505,7 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
   const student = await prisma.student.findFirst({
     where: {
       id: studentS.studentId,
+      status: 0,
       classes: {
         some: {
           classId: session.classId,
@@ -769,6 +773,7 @@ export async function listSessionAttendanceForTeacher(params: {
       where: {
         classId: session.classId,
         isActive: true,
+        student: { status: 0 },
       },
       orderBy: {
         student: {

@@ -17,15 +17,27 @@ function assertPathInBounds(resolvedPath: string, allowedRoot: string) {
   }
 }
 
-function resolveDownloadFileName(fileName: string) {
+const MIME_EXTENSION: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+function resolveDownloadFileName(fileName: string, mimeType: string | null) {
   const safe =
     fileName
       .toLowerCase()
       .replace(/[^a-z0-9._-]/g, "-")
       .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "") || "bundle-item.pdf";
+      .replace(/^-|-$/g, "") || "bundle-item";
 
-  return safe.endsWith(".pdf") ? safe : `${safe}.pdf`;
+  if (/\.[a-z0-9]+$/.test(safe)) return safe;
+
+  const ext = MIME_EXTENSION[mimeType ?? ""] ?? "bin";
+  return `${safe}.${ext}`;
 }
 
 export async function GET(
@@ -44,7 +56,9 @@ export async function GET(
       where: {
         id: itemId,
         bundleId,
+        status: 0,
         bundle: {
+          status: 0,
           class: {
             teacherId: session.teacherId,
           },
@@ -69,7 +83,7 @@ export async function GET(
     });
 
     const asDownload = new URL(request.url).searchParams.get("download") === "1";
-    const fileName = resolveDownloadFileName(item.fileName);
+    const fileName = resolveDownloadFileName(item.fileName, item.mimeType);
     const encoded = encodeURIComponent(fileName);
 
     return new Response(file, {

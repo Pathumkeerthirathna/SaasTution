@@ -1,9 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { FormEvent, useMemo, useState } from "react";
+import { CheckCircle2, KeyRound, Lock } from "lucide-react";
+
+import { AuthShell } from "@/components/auth-shell";
+import { AuthIllustration } from "@/components/auth-illustration";
+
+function passwordProblem(value: string): string | null {
+  if (value.length < 8) return "Use at least 8 characters.";
+  if (!/[a-z]/.test(value)) return "Include a lowercase letter.";
+  if (!/[A-Z]/.test(value)) return "Include an uppercase letter.";
+  if (!/[0-9]/.test(value)) return "Include a number.";
+  return null;
+}
 
 function ResetPasswordConfirmContent() {
   const searchParams = useSearchParams();
@@ -16,6 +27,13 @@ function ResetPasswordConfirmContent() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const problem = passwordProblem(newPassword);
+    if (problem) {
+      setErrorMessage(problem);
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
     setMessage(null);
@@ -53,31 +71,44 @@ function ResetPasswordConfirmContent() {
 
   if (!token) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-10 sm:px-6">
-        <section className="w-full rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-          <h1 className="text-2xl font-semibold">Reset link is missing</h1>
-          <p className="mt-2 text-sm text-muted">Use the link from your email, or request a new reset link.</p>
-          <div className="mt-6 text-sm">
-            <Link href="/reset-password" className="font-medium text-brand-700 hover:underline">
-              Request a new reset link
-            </Link>
-          </div>
-        </section>
-      </main>
+      <AuthShell
+        title="Reset link is missing"
+        subtitle="Use the link from your email, or request a new reset link."
+        footerText="Need a new link?"
+        footerLinkHref="/reset-password"
+        footerLinkLabel="Request one"
+        icon={<KeyRound className="h-5 w-5" />}
+        illustration={<AuthIllustration />}
+        showBackToHome
+      >
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+          The reset link is invalid or has expired. Request a fresh one and try again.
+        </p>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-10 sm:px-6">
-      <section className="w-full rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Password reset</p>
-        <h1 className="mt-3 text-2xl font-semibold">Set your new password</h1>
-
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="newPassword" className="mb-1 block text-sm font-medium">
-              New password
-            </label>
+    <AuthShell
+      title="Set a new password"
+      subtitle="Choose a strong password for your account."
+      footerText="Remembered it?"
+      footerLinkHref="/login"
+      footerLinkLabel="Sign in"
+      icon={<KeyRound className="h-5 w-5" />}
+      illustration={<AuthIllustration />}
+      showBackToHome
+    >
+      <form className="space-y-3.5" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="newPassword"
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+          >
+            New password
+          </label>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               id="newPassword"
               type="password"
@@ -85,35 +116,39 @@ function ResetPasswordConfirmContent() {
               minLength={8}
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
-              className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               placeholder="At least 8 characters"
             />
           </div>
-
-          {errorMessage ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
-          ) : null}
-
-          {message ? (
-            <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSubmitting ? "Saving..." : "Reset password"}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <Link href="/login" className="font-medium">
-            Back to login
-          </Link>
+          <p className="mt-1 text-[11px] text-slate-500">
+            At least 8 characters, with one uppercase letter, one lowercase letter
+            and a number.
+          </p>
         </div>
-      </section>
-    </main>
+
+        {errorMessage ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        {message ? (
+          <p className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            {message}
+          </p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <KeyRound className="h-4 w-4" />
+          {isSubmitting ? "Saving..." : "Reset password"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
 
