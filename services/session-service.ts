@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/error-handler";
 import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/lib/mailer";
+import { emitLiveChange, emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
@@ -130,6 +131,8 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     where: { id: lecture.id },
     data: { classStatus: "LIVE" },
   });
+
+  emitLiveChange({ classId, kind: "jitsi", event: "started" });
 
   return {
     session,
@@ -648,6 +651,8 @@ export async function markStudentJoinedSession(sessionId: string, student: Stude
     },
   });
 
+  emitStudentDataChange({ studentId: student.studentId });
+
   return {
     attendance,
   };
@@ -680,6 +685,8 @@ export async function markAttendanceOnJoin(params: {
       leftAt: true,
     },
   });
+
+  emitStudentDataChange({ studentId: params.student.studentId });
 
   return {
     attendance,
@@ -936,7 +943,7 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
 
   const endedAt = new Date();
 
-  await prisma.classSession.update({
+  const ended = await prisma.classSession.update({
     where: {
       id: sessionId,
     },
@@ -944,6 +951,7 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
       isActive: false,
       endedAt,
     },
+    select: { classId: true },
   });
 
   await prisma.attendance.updateMany({
@@ -955,6 +963,8 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
       leftAt: endedAt,
     },
   });
+
+  emitLiveChange({ classId: ended.classId, kind: "jitsi", event: "ended" });
 
   return {
     sessionId,

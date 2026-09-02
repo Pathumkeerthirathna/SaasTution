@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { emitLiveChange } from "@/lib/session-events";
 import {
     getYouTubeLiveBroadcast,
     transitionYouTubeLiveBroadcast,
@@ -176,6 +177,8 @@ export async function POST(
                 endedAt: new Date(),
             },
         });
+
+        emitLiveChange({ classId: lecture.classId, kind: "youtube", event: "ended" });
 
         return NextResponse.json({
             success: true,

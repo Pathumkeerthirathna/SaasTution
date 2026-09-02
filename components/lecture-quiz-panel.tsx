@@ -32,7 +32,8 @@ type LectureQuiz = {
   id: string;
   title: string;
   maxAttempts: number | null;
-  dueDate: string | null;
+  startDateTime: string;
+  endDateTime: string;
   questions: Array<{
     id: string;
     text: string;
@@ -51,7 +52,8 @@ type QuizDraft = {
   id?: string;
   title: string;
   maxAttempts: number | null;
-  dueDate: string | null;
+  startDateTime: string;
+  endDateTime: string;
   questions: QuizQuestion[];
 };
 
@@ -60,7 +62,8 @@ type QuizResultsData = {
     id: string;
     title: string;
     maxAttempts: number | null;
-    dueDate: string | null;
+    startDateTime: string;
+    endDateTime: string;
     totalQuestions: number;
   };
   stats: {
@@ -107,11 +110,22 @@ function createEmptyQuestion(): QuizQuestion {
   };
 }
 
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function createEmptyDraft(): QuizDraft {
+  const start = new Date();
+  start.setMinutes(0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     title: "",
     maxAttempts: null,
-    dueDate: null,
+    startDateTime: start.toISOString(),
+    endDateTime: end.toISOString(),
     questions: [createEmptyQuestion()],
   };
 }
@@ -121,7 +135,8 @@ function toDraft(quiz: LectureQuiz): QuizDraft {
     id: quiz.id,
     title: quiz.title,
     maxAttempts: quiz.maxAttempts,
-    dueDate: quiz.dueDate,
+    startDateTime: quiz.startDateTime,
+    endDateTime: quiz.endDateTime,
     questions: quiz.questions
       .slice()
       .sort((left, right) => left.orderIndex - right.orderIndex)
@@ -369,6 +384,14 @@ export function LectureQuizPanel(props: {
       return "Quiz title is required.";
     }
 
+    if (!draft.startDateTime || !draft.endDateTime) {
+      return "Start and end date/time are required.";
+    }
+
+    if (new Date(draft.endDateTime).getTime() <= new Date(draft.startDateTime).getTime()) {
+      return "End date/time must be after the start date/time.";
+    }
+
     if (draft.questions.length === 0) {
       return "Quiz must include at least one question.";
     }
@@ -418,7 +441,8 @@ export function LectureQuizPanel(props: {
       const payload = {
         title: draft.title.trim(),
         maxAttempts: draft.maxAttempts,
-        dueDate: draft.dueDate,
+        startDateTime: draft.startDateTime,
+        endDateTime: draft.endDateTime,
         questions: draft.questions.map((question) => ({
           id: question.id,
           text: question.text.trim(),
@@ -558,9 +582,9 @@ export function LectureQuizPanel(props: {
                     {quiz.maxAttempts !== null ? (
                       <p className="mt-0.5 text-[11px] text-slate-500">Max {quiz.maxAttempts} attempt(s)</p>
                     ) : null}
-                    {quiz.dueDate ? (
-                      <p className="mt-0.5 text-[10px] text-muted">Due {new Date(quiz.dueDate).toLocaleDateString()}</p>
-                    ) : null}
+                    <p className="mt-0.5 text-[10px] text-muted">
+                      {new Date(quiz.startDateTime).toLocaleString()} → {new Date(quiz.endDateTime).toLocaleString()}
+                    </p>
                   </button>
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -647,7 +671,7 @@ export function LectureQuizPanel(props: {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
                       <label className="form-label mb-1 block">Max attempts (optional)</label>
                       <input
@@ -667,16 +691,38 @@ export function LectureQuizPanel(props: {
                     </div>
 
                     <div>
-                      <label className="form-label mb-1 block">Due date (optional)</label>
+                      <label className="form-label mb-1 block">Start date &amp; time *</label>
                       <div className="relative">
                         <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                           type="datetime-local"
-                          value={draft.dueDate ? new Date(draft.dueDate).toISOString().slice(0, 16) : ""}
+                          value={toLocalInput(draft.startDateTime)}
                           onChange={(event) =>
                             setDraft((prev) => ({
                               ...prev,
-                              dueDate: event.target.value ? new Date(event.target.value).toISOString() : null,
+                              startDateTime: event.target.value
+                                ? new Date(event.target.value).toISOString()
+                                : prev.startDateTime,
+                            }))
+                          }
+                          className="control-input h-9 pl-8 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label mb-1 block">End date &amp; time *</label>
+                      <div className="relative">
+                        <Calendar size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="datetime-local"
+                          value={toLocalInput(draft.endDateTime)}
+                          onChange={(event) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              endDateTime: event.target.value
+                                ? new Date(event.target.value).toISOString()
+                                : prev.endDateTime,
                             }))
                           }
                           className="control-input h-9 pl-8 text-sm"
@@ -684,6 +730,11 @@ export function LectureQuizPanel(props: {
                       </div>
                     </div>
                   </div>
+
+                  <p className="text-[11px] text-muted">
+                    Students see a countdown before the start time, can attempt only between start and end,
+                    and cannot submit after the end time.
+                  </p>
 
                   <div className="space-y-3">
                     {draft.questions.map((question, questionIndex) => (
@@ -911,9 +962,10 @@ export function LectureQuizPanel(props: {
                     <p className="mt-1 text-base font-semibold text-slate-900">{resultsData.quiz.maxAttempts ?? "Unlimited"}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Due</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-900">
-                      {resultsData.quiz.dueDate ? new Date(resultsData.quiz.dueDate).toLocaleDateString() : "No due date"}
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Window</p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-900">
+                      {new Date(resultsData.quiz.startDateTime).toLocaleString()}
+                      <br />→ {new Date(resultsData.quiz.endDateTime).toLocaleString()}
                     </p>
                   </div>
                 </div>

@@ -42,7 +42,6 @@ export async function GET(
             id: true,
             title: true,
             maxAttempts: true,
-            dueDate: true,
             status: true,
             lecture: {
               select: {

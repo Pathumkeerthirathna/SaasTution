@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { emitStudentDataChange } from "@/lib/session-events";
 import type {
   CreateAssignmentInput,
   CreateLectureInput,
@@ -80,6 +81,7 @@ async function assertTeacherOwnsAssignment(teacherId: string, lectureId: string,
       title: true,
       description: true,
       dueDate: true,
+      lecture: { select: { classId: true } },
     },
   });
 
@@ -107,6 +109,7 @@ async function assertTeacherOwnsQuiz(teacherId: string, lectureId: string, quizI
       id: true,
       lectureId: true,
       title: true,
+      lecture: { select: { classId: true } },
     },
   });
 
@@ -122,7 +125,8 @@ const quizWithQuestionsSelect = {
   lectureId: true,
   title: true,
   maxAttempts: true,
-  dueDate: true,
+  startDateTime: true,
+  endDateTime: true,
   questions: {
     orderBy: {
       orderIndex: "asc" as const,
@@ -170,6 +174,7 @@ async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteI
       sizeBytes: true,
       downloadCount: true,
       lastDownloadedAt: true,
+      lecture: { select: { classId: true } },
     },
   });
 
@@ -183,7 +188,7 @@ async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteI
 export async function createLectureForTeacher(teacherId: string, input: CreateLectureInput) {
   await assertTeacherOwnsClass(teacherId, input.classId);
 
-  return prisma.lecture.create({
+  const lecture = await prisma.lecture.create({
     data: {
       classId: input.classId,
       title: input.title,
@@ -204,6 +209,9 @@ export async function createLectureForTeacher(teacherId: string, input: CreateLe
       },
     },
   });
+
+  emitStudentDataChange({ classId: input.classId });
+  return lecture;
 }
 
 export async function updateLectureForTeacher(teacherId: string, lectureId: string, input: UpdateLectureInput) {
@@ -266,7 +274,7 @@ export async function updateLectureClassStatusForTeacher(
 }
 
 export async function deleteLectureForTeacher(teacherId: string, lectureId: string) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
 
   // Soft delete: status 1 hides the lecture (and, via lecture.status filters, its
   // notes / assignments / quizzes) from every view while keeping history intact.
@@ -278,6 +286,8 @@ export async function deleteLectureForTeacher(teacherId: string, lectureId: stri
       status: 1,
     },
   });
+
+  emitStudentDataChange({ classId: lecture.classId });
 }
 
 export async function listLecturesForTeacher(params: {
@@ -565,9 +575,9 @@ export async function addAssignmentToLectureForTeacher(
   lectureId: string,
   input: CreateAssignmentInput
 ) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
 
-  return prisma.assignment.create({
+  const created = await prisma.assignment.create({
     data: {
       lectureId,
       title: input.title,
@@ -582,6 +592,9 @@ export async function addAssignmentToLectureForTeacher(
       dueDate: true,
     },
   });
+
+  emitStudentDataChange({ classId: lecture.classId });
+  return created;
 }
 
 export async function updateAssignmentForTeacher(
@@ -612,7 +625,7 @@ export async function updateAssignmentForTeacher(
 }
 
 export async function deleteAssignmentForTeacher(teacherId: string, lectureId: string, assignmentId: string) {
-  await assertTeacherOwnsAssignment(teacherId, lectureId, assignmentId);
+  const assignment = await assertTeacherOwnsAssignment(teacherId, lectureId, assignmentId);
 
   // Soft delete — keep submissions and history.
   await prisma.assignment.update({
@@ -623,6 +636,8 @@ export async function deleteAssignmentForTeacher(teacherId: string, lectureId: s
       status: 1,
     },
   });
+
+  emitStudentDataChange({ classId: assignment.lecture.classId });
 }
 
 export async function addQuizToLectureForTeacher(
@@ -630,14 +645,15 @@ export async function addQuizToLectureForTeacher(
   lectureId: string,
   input: CreateQuizInput
 ) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
 
-  return prisma.quiz.create({
+  const created = await prisma.quiz.create({
     data: {
       lectureId,
       title: input.title,
       maxAttempts: input.maxAttempts ?? null,
-      dueDate: input.dueDate ?? null,
+      startDateTime: input.startDateTime,
+      endDateTime: input.endDateTime,
       questions: {
         create: input.questions.map((question, questionIndex) => ({
           text: question.text,
@@ -655,6 +671,9 @@ export async function addQuizToLectureForTeacher(
     },
     select: quizWithQuestionsSelect,
   });
+
+  emitStudentDataChange({ classId: lecture.classId });
+  return created;
 }
 
 export async function updateQuizForTeacher(
@@ -672,7 +691,8 @@ export async function updateQuizForTeacher(
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
-      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+      ...(input.startDateTime !== undefined ? { startDateTime: input.startDateTime } : {}),
+      ...(input.endDateTime !== undefined ? { endDateTime: input.endDateTime } : {}),
       questions: {
         deleteMany: {},
         create: input.questions.map((question, questionIndex) => ({
@@ -694,7 +714,7 @@ export async function updateQuizForTeacher(
 }
 
 export async function deleteQuizForTeacher(teacherId: string, lectureId: string, quizId: string) {
-  await assertTeacherOwnsQuiz(teacherId, lectureId, quizId);
+  const quiz = await assertTeacherOwnsQuiz(teacherId, lectureId, quizId);
 
   // Soft delete — keep questions and submissions.
   await prisma.quiz.update({
@@ -705,6 +725,8 @@ export async function deleteQuizForTeacher(teacherId: string, lectureId: string,
       status: 1,
     },
   });
+
+  emitStudentDataChange({ classId: quiz.lecture.classId });
 }
 
 export async function addNoteToLectureForTeacher(params: {
@@ -716,9 +738,9 @@ export async function addNoteToLectureForTeacher(params: {
   sizeBytes: number;
   kind: "NOTE" | "SUPPORTING_MATERIAL";
 }) {
-  await assertTeacherOwnsLecture(params.teacherId, params.lectureId);
+  const lecture = await assertTeacherOwnsLecture(params.teacherId, params.lectureId);
 
-  return prisma.note.create({
+  const note = await prisma.note.create({
     data: {
       lectureId: params.lectureId,
       title: params.title,
@@ -729,6 +751,21 @@ export async function addNoteToLectureForTeacher(params: {
     },
     select: noteSelect,
   });
+
+  // Track a per-student "viewed" row for every active student of the class.
+  const activeStudents = await prisma.classStudent.findMany({
+    where: { classId: lecture.classId, isActive: true, student: { status: 0 } },
+    select: { studentId: true },
+  });
+  if (activeStudents.length > 0) {
+    await prisma.noteStudent.createMany({
+      data: activeStudents.map((s) => ({ noteId: note.id, studentId: s.studentId })),
+      skipDuplicates: true,
+    });
+  }
+
+  emitStudentDataChange({ classId: lecture.classId });
+  return note;
 }
 
 export async function updateNoteForTeacher(
@@ -766,6 +803,7 @@ export async function deleteNoteForTeacher(teacherId: string, lectureId: string,
     },
   });
 
+  emitStudentDataChange({ classId: note.lecture.classId });
   return note;
 }
 

@@ -1,8 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  FolderOpen,
+  FileText,
+  ClipboardList,
+  Download,
+  Eye,
+  CalendarClock,
+  CheckCircle2,
+  UploadCloud,
+  PackageCheck,
+} from "lucide-react";
 
-import { Panel } from "@/components/student-portal/student-ui";
 import type { PaginationMeta } from "@/lib/api-types";
 
 type ClassOption = { id: string; name: string };
@@ -13,7 +24,8 @@ type BundleItem = {
   title: string;
   description: string | null;
   fileName: string | null;
-  fileUrl: string | null;
+  hasFile: boolean;
+  mimeType: string | null;
   paperStartAt: string | null;
   paperEndAt: string | null;
   submissionDeadline: string | null;
@@ -34,39 +46,76 @@ type BundleRecord = {
   month: number;
   sentAt: string | null;
   confirmedAt: string | null;
-  countdownLeadMinutes: number;
-  submissionGraceMinutes: number;
   classId: string;
   className: string;
   items: BundleItem[];
 };
 
 const PAGE_SIZE = 10;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+type Period = "all" | "month" | "year" | "custom";
+const PERIODS: { value: Period; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+  { value: "custom", label: "Custom" },
+];
+
+function fmtDateTime(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export default function StudentMaterialBundlesPage() {
-  const [view, setView] = useState<"awaiting" | "confirmed">("awaiting");
+  return (
+    <Suspense fallback={null}>
+      <StudentMaterialBundlesPageInner />
+    </Suspense>
+  );
+}
+
+function StudentMaterialBundlesPageInner() {
+  const searchParams = useSearchParams();
+  const now = useMemo(() => new Date(), []);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [records, setRecords] = useState<BundleRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [classId, setClassId] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [classId, setClassId] = useState(() => searchParams.get("classId") ?? "");
+  const [period, setPeriod] = useState<Period>("all");
+  const [customYear, setCustomYear] = useState(String(now.getFullYear()));
+  const [customMonth, setCustomMonth] = useState("");
   const [page, setPage] = useState(1);
+
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Record<string, File | null>>({});
-  const [isSubmittingPaper, setIsSubmittingPaper] = useState<Record<string, boolean>>({});
-  const [lateReasons, setLateReasons] = useState<Record<string, string>>({});
-  const [isSendingReason, setIsSendingReason] = useState<Record<string, boolean>>({});
+  const [submittingItem, setSubmittingItem] = useState<Record<string, boolean>>({});
 
-  function applyFilter(setter: (v: string) => void) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setter(e.target.value);
-      setPage(1);
-    };
-  }
+  const range = useMemo<{ year?: string; month?: string }>(() => {
+    if (period === "month") {
+      return { year: String(now.getFullYear()), month: String(now.getMonth() + 1) };
+    }
+    if (period === "year") {
+      return { year: String(now.getFullYear()) };
+    }
+    if (period === "custom") {
+      return { year: customYear || undefined, month: customMonth || undefined };
+    }
+    return {};
+  }, [period, customYear, customMonth, now]);
+
+  const yearOptions = useMemo(
+    () => Array.from({ length: 6 }, (_, i) => now.getFullYear() - i),
+    [now]
+  );
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -74,16 +123,15 @@ export default function StudentMaterialBundlesPage() {
     try {
       const params = new URLSearchParams();
       if (classId) params.set("classId", classId);
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      params.set("view", view);
+      if (range.year) params.set("year", range.year);
+      if (range.month) params.set("month", range.month);
       params.set("page", String(page));
       params.set("pageSize", String(PAGE_SIZE));
 
       const res = await fetch(`/api/students/me/material-bundles?${params.toString()}`);
       const json = (await res.json()) as {
         success: boolean;
-        data?: { records: BundleRecord[]; classes: ClassOption[]; view: "awaiting" | "confirmed" };
+        data?: { records: BundleRecord[]; classes: ClassOption[] };
         pagination?: PaginationMeta;
         error?: { message: string };
       };
@@ -93,384 +141,338 @@ export default function StudentMaterialBundlesPage() {
         setClasses(json.data.classes);
         setPagination(json.pagination ?? null);
       } else {
-        setError(json.error?.message ?? "Failed to load material bundles.");
+        setError(json.error?.message ?? "Failed to load tutes & papers.");
       }
     } catch {
-      setError("Failed to load material bundles.");
+      setError("Failed to load tutes & papers.");
     } finally {
       setIsLoading(false);
     }
-  }, [view, classId, from, to, page]);
+  }, [classId, range.year, range.month, page]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  function setPaperSubmitting(itemId: string, value: boolean) {
-    setIsSubmittingPaper((prev) => ({ ...prev, [itemId]: value }));
-  }
-
-  function setReasonSending(itemId: string, value: boolean) {
-    setIsSendingReason((prev) => ({ ...prev, [itemId]: value }));
-  }
-
-  async function submitPaper(bundleId: string, itemId: string) {
-    const file = selectedFiles[itemId];
-    if (!file) {
-      setError("Please choose a PDF file before submitting.");
-      return;
-    }
-
-    setPaperSubmitting(itemId, true);
-    setError(null);
-
-    try {
-      const formData = new FormData();
-      formData.set("file", file);
-
-      const response = await fetch(`/api/material-bundles/${bundleId}/items/${itemId}/submit`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: { message?: string };
-      };
-
-      if (!payload.success) {
-        setError(payload.error?.message ?? "Failed to submit paper.");
-        return;
-      }
-
-      setSelectedFiles((prev) => ({ ...prev, [itemId]: null }));
-      await loadData();
-    } catch {
-      setError("Failed to submit paper.");
-    } finally {
-      setPaperSubmitting(itemId, false);
-    }
-  }
-
-  async function sendLateReason(bundleId: string, itemId: string) {
-    const reason = lateReasons[itemId]?.trim() ?? "";
-
-    if (reason.length < 10) {
-      setError("Please enter at least 10 characters for the reason.");
-      return;
-    }
-
-    setReasonSending(itemId, true);
-    setError(null);
-
-    try {
-      const response = await fetch(
-        `/api/students/me/material-bundles/${bundleId}/items/${itemId}/late-message`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: reason }),
-        },
-      );
-
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: { message?: string };
-      };
-
-      if (!payload.success) {
-        setError(payload.error?.message ?? "Failed to send reason to teacher.");
-        return;
-      }
-
-      setLateReasons((prev) => ({ ...prev, [itemId]: "" }));
-    } catch {
-      setError("Failed to send reason to teacher.");
-    } finally {
-      setReasonSending(itemId, false);
-    }
-  }
-
   async function confirmDelivery(bundleId: string) {
     setConfirmingId(bundleId);
     setError(null);
-
     try {
-      const response = await fetch(`/api/students/me/material-bundles/${bundleId}/confirm`, {
-        method: "POST",
-      });
-
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: { message?: string };
-      };
-
-      if (!payload.success) {
-        setError(payload.error?.message ?? "Failed to confirm delivery.");
+      const res = await fetch(`/api/students/me/material-bundles/${bundleId}/confirm`, { method: "POST" });
+      const json = (await res.json()) as { success: boolean; error?: { message?: string } };
+      if (!json.success) {
+        setError(json.error?.message ?? "Failed to mark as received.");
         return;
       }
-
       await loadData();
     } catch {
-      setError("Failed to confirm delivery.");
+      setError("Failed to mark as received.");
     } finally {
       setConfirmingId(null);
     }
   }
 
+  async function submitPaper(bundleId: string, itemId: string) {
+    const file = selectedFiles[itemId];
+    if (!file) {
+      setError("Choose a PDF file before submitting.");
+      return;
+    }
+    setSubmittingItem((p) => ({ ...p, [itemId]: true }));
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(`/api/material-bundles/${bundleId}/items/${itemId}/submit`, {
+        method: "POST",
+        body: fd,
+      });
+      const json = (await res.json()) as { success: boolean; error?: { message?: string } };
+      if (!json.success) {
+        setError(json.error?.message ?? "Failed to submit paper.");
+        return;
+      }
+      setSelectedFiles((p) => ({ ...p, [itemId]: null }));
+      await loadData();
+    } catch {
+      setError("Failed to submit paper.");
+    } finally {
+      setSubmittingItem((p) => ({ ...p, [itemId]: false }));
+    }
+  }
+
   function clearFilters() {
     setClassId("");
-    setFrom("");
-    setTo("");
+    setPeriod("all");
+    setCustomMonth("");
     setPage(1);
   }
 
-  function switchView(nextView: "awaiting" | "confirmed") {
-    setView(nextView);
-    setPage(1);
-  }
+  const hasFilter = Boolean(classId) || period !== "all";
 
-  const hasFilter = classId || from || to;
-  const isAwaitingView = view === "awaiting";
+  function fileLinks(bundleId: string, item: BundleItem, previewLabel: string) {
+    if (!item.hasFile) {
+      return <span className="text-[11px] text-slate-400">Not uploaded yet</span>;
+    }
+    const base = `/api/students/me/material-bundles/${bundleId}/items/${item.id}/file`;
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        <a
+          href={base}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+        >
+          <Eye size={11} /> {previewLabel}
+        </a>
+        <a
+          href={`${base}?download=1`}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <Download size={11} /> Download
+        </a>
+      </div>
+    );
+  }
 
   return (
-    <Panel
-      title={isAwaitingView ? "Bundle Awaiting" : "Confirmed Bundles"}
-      subtitle={
-        isAwaitingView
-          ? "Teacher-sent tutes and papers waiting for your delivery confirmation."
-          : "Previously confirmed bundle deliveries."
-      }
-      contentClassName="px-5 pb-5 sm:px-6 sm:pb-6"
-    >
-      <div className="mb-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => switchView("awaiting")}
-          className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
-            isAwaitingView
-              ? "border-brand-500 bg-brand-600 text-white"
-              : "border-brand-200 bg-white text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          Awaiting
-        </button>
-        <button
-          type="button"
-          onClick={() => switchView("confirmed")}
-          className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
-            !isAwaitingView
-              ? "border-brand-500 bg-brand-600 text-white"
-              : "border-brand-200 bg-white text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          Confirmed
-        </button>
-      </div>
+    <section className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-card">
+      <header className="flex items-center gap-2.5 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+          <FolderOpen size={16} />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-slate-900">Tutes / Papers</h1>
+          <p className="text-xs text-slate-500">Monthly tutes and papers sent by your teachers.</p>
+        </div>
+      </header>
 
-      <div className="flex flex-wrap items-end gap-3 border-b border-brand-200 pb-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-600">Class</label>
-          <select
-            value={classId}
-            onChange={applyFilter(setClassId)}
-            className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-400"
-          >
-            <option value="">All classes</option>
-            {classes.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
+      <div className="p-3">
+        {/* Filters */}
+        <div className="mb-3 flex flex-wrap items-end gap-2.5">
+          <div>
+            <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">Class</label>
+            <select
+              value={classId}
+              onChange={(e) => {
+                setClassId(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400"
+            >
+              <option value="">All classes</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">Period</label>
+            <select
+              value={period}
+              onChange={(e) => {
+                setPeriod(e.target.value as Period);
+                setPage(1);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400"
+            >
+              {PERIODS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {period === "custom" ? (
+            <>
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">Year</label>
+                <select
+                  value={customYear}
+                  onChange={(e) => {
+                    setCustomYear(e.target.value);
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">Month</label>
+                <select
+                  value={customMonth}
+                  onChange={(e) => {
+                    setCustomMonth(e.target.value);
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400"
+                >
+                  <option value="">All months</option>
+                  {MONTHS.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : null}
+
+          {hasFilter ? (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              Reset
+            </button>
+          ) : null}
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-600">Sent from</label>
-          <input
-            type="date"
-            value={from}
-            onChange={applyFilter(setFrom)}
-            className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-400"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-600">Sent to</label>
-          <input
-            type="date"
-            value={to}
-            onChange={applyFilter(setTo)}
-            className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-400"
-          />
-        </div>
-
-        {hasFilter ? (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            Clear
-          </button>
+        {error ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
         ) : null}
-      </div>
 
-      <div className="mt-4">
         {isLoading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
-        ) : error ? (
-          <p className="text-sm text-red-600">{error}</p>
+          <div className="space-y-2.5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-32 animate-pulse rounded-lg bg-slate-100" />
+            ))}
+          </div>
         ) : records.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-brand-200 bg-white/70 p-6 text-sm text-slate-600">
-            No {isAwaitingView ? "awaiting" : "confirmed"} bundles found{hasFilter ? " for the selected filters" : ""}.
+          <div className="rounded-lg border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-600">
+            No tutes or papers{hasFilter ? " for the selected filters" : " sent to you yet"}.
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             {records.map((bundle) => {
-              const tutes = bundle.items.filter((item) => item.type === "TUTE");
-              const papers = bundle.items.filter((item) => item.type === "PAPER");
+              const tutes = bundle.items.filter((i) => i.type === "TUTE");
+              const papers = bundle.items.filter((i) => i.type === "PAPER");
+              const received = Boolean(bundle.confirmedAt);
 
               return (
-                <article key={bundle.id} className="rounded-xl border border-brand-200 bg-white p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900">{bundle.title}</h3>
-                      <p className="text-sm text-slate-600">{bundle.className}</p>
-                      <p className="text-xs text-slate-500">
-                        Sent: {bundle.sentAt ? new Date(bundle.sentAt).toLocaleString() : "-"}
+                <article
+                  key={bundle.id}
+                  className={`rounded-lg border bg-white p-3 ${received ? "border-emerald-200" : "border-slate-200"}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="truncate text-sm font-semibold text-slate-900">{bundle.title}</h3>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                          {MONTHS[bundle.month - 1]} {bundle.year}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {bundle.className}
+                        {bundle.sentAt ? ` · sent ${fmtDateTime(bundle.sentAt)}` : ""}
                       </p>
-                      {!isAwaitingView ? (
-                        <p className="text-xs text-emerald-700">
-                          Confirmed: {bundle.confirmedAt ? new Date(bundle.confirmedAt).toLocaleString() : "-"}
-                        </p>
-                      ) : null}
                     </div>
 
-                    {isAwaitingView ? (
+                    {received ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                        <CheckCircle2 size={11} />
+                        Received {bundle.confirmedAt ? fmtDateTime(bundle.confirmedAt) : ""}
+                      </span>
+                    ) : (
                       <button
                         type="button"
                         disabled={confirmingId === bundle.id}
                         onClick={() => confirmDelivery(bundle.id)}
-                        className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                       >
-                        {confirmingId === bundle.id ? "Confirming..." : "Confirm Delivery"}
+                        <PackageCheck size={13} />
+                        {confirmingId === bundle.id ? "Marking…" : "Mark as received"}
                       </button>
-                    ) : null}
+                    )}
                   </div>
 
-                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                    <section className="rounded-lg border border-brand-100 bg-brand-50/40 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Tutes</p>
+                  <div className="mt-3 grid gap-2.5 lg:grid-cols-2">
+                    {/* Tutes */}
+                    <section className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
+                      <p className="mb-1.5 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                        <FileText size={11} /> Tutes ({tutes.length})
+                      </p>
                       {tutes.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500">No tutes in this bundle.</p>
+                        <p className="text-[11px] text-slate-400">No tutes in this bundle.</p>
                       ) : (
-                        <ul className="mt-2 space-y-2">
+                        <ul className="space-y-1.5">
                           {tutes.map((item) => (
-                            <li key={item.id} className="rounded-md border border-brand-100 bg-white p-2">
-                              <p className="text-sm font-medium text-slate-800">{item.title}</p>
+                            <li key={item.id} className="rounded-md border border-slate-100 bg-white p-2">
+                              <p className="text-xs font-semibold text-slate-800">{item.title}</p>
                               {item.description ? (
-                                <p className="mt-1 text-xs text-slate-600">{item.description}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-500">{item.description}</p>
                               ) : null}
+                              <div className="mt-1.5">{fileLinks(bundle.id, item, "View")}</div>
                             </li>
                           ))}
                         </ul>
                       )}
                     </section>
 
-                    <section className="rounded-lg border border-brand-100 bg-brand-50/40 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Papers</p>
+                    {/* Papers */}
+                    <section className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
+                      <p className="mb-1.5 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-violet-700">
+                        <ClipboardList size={11} /> Papers ({papers.length})
+                      </p>
                       {papers.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500">No papers in this bundle.</p>
+                        <p className="text-[11px] text-slate-400">No papers in this bundle.</p>
                       ) : (
-                        <ul className="mt-2 space-y-2">
+                        <ul className="space-y-1.5">
                           {papers.map((item) => (
-                            <li key={item.id} className="rounded-md border border-brand-100 bg-white p-2">
-                              <p className="text-sm font-medium text-slate-800">{item.title}</p>
-                              <p className="mt-1 text-xs text-slate-600">
-                                {item.paperStartAt ? `Start: ${new Date(item.paperStartAt).toLocaleString()}` : "Start: -"}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                {item.paperEndAt ? `End: ${new Date(item.paperEndAt).toLocaleString()}` : "End: -"}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                {item.submissionDeadline
-                                  ? `PDF submit deadline: ${new Date(item.submissionDeadline).toLocaleString()}`
-                                  : "PDF submit deadline: -"}
-                              </p>
-
-                              {item.fileUrl ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  <a
-                                    href={`/api/students/me/material-bundles/${bundle.id}/items/${item.id}/file`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-lg border border-brand-200 px-2 py-1 text-xs font-semibold text-slate-700"
-                                  >
-                                    Preview paper
-                                  </a>
-                                  <a
-                                    href={`/api/students/me/material-bundles/${bundle.id}/items/${item.id}/file?download=1`}
-                                    className="rounded-lg border border-brand-200 px-2 py-1 text-xs font-semibold text-slate-700"
-                                  >
-                                    Download
-                                  </a>
-                                </div>
+                            <li key={item.id} className="rounded-md border border-slate-100 bg-white p-2">
+                              <p className="text-xs font-semibold text-slate-800">{item.title}</p>
+                              {item.description ? (
+                                <p className="mt-0.5 text-[11px] text-slate-500">{item.description}</p>
                               ) : null}
+                              <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                <CalendarClock size={11} />
+                                {item.paperStartAt ? fmtDateTime(item.paperStartAt) : "—"}
+                                {" → "}
+                                {item.paperEndAt ? fmtDateTime(item.paperEndAt) : "—"}
+                              </p>
+                              <div className="mt-1.5">{fileLinks(bundle.id, item, "Preview")}</div>
 
                               {item.latestSubmission ? (
-                                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5">
-                                  <p className="text-xs font-semibold text-emerald-700">Latest submission uploaded</p>
-                                  <p className="text-xs text-slate-600">
-                                    {item.latestSubmission.fileName} • {new Date(item.latestSubmission.submittedAt).toLocaleString()}
-                                  </p>
-                                </div>
+                                <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  <CheckCircle2 size={10} />
+                                  Answer submitted {fmtDateTime(item.latestSubmission.submittedAt)}
+                                </p>
                               ) : null}
 
                               {item.canSubmit ? (
-                                <div className="mt-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2">
-                                  <p className="text-xs font-semibold text-brand-700">Upload your answered PDF</p>
-                                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                                    <input
-                                      type="file"
-                                      accept="application/pdf"
-                                      onChange={(event) => {
-                                        const file = event.target.files?.[0] ?? null;
-                                        setSelectedFiles((prev) => ({ ...prev, [item.id]: file }));
-                                      }}
-                                      className="text-xs"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => void submitPaper(bundle.id, item.id)}
-                                      disabled={isSubmittingPaper[item.id]}
-                                      className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-60"
-                                    >
-                                      {isSubmittingPaper[item.id] ? "Submitting..." : "Submit PDF"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : item.submissionDeadline && new Date() > new Date(item.submissionDeadline) ? (
-                                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
-                                  <p className="text-xs font-semibold text-amber-700">
-                                    Submission time ended. Send reason to teacher.
-                                  </p>
-                                  <textarea
-                                    value={lateReasons[item.id] ?? ""}
-                                    onChange={(event) =>
-                                      setLateReasons((prev) => ({ ...prev, [item.id]: event.target.value }))
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                  <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    onChange={(e) =>
+                                      setSelectedFiles((p) => ({ ...p, [item.id]: e.target.files?.[0] ?? null }))
                                     }
-                                    rows={3}
-                                    placeholder="Explain why you couldn't submit in time..."
-                                    className="mt-1 w-full rounded-md border border-amber-200 bg-white px-2 py-1 text-xs outline-none"
+                                    className="text-[11px]"
                                   />
                                   <button
                                     type="button"
-                                    onClick={() => void sendLateReason(bundle.id, item.id)}
-                                    disabled={isSendingReason[item.id]}
-                                    className="mt-1 rounded-lg border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-800 disabled:opacity-60"
+                                    onClick={() => void submitPaper(bundle.id, item.id)}
+                                    disabled={submittingItem[item.id]}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
                                   >
-                                    {isSendingReason[item.id] ? "Sending..." : "Send reason"}
+                                    <UploadCloud size={11} />
+                                    {submittingItem[item.id] ? "Submitting…" : "Submit answer"}
                                   </button>
                                 </div>
+                              ) : item.submissionDeadline && new Date() > new Date(item.submissionDeadline) ? (
+                                <p className="mt-1.5 text-[10px] font-semibold text-amber-700">
+                                  Submission window closed.
+                                </p>
                               ) : null}
                             </li>
                           ))}
@@ -483,34 +485,34 @@ export default function StudentMaterialBundlesPage() {
             })}
           </div>
         )}
-      </div>
 
-      {pagination && pagination.totalPages > 1 ? (
-        <div className="mt-5 flex items-center justify-between border-t border-brand-200 pt-4">
-          <p className="text-xs text-slate-500">
-            Page {pagination.page} of {pagination.totalPages} &mdash;{" "}
-            {pagination.totalItems} bundle{pagination.totalItems !== 1 ? "s" : ""}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={!pagination.hasPreviousPage || isLoading}
-              onClick={() => setPage((p) => p - 1)}
-              className="rounded-lg border border-brand-200 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              disabled={!pagination.hasNextPage || isLoading}
-              onClick={() => setPage((p) => p + 1)}
-              className="rounded-lg border border-brand-200 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-40"
-            >
-              Next
-            </button>
+        {pagination && pagination.totalPages > 1 ? (
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+            <p className="text-[11px] text-slate-500">
+              Page {pagination.page} / {pagination.totalPages} · {pagination.totalItems} bundle
+              {pagination.totalItems !== 1 ? "s" : ""}
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!pagination.hasPreviousPage || isLoading}
+                onClick={() => setPage((p) => p - 1)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                ← Previous
+              </button>
+              <button
+                type="button"
+                disabled={!pagination.hasNextPage || isLoading}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </Panel>
+        ) : null}
+      </div>
+    </section>
   );
 }

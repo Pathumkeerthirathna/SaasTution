@@ -37,8 +37,10 @@ type ListItem =
       startTime: string | null;
       endTime: string | null;
       noteCount: number;
+      unviewedNoteCount: number;
       assignmentCount: number;
       recordingCount: number;
+      attended: boolean;
     }
   | {
       kind: "schedule";
@@ -68,6 +70,8 @@ export async function GET(request: Request) {
     const scheduledOnly = ["1", "true", "yes"].includes(
       (url.searchParams.get("scheduled") ?? "").toLowerCase()
     );
+    const unviewedNotesOnly = url.searchParams.get("notes") === "unviewed";
+    const missedOnly = url.searchParams.get("attendance") === "missed";
 
     const now = new Date();
     const fromDate = fromParam ? new Date(`${fromParam}T00:00:00.000`) : null;
@@ -111,9 +115,26 @@ export async function GET(request: Request) {
           date: true,
           classId: true,
           class: { select: { id: true, name: true } },
+          notes: {
+            where: { status: 0 },
+            select: {
+              id: true,
+              noteStudents: {
+                where: { studentId: session.studentId },
+                select: { viewed: true },
+                take: 1,
+              },
+            },
+          },
+          sessions: {
+            select: {
+              _count: {
+                select: { attendance: { where: { studentId: session.studentId } } },
+              },
+            },
+          },
           _count: {
             select: {
-              notes: { where: { status: 0 } },
               assignments: { where: { status: 0 } },
               youtubeRecordings: { where: { visibility: "PUBLIC" } },
             },
@@ -174,6 +195,14 @@ export async function GET(request: Request) {
     for (const l of lectures) {
       const weekday = WEEKDAY_NAMES[l.date.getDay()];
       const match = scheduleByClassDay.get(`${l.classId}|${weekday}`) ?? null;
+      const unviewedNoteCount = l.notes.filter(
+        (n) => !(n.noteStudents[0]?.viewed ?? false)
+      ).length;
+      const attended = l.sessions.some((s) => s._count.attendance > 0);
+
+      if (unviewedNotesOnly && unviewedNoteCount === 0) continue;
+      if (missedOnly && attended) continue;
+
       lectureItems.push({
         kind: "lecture",
         id: l.id,
@@ -183,9 +212,11 @@ export async function GET(request: Request) {
         classId: l.class.id,
         startTime: match?.startTime ?? null,
         endTime: match?.endTime ?? null,
-        noteCount: l._count.notes,
+        noteCount: l.notes.length,
+        unviewedNoteCount,
         assignmentCount: l._count.assignments,
         recordingCount: l._count.youtubeRecordings,
+        attended,
       });
     }
 
@@ -197,7 +228,8 @@ export async function GET(request: Request) {
       Math.min(schedTo.getTime(), windowStart.getTime() + 400 * DAY_MS)
     );
 
-    for (const s of scheduledOnly ? [] : schedules) {
+    const skipScheduleRows = scheduledOnly || unviewedNotesOnly || missedOnly;
+    for (const s of skipScheduleRows ? [] : schedules) {
       const targetDow = WEEKDAY_NAMES.indexOf(s.dayOfWeek);
       if (targetDow < 0) continue;
       const [h, m] = parseTime(s.startTime);

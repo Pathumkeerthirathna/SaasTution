@@ -9,10 +9,13 @@ import {
   ClipboardList,
   HelpCircle,
   FileText,
+  ScrollText,
   CalendarCheck,
+  CalendarDays,
   MessageSquare,
   Settings,
   GraduationCap,
+  Wallet,
   X,
   ChevronRight,
   LucideIcon,
@@ -36,22 +39,25 @@ type StudentSidebarProps = {
 
 const iconMap: Record<string, LucideIcon> = {
   dashboard:   LayoutDashboard,
+  calendar:    CalendarDays,
   classes:     BookOpen,
   live:        Radio,
   folder:      FolderOpen,
   assignments: ClipboardList,
   quizzes:     HelpCircle,
   lectures:    FileText,
+  papers:      ScrollText,
   attendance:  CalendarCheck,
   messages:    MessageSquare,
   settings:    Settings,
+  payments:    Wallet,
 };
 
 export function StudentSidebar({ items, activePath, open, onClose, onToggle }: StudentSidebarProps) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-gradient-to-b from-[#1c8a5c] via-[#15774e] to-[#0b5236] text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.12] ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-gradient-to-b from-emerald-600 via-emerald-700 to-teal-800 text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.12] ${
           open ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-20"
         }`}
       >
@@ -68,7 +74,7 @@ export function StudentSidebar({ items, activePath, open, onClose, onToggle }: S
         {/* Brand header */}
         <div className="relative z-10 flex items-center justify-between border-b border-white/[0.12] px-4 py-4 lg:px-4">
           <div className={`flex items-center gap-2.5 ${open ? "" : "lg:justify-center"}`}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[#15774e] shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-emerald-700 shadow-sm">
               <GraduationCap size={17} strokeWidth={1.75} />
             </div>
             <div className={open ? "" : "hidden lg:hidden"}>

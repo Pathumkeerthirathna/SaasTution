@@ -136,7 +136,7 @@ model TeacherAnnouncement {
 }
 
 model YouTubeConnection {
-  id       String @id @default(uuid())
+  id String @id @default(uuid())
 
   teacherId String  @unique
   teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -464,6 +464,8 @@ model Student {
   paperSupportMessages          PaperSupportMessage[]
   paymentMessages               PaymentMessage[]
   quizSubmissions               QuizSubmission[]
+  classPaperSubmissions         ClassPaperStudent[]
+  noteViews                     NoteStudent[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
 
   @@index([teacherId])
@@ -473,23 +475,22 @@ model Student {
 }
 
 model StudentDevice {
-
   id String @id @default(uuid())
 
   studentId String
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   deviceId String
 
   deviceModel String?
-  deviceName String?
+  deviceName  String?
 
-  browser String?
+  browser        String?
   browserVersion String?
 
   fingerprint String?
 
-  os String?
+  os        String?
   osVersion String?
 
   platform String?
@@ -499,16 +500,16 @@ model StudentDevice {
   lastIpAddress String?
 
   country String?
-  city String?
+  city    String?
 
   status StudentDeviceStatus @default(PENDING)
 
-  firstLoginAt DateTime @default(now())
-  lastLoginAt DateTime?
+  firstLoginAt DateTime  @default(now())
+  lastLoginAt  DateTime?
 
-  approvalRequestedAt DateTime @default(now())
-  approvedAt DateTime?
-  rejectedAt DateTime?
+  approvalRequestedAt DateTime  @default(now())
+  approvedAt          DateTime?
+  rejectedAt          DateTime?
 
   approvedReason String?
   rejectedReason String?
@@ -518,19 +519,18 @@ model StudentDevice {
   approvalRequestedByStudentAt DateTime?
 
   approvedByTeacherId String?
-  approvedByTeacher Teacher?@relation("ApprovedDevices", fields: [approvedByTeacherId], references: [id])
+  approvedByTeacher   Teacher? @relation("ApprovedDevices", fields: [approvedByTeacherId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   loginHistory StudentLoginHistory[]
 
+  @@unique([studentId, deviceId])
   @@index([studentId])
   @@index([status])
   @@index([approvedByTeacherId])
   @@index([approvalRequestedAt])
-  @@unique([studentId, deviceId])
-
 }
 
 model StudentLoginHistory {
@@ -608,6 +608,7 @@ model Class {
   materialBundles      MaterialBundle[]
   messages             Message[]
   paperSupportMessages PaperSupportMessage[]
+  classPapers          ClassPaper[]
 
   publicRegistrations Student[] @relation("PublicClassRegistration")
 
@@ -638,6 +639,67 @@ model TeacherPaperConfig {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
   teacher                Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+model ClassPaper {
+  id      String @id @default(uuid())
+  classId String
+
+  name        String
+  description String?
+
+  // The paper file the teacher uploads (PDF or image).
+  pdfName     String
+  pdfUrl      String
+  pdfMimeType String
+
+  maxMarks Decimal?
+
+  startTime DateTime
+  endTime   DateTime
+
+  sortOrder Int @default(0)
+
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  submissions ClassPaperStudent[]
+
+  @@index([classId, status])
+  @@index([startTime, endTime])
+}
+
+model ClassPaperStudent {
+  id String @id @default(uuid())
+
+  classPaperId String
+  studentId    String
+
+  submitted   Boolean   @default(false)
+  submittedAt DateTime?
+
+  // The student's answer file (PDF or image), stored under /storage.
+  submissionPdfUrl   String?
+  submissionFileName String?
+  submissionMimeType String?
+
+  marks    Decimal?
+  markedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classPaper ClassPaper @relation(fields: [classPaperId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classPaperId, studentId])
+  @@index([studentId])
+  @@index([classPaperId])
 }
 
 model MaterialBundle {
@@ -831,12 +893,12 @@ model ClassStudentHistory {
 }
 
 model Lecture {
-  id          String         @id @default(uuid())
+  id          String      @id @default(uuid())
   title       String
   date        DateTime
   classId     String
-  classStatus ClassStatus    @default(SCHEDULED)
-  createdAt   DateTime       @default(now())
+  classStatus ClassStatus @default(SCHEDULED)
+  createdAt   DateTime    @default(now())
 
   // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
   status Int @default(0)
@@ -859,6 +921,7 @@ enum ClassStatus {
   COMPLETED
   CANCELLED
 }
+
 model YouTubeRecording {
   id String @id @default(uuid())
 
@@ -869,7 +932,7 @@ model YouTubeRecording {
   videoId     String
   youtubeUrl  String
 
-  privacy YouTubePrivacy @default(UNLISTED)
+  privacy YouTubePrivacy         @default(UNLISTED)
   status  YouTubeBroadcastStatus @default(READY)
 
   visibility RecordingVisibility @default(PRIVATE)
@@ -904,7 +967,7 @@ model YouTubeLiveBroadcast {
   videoId     String
   youtubeUrl  String
 
-  privacy YouTubePrivacy @default(UNLISTED)
+  privacy YouTubePrivacy         @default(UNLISTED)
   status  YouTubeBroadcastStatus @default(READY)
 
   startedAt DateTime?
@@ -949,13 +1012,35 @@ model Note {
   // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
   status Int @default(0)
 
-  lecture          Lecture   @relation(fields: [lectureId], references: [id])
+  lecture Lecture @relation(fields: [lectureId], references: [id])
+
+  noteStudents NoteStudent[]
 
   @@index([lectureId, status])
 }
 
+model NoteStudent {
+  id String @id @default(uuid())
+
+  noteId    String
+  studentId String
+
+  viewed   Boolean   @default(false)
+  viewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  note    Note    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, studentId])
+  @@index([studentId])
+  @@index([noteId])
+}
+
 model Assignment {
-  id          String                 @id @default(uuid())
+  id          String   @id @default(uuid())
   title       String
   description String
   dueDate     DateTime
@@ -989,14 +1074,20 @@ model AssignmentSubmission {
 }
 
 model Quiz {
-  id          String           @id @default(uuid())
-  title       String
-  lectureId   String
-  dueDate     DateTime?
+  id        String @id @default(uuid())
+  title     String
+  lectureId String
+
+  startDateTime DateTime
+  endDateTime   DateTime
+
   maxAttempts Int?
 
-  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  // 0 = active, 1 = removed (soft-deleted)
   status Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   lecture     Lecture          @relation(fields: [lectureId], references: [id])
   questions   QuizQuestion[]
@@ -1108,38 +1199,38 @@ model MessageDelivery {
 }
 
 model ClassPayment {
-  id                   String             @id @default(uuid())
+  id String @id @default(uuid())
 
-  classId              String
-  studentId            String
-  classStudentFeeId    String
+  classId           String
+  studentId         String
+  classStudentFeeId String
 
-  amount               Int
+  amount Int
 
-  note                 String?
+  note String?
 
-  slipFileName         String?
-  slipFileUrl          String?
-  slipMimeType         String?
-  slipSizeBytes        Int?
+  slipFileName  String?
+  slipFileUrl   String?
+  slipMimeType  String?
+  slipSizeBytes Int?
 
-  status               ClassPaymentStatus @default(PENDING)
-  teacherFeedback      String?
+  status          ClassPaymentStatus @default(PENDING)
+  teacherFeedback String?
 
-  submittedAt          DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  submittedAt          DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
   confirmedAt          DateTime?
   confirmedByTeacherId String?
 
-  class                Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
 
-  student              Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  classStudentFee      ClassStudentFee    @relation(fields: [classStudentFeeId], references: [id])
+  classStudentFee ClassStudentFee @relation(fields: [classStudentFeeId], references: [id])
 
-  confirmedByTeacher   Teacher?           @relation("ClassPaymentConfirmedBy", fields: [confirmedByTeacherId], references: [id])
+  confirmedByTeacher Teacher? @relation("ClassPaymentConfirmedBy", fields: [confirmedByTeacherId], references: [id])
 
-  messages             PaymentMessage[]
+  messages PaymentMessage[]
 
   @@index([studentId])
   @@index([classId, status])

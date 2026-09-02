@@ -80,12 +80,11 @@ export async function getTeacherCourseworkForRange(
       where: {
         status: 0,
         lecture: classScope,
-        OR: [
-          { dueDate: { gte: from, lte: to } },
-          { dueDate: null, lecture: { date: { gte: from, lte: to } } },
-        ],
+        // Quiz window overlaps the selected range.
+        startDateTime: { lte: to },
+        endDateTime: { gte: from },
       },
-      orderBy: [{ dueDate: "desc" }, { lecture: { date: "desc" } }],
+      orderBy: [{ endDateTime: "desc" }],
       select: {
         id: true,
         title: true,

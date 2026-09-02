@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = req.nextUrl;
     const classId = searchParams.get("classId") ?? undefined;
+    const lectureId = searchParams.get("lectureId") ?? undefined;
     const from = searchParams.get("from") ?? undefined;
     const to = searchParams.get("to") ?? undefined;
     const { page, pageSize, skip, take } = parsePaginationParams(searchParams);
@@ -21,53 +22,44 @@ export async function GET(req: NextRequest) {
     const fromDate = from ? new Date(`${from}T00:00:00.000`) : undefined;
     const toDate = to ? new Date(`${to}T23:59:59.999`) : undefined;
 
+    const enrolledFilter = {
+      class: {
+        status: 0,
+        students: { some: { studentId: session.studentId, isActive: true } },
+      },
+    };
+
     const where = {
       status: 0,
       lecture: {
         status: 0,
-        ...(classId ? { class: { id: classId } } : {}),
+        ...enrolledFilter,
+        ...(classId ? { classId } : {}),
+        ...(lectureId ? { id: lectureId } : {}),
       },
-      OR: [
-        {
-          submissions: {
-            some: {
-              studentId: session.studentId,
-            },
-          },
-        },
-        {
-          lecture: {
-            class: {
-              students: { some: { studentId: session.studentId, isActive: true } },
-            },
-          },
-        },
-      ],
-      ...(fromDate || toDate
-        ? {
-            dueDate: {
-              ...(fromDate ? { gte: fromDate } : {}),
-              ...(toDate ? { lte: toDate } : {}),
-            },
-          }
-        : {}),
+      // The quiz window overlaps the selected range.
+      ...(toDate ? { startDateTime: { lte: toDate } } : {}),
+      ...(fromDate ? { endDateTime: { gte: fromDate } } : {}),
     };
 
-    const [totalItems, quizzes] = await Promise.all([
+    const [totalItems, quizzes, lectureOptions, classStudents] = await Promise.all([
       prisma.quiz.count({ where }),
       prisma.quiz.findMany({
         where,
-        orderBy: [{ lecture: { date: "desc" } }, { title: "asc" }],
+        orderBy: [{ startDateTime: "asc" }, { title: "asc" }],
         skip,
         take,
         select: {
           id: true,
           title: true,
           maxAttempts: true,
-          dueDate: true,
+          startDateTime: true,
+          endDateTime: true,
           lecture: {
             select: {
+              id: true,
               title: true,
+              date: true,
               class: { select: { id: true, name: true } },
             },
           },
@@ -84,6 +76,28 @@ export async function GET(req: NextRequest) {
           },
         },
       }),
+      prisma.lecture.findMany({
+        where: {
+          status: 0,
+          ...enrolledFilter,
+          ...(classId ? { classId } : {}),
+          quizzes: { some: { status: 0 } },
+        },
+        orderBy: { date: "desc" },
+        select: {
+          id: true,
+          title: true,
+          date: true,
+          classId: true,
+          class: { select: { name: true } },
+        },
+      }),
+      prisma.classStudent.findMany({
+        where: { studentId: session.studentId, isActive: true },
+        distinct: ["classId"],
+        select: { class: { select: { id: true, name: true } } },
+        orderBy: { class: { name: "asc" } },
+      }),
     ]);
 
     const records = quizzes.map((q) => {
@@ -92,10 +106,13 @@ export async function GET(req: NextRequest) {
         id: q.id,
         title: q.title,
         maxAttempts: q.maxAttempts,
-        dueDate: q.dueDate ? q.dueDate.toISOString() : null,
+        startDateTime: q.startDateTime.toISOString(),
+        endDateTime: q.endDateTime.toISOString(),
         classId: q.lecture.class.id,
         className: q.lecture.class.name,
+        lectureId: q.lecture.id,
         lectureTitle: q.lecture.title,
+        lectureDate: q.lecture.date.toISOString(),
         submission: sub
           ? {
               id: sub.id,
@@ -108,16 +125,17 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Classes for filter dropdown
-    const classStudents = await prisma.classStudent.findMany({
-      where: { studentId: session.studentId },
-      distinct: ["classId"],
-      include: { class: { select: { id: true, name: true } } },
-    });
     const classes = classStudents.map((cs) => ({ id: cs.class.id, name: cs.class.name }));
+    const lectures = lectureOptions.map((l) => ({
+      id: l.id,
+      title: l.title,
+      classId: l.classId,
+      className: l.class.name,
+      date: l.date.toISOString(),
+    }));
 
     return apiSuccess(
-      { records, classes },
+      { records, classes, lectures },
       { pagination: buildPaginationMeta(totalItems, page, pageSize) },
     );
   } catch (err) {

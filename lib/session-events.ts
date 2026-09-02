@@ -50,3 +50,78 @@ export function subscribeSessionAttendanceEvents(
     sessionEventBus.off(SESSION_ATTENDANCE_EVENT, wrappedListener);
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Live-state change signal
+ *
+ * A push notification that "the live state of a class changed" — a Jitsi
+ * session or a YouTube broadcast started or ended. Whoever writes that change
+ * to the database calls `emitLiveChange(...)`; the student dashboard's SSE
+ * stream listens and re-pushes the authoritative snapshot. No polling.
+ *
+ * NOTE: this is an in-process EventEmitter, so it only fans out within a
+ * single Node process (same constraint as the attendance stream above). A
+ * multi-instance deployment would need Postgres LISTEN/NOTIFY or Redis pub/sub
+ * as the transport; the API surface here would stay the same.
+ * ------------------------------------------------------------------ */
+
+export type LiveChangePayload = {
+  classId: string;
+  kind: "jitsi" | "youtube";
+  event: "started" | "ended";
+  occurredAt: string;
+};
+
+const LIVE_CHANGE_EVENT = "live-change";
+
+export function emitLiveChange(
+  payload: Omit<LiveChangePayload, "occurredAt"> & { occurredAt?: string }
+) {
+  sessionEventBus.emit(LIVE_CHANGE_EVENT, {
+    ...payload,
+    occurredAt: payload.occurredAt ?? new Date().toISOString(),
+  } satisfies LiveChangePayload);
+}
+
+export function subscribeLiveChanges(listener: (payload: LiveChangePayload) => void) {
+  sessionEventBus.on(LIVE_CHANGE_EVENT, listener);
+  return () => {
+    sessionEventBus.off(LIVE_CHANGE_EVENT, listener);
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Student coursework / engagement change signal
+ *
+ * Fired when something that feeds a student's dashboard counts changes —
+ * a teacher adds/removes a note, assignment, quiz or paper (`classId`), or a
+ * student submits / views one (`studentId`). The dashboard SSE stream listens
+ * and tells the affected clients to re-pull their counts. Same in-process
+ * constraint as the buses above.
+ * ------------------------------------------------------------------ */
+
+export type StudentDataChangePayload = {
+  studentId?: string;
+  classId?: string;
+  occurredAt: string;
+};
+
+const STUDENT_DATA_CHANGE_EVENT = "student-data-change";
+
+export function emitStudentDataChange(
+  payload: Omit<StudentDataChangePayload, "occurredAt"> & { occurredAt?: string }
+) {
+  sessionEventBus.emit(STUDENT_DATA_CHANGE_EVENT, {
+    ...payload,
+    occurredAt: payload.occurredAt ?? new Date().toISOString(),
+  } satisfies StudentDataChangePayload);
+}
+
+export function subscribeStudentDataChanges(
+  listener: (payload: StudentDataChangePayload) => void
+) {
+  sessionEventBus.on(STUDENT_DATA_CHANGE_EVENT, listener);
+  return () => {
+    sessionEventBus.off(STUDENT_DATA_CHANGE_EVENT, listener);
+  };
+}

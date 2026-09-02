@@ -1,6 +1,7 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 import { submitQuizSchema } from "@/lib/quiz-submission-validation";
 
@@ -98,7 +99,8 @@ export async function POST(
       select: {
         id: true,
         maxAttempts: true,
-        dueDate: true,
+        startDateTime: true,
+        endDateTime: true,
         questions: {
           orderBy: {
             orderIndex: "asc",
@@ -121,7 +123,11 @@ export async function POST(
       throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
     }
 
-    if (quiz.dueDate && new Date() > quiz.dueDate) {
+    const submitAt = new Date();
+    if (submitAt < quiz.startDateTime) {
+      throw new AppError("This quiz has not started yet.", 403, "QUIZ_NOT_STARTED");
+    }
+    if (submitAt > quiz.endDateTime) {
       throw new AppError("This quiz is closed and no longer accepting submissions.", 403, "QUIZ_CLOSED");
     }
 
@@ -239,6 +245,8 @@ export async function POST(
         },
       });
     });
+
+    emitStudentDataChange({ studentId: studentSession.studentId });
 
     return apiSuccess(
       {

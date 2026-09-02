@@ -33,7 +33,8 @@ interface QuizRow {
   lectureId: string;
   lectureTitle: string;
   lectureDate: string;
-  dueDate: string | null;
+  startDateTime: string;
+  endDateTime: string;
   attempted: boolean;
   score: number | null;
   totalQuestions: number | null;
@@ -265,12 +266,10 @@ export function StudentQuizzes({ studentId, data }: StudentQuizzesProps) {
                             <CalendarDays size={10} />
                             {quiz.lectureTitle}
                           </span>
-                          {quiz.dueDate && (
-                            <span className="inline-flex items-center gap-1">
-                              <CalendarClock size={10} className="text-amber-500" />
-                              Due {fmtDate(quiz.dueDate)}
-                            </span>
-                          )}
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarClock size={10} className="text-amber-500" />
+                            {fmtDate(quiz.startDateTime)} – {fmtDate(quiz.endDateTime)}
+                          </span>
                           {quiz.attempted && quiz.attemptCount > 0 && (
                             <span className="inline-flex items-center gap-1">
                               <Repeat2 size={10} className="text-slate-400" />

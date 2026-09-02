@@ -24,12 +24,13 @@ export async function GET() {
           },
         },
       },
-      orderBy: [{ lecture: { date: "desc" } }, { title: "asc" }],
+      orderBy: [{ endDateTime: "desc" }, { title: "asc" }],
       select: {
         id: true,
         title: true,
         maxAttempts: true,
-        dueDate: true,
+        startDateTime: true,
+        endDateTime: true,
         lecture: {
           select: {
             id: true,
@@ -72,7 +73,8 @@ export async function GET() {
         lectureDate: quiz.lecture.date,
         totalQuestions: quiz.questions.length,
         maxAttempts: quiz.maxAttempts,
-        dueDate: quiz.dueDate,
+        startDateTime: quiz.startDateTime,
+        endDateTime: quiz.endDateTime,
         submission: quiz.submissions[0] ?? null,
       }))
     );

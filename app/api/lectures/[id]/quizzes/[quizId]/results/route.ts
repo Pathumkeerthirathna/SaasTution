@@ -34,7 +34,8 @@ export async function GET(
         id: true,
         title: true,
         maxAttempts: true,
-        dueDate: true,
+        startDateTime: true,
+        endDateTime: true,
         questions: { select: { id: true } },
         submissions: {
           orderBy: { submittedAt: "desc" },
@@ -80,7 +81,8 @@ export async function GET(
         id: quiz.id,
         title: quiz.title,
         maxAttempts: quiz.maxAttempts,
-        dueDate: quiz.dueDate,
+        startDateTime: quiz.startDateTime,
+        endDateTime: quiz.endDateTime,
         totalQuestions,
       },
       stats: {

@@ -13,7 +13,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { StudentClassPaymentsPanel } from "@/components/student-portal/student-class-payments-panel";
 import { StudentClassLiveBadge } from "@/components/student-portal/student-class-live-badge";
 import {
   ClassBookBadge,
@@ -102,14 +101,6 @@ export default async function StudentClassesPage() {
   });
 
   const liveSessionByClassId = new Map(liveSessions.map((session) => [session.class.id, session]));
-
-  const classesForPayments = activeEnrollments.map((enrollment) => ({
-    id: enrollment.class.id,
-    name: enrollment.class.name,
-    monthlyFee: enrollment.class.monthlyFee,
-    paymentDueWeek: enrollment.class.paymentDueWeek,
-    teacherName: enrollment.class.teacher.name,
-  }));
 
   type Enrollment = (typeof enrollments)[number];
 
@@ -272,6 +263,13 @@ export default async function StudentClassesPage() {
               >
                 <HelpCircle size={11} />
                 Quizzes
+              </Link>
+              <Link
+                href={`/student/payments?classId=${cls.id}`}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900"
+              >
+                <Wallet size={11} />
+                Payments
                 <ChevronRight size={11} className="text-slate-400" />
               </Link>
             </div>
@@ -322,8 +320,6 @@ export default async function StudentClassesPage() {
           </div>
         )}
       </section>
-
-      {classesForPayments.length > 0 ? <StudentClassPaymentsPanel classes={classesForPayments} /> : null}
     </>
   );
 }

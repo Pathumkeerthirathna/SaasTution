@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { emitLiveChange } from "@/lib/session-events";
 import {
     createYouTubeLiveBroadcast,
     bindYouTubeLiveBroadcast,
@@ -16,6 +17,27 @@ import { YouTubeBroadcastStatus, YouTubePrivacy } from "@prisma/client";
 
 
 export async function startYouTubeLecture(
+    teacherId: string,
+    lectureId: string,
+    privacy: "public" | "unlisted" | "private"
+) {
+    const result = await startYouTubeLectureInternal(teacherId, lectureId, privacy);
+
+    // Push a "live is available" signal to student dashboards (no polling).
+    try {
+        const lec = await prisma.lecture.findUnique({
+            where: { id: lectureId },
+            select: { classId: true },
+        });
+        if (lec) emitLiveChange({ classId: lec.classId, kind: "youtube", event: "started" });
+    } catch {
+        /* the stream still started — the signal is best-effort */
+    }
+
+    return result;
+}
+
+async function startYouTubeLectureInternal(
     teacherId: string,
     lectureId: string,
     privacy: "public" | "unlisted" | "private"

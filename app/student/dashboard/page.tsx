@@ -9,7 +9,6 @@ import {
   MessageSquare,
   CheckCircle2,
   ArrowRight,
-  Play,
   DollarSign,
   Bell,
   BarChart2,
@@ -26,18 +25,16 @@ import { prisma } from "@/lib/prisma";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
 import { verifySessionInviteToken } from "@/lib/session-invite";
 import { PaperCountdownList } from "@/components/student-portal/paper-countdown-list";
-import { LiveBroadcastCard } from "@/components/dashboard/live-broadcast-card";
+import { DashboardCountdowns } from "@/components/student-portal/dashboard-countdowns";
+import { getStudentUpcomingCountdowns } from "@/services/student-countdown-service";
+import { LiveDashboardSection } from "@/components/student-portal/live-dashboard-section";
+import { DashboardAgenda } from "@/components/student-portal/dashboard-agenda";
+import { getStudentDashboardCounts } from "@/services/student-dashboard-counts-service";
 
 // helpers
 
 const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_NAMES = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"] as const;
-
-function formatElapsed(startedAt: Date): string {
-  const mins = Math.floor((Date.now() - startedAt.getTime()) / 60_000);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
 
 type SearchParams = { invite?: string };
 
@@ -167,12 +164,13 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
     prisma.quiz.findMany({
       where: { status: 0, lecture: { status: 0, class: { status: 0, students: { some: { studentId, isActive: true } } } } },
-      orderBy: { dueDate: "desc" },
+      orderBy: { endDateTime: "desc" },
       take: 8,
       select: {
         id: true,
         title: true,
-        dueDate: true,
+        startDateTime: true,
+        endDateTime: true,
         maxAttempts: true,
         lecture: { select: { class: { select: { name: true } } } },
         submissions: {
@@ -352,6 +350,8 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     .join(" / ");
 
   const liveBroadcasts = await getActiveYouTubeLives({ studentId });
+  const upcomingCountdowns = await getStudentUpcomingCountdowns(studentId);
+  const dashboardCounts = await getStudentDashboardCounts(studentId, "month");
 
   // derived values
 
@@ -428,7 +428,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   const quickPrimaryActions = [
     { label: "My Classes",    href: "/student/classes",      Icon: BookOpen      },
     { label: "Assignments",   href: "/student/assignments",  Icon: ClipboardList },
-    { label: "Live Sessions", href: "/student/live-classes", Icon: Radio         },
+    { label: "Papers",        href: "/student/papers",       Icon: FileText      },
     { label: "Lectures",      href: "/student/lectures",     Icon: BookMarked    },
     { label: "Attendance",    href: "/student/attendance",   Icon: UserCheck     },
     { label: "Messages",      href: "/student/messages",     Icon: MessageSquare },
@@ -441,23 +441,23 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
       <div className="flex w-full flex-col gap-6 pb-6">
 
         {/* 1. Hero */}
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-900 p-6 text-white shadow-panel sm:p-8">
+        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 p-6 text-white shadow-panel sm:p-8">
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
           <div className="pointer-events-none absolute -bottom-8 right-24 h-28 w-28 rounded-full bg-white/5" />
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-brand-200">Student Dashboard</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-100/90">Student Dashboard</p>
               <h1 className="mt-2 text-2xl font-bold sm:text-3xl">
                 Welcome back, {studentSession.name.split(" ")[0]}
               </h1>
-              <p className="mt-1.5 text-sm text-brand-200">{todayLabel} &middot; Your learning command center.</p>
+              <p className="mt-1.5 text-sm text-emerald-100/90">{todayLabel} &middot; Your learning command center.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {[
                   { label: `${enrolledCount} Classes`,              bg: "bg-white/10" },
-                  { label: `${liveSessions.length} Live Now`,       bg: liveSessions.length > 0 ? "bg-emerald-500/30" : "bg-white/10" },
+                  { label: `${liveSessions.length} Live Now`,       bg: liveSessions.length > 0 ? "bg-white/25" : "bg-white/10" },
                   { label: `${todaySchedules.length} Today`,        bg: "bg-white/10" },
-                  { label: `${pendingAssignments.length} Pending`,  bg: pendingAssignments.length > 0 ? "bg-amber-500/30" : "bg-white/10" },
-                  { label: unpaidCount > 0 ? `${unpaidCount} Unpaid` : "Payments OK", bg: unpaidCount > 0 ? "bg-red-500/30" : "bg-emerald-500/20" },
+                  { label: `${pendingAssignments.length} Pending`,  bg: pendingAssignments.length > 0 ? "bg-amber-400/30" : "bg-white/10" },
+                  { label: unpaidCount > 0 ? `${unpaidCount} Unpaid` : "Payments OK", bg: unpaidCount > 0 ? "bg-rose-400/30" : "bg-white/15" },
                 ].map(({ label, bg }) => (
                   <span key={label} className={`rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-white ${bg}`}>
                     {label}
@@ -468,13 +468,16 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
             <div className="grid grid-cols-3 gap-2.5 lg:min-w-[260px]">
               <Link href="/student/classes"      className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><BookOpen size={13} className="mx-auto mb-1" />Classes</Link>
               <Link href="/student/assignments"  className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><ClipboardList size={13} className="mx-auto mb-1" />Tasks</Link>
-              <Link href="/student/live-classes" className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><Radio size={13} className="mx-auto mb-1" />Live</Link>
+              <Link href="/student/papers" className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><FileText size={13} className="mx-auto mb-1" />Papers</Link>
               <Link href="/student/lectures"     className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><BookMarked size={13} className="mx-auto mb-1" />Lectures</Link>
               <Link href="/student/messages"     className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><MessageSquare size={13} className="mx-auto mb-1" />Messages</Link>
               <Link href="/student/attendance"   className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"><UserCheck size={13} className="mx-auto mb-1" />Attendance</Link>
             </div>
           </div>
         </section>
+
+        {/* Upcoming countdowns (next 8 hours) */}
+        <DashboardCountdowns items={upcomingCountdowns} />
 
         {/* Teacher confirmation pending / rejected */}
         {studentRecord?.confirmationStatus === "PENDING" && (
@@ -535,35 +538,23 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
           </section>
         )}
 
-        <LiveBroadcastCard broadcasts={liveBroadcasts} tone="emerald" />
+        {/* 2. Live now — Jitsi sessions + YouTube broadcasts, pushed over SSE */}
+        <LiveDashboardSection
+          studentId={studentId}
+          initialSessions={liveSessions.map((s) => ({
+            id: s.id,
+            className: s.class.name,
+            teacherName: s.class.teacher.name,
+            lectureTitle: s.lecture?.title ?? null,
+            startedAt: s.startedAt.toISOString(),
+            joinedCount: s._count.attendance,
+          }))}
+          initialBroadcasts={liveBroadcasts}
+          initialCounts={dashboardCounts}
+        />
 
-        {/* 2. Live Class NOW */}
-        {liveSessions.length > 0 && (
-          <section className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 to-white p-5 shadow-card">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" />
-              </span>
-              <p className="text-sm font-bold uppercase tracking-widest text-emerald-700">Live Now</p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {liveSessions.map((session) => (
-                <article key={session.id} className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">{session.class.name}</h3>
-                    <p className="text-xs text-muted">Teacher: {session.class.teacher.name}</p>
-                    {session.lecture && <p className="mt-0.5 text-xs font-medium text-emerald-700">{session.lecture.title}</p>}
-                    <p className="mt-1 text-[11px] text-muted">Started {formatElapsed(session.startedAt)} ago &middot; {session._count.attendance} joined</p>
-                  </div>
-                  <Link href={`/session/join?sessionId=${session.id}&role=student&studentId=${studentId}`} className="btn-primary inline-flex items-center gap-1.5 self-start">
-                    <Play size={13} /> Join Now
-                  </Link>
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* Schedule + assignments due — realtime via SSE */}
+        <DashboardAgenda />
 
         {/* 3. Today's Schedule */}
         <section className="rounded-3xl border border-border bg-white p-5 shadow-card sm:p-6">
@@ -677,13 +668,18 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
                 {recentQuizzes.map((q) => {
                   const sub = q.submissions[0] ?? null;
                   const pct = sub && sub.totalQuestions > 0 ? Math.round((sub.score / sub.totalQuestions) * 100) : null;
-                  const isPast = q.dueDate ? now > q.dueDate : false;
+                  const notStarted = now < q.startDateTime;
+                  const isPast = now > q.endDateTime;
                   return (
                     <article key={q.id} className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/40 px-4 py-3">
                       <div>
                         <p className="text-sm font-semibold text-foreground">{q.title}</p>
                         <p className="text-xs text-muted">{q.lecture.class.name}</p>
-                        {q.dueDate && <p className="text-[11px] text-muted">Due {q.dueDate.toLocaleDateString()}</p>}
+                        <p className="text-[11px] text-muted">
+                          {notStarted
+                            ? `Opens ${q.startDateTime.toLocaleString()}`
+                            : `Closes ${q.endDateTime.toLocaleString()}`}
+                        </p>
                       </div>
                       <div className="flex-shrink-0 text-right">
                         {sub ? (
@@ -692,7 +688,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
                             <p className="text-[11px] text-muted">Attempt {sub.attemptCount}</p>
                           </>
                         ) : (
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isPast ? "bg-zinc-100 text-zinc-500" : "bg-amber-50 text-amber-700"}`}>{isPast ? "Missed" : "Pending"}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isPast ? "bg-zinc-100 text-zinc-500" : notStarted ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}`}>{isPast ? "Missed" : notStarted ? "Upcoming" : "Open now"}</span>
                         )}
                       </div>
                     </article>

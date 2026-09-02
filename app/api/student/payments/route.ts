@@ -6,11 +6,10 @@ import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import {
   ALLOWED_PAYMENT_PROOF_MIME_TYPES,
-  getCurrentMonthKey,
-  isValidMonthKey,
   MAX_PAYMENT_PROOF_SIZE_BYTES,
   sanitizeUploadFileName,
 } from "@/lib/payment-validation";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -23,226 +22,242 @@ function assertPathInBounds(resolvedPath: string, allowedRoot: string) {
   }
 }
 
+type FeeState = "UNPAID" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID";
+
+// GET /api/student/payments?classId=
+// Returns the logged-in student's monthly fees grouped as:
+//   toPay    — nothing submitted yet, or the teacher asked for clarification
+//   inReview — a slip is submitted and awaiting the teacher
+//   paid     — the teacher confirmed the payment
 export async function GET(request: Request) {
   try {
     const session = await requireStudentSession();
     const { searchParams } = new URL(request.url);
-    const classId = searchParams.get("classId")?.trim();
+    const classId = searchParams.get("classId")?.trim() || undefined;
 
-    const payments = await prisma.classPayment.findMany({
+    const fees = await prisma.classStudentFee.findMany({
       where: {
-        studentId: session.studentId,
-        ...(classId ? { classId } : {}),
+        status: 0,
+        classStudent: {
+          studentId: session.studentId,
+          class: { status: 0 },
+          ...(classId ? { classId } : {}),
+        },
       },
-      orderBy: [{ month: "desc" }, { submittedAt: "desc" }],
       select: {
         id: true,
-        classId: true,
+        year: true,
         month: true,
         amount: true,
-        note: true,
-        status: true,
-        teacherFeedback: true,
-        slipFileName: true,
-        submittedAt: true,
-        class: {
+        discount: true,
+        lateJoinDeduct: true,
+        waiverAmount: true,
+        finalAmount: true,
+        dueDate: true,
+        classStudent: {
           select: {
-            name: true,
-            monthlyFee: true,
-            paymentDueWeek: true,
+            class: {
+              select: { id: true, name: true, teacher: { select: { name: true } } },
+            },
           },
         },
-        messages: {
-          orderBy: { createdAt: "asc" },
+        payments: {
+          orderBy: { submittedAt: "desc" },
           select: {
             id: true,
-            senderRole: true,
-            message: true,
-            proofFileName: true,
-            createdAt: true,
-            teacher: {
-              select: {
-                name: true,
-              },
-            },
-            student: {
-              select: {
-                name: true,
-              },
-            },
+            amount: true,
+            status: true,
+            note: true,
+            teacherFeedback: true,
+            slipFileName: true,
+            submittedAt: true,
+            confirmedAt: true,
           },
         },
       },
     });
 
-    return apiSuccess({
-      payments: payments.map((item) => ({
-        ...item,
-        hasSlip: Boolean(item.slipFileName),
-        messages: item.messages.map((msg) => ({
-          ...msg,
-          senderName: msg.senderRole === "TEACHER" ? msg.teacher?.name ?? "Teacher" : msg.student?.name ?? "Student",
-          hasProofFile: Boolean(msg.proofFileName),
-        })),
-      })),
+    const classesMap = new Map<string, string>();
+
+    const items = fees.map((fee) => {
+      const cls = fee.classStudent.class;
+      classesMap.set(cls.id, cls.name);
+
+      const confirmed = fee.payments.find((p) => p.status === "CONFIRMED") ?? null;
+      const latest = fee.payments[0] ?? null;
+      const active = confirmed ?? latest;
+
+      let state: FeeState;
+      if (confirmed) state = "PAID";
+      else if (!latest) state = "UNPAID";
+      else if (latest.status === "NEEDS_CLARIFICATION") state = "ACTION_NEEDED";
+      else state = "IN_REVIEW";
+
+      return {
+        feeId: fee.id,
+        classId: cls.id,
+        className: cls.name,
+        teacherName: cls.teacher.name,
+        year: fee.year,
+        month: fee.month,
+        dueDate: fee.dueDate ? fee.dueDate.toISOString() : null,
+        amount: fee.amount,
+        discount: fee.discount,
+        lateJoinDeduct: fee.lateJoinDeduct,
+        waiverAmount: fee.waiverAmount,
+        finalAmount: fee.finalAmount,
+        state,
+        payment: active
+          ? {
+              id: active.id,
+              amount: active.amount,
+              status: active.status,
+              note: active.note,
+              teacherFeedback: active.teacherFeedback,
+              hasSlip: Boolean(active.slipFileName),
+              slipFileName: active.slipFileName,
+              submittedAt: active.submittedAt.toISOString(),
+              confirmedAt: active.confirmedAt ? active.confirmedAt.toISOString() : null,
+            }
+          : null,
+      };
     });
+
+    const dueAsc = (a: (typeof items)[number], b: (typeof items)[number]) => {
+      const av = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      const bv = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      return av - bv;
+    };
+
+    const toPay = items
+      .filter((i) => i.state === "UNPAID" || i.state === "ACTION_NEEDED")
+      .sort(dueAsc);
+    const inReview = items.filter((i) => i.state === "IN_REVIEW").sort(dueAsc);
+    const paid = items.filter((i) => i.state === "PAID").sort((a, b) => -dueAsc(a, b));
+
+    const classes = Array.from(classesMap, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
+    return apiSuccess({ toPay, inReview, paid, classes });
   } catch (error) {
     return handleRouteError(error);
   }
 }
 
+// POST /api/student/payments — submit / re-submit a payment slip for one fee.
+// formData: feeId (required), slip (File, required), note (optional)
 export async function POST(request: Request) {
   try {
     const session = await requireStudentSession();
     const formData = await request.formData();
 
-    const classId = String(formData.get("classId") ?? "").trim();
-    const month = String(formData.get("month") ?? "").trim();
-    const amountRaw = String(formData.get("amount") ?? "").trim();
+    const feeId = String(formData.get("feeId") ?? "").trim();
     const note = String(formData.get("note") ?? "").trim() || null;
     const fileEntry = formData.get("slip");
 
-    if (!classId) {
-      return apiError("Class is required.", 400, "VALIDATION_ERROR");
+    if (!feeId) {
+      return apiError("A fee is required.", 400, "VALIDATION_ERROR");
     }
 
-    const monthKey = month || getCurrentMonthKey();
-    if (!isValidMonthKey(monthKey)) {
-      return apiError("Month must be in YYYY-MM format.", 400, "VALIDATION_ERROR");
-    }
-
-    const enrollment = await prisma.classStudent.findFirst({
+    const fee = await prisma.classStudentFee.findFirst({
       where: {
-        classId,
-        studentId: session.studentId,
-        isActive: true,
+        id: feeId,
+        status: 0,
+        classStudent: { studentId: session.studentId },
       },
       select: {
         id: true,
-        class: {
-          select: {
-            monthlyFee: true,
+        finalAmount: true,
+        classStudent: { select: { classId: true } },
+        payments: {
+          orderBy: { submittedAt: "desc" },
+          select: { id: true, status: true, slipFileUrl: true },
+        },
+      },
+    });
+
+    if (!fee) {
+      throw new AppError("Fee not found.", 404, "FEE_NOT_FOUND");
+    }
+
+    if (fee.payments.some((p) => p.status === "CONFIRMED")) {
+      return apiError("This payment is already confirmed.", 409, "ALREADY_CONFIRMED");
+    }
+
+    if (!(fileEntry instanceof File) || fileEntry.size === 0) {
+      return apiError("A payment slip file is required.", 400, "VALIDATION_ERROR");
+    }
+
+    if (!ALLOWED_PAYMENT_PROOF_MIME_TYPES.has(fileEntry.type)) {
+      return apiError("Only PDF, PNG, JPG, and WEBP files are allowed.", 400, "UNSUPPORTED_FILE_TYPE");
+    }
+
+    if (fileEntry.size > MAX_PAYMENT_PROOF_SIZE_BYTES) {
+      return apiError("Payment slip exceeds the 10 MB size limit.", 400, "FILE_TOO_LARGE");
+    }
+
+    const classId = fee.classStudent.classId;
+    const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+    const safeName = sanitizeUploadFileName(fileEntry.name || "payment-slip") || "payment-slip";
+    const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+    const uploadDir = path.join(
+      process.cwd(),
+      "storage",
+      "payments",
+      classId,
+      session.studentId,
+      feeId
+    );
+    await mkdir(uploadDir, { recursive: true });
+    await writeFile(path.join(uploadDir, storedName), bytes);
+
+    const slip = {
+      slipFileName: fileEntry.name || "payment-slip",
+      slipFileUrl: `payments/${classId}/${session.studentId}/${feeId}/${storedName}`,
+      slipMimeType: fileEntry.type,
+      slipSizeBytes: fileEntry.size,
+    };
+
+    const existing = fee.payments.find((p) => p.status !== "CONFIRMED") ?? null;
+
+    const payment = existing
+      ? await prisma.classPayment.update({
+          where: { id: existing.id },
+          data: {
+            amount: fee.finalAmount,
+            note,
+            status: "PENDING",
+            teacherFeedback: null,
+            confirmedAt: null,
+            confirmedByTeacherId: null,
+            submittedAt: new Date(),
+            ...slip,
           },
-        },
-      },
-    });
+          select: { id: true, status: true, submittedAt: true },
+        })
+      : await prisma.classPayment.create({
+          data: {
+            classId,
+            studentId: session.studentId,
+            classStudentFeeId: feeId,
+            amount: fee.finalAmount,
+            note,
+            ...slip,
+          },
+          select: { id: true, status: true, submittedAt: true },
+        });
 
-    if (!enrollment) {
-      throw new AppError("Class not found.", 404, "CLASS_NOT_FOUND");
-    }
-
-    const amount = amountRaw ? Number(amountRaw) : enrollment.class.monthlyFee;
-    if (!Number.isInteger(amount) || amount < 0) {
-      return apiError("Amount must be a non-negative whole number.", 400, "VALIDATION_ERROR");
-    }
-
-    let storedFileMeta:
-      | {
-          fileName: string;
-          fileUrl: string;
-          mimeType: string;
-          sizeBytes: number;
-        }
-      | undefined;
-
-    if (fileEntry instanceof File && fileEntry.size > 0) {
-      if (!ALLOWED_PAYMENT_PROOF_MIME_TYPES.has(fileEntry.type)) {
-        return apiError("Only PDF, PNG, JPG, and WEBP files are allowed.", 400, "UNSUPPORTED_FILE_TYPE");
-      }
-
-      if (fileEntry.size > MAX_PAYMENT_PROOF_SIZE_BYTES) {
-        return apiError("Payment proof exceeds size limit of 10 MB.", 400, "FILE_TOO_LARGE");
-      }
-
-      const bytes = new Uint8Array(await fileEntry.arrayBuffer());
-      const safeName = sanitizeUploadFileName(fileEntry.name || "payment-proof") || "payment-proof";
-      const ext = path.extname(safeName) || (fileEntry.type === "application/pdf" ? ".pdf" : "");
-      const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}${ext && !safeName.endsWith(ext) ? ext : ""}`;
-      const uploadDir = path.join(process.cwd(), "storage", "payments", classId, session.studentId, monthKey);
-      await mkdir(uploadDir, { recursive: true });
-      const fullFilePath = path.join(uploadDir, storedName);
-      await writeFile(fullFilePath, bytes);
-
-      storedFileMeta = {
-        fileName: fileEntry.name || "payment-proof",
-        fileUrl: `payments/${classId}/${session.studentId}/${monthKey}/${storedName}`,
-        mimeType: fileEntry.type,
-        sizeBytes: fileEntry.size,
-      };
-    }
-
-    const existing = await prisma.classPayment.findUnique({
-      where: {
-        classId_studentId_month: {
-          classId,
-          studentId: session.studentId,
-          month: monthKey,
-        },
-      },
-      select: {
-        id: true,
-        slipFileUrl: true,
-      },
-    });
-
-    const payment = await prisma.classPayment.upsert({
-      where: {
-        classId_studentId_month: {
-          classId,
-          studentId: session.studentId,
-          month: monthKey,
-        },
-      },
-      create: {
-        classId,
-        studentId: session.studentId,
-        month: monthKey,
-        amount,
-        note,
-        ...(storedFileMeta
-          ? {
-              slipFileName: storedFileMeta.fileName,
-              slipFileUrl: storedFileMeta.fileUrl,
-              slipMimeType: storedFileMeta.mimeType,
-              slipSizeBytes: storedFileMeta.sizeBytes,
-            }
-          : {}),
-      },
-      update: {
-        amount,
-        note,
-        status: "PENDING",
-        teacherFeedback: null,
-        confirmedAt: null,
-        confirmedByTeacherId: null,
-        submittedAt: new Date(),
-        ...(storedFileMeta
-          ? {
-              slipFileName: storedFileMeta.fileName,
-              slipFileUrl: storedFileMeta.fileUrl,
-              slipMimeType: storedFileMeta.mimeType,
-              slipSizeBytes: storedFileMeta.sizeBytes,
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        classId: true,
-        month: true,
-        amount: true,
-        status: true,
-        submittedAt: true,
-      },
-    });
-
-    if (storedFileMeta && existing?.slipFileUrl && existing.slipFileUrl !== storedFileMeta.fileUrl) {
-      const oldPath = path.join(process.cwd(), "storage", existing.slipFileUrl);
+    if (existing?.slipFileUrl && existing.slipFileUrl !== slip.slipFileUrl) {
       const root = path.join(process.cwd(), "storage");
+      const oldPath = path.join(root, existing.slipFileUrl);
       assertPathInBounds(oldPath, root);
       await unlink(oldPath).catch(() => undefined);
     }
 
-    return apiSuccess({ payment }, { status: 201, message: "Payment submitted successfully." });
+    emitStudentDataChange({ studentId: session.studentId });
+
+    return apiSuccess({ payment }, { status: 201, message: "Payment slip submitted." });
   } catch (error) {
     return handleRouteError(error);
   }

@@ -1,6 +1,7 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ export async function POST(
       },
       select: {
         id: true,
+        studentId: true,
       },
     });
 
@@ -91,6 +93,8 @@ export async function POST(
 
       return paymentUpdate;
     });
+
+    emitStudentDataChange({ studentId: payment.studentId });
 
     return apiSuccess({ payment: updated }, { message: status === "CONFIRMED" ? "Payment confirmed." : "Clarification requested." });
   } catch (error) {

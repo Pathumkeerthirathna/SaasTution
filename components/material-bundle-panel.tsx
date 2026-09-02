@@ -1232,7 +1232,7 @@ export function MaterialBundlePanel() {
                               <span className="text-[10px] text-slate-400">
                                 {recipientsEditable
                                   ? `${accSelCount}/${accStudents.length} selected`
-                                  : `${accStudents.filter((st) => st.willReceive).length} recipients`}
+                                  : `${accStudents.filter((st) => st.willReceive && st.receivedAt).length}/${accStudents.filter((st) => st.willReceive).length} received`}
                               </span>
                             </div>
 
@@ -1270,10 +1270,16 @@ export function MaterialBundlePanel() {
                                         ({st.registrationNumber})
                                       </span>
                                     ) : null}
-                                    {!recipientsEditable && st.willReceive && st.receivedAt ? (
-                                      <span className="ml-auto text-[9px] font-semibold text-emerald-600">
-                                        confirmed
-                                      </span>
+                                    {!recipientsEditable && st.willReceive ? (
+                                      st.receivedAt ? (
+                                        <span className="ml-auto whitespace-nowrap text-[9px] font-semibold text-emerald-600">
+                                          ✓ Received {new Date(st.receivedAt).toLocaleDateString()}
+                                        </span>
+                                      ) : (
+                                        <span className="ml-auto text-[9px] font-medium text-amber-500">
+                                          not yet received
+                                        </span>
+                                      )
                                     ) : null}
                                   </label>
                                 ))}

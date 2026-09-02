@@ -268,3 +268,133 @@ export async function getTeacherCalendar(
 
   return events;
 }
+
+export type StudentCalendarEntry = {
+  key: string;
+  /** YYYY-MM-DD */
+  date: string;
+  startTime: string | null;
+  endTime: string | null;
+  classId: string;
+  className: string;
+  teacherName: string;
+  /** true = generated from a recurring class schedule. */
+  scheduled: boolean;
+  lecture: {
+    id: string;
+    title: string;
+    status: string;
+  } | null;
+};
+
+/**
+ * Calendar entries for a student between `from` and `to`: one entry per
+ * recurring class-schedule occurrence for each class the student is actively
+ * enrolled in (carrying the lecture for that day when one exists), plus any
+ * lecture that does not line up with a scheduled occurrence.
+ */
+export async function getStudentCalendar(
+  studentId: string,
+  from: Date,
+  to: Date
+): Promise<StudentCalendarEntry[]> {
+  const classes = await prisma.class.findMany({
+    where: {
+      status: 0,
+      students: { some: { studentId, isActive: true } },
+    },
+    select: {
+      id: true,
+      name: true,
+      startDate: true,
+      teacher: { select: { name: true } },
+      schedules: {
+        select: { dayOfWeek: true, startTime: true, endTime: true },
+        orderBy: { startTime: "asc" },
+      },
+      lectures: {
+        where: { status: 0, date: { gte: from, lte: to } },
+        select: { id: true, title: true, classStatus: true, date: true },
+        orderBy: { date: "asc" },
+      },
+    },
+  });
+
+  const entries: StudentCalendarEntry[] = [];
+  const rangeStart = new Date(`${dayKey(from)}T00:00:00.000Z`);
+
+  for (const cls of classes) {
+    const teacherName = cls.teacher.name;
+
+    const lecturesByDay = new Map<
+      string,
+      { id: string; title: string; classStatus: string }[]
+    >();
+    for (const lecture of cls.lectures) {
+      const key = dayKey(lecture.date);
+      const list = lecturesByDay.get(key) ?? [];
+      list.push({ id: lecture.id, title: lecture.title, classStatus: lecture.classStatus });
+      lecturesByDay.set(key, list);
+    }
+
+    const usedLectureIds = new Set<string>();
+    const startDateKey = cls.startDate ? dayKey(cls.startDate) : null;
+
+    if (cls.schedules.length > 0) {
+      for (let day = rangeStart; day.getTime() <= to.getTime(); day = addUtcDays(day, 1)) {
+        const key = dayKey(day);
+        if (startDateKey && key < startDateKey) continue;
+
+        const dow = day.getUTCDay();
+        const matches = cls.schedules.filter(
+          (schedule) => WEEKDAY_INDEX[schedule.dayOfWeek] === dow
+        );
+        if (matches.length === 0) continue;
+
+        const dayLectures = lecturesByDay.get(key) ?? [];
+
+        for (const schedule of matches) {
+          const lecture =
+            dayLectures.find((item) => !usedLectureIds.has(item.id)) ?? dayLectures[0] ?? null;
+          if (lecture) usedLectureIds.add(lecture.id);
+
+          entries.push({
+            key: `${cls.id}-${key}-${schedule.startTime}`,
+            date: key,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            classId: cls.id,
+            className: cls.name,
+            teacherName,
+            scheduled: true,
+            lecture: lecture
+              ? { id: lecture.id, title: lecture.title, status: lecture.classStatus }
+              : null,
+          });
+        }
+      }
+    }
+
+    for (const lecture of cls.lectures) {
+      if (usedLectureIds.has(lecture.id)) continue;
+      entries.push({
+        key: `lecture-${lecture.id}`,
+        date: dayKey(lecture.date),
+        startTime: timeKey(lecture.date),
+        endTime: null,
+        classId: cls.id,
+        className: cls.name,
+        teacherName,
+        scheduled: false,
+        lecture: { id: lecture.id, title: lecture.title, status: lecture.classStatus },
+      });
+    }
+  }
+
+  entries.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.startTime ?? "").localeCompare(b.startTime ?? "");
+  });
+
+  return entries;
+}

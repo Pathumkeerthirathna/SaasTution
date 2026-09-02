@@ -1299,7 +1299,8 @@ export async function getStudentQuizResults(
     select: {
       id: true,
       title: true,
-      dueDate: true,
+      startDateTime: true,
+      endDateTime: true,
 
       lecture: {
         select: {
@@ -1333,7 +1334,8 @@ export async function getStudentQuizResults(
       lectureId: quiz.lecture.id,
       lectureTitle: quiz.lecture.title,
       lectureDate: quiz.lecture.date,
-      dueDate: quiz.dueDate ?? null,
+      startDateTime: quiz.startDateTime,
+      endDateTime: quiz.endDateTime,
 
       attempted: !!submission,
 
@@ -1750,12 +1752,13 @@ export async function getStudentClassQuizResults(
       },
     },
     orderBy: {
-      dueDate: "desc",
+      startDateTime: "desc",
     },
     select: {
       id: true,
       title: true,
-      dueDate: true,
+      startDateTime: true,
+      endDateTime: true,
 
       lecture: {
         select: {
@@ -1785,7 +1788,8 @@ export async function getStudentClassQuizResults(
     return {
       quizId: quiz.id,
       quizTitle: quiz.title,
-      dueDate: quiz.dueDate,
+      startDateTime: quiz.startDateTime,
+      endDateTime: quiz.endDateTime,
 
       lectureTitle:
         quiz.lecture.title,
@@ -2512,7 +2516,7 @@ export async function getStudentQuizAnalytics(
     select: {
       id: true,
       title: true,
-      dueDate: true,
+      endDateTime: true,
       lecture: { select: { date: true } },
       submissions: {
         where: { studentId },
@@ -2539,7 +2543,7 @@ export async function getStudentQuizAnalytics(
   const recentPool: Array<QuizAnalyticsRecent & { ts: number }> = [];
 
   for (const quiz of quizzes) {
-    const scheduled = quiz.dueDate ?? quiz.lecture.date;
+    const scheduled = quiz.endDateTime ?? quiz.lecture.date;
     const scheduledDate = new Date(scheduled);
     const inPeriod = scheduledDate >= periodStart && scheduledDate <= now;
 

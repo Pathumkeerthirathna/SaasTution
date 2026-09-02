@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = req.nextUrl;
     const classId = searchParams.get("classId") ?? undefined;
+    const lectureId = searchParams.get("lectureId") ?? undefined;
     const from = searchParams.get("from") ?? undefined;
     const to = searchParams.get("to") ?? undefined;
     const { page, pageSize, skip, take } = parsePaginationParams(searchParams);
@@ -21,28 +22,21 @@ export async function GET(req: NextRequest) {
     const fromDate = from ? new Date(`${from}T00:00:00.000`) : undefined;
     const toDate = to ? new Date(`${to}T23:59:59.999`) : undefined;
 
+    const enrolledFilter = {
+      class: {
+        status: 0,
+        students: { some: { studentId: session.studentId, isActive: true } },
+      },
+    };
+
     const where = {
       status: 0,
       lecture: {
         status: 0,
-        ...(classId ? { class: { id: classId } } : {}),
+        ...enrolledFilter,
+        ...(classId ? { classId } : {}),
+        ...(lectureId ? { id: lectureId } : {}),
       },
-      OR: [
-        {
-          submissions: {
-            some: {
-              studentId: session.studentId,
-            },
-          },
-        },
-        {
-          lecture: {
-            class: {
-              students: { some: { studentId: session.studentId, isActive: true } },
-            },
-          },
-        },
-      ],
       ...(fromDate || toDate
         ? {
             dueDate: {
@@ -53,35 +47,66 @@ export async function GET(req: NextRequest) {
         : {}),
     };
 
-    const [totalItems, assignments, submissions] = await Promise.all([
-      prisma.assignment.count({ where }),
-      prisma.assignment.findMany({
-        where,
-        orderBy: { dueDate: "asc" },
-        skip,
-        take,
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          dueDate: true,
-          lecture: { select: { class: { select: { id: true, name: true } } } },
-        },
-      }),
-      prisma.assignmentSubmission.findMany({
-        where: { studentId: session.studentId },
-        select: {
-          assignmentId: true,
-          id: true,
-          notes: true,
-          fileName: true,
-          fileUrl: true,
-          mimeType: true,
-          sizeBytes: true,
-          submittedAt: true,
-        },
-      }),
-    ]);
+    const [totalItems, assignments, submissions, lectureOptions, classStudents] =
+      await Promise.all([
+        prisma.assignment.count({ where }),
+        prisma.assignment.findMany({
+          where,
+          orderBy: { dueDate: "asc" },
+          skip,
+          take,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            dueDate: true,
+            lecture: {
+              select: {
+                id: true,
+                title: true,
+                date: true,
+                class: { select: { id: true, name: true } },
+              },
+            },
+          },
+        }),
+        prisma.assignmentSubmission.findMany({
+          where: { studentId: session.studentId },
+          select: {
+            assignmentId: true,
+            id: true,
+            notes: true,
+            fileName: true,
+            fileUrl: true,
+            mimeType: true,
+            sizeBytes: true,
+            submittedAt: true,
+          },
+        }),
+        // Lectures (with at least one active assignment) for the lecture filter.
+        prisma.lecture.findMany({
+          where: {
+            status: 0,
+            ...enrolledFilter,
+            ...(classId ? { classId } : {}),
+            assignments: { some: { status: 0 } },
+          },
+          orderBy: { date: "desc" },
+          select: {
+            id: true,
+            title: true,
+            date: true,
+            classId: true,
+            class: { select: { name: true } },
+          },
+        }),
+        prisma.classStudent.findMany({
+          where: { studentId: session.studentId, isActive: true },
+          distinct: ["classId"],
+          select: { class: { select: { id: true, name: true } } },
+          orderBy: { class: { name: "asc" } },
+        }),
+      ]);
 
     const submissionMap = new Map(submissions.map((s) => [s.assignmentId, s]));
 
@@ -94,6 +119,9 @@ export async function GET(req: NextRequest) {
         dueDate: a.dueDate.toISOString(),
         classId: a.lecture.class.id,
         className: a.lecture.class.name,
+        lectureId: a.lecture.id,
+        lectureTitle: a.lecture.title,
+        lectureDate: a.lecture.date.toISOString(),
         submission: sub
           ? {
               id: sub.id,
@@ -108,16 +136,17 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Classes for filter dropdown
-    const classStudents = await prisma.classStudent.findMany({
-      where: { studentId: session.studentId },
-      distinct: ["classId"],
-      include: { class: { select: { id: true, name: true } } },
-    });
     const classes = classStudents.map((cs) => ({ id: cs.class.id, name: cs.class.name }));
+    const lectures = lectureOptions.map((l) => ({
+      id: l.id,
+      title: l.title,
+      classId: l.classId,
+      className: l.class.name,
+      date: l.date.toISOString(),
+    }));
 
     return apiSuccess(
-      { records, classes },
+      { records, classes, lectures },
       { pagination: buildPaginationMeta(totalItems, page, pageSize) },
     );
   } catch (err) {

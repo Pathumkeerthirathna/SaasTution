@@ -16,34 +16,28 @@ export async function GET(req: NextRequest) {
     const session = await requireStudentSession();
 
     const { searchParams } = req.nextUrl;
-    const viewParam = searchParams.get("view");
-    const view = viewParam === "confirmed" ? "confirmed" : "awaiting";
     const classId = searchParams.get("classId") ?? undefined;
-    const from = searchParams.get("from") ?? undefined;
-    const to = searchParams.get("to") ?? undefined;
+    const yearRaw = searchParams.get("year");
+    const monthRaw = searchParams.get("month");
     const { page, pageSize, skip, take } = parsePaginationParams(searchParams);
 
-    const fromDate = from ? new Date(`${from}T00:00:00.000`) : undefined;
-    const toDate = to ? new Date(`${to}T23:59:59.999`) : undefined;
+    const year = yearRaw && /^\d{4}$/.test(yearRaw) ? Number(yearRaw) : undefined;
+    const month =
+      monthRaw && /^\d{1,2}$/.test(monthRaw) && Number(monthRaw) >= 1 && Number(monthRaw) <= 12
+        ? Number(monthRaw)
+        : undefined;
     const now = new Date();
 
     const where = {
       bundleStatus: "SENT" as const,
       status: 0,
       ...(classId ? { classId } : {}),
-      ...(fromDate || toDate
-        ? {
-            sentAt: {
-              ...(fromDate ? { gte: fromDate } : {}),
-              ...(toDate ? { lte: toDate } : {}),
-            },
-          }
-        : {}),
+      ...(year ? { year } : {}),
+      ...(month ? { month } : {}),
       recipients: {
         some: {
           studentId: session.studentId,
           willReceive: true,
-          ...(view === "awaiting" ? { receivedAt: null } : { receivedAt: { not: null } }),
         },
       },
     };
@@ -94,6 +88,7 @@ export async function GET(req: NextRequest) {
               description: true,
               fileName: true,
               fileUrl: true,
+              mimeType: true,
               paperStartAt: true,
               paperEndAt: true,
               submissions: {
@@ -158,7 +153,8 @@ export async function GET(req: NextRequest) {
         title: item.title,
         description: item.description,
         fileName: item.fileName,
-        fileUrl: item.fileUrl,
+        hasFile: Boolean(item.fileUrl),
+        mimeType: item.mimeType,
         paperStartAt: item.paperStartAt ? item.paperStartAt.toISOString() : null,
         paperEndAt: item.paperEndAt ? item.paperEndAt.toISOString() : null,
         latestSubmission: item.submissions[0]
@@ -176,7 +172,7 @@ export async function GET(req: NextRequest) {
     const classes = classRows.map((cs) => ({ id: cs.class.id, name: cs.class.name }));
 
     return apiSuccess(
-      { records, classes, view },
+      { records, classes },
       { pagination: buildPaginationMeta(totalItems, page, pageSize) },
     );
   } catch (err) {

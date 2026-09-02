@@ -1,4 +1,4 @@
-import { apiSuccess } from "@/lib/api-response";
+import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
@@ -37,7 +37,8 @@ export async function GET(
         id: true,
         title: true,
         maxAttempts: true,
-        dueDate: true,
+        startDateTime: true,
+        endDateTime: true,
         questions: {
           orderBy: {
             orderIndex: "asc",
@@ -85,12 +86,17 @@ export async function GET(
       throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
     }
 
+    if (new Date() < quiz.startDateTime) {
+      return apiError("This quiz has not started yet.", 403, "QUIZ_NOT_STARTED");
+    }
+
     return apiSuccess({
       quiz: {
         id: quiz.id,
         title: quiz.title,
         maxAttempts: quiz.maxAttempts,
-        dueDate: quiz.dueDate,
+        startDateTime: quiz.startDateTime,
+        endDateTime: quiz.endDateTime,
         questions: quiz.questions,
       },
       submission: quiz.submissions[0] ?? null,

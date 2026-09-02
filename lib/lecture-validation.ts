@@ -84,14 +84,16 @@ export const updateAssignmentSchema = z
     }
   );
 
-export const createQuizSchema = z.object({
+export const createQuizSchema = z
+  .object({
   title: z
     .string()
     .trim()
     .min(2, "Quiz title must be at least 2 characters long.")
     .max(150, "Quiz title must be at most 150 characters long."),
   maxAttempts: z.number().int().min(1, "Max attempts must be at least 1.").max(100).nullable().optional(),
-  dueDate: z.coerce.date().nullable().optional(),
+  startDateTime: z.coerce.date(),
+  endDateTime: z.coerce.date(),
   questions: z
     .array(
       z
@@ -131,7 +133,11 @@ export const createQuizSchema = z.object({
         )
     )
     .min(1, "Quiz must contain at least one question."),
-});
+  })
+  .refine((value) => value.endDateTime.getTime() > value.startDateTime.getTime(), {
+    message: "End date/time must be after the start date/time.",
+    path: ["endDateTime"],
+  });
 
 export const updateQuizSchema = createQuizSchema;
 

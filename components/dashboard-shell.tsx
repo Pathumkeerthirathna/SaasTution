@@ -23,6 +23,7 @@ import {
   ChevronRight,
   BadgeInfo,
   Bell,
+  ScrollText,
 } from "lucide-react";
 
 import { SidebarGraduate } from "@/components/sidebar-graduate";
@@ -67,6 +68,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles",              label: "Tutes & Papers",     icon: <FolderOpen size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/papers",                        label: "Papers",             icon: <ScrollText size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles/configuration",label: "Paper Config",       icon: <Settings size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/sessions",                      label: "Live Sessions",      icon: <Radio size={18} strokeWidth={1.75} /> },
     ];

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { AssignmentSubmitButton } from "@/components/student-portal/assignment-submit-button";
+import { dashRangeToYmd } from "@/lib/dashboard-range";
 
 type ClassOption = { id: string; name: string };
 
@@ -33,8 +34,10 @@ type LectureListItem = {
   startTime: string | null;
   endTime: string | null;
   noteCount: number;
+  unviewedNoteCount: number;
   assignmentCount: number;
   recordingCount: number;
+  attended: boolean;
 };
 
 type ScheduleListItem = {
@@ -186,13 +189,23 @@ function formatTime12h(value: string | null) {
 export function LectureListClient() {
   const searchParams = useSearchParams();
 
+  const initialRange = (() => {
+    const r = searchParams.get("range");
+    if (r === "month" || r === "quarter" || r === "year" || r === "all") return dashRangeToYmd(r);
+    return null;
+  })();
+
   const [classId, setClassId] = useState(() => searchParams.get("classId") ?? "");
-  const [preset, setPreset] = useState<Preset>("month");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [preset, setPreset] = useState<Preset>(initialRange ? "custom" : "month");
+  const [customFrom, setCustomFrom] = useState(initialRange?.from ?? "");
+  const [customTo, setCustomTo] = useState(initialRange?.to ?? "");
   const [scheduledOnly, setScheduledOnly] = useState(
     () => ["1", "true", "yes"].includes((searchParams.get("scheduled") ?? "").toLowerCase())
   );
+  const [unviewedNotesOnly, setUnviewedNotesOnly] = useState(
+    () => searchParams.get("notes") === "unviewed"
+  );
+  const [missedOnly, setMissedOnly] = useState(() => searchParams.get("attendance") === "missed");
   const [page, setPage] = useState(1);
 
   const [data, setData] = useState<ListData | null>(null);
@@ -214,11 +227,35 @@ export function LectureListClient() {
   const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reqRef = useRef({ classId, from: range.from, to: range.to, page, scheduledOnly });
-  reqRef.current = { classId, from: range.from, to: range.to, page, scheduledOnly };
+  const reqRef = useRef({
+    classId,
+    from: range.from,
+    to: range.to,
+    page,
+    scheduledOnly,
+    unviewedNotesOnly,
+    missedOnly,
+  });
+  reqRef.current = {
+    classId,
+    from: range.from,
+    to: range.to,
+    page,
+    scheduledOnly,
+    unviewedNotesOnly,
+    missedOnly,
+  };
 
   const fetchItems = useCallback(
-    async (params: { classId: string; from: string; to: string; page: number; scheduledOnly: boolean }) => {
+    async (params: {
+      classId: string;
+      from: string;
+      to: string;
+      page: number;
+      scheduledOnly: boolean;
+      unviewedNotesOnly: boolean;
+      missedOnly: boolean;
+    }) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -227,6 +264,8 @@ export function LectureListClient() {
       if (params.from) qs.set("from", params.from);
       if (params.to) qs.set("to", params.to);
       if (params.scheduledOnly) qs.set("scheduled", "1");
+      if (params.unviewedNotesOnly) qs.set("notes", "unviewed");
+      if (params.missedOnly) qs.set("attendance", "missed");
       qs.set("page", String(params.page));
       qs.set("limit", "10");
 
@@ -248,7 +287,7 @@ export function LectureListClient() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classId, range.from, range.to, page, scheduledOnly, fetchItems]);
+  }, [classId, range.from, range.to, page, scheduledOnly, unviewedNotesOnly, missedOnly, fetchItems]);
 
   const ensureDetail = useCallback(
     async (lectureId: string) => {
@@ -278,6 +317,13 @@ export function LectureListClient() {
     await ensureDetail(lectureId);
   }
 
+  // Deep link from the calendar: ?focus=<lectureId> opens that lecture's panel.
+  useEffect(() => {
+    const focusId = searchParams.get("focus");
+    if (focusId) void openPanel(focusId, "notes");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function closePanel() {
     setPanelLectureId(null);
     setPreviewNoteId(null);
@@ -299,13 +345,16 @@ export function LectureListClient() {
     setCustomFrom("");
     setCustomTo("");
     setScheduledOnly(false);
+    setUnviewedNotesOnly(false);
+    setMissedOnly(false);
     setPage(1);
   }
 
   const enrolledClasses = data?.enrolledClasses ?? [];
   const items = data?.items ?? [];
   const pagination = data?.pagination;
-  const hasFilters = Boolean(classId) || preset !== "month" || scheduledOnly;
+  const hasFilters =
+    Boolean(classId) || preset !== "month" || scheduledOnly || unviewedNotesOnly || missedOnly;
 
   const panelDetail = panelLectureId ? detailByLecture[panelLectureId] ?? null : null;
   const panelLoading = panelLectureId != null && detailLoadingId === panelLectureId && !panelDetail;
@@ -352,6 +401,32 @@ export function LectureListClient() {
               className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             Scheduled
+          </label>
+
+          <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+            <input
+              type="checkbox"
+              checked={unviewedNotesOnly}
+              onChange={(e) => {
+                setUnviewedNotesOnly(e.target.checked);
+                setPage(1);
+              }}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            Unviewed notes
+          </label>
+
+          <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+            <input
+              type="checkbox"
+              checked={missedOnly}
+              onChange={(e) => {
+                setMissedOnly(e.target.checked);
+                setPage(1);
+              }}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            Not attended
           </label>
         </div>
 
@@ -497,11 +572,15 @@ export function LectureListClient() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <h3 className="truncate text-sm font-semibold text-slate-900">{item.title}</h3>
                           {upcoming ? (
                             <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
                               Upcoming
+                            </span>
+                          ) : !item.attended ? (
+                            <span className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-700">
+                              Not attended
                             </span>
                           ) : null}
                         </div>
@@ -526,8 +605,16 @@ export function LectureListClient() {
                       >
                         <FileText size={12} />
                         Notes
-                        <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">
-                          {item.noteCount}
+                        <span
+                          className={`rounded px-1 text-[10px] font-bold ${
+                            item.unviewedNoteCount > 0
+                              ? "bg-amber-200 text-amber-800"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {item.unviewedNoteCount > 0
+                            ? `${item.unviewedNoteCount} new`
+                            : item.noteCount}
                         </span>
                       </button>
 

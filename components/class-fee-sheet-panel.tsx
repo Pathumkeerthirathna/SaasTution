@@ -19,7 +19,11 @@ import {
   Loader2,
   RefreshCw,
   Users,
+  ExternalLink,
+  CheckCircle2,
+  MessageCircleWarning,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 import {
   formatStoredSriLankaDate,
@@ -767,6 +771,8 @@ export function ClassFeeSheetPanel() {
                             <PaymentAccordion
                               payments={row.payments}
                               finalAmount={row.finalAmount}
+                              classId={sheet.class.id}
+                              onChanged={loadSheet}
                             />
                           </td>
                         </tr>
@@ -975,9 +981,13 @@ function AmountCell({
 function PaymentAccordion({
   payments,
   finalAmount,
+  classId,
+  onChanged,
 }: {
   payments: FeePaymentDetail[];
   finalAmount: number;
+  classId: string;
+  onChanged: () => void | Promise<void>;
 }) {
   if (payments.length === 0) {
     return (
@@ -992,66 +1002,172 @@ function PaymentAccordion({
 
   return (
     <div className="space-y-2">
-      {payments.map((payment) => {
-        const tone =
-          payment.status === "CONFIRMED"
-            ? "border-emerald-200 bg-emerald-50"
-            : payment.status === "NEEDS_CLARIFICATION"
-            ? "border-rose-200 bg-rose-50"
-            : "border-amber-200 bg-amber-50";
+      {payments.map((payment) => (
+        <PaymentReviewCard
+          key={payment.id}
+          payment={payment}
+          classId={classId}
+          onChanged={onChanged}
+        />
+      ))}
+    </div>
+  );
+}
 
-        const label =
-          payment.status === "CONFIRMED"
-            ? "Confirmed"
-            : payment.status === "NEEDS_CLARIFICATION"
-            ? "Needs clarification"
-            : "Pending";
+function PaymentReviewCard({
+  payment,
+  classId,
+  onChanged,
+}: {
+  payment: FeePaymentDetail;
+  classId: string;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState<null | "CONFIRMED" | "NEEDS_CLARIFICATION">(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedback, setFeedback] = useState("");
 
-        return (
-          <div
-            key={payment.id}
-            className={`rounded-lg border px-3 py-2.5 text-xs ${tone}`}
+  const tone =
+    payment.status === "CONFIRMED"
+      ? "border-emerald-200 bg-emerald-50"
+      : payment.status === "NEEDS_CLARIFICATION"
+      ? "border-rose-200 bg-rose-50"
+      : "border-amber-200 bg-amber-50";
+
+  const label =
+    payment.status === "CONFIRMED"
+      ? "Confirmed"
+      : payment.status === "NEEDS_CLARIFICATION"
+      ? "Needs clarification"
+      : "Pending review";
+
+  async function act(status: "CONFIRMED" | "NEEDS_CLARIFICATION") {
+    if (status === "NEEDS_CLARIFICATION" && feedback.trim().length < 3) {
+      toast.error("Add a short note explaining what the student should fix.");
+      return;
+    }
+    setBusy(status);
+    try {
+      const res = await fetch(`/api/classes/${classId}/payments/${payment.id}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, feedback: feedback.trim() || undefined }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: { message?: string } };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? "Action failed.");
+      }
+      toast.success(status === "CONFIRMED" ? "Payment confirmed." : "Clarification requested.");
+      setShowFeedback(false);
+      setFeedback("");
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const canAct = payment.status !== "CONFIRMED";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 text-xs ${tone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-slate-900">{rupees(payment.amount)}</span>
+        <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+          {label}
+        </span>
+      </div>
+
+      <div className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+        <p className="text-slate-600">
+          Submitted: {formatStoredSriLankaDateTime(payment.submittedAt)}
+        </p>
+        {payment.confirmedAt ? (
+          <p className="text-slate-600">
+            Confirmed: {formatStoredSriLankaDateTime(payment.confirmedAt)}
+          </p>
+        ) : null}
+      </div>
+
+      {payment.note ? (
+        <p className="mt-1.5 text-slate-700">
+          <span className="font-semibold">Student note:</span> {payment.note}
+        </p>
+      ) : null}
+      {payment.teacherFeedback ? (
+        <p className="mt-0.5 text-slate-700">
+          <span className="font-semibold">Your feedback:</span> {payment.teacherFeedback}
+        </p>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {payment.hasSlip ? (
+          <a
+            href={`/api/payments/${payment.id}/slip`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-slate-900">
-                {rupees(payment.amount)}
-              </span>
-              <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                {label}
-              </span>
-            </div>
+            <FileText size={11} />
+            View slip <ExternalLink size={9} />
+          </a>
+        ) : (
+          <span className="text-[11px] text-slate-400">No slip attached</span>
+        )}
 
-            <div className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
-              <p className="text-slate-600">
-                Submitted: {formatStoredSriLankaDateTime(payment.submittedAt)}
-              </p>
-              {payment.confirmedAt ? (
-                <p className="text-slate-600">
-                  Confirmed: {formatStoredSriLankaDateTime(payment.confirmedAt)}
-                </p>
-              ) : null}
-              {payment.hasSlip ? (
-                <p className="inline-flex items-center gap-1 text-slate-600">
-                  <FileText size={11} />
-                  Slip attached
-                </p>
-              ) : null}
-            </div>
+        {canAct ? (
+          <>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void act("CONFIRMED")}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <CheckCircle2 size={11} />
+              {busy === "CONFIRMED" ? "Confirming…" : "Confirm payment"}
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => setShowFeedback((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-50"
+            >
+              <MessageCircleWarning size={11} />
+              Request clarification
+            </button>
+          </>
+        ) : null}
+      </div>
 
-            {payment.note ? (
-              <p className="mt-1.5 text-slate-700">
-                <span className="font-semibold">Note:</span> {payment.note}
-              </p>
-            ) : null}
-            {payment.teacherFeedback ? (
-              <p className="mt-0.5 text-slate-700">
-                <span className="font-semibold">Teacher feedback:</span>{" "}
-                {payment.teacherFeedback}
-              </p>
-            ) : null}
+      {showFeedback && canAct ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-white p-2">
+          <textarea
+            rows={2}
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            placeholder="What should the student correct or re-send?"
+            className="w-full resize-none rounded-md border border-amber-200 bg-white px-2 py-1 text-[11px] outline-none focus:border-amber-400"
+          />
+          <div className="mt-1 flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowFeedback(false)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void act("NEEDS_CLARIFICATION")}
+              className="rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {busy === "NEEDS_CLARIFICATION" ? "Sending…" : "Send request"}
+            </button>
           </div>
-        );
-      })}
+        </div>
+      ) : null}
     </div>
   );
 }

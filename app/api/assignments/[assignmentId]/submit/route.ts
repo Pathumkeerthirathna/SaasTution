@@ -5,6 +5,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { submitAssignmentSchema } from "@/lib/lecture-validation";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -218,6 +219,8 @@ export async function POST(
       assertPathInBounds(oldPath, root);
       await unlink(oldPath).catch(() => undefined);
     }
+
+    emitStudentDataChange({ studentId: studentSession.studentId });
 
     return apiSuccess({ submission }, { message: "Assignment submitted successfully.", status: 201 });
   } catch (error) {

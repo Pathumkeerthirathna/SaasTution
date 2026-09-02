@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -72,6 +73,29 @@ export async function GET(
 
     if (!note) {
       throw new AppError("Note not found.", 404, "NOTE_NOT_FOUND");
+    }
+
+    // Mark this note as viewed by the student (idempotent). Only signal a
+    // dashboard refresh when the row actually changed unviewed -> viewed.
+    try {
+      const existing = await prisma.noteStudent.findUnique({
+        where: { noteId_studentId: { noteId, studentId: session.studentId } },
+        select: { viewed: true },
+      });
+      if (!existing) {
+        await prisma.noteStudent.create({
+          data: { noteId, studentId: session.studentId, viewed: true, viewedAt: new Date() },
+        });
+        emitStudentDataChange({ studentId: session.studentId });
+      } else if (!existing.viewed) {
+        await prisma.noteStudent.update({
+          where: { noteId_studentId: { noteId, studentId: session.studentId } },
+          data: { viewed: true, viewedAt: new Date() },
+        });
+        emitStudentDataChange({ studentId: session.studentId });
+      }
+    } catch {
+      /* viewing the file must not fail on a tracking hiccup */
     }
 
     const { filePath, allowedRoot } = getFilePath(note.fileUrl);
