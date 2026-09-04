@@ -41,7 +41,9 @@ export async function GET(req: NextRequest) {
         where,
         include: {
           classSession: {
-            include: {
+            select: {
+              startedAt: true,
+              endedAt: true,
               class: { select: { id: true, name: true } },
               lecture: { select: { id: true, title: true } },
             },
@@ -56,8 +58,11 @@ export async function GET(req: NextRequest) {
     const records = rows.map((a) => ({
       id: a.id,
       classId: a.classId,
+      sessionId: a.classSessionId,
       className: a.classSession.class.name,
       lectureTitle: a.classSession.lecture?.title ?? null,
+      sessionStartedAt: a.classSession.startedAt.toISOString(),
+      sessionEndedAt: a.classSession.endedAt ? a.classSession.endedAt.toISOString() : null,
       joinedAt: a.joinedAt.toISOString(),
       leftAt: a.leftAt ? a.leftAt.toISOString() : null,
     }));

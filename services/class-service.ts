@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
@@ -518,7 +519,7 @@ export async function updateClassForTeacher(
     throw new AppError("Class not found.", 404, "CLASS_NOT_FOUND");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     if (input.schedules) {
       await tx.classSchedule.deleteMany({
         where: {
@@ -595,6 +596,11 @@ export async function updateClassForTeacher(
       },
     });
   });
+
+  // Realtime: name / fee / schedule edits show on the student's classes & calendar.
+  emitStudentDataChange({ classId });
+
+  return result;
 }
 
 export type ClassFeeHistoryEntry = {

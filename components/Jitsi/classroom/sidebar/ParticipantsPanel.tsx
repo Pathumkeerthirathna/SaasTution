@@ -171,45 +171,45 @@ console.log(absentStudents);
 
 
     return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3 text-slate-900">
 
       {/* PRESENT */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
 
         <div className="mb-2 flex shrink-0 items-center gap-2">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-[#22C55E]" />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
 
-          <h3 className="text-sm font-semibold text-[#F8FAFC]">
+          <h3 className="text-sm font-semibold text-slate-900">
             Present
           </h3>
 
-          <span className="text-xs text-[#94A3B8]">
-            {presentStudents?.length}
+          <span className="rounded-full bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700">
+            {presentStudents?.length ?? 0}
           </span>
         </div>
 
         <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           {presentStudents?.length === 0 ? (
-            <div className="rounded-lg bg-[#1E293B] p-2.5 text-center text-xs text-[#64748B]">
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-2.5 text-center text-xs text-slate-400">
               No students
             </div>
           ) : (
             presentStudents?.map((student) => (
               <div
                 key={student.studentId}
-                className="flex items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
+                className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2"
               >
                 {/* Learning / Present Icon */}
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-100">
                   <BookOpenCheck
                     size={14}
-                    className="text-emerald-400"
+                    className="text-emerald-700"
                   />
                 </div>
 
                 {/* Student */}
                 <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-[#F8FAFC]">
+                  <span className="block truncate text-sm font-medium text-slate-900">
                     {student.displayName}
                   </span>
                 </div>
@@ -221,19 +221,19 @@ console.log(absentStudents);
 
 
       {/* ABSENT */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
 
-        <div className="mb-2 flex shrink-0 items-center justify-between">
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
 
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
 
-            <h3 className="text-sm font-semibold text-[#F8FAFC]">
+            <h3 className="text-sm font-semibold text-slate-900">
               Absent
             </h3>
 
-            <span className="text-xs text-[#94A3B8]">
-              {absentStudents?.length}
+            <span className="rounded-full bg-red-100 px-1.5 text-xs font-semibold text-red-700">
+              {absentStudents?.length ?? 0}
             </span>
           </div>
 
@@ -260,7 +260,7 @@ console.log(absentStudents);
 
               setShowNotify(true);
             }}
-            className="flex items-center gap-1 rounded-full bg-[#1E293B] px-2.5 py-1 text-[11px] font-medium text-[#94A3B8] transition hover:bg-[#334155] hover:text-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Bell size={12} />
             Notify
@@ -270,26 +270,26 @@ console.log(absentStudents);
 
         <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           {absentStudents?.length === 0 ? (
-            <div className="rounded-lg bg-[#1E293B] p-2.5 text-center text-xs text-[#64748B]">
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-2.5 text-center text-xs text-slate-400">
               No students
             </div>
           ) : (
             absentStudents?.map((student) => (
               <div
                 key={student.studentId}
-                className="flex items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
+                className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2"
               >
                 {/* Absent Icon */}
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-500/10">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-100">
                   <UserRoundX
                     size={14}
-                    className="text-red-400"
+                    className="text-red-600"
                   />
                 </div>
 
                 {/* Student */}
                 <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-[#CBD5E1]">
+                  <span className="block truncate text-sm font-medium text-slate-600">
                     {student.displayName}
                   </span>
                 </div>
@@ -300,17 +300,17 @@ console.log(absentStudents);
       </div>
 
       {showNotify && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[#1E293B] bg-[#172033] p-5 shadow-2xl">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
 
             {/* Header */}
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-semibold text-[#F8FAFC]">
+                <h3 className="text-base font-semibold text-slate-900">
                   Notify Absent Students
                 </h3>
 
-                <p className="mt-1 text-xs text-[#94A3B8]">
+                <p className="mt-1 text-xs text-slate-500">
                   Send an email to the selected students below.
                 </p>
               </div>
@@ -318,7 +318,7 @@ console.log(absentStudents);
               <button
                 type="button"
                 onClick={() => setShowNotify(false)}
-                className="rounded-lg p-2 text-[#94A3B8] transition hover:bg-[#1E293B] hover:text-[#F8FAFC]"
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 <X size={16} />
               </button>
@@ -326,7 +326,7 @@ console.log(absentStudents);
 
             {/* Selected absent students */}
             <div className="mb-4">
-              <div className="mb-2 text-xs font-medium text-[#94A3B8]">
+              <div className="mb-2 text-xs font-medium text-slate-500">
                 {selectedAbsentIds.size} of {absentStudents?.length ?? 0} selected
               </div>
 
@@ -334,7 +334,7 @@ console.log(absentStudents);
                 {absentStudents?.map((student) => (
                   <label
                     key={student.studentId}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg bg-[#1E293B] px-2.5 py-2"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 hover:bg-slate-100"
                   >
                     <input
                       type="checkbox"
@@ -342,10 +342,10 @@ console.log(absentStudents);
                       onChange={() =>
                         toggleAbsentSelected(student.studentId)
                       }
-                      className="h-4 w-4 rounded border-[#334155] bg-[#0F172A] accent-[#3B82F6]"
+                      className="h-4 w-4 rounded border-slate-300 accent-[#3B82F6]"
                     />
 
-                    <span className="truncate text-sm text-[#F8FAFC]">
+                    <span className="truncate text-sm text-slate-800">
                       {student.displayName}
                     </span>
                   </label>
@@ -355,7 +355,7 @@ console.log(absentStudents);
 
             {/* Message */}
             <div className="mb-4">
-              <label className="mb-1.5 block text-xs font-medium text-[#94A3B8]">
+              <label className="mb-1.5 block text-xs font-medium text-slate-500">
                 Message
               </label>
 
@@ -363,7 +363,7 @@ console.log(absentStudents);
                 value={notifyMessage}
                 onChange={(e) => setNotifyMessage(e.target.value)}
                 rows={5}
-                className="w-full resize-none rounded-lg border border-[#1E293B] bg-[#0F172A] px-3 py-2 text-sm text-[#F8FAFC] outline-none focus:border-[#3B82F6]"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#3B82F6]"
               />
             </div>
 

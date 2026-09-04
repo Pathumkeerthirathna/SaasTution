@@ -43,7 +43,13 @@ export async function GET(req: NextRequest) {
         include: {
           message: {
             include: {
-              class: { select: { id: true, name: true } },
+              class: {
+                select: {
+                  id: true,
+                  name: true,
+                  teacher: { select: { name: true } },
+                },
+              },
             },
           },
         },
@@ -58,6 +64,7 @@ export async function GET(req: NextRequest) {
       messageId: d.messageId,
       classId: d.message.classId,
       className: d.message.class.name,
+      teacherName: d.message.class.teacher.name,
       content: d.message.content,
       sentAt: d.message.createdAt.toISOString(),
       status: d.status,

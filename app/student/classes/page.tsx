@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { StudentClassLiveBadge } from "@/components/student-portal/student-class-live-badge";
+import { RealtimeRefresh } from "@/components/student-portal/realtime-refresh";
 import {
   ClassBookBadge,
   getClassBookLabel,
@@ -116,7 +117,7 @@ export default async function StudentClassesPage() {
     return (
       <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg">
         {/* Header */}
-        <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-32 text-white`}>
+        <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 text-white sm:pr-32 ${live && !past ? "pr-16" : "pr-4"}`}>
           <div className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full ${theme.glow1} blur-2xl`} />
           <div className={`pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full ${theme.glow2} blur-2xl`} />
 
@@ -130,12 +131,15 @@ export default async function StudentClassesPage() {
             />
           ) : null}
 
-          <ClassBookBadge
-            label={bookLabel}
-            number={bookNumber}
-            bookGradient={theme.bookGradient}
-            numberColor={theme.numberColor}
-          />
+          {/* Decorative book emblem — hidden on small screens so it never crowds the class details */}
+          <div className="hidden sm:block">
+            <ClassBookBadge
+              label={bookLabel}
+              number={bookNumber}
+              bookGradient={theme.bookGradient}
+              numberColor={theme.numberColor}
+            />
+          </div>
 
           <div className="relative flex items-start gap-2">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 shadow-inner backdrop-blur">
@@ -144,7 +148,7 @@ export default async function StudentClassesPage() {
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <h3 className="truncate text-sm font-bold leading-tight tracking-tight text-white">
+                <h3 className="break-words text-sm font-bold leading-tight tracking-tight text-white sm:truncate">
                   {cls.name}
                 </h3>
                 <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border ${theme.badgeBorder} ${theme.badgeBg} px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${theme.badgeText}`}>
@@ -281,6 +285,7 @@ export default async function StudentClassesPage() {
 
   return (
     <>
+      <RealtimeRefresh events={["counts-stale", "sessions", "broadcasts"]} />
       <section>
         {enrollments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-brand-200 bg-white/70 p-6 text-sm text-slate-600">

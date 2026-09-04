@@ -40,6 +40,11 @@ export default function RightSidebar(props: RightSidebarProps) {
     activePanel as (typeof LECTURE_TOOL_PANELS)[number]
   );
 
+  // The teacher's "Class Register" (participants panel) is styled like the
+  // lecture tool panels: blue header, light body.
+  const isClassRegister =
+    props.role === "teacher" && activePanel === "participants";
+
   const handlePanelChange = (panel: string) => {
     setActivePanel((current) =>
       current === panel ? null : panel
@@ -81,9 +86,10 @@ export default function RightSidebar(props: RightSidebarProps) {
     return;
   }
 
-  // The lecture tool panels open their own modals/drawers outside this
-  // container — don't collapse the sidebar when the teacher interacts with them.
-  if (isLectureToolPanel) {
+  // The lecture tool panels (and the Class Register, whose "Notify" dialog is a
+  // full-screen overlay) open their own modals outside this container — don't
+  // collapse the sidebar when the teacher interacts with them.
+  if (isLectureToolPanel || isClassRegister) {
     return;
   }
 
@@ -112,7 +118,7 @@ export default function RightSidebar(props: RightSidebarProps) {
       );
     };
 
-  }, [activePanel, isLectureToolPanel]);
+  }, [activePanel, isLectureToolPanel, isClassRegister]);
 
 
 
@@ -131,7 +137,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           top-[80px]
           bottom-0
           z-40
-          ${isLectureToolPanel ? "w-[460px] max-w-[92vw]" : "w-[360px]"}
+          ${isLectureToolPanel || isClassRegister ? "w-[460px] max-w-[92vw]" : "w-[360px]"}
           overflow-hidden
           border-l
           border-[#1E293B]
@@ -195,6 +201,10 @@ export default function RightSidebar(props: RightSidebarProps) {
                 <p className="max-w-[300px] truncate text-[11px] text-[#94A3B8]">
                   {props.lectureTitle}
                 </p>
+              ) : isClassRegister && props.className ? (
+                <p className="max-w-[300px] truncate text-[11px] text-[#94A3B8]">
+                  {props.className}
+                </p>
               ) : null}
             </div>
 
@@ -215,7 +225,11 @@ export default function RightSidebar(props: RightSidebarProps) {
 
         <div
           className={`h-[calc(100%-72px)] ${
-            isLectureToolPanel ? "overflow-y-auto scrollbar-thin bg-white" : "overflow-hidden p-3"
+            isLectureToolPanel
+              ? "overflow-y-auto scrollbar-thin bg-white"
+              : isClassRegister
+                ? "overflow-hidden bg-white p-3 text-slate-900"
+                : "overflow-hidden p-3"
           }`}
         >
 

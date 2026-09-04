@@ -72,8 +72,14 @@ export function StudentSidebar({ items, activePath, open, onClose, onToggle }: S
         </div>
 
         {/* Brand header */}
-        <div className="relative z-10 flex items-center justify-between border-b border-white/[0.12] px-4 py-4 lg:px-4">
-          <div className={`flex items-center gap-2.5 ${open ? "" : "lg:justify-center"}`}>
+        <div
+          className={`relative z-10 flex border-b border-white/[0.12] px-4 py-4 ${
+            open
+              ? "items-center justify-between gap-2"
+              : "items-center justify-between gap-2 lg:flex-col lg:gap-3"
+          }`}
+        >
+          <div className={`flex min-w-0 items-center gap-2.5 ${open ? "" : "lg:justify-center"}`}>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-emerald-700 shadow-sm">
               <GraduationCap size={17} strokeWidth={1.75} />
             </div>
@@ -85,7 +91,7 @@ export function StudentSidebar({ items, activePath, open, onClose, onToggle }: S
           <button
             type="button"
             onClick={onToggle}
-            className="rounded-lg p-1 text-white/45 hover:bg-white/[0.06] hover:text-white/80"
+            className="shrink-0 rounded-lg p-1 text-white/45 hover:bg-white/[0.06] hover:text-white/80"
             aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
           >
             {open ? <X size={18} /> : <ChevronRight size={18} />}

@@ -83,15 +83,8 @@ function createTransport() {
   const user = process.env.SMTP_USER?.trim();
   const pass = process.env.SMTP_PASS?.trim();
   const secureValue = process.env.SMTP_SECURE?.trim().toLowerCase();
+  // Implicit TLS on 465; STARTTLS (secure:false) on 587/25 unless SMTP_SECURE says otherwise.
   const secure = secureValue ? secureValue === "true" : port === 465;
-
-  console.log("SMTP Config:", {
-    host,
-    port,
-    secure,
-    user,
-    from: process.env.SMTP_FROM,
-  });
 
   if (!host || !user || !pass) {
     console.error("SMTP configuration is incomplete.");
@@ -101,13 +94,11 @@ function createTransport() {
   return nodemailer.createTransport({
     host,
     port,
-    secure:true,
+    secure,
     auth: {
       user,
       pass,
     },
-    logger: true,
-    debug: true,
   });
 }
 

@@ -154,6 +154,7 @@ function CardShell({
   icon,
   iconClass,
   title,
+  headerHref,
   preset,
   onPreset,
   children,
@@ -161,17 +162,29 @@ function CardShell({
   icon: React.ReactNode;
   iconClass: string;
   title: string;
+  headerHref?: string;
   preset: Preset;
   onPreset: (v: Preset) => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-3">
-        <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
-          <span className={iconClass}>{icon}</span>
-          {title}
-        </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 sm:px-5">
+        {headerHref ? (
+          <Link
+            href={headerHref}
+            className="group inline-flex items-center gap-1.5 text-sm font-bold text-foreground hover:text-emerald-700"
+          >
+            <span className={iconClass}>{icon}</span>
+            {title}
+            <ArrowUpRight size={13} className="text-slate-300 group-hover:text-emerald-600" />
+          </Link>
+        ) : (
+          <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
+            <span className={iconClass}>{icon}</span>
+            {title}
+          </h2>
+        )}
         <Chips value={preset} onChange={onPreset} />
       </div>
       <div className="p-3">{children}</div>
@@ -313,6 +326,7 @@ export function DashboardAgenda() {
           icon={<CalendarClock size={14} className="text-emerald-600" />}
           iconClass=""
           title="Schedule"
+          headerHref="/student/lectures?scheduled=1"
           preset={schedPreset}
           onPreset={setSchedPreset}
         >
@@ -345,7 +359,7 @@ export function DashboardAgenda() {
                         </span>
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">{e.className}</p>
+                        <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{e.className}</p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
                           <span className="inline-flex items-center gap-1">
                             <Clock size={10} />
@@ -380,6 +394,7 @@ export function DashboardAgenda() {
           icon={<ScrollText size={14} className="text-violet-600" />}
           iconClass=""
           title="Papers scheduled"
+          headerHref="/student/papers"
           preset={papersPreset}
           onPreset={setPapersPreset}
         >
@@ -394,7 +409,7 @@ export function DashboardAgenda() {
                 return (
                   <li key={p.paperId}>
                     <Link
-                      href={`/student/papers?classId=${p.classId}`}
+                      href={`/student/papers?classId=${p.classId}&focus=${p.paperId}`}
                       className={`flex items-start gap-3 rounded-lg border p-2.5 transition-colors hover:bg-violet-50/40 ${
                         p.submitted ? "border-emerald-200" : "border-violet-200"
                       }`}
@@ -407,8 +422,8 @@ export function DashboardAgenda() {
                         {p.submitted ? <CheckCircle2 size={15} /> : <ScrollText size={15} />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">{p.name}</p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">{p.className}</p>
+                        <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{p.name}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">{p.className}</p>
                         <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 text-[11px] font-medium">
                           <CalendarClock size={10} className="text-slate-400" />
                           <span className="text-slate-500">
@@ -441,6 +456,7 @@ export function DashboardAgenda() {
           icon={<ClipboardList size={14} className="text-sky-600" />}
           iconClass=""
           title="Assignments due"
+          headerHref="/student/assignments?due=1"
           preset={duePreset}
           onPreset={setDuePreset}
         >
@@ -455,7 +471,7 @@ export function DashboardAgenda() {
                 return (
                   <li key={a.id}>
                     <Link
-                      href={`/student/assignments?classId=${a.classId}&lectureId=${a.lectureId}&due=1`}
+                      href={`/student/assignments?classId=${a.classId}&lectureId=${a.lectureId}&due=1&focus=${a.id}`}
                       className={`flex items-start gap-3 rounded-lg border p-2.5 transition-colors hover:bg-sky-50/40 ${
                         a.submitted ? "border-emerald-200" : overdue ? "border-rose-200" : "border-slate-200"
                       }`}
@@ -472,8 +488,8 @@ export function DashboardAgenda() {
                         {a.submitted ? <CheckCircle2 size={15} /> : <ClipboardList size={15} />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">{a.title}</p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                        <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{a.title}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">
                           {a.className} · {a.lectureTitle}
                         </p>
                         <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 text-[11px] font-medium">
@@ -503,6 +519,7 @@ export function DashboardAgenda() {
           icon={<HelpCircle size={14} className="text-indigo-600" />}
           iconClass=""
           title="Quizzes scheduled"
+          headerHref="/student/quizzes?todo=1"
           preset={quizzesPreset}
           onPreset={setQuizzesPreset}
         >
@@ -521,7 +538,7 @@ export function DashboardAgenda() {
                 return (
                   <li key={q.id}>
                     <Link
-                      href={`/student/quizzes?classId=${q.classId}&lectureId=${q.lectureId}&todo=1`}
+                      href={`/student/quizzes?classId=${q.classId}&lectureId=${q.lectureId}&todo=1&focus=${q.id}`}
                       className={`flex items-start gap-3 rounded-lg border p-2.5 transition-colors hover:bg-indigo-50/40 ${
                         q.attempted ? "border-emerald-200" : missed ? "border-rose-200" : "border-indigo-200"
                       }`}
@@ -538,8 +555,8 @@ export function DashboardAgenda() {
                         {q.attempted ? <CheckCircle2 size={15} /> : <HelpCircle size={15} />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">{q.title}</p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">{q.className}</p>
+                        <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{q.title}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">{q.className}</p>
                         <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 text-[11px] font-medium">
                           <CalendarClock size={10} className="text-slate-400" />
                           <span className="text-slate-500">

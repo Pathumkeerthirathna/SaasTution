@@ -8,11 +8,23 @@ const content = z
   .min(1, "Message content is required.")
   .max(2000, "Message content must be at most 2000 characters long.");
 
-export const bulkMessageSchema = z.object({
-  classId,
-  content,
-  channel: z.enum(["email", "whatsapp"]).default("email"),
-});
+const channel = z.enum(["email", "whatsapp"]);
+
+export const bulkMessageSchema = z
+  .object({
+    classId,
+    content,
+    // Outbound channels on top of the always-on in-app delivery. An empty list
+    // (or nothing at all) means "post in the app only". Legacy callers may still
+    // send a single `channel` string.
+    channels: z.array(channel).optional(),
+    channel: channel.optional(),
+  })
+  .transform((value) => ({
+    classId: value.classId,
+    content: value.content,
+    channels: value.channels ?? (value.channel ? [value.channel] : []),
+  }));
 
 export const listMessagesQuerySchema = z.object({
   classId,

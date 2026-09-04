@@ -2,7 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { bulkMessageSchema } from "@/lib/message-validation";
-import { sendMessageToClassStudents } from "@/services/message-service";
+import { sendClassMessage } from "@/services/message-service";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       classId?: string;
       content?: string;
       channel?: string;
+      channels?: string[];
     };
 
     const parsed = bulkMessageSchema.safeParse(body);
@@ -22,16 +23,16 @@ export async function POST(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    const result = await sendMessageToClassStudents({
+    const result = await sendClassMessage({
       teacherId: session.teacherId,
       classId: parsed.data.classId,
       content: parsed.data.content,
-      channel: parsed.data.channel,
+      channels: parsed.data.channels,
     });
 
     return apiSuccess(result, {
       status: 201,
-      message: "Message sent to class students and saved successfully.",
+      message: "Message saved and sent to class students.",
     });
   } catch (error) {
     return handleRouteError(error);

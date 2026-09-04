@@ -73,7 +73,7 @@ export function DashboardCountdowns({ items }: { items: CountdownItem[] }) {
 
   return (
     <section className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
-      <div className="flex items-center gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-3">
+      <div className="flex items-center gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 sm:px-5">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
           <Hourglass size={14} />
         </span>
@@ -100,11 +100,11 @@ export function DashboardCountdowns({ items }: { items: CountdownItem[] }) {
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                    <p className="text-sm font-semibold text-foreground break-words sm:truncate">
                       <span className="font-normal text-muted">{item.message} </span>
                       {item.title}
                     </p>
-                    <p className="truncate text-[11px] text-muted">{item.subtitle}</p>
+                    <p className="text-[11px] text-muted break-words sm:truncate">{item.subtitle}</p>
                   </div>
 
                   <span

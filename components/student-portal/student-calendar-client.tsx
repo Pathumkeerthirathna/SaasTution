@@ -12,6 +12,8 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
+
 type CalendarEntry = {
   key: string;
   date: string;
@@ -100,6 +102,9 @@ export function StudentCalendarClient() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Realtime: re-pull the visible month whenever a lecture/schedule change is signalled.
+  useStudentLiveRefetch(() => void load());
 
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
@@ -190,8 +195,9 @@ export function StudentCalendarClient() {
         </span>
       </div>
 
-      {/* Grid */}
-      <div className="overflow-hidden rounded-lg border border-slate-200">
+      {/* Grid — scrolls horizontally on small screens so every day cell stays readable */}
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <div className="min-w-[640px] sm:min-w-0">
         <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[10px] font-bold uppercase tracking-wide text-slate-500">
           {WEEKDAYS.map((d) => (
             <div key={d} className="py-1.5">
@@ -258,6 +264,7 @@ export function StudentCalendarClient() {
               </button>
             );
           })}
+        </div>
         </div>
       </div>
 

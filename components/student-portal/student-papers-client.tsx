@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 
 import { dashRangeToYmd, isDashRange, type DashRange } from "@/lib/dashboard-range";
+import { focusElementId, useFocusHighlight } from "@/components/student-portal/use-focus-highlight";
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 
 const PERIODS: { value: DashRange; label: string }[] = [
   { value: "all", label: "All time" },
@@ -96,6 +98,9 @@ export function StudentPapersClient() {
     void load(classId);
   }, [classId, load]);
 
+  // Realtime: refresh papers whenever a paper is added/updated or a submission is marked.
+  useStudentLiveRefetch(() => void load(classId));
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
@@ -158,6 +163,8 @@ export function StudentPapersClient() {
   }, [data, period, pendingOnly]);
 
   const hasFilter = Boolean(classId) || period !== "all" || pendingOnly;
+
+  useFocusHighlight(!isLoading && visiblePapers.length > 0);
 
   return (
     <>
@@ -242,7 +249,8 @@ export function StudentPapersClient() {
             return (
               <article
                 key={paper.paperId}
-                className={`rounded-lg border bg-white p-3 ${
+                id={focusElementId(paper.paperId)}
+                className={`scroll-mt-24 rounded-lg border bg-white p-3 transition-shadow ${
                   paper.marks != null
                     ? "border-emerald-200"
                     : phase === "open"
@@ -255,7 +263,7 @@ export function StudentPapersClient() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <h3 className="truncate text-sm font-semibold text-slate-900">{paper.name}</h3>
+                      <h3 className="text-sm font-semibold text-slate-900 break-words sm:truncate">{paper.name}</h3>
                       <span
                         className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
                           phase === "open"
@@ -374,7 +382,7 @@ export function StudentPapersClient() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <form
               onSubmit={handleSubmit}
-              className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl"
             >
               <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <div className="min-w-0">

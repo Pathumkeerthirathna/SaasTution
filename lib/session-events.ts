@@ -41,7 +41,13 @@ export function subscribeSessionAttendanceEvents(
       return;
     }
 
-    listener(payload);
+    // A single broken SSE stream must never break the emit for the other
+    // subscribers or throw back into the mutation that triggered it.
+    try {
+      listener(payload);
+    } catch {
+      /* ignore a failing subscriber */
+    }
   };
 
   sessionEventBus.on(SESSION_ATTENDANCE_EVENT, wrappedListener);
@@ -84,9 +90,16 @@ export function emitLiveChange(
 }
 
 export function subscribeLiveChanges(listener: (payload: LiveChangePayload) => void) {
-  sessionEventBus.on(LIVE_CHANGE_EVENT, listener);
+  const safeListener = (payload: LiveChangePayload) => {
+    try {
+      listener(payload);
+    } catch {
+      /* one broken SSE stream must not break the fan-out for the others */
+    }
+  };
+  sessionEventBus.on(LIVE_CHANGE_EVENT, safeListener);
   return () => {
-    sessionEventBus.off(LIVE_CHANGE_EVENT, listener);
+    sessionEventBus.off(LIVE_CHANGE_EVENT, safeListener);
   };
 }
 
@@ -120,8 +133,15 @@ export function emitStudentDataChange(
 export function subscribeStudentDataChanges(
   listener: (payload: StudentDataChangePayload) => void
 ) {
-  sessionEventBus.on(STUDENT_DATA_CHANGE_EVENT, listener);
+  const safeListener = (payload: StudentDataChangePayload) => {
+    try {
+      listener(payload);
+    } catch {
+      /* one broken SSE stream must not break the fan-out for the others */
+    }
+  };
+  sessionEventBus.on(STUDENT_DATA_CHANGE_EVENT, safeListener);
   return () => {
-    sessionEventBus.off(STUDENT_DATA_CHANGE_EVENT, listener);
+    sessionEventBus.off(STUDENT_DATA_CHANGE_EVENT, safeListener);
   };
 }

@@ -54,7 +54,7 @@ export function PaperCountdownList({ items }: PaperCountdownListProps) {
   }
 
   return (
-    <section className="rounded-3xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm sm:p-6">
+    <section className="rounded-3xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-900">Paper countdown</h2>
         <span className="rounded-full bg-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
@@ -67,11 +67,11 @@ export function PaperCountdownList({ items }: PaperCountdownListProps) {
         {activeItems.map((item) => (
           <article key={item.itemId} className="rounded-xl border border-amber-200 bg-white p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900">{item.itemTitle}</p>
                 <p className="text-xs text-slate-600">{item.className} • {item.bundleTitle}</p>
               </div>
-              <p className="rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-semibold text-white">
+              <p className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-semibold tabular-nums text-white">
                 {formatDuration(item.remainingMs)}
               </p>
             </div>

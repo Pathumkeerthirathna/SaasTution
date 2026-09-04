@@ -15,6 +15,9 @@ import {
   ExternalLink,
 } from "lucide-react";
 
+import { focusElementId, useFocusHighlight } from "@/components/student-portal/use-focus-highlight";
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
+
 type PaymentState = "UNPAID" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID";
 
 type PaymentInfo = {
@@ -49,6 +52,16 @@ type FeeItem = {
 type ClassOption = { id: string; name: string };
 type Data = { toPay: FeeItem[]; inReview: FeeItem[]; paid: FeeItem[]; classes: ClassOption[] };
 
+type SectionKey = "toPay" | "inReview" | "paid";
+const SECTION_LABELS: Record<SectionKey, string> = {
+  toPay: "To pay",
+  inReview: "Awaiting confirmation",
+  paid: "Paid",
+};
+function isSectionKey(value: string | null): value is SectionKey {
+  return value === "toPay" || value === "inReview" || value === "paid";
+}
+
 const rs = (n: number) => `Rs ${n.toLocaleString()}`;
 
 function monthLabel(year: number, month: number) {
@@ -81,6 +94,10 @@ export function StudentPaymentsClient() {
   const searchParams = useSearchParams();
 
   const [classId, setClassId] = useState(() => searchParams.get("classId") ?? "");
+  const [sectionFilter, setSectionFilter] = useState<SectionKey | null>(() => {
+    const f = searchParams.get("filter");
+    return isSectionKey(f) ? f : null;
+  });
   const [data, setData] = useState<Data | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +128,9 @@ export function StudentPaymentsClient() {
   useEffect(() => {
     void load(classId);
   }, [classId, load]);
+
+  // Realtime: refresh dues whenever a fee is assigned or a payment is submitted/confirmed.
+  useStudentLiveRefetch(() => void load(classId));
 
   useEffect(() => {
     if (!toast) return;
@@ -201,6 +221,12 @@ export function StudentPaymentsClient() {
     [data]
   );
 
+  const visibleSections = sectionFilter
+    ? sections.filter((s) => s.key === sectionFilter)
+    : sections;
+
+  useFocusHighlight(!isLoading && data != null);
+
   return (
     <>
       {/* Filter */}
@@ -220,6 +246,16 @@ export function StudentPaymentsClient() {
             ))}
           </select>
         </div>
+        {sectionFilter ? (
+          <button
+            type="button"
+            onClick={() => setSectionFilter(null)}
+            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            {SECTION_LABELS[sectionFilter]} only
+            <X size={12} />
+          </button>
+        ) : null}
         {classId ? (
           <button
             type="button"
@@ -247,7 +283,14 @@ export function StudentPaymentsClient() {
         </div>
       ) : (
         <div className="space-y-5">
-          {sections.map((section) =>
+          {visibleSections.every((s) => s.items.length === 0) ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-600">
+              {sectionFilter
+                ? `Nothing in "${SECTION_LABELS[sectionFilter]}" right now.`
+                : "No fees match the current filters."}
+            </div>
+          ) : null}
+          {visibleSections.map((section) =>
             section.items.length === 0 ? null : (
               <div key={section.key}>
                 <div className="mb-2 flex items-center gap-1.5">
@@ -281,7 +324,7 @@ export function StudentPaymentsClient() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <form
               onSubmit={handleSubmit}
-              className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl"
             >
               <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <div className="min-w-0">
@@ -432,7 +475,8 @@ function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) 
 
   return (
     <article
-      className={`rounded-lg border bg-white p-3 ${
+      id={focusElementId(fee.feeId)}
+      className={`scroll-mt-24 rounded-lg border bg-white p-3 transition-shadow ${
         fee.state === "ACTION_NEEDED"
           ? "border-rose-200"
           : paid
@@ -440,9 +484,9 @@ function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) 
             : "border-slate-200"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-slate-900">
+          <h3 className="text-sm font-semibold text-slate-900 break-words sm:truncate">
             {fee.className}
             <span className="ml-1.5 font-normal text-slate-400">· {monthLabel(fee.year, fee.month)}</span>
           </h3>

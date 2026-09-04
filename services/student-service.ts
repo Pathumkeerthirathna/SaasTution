@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
@@ -282,6 +283,9 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
 
       return assignment;
     });
+
+    // Realtime: the student's "My Classes" page should show this class immediately.
+    emitStudentDataChange({ studentId });
 
     return {
       ...record,
@@ -901,7 +905,7 @@ export async function removeStudentFromClassForTeacher(params: {
   //   },
   // });
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const removedAt = nowInSriLanka();
 
     const assignment = await tx.classStudent.update({
@@ -936,6 +940,10 @@ export async function removeStudentFromClassForTeacher(params: {
     return assignment;
   });
 
+  // Realtime: the student's "My Classes" page should drop this class immediately.
+  emitStudentDataChange({ studentId: params.studentId });
+
+  return result;
 }
 
 export async function addGuardianForTeacher(teacherId: string, input: CreateGuardianInput) {

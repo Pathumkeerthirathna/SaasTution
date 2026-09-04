@@ -117,7 +117,7 @@ export function LiveDashboardSection({
       <LiveBroadcastCard broadcasts={broadcasts} tone="emerald" heading="Live class streaming now" />
 
       {sessions.length > 0 && (
-        <section className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 to-white p-5 shadow-card">
+        <section className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 to-white p-4 shadow-card sm:p-5">
           <div className="mb-3 flex items-center gap-2">
             <span className="relative flex h-3 w-3">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -156,7 +156,7 @@ export function LiveDashboardSection({
 
       {/* Overview counts — realtime via the same SSE stream */}
       <section className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 sm:px-5">
           <div>
             <h2 className="text-sm font-bold text-foreground">Your overview</h2>
             <p className="text-[11px] text-muted">Engagement across your classes{countsLoading ? " · updating…" : ""}</p>

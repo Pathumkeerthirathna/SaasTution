@@ -1,10 +1,11 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Menu, LogOut, ChevronDown, Hash } from "lucide-react";
 
 import { StudentSidebar } from "@/components/student-portal/student-sidebar";
+import { StudentMessageBell } from "@/components/student-portal/student-message-bell";
 import { studentNavItems } from "@/components/student-portal/student-data";
 
 type StudentShellProps = {
@@ -26,6 +27,22 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  // On desktop (lg+) the sidebar is a persistent rail — start it expanded so every
+  // nav label is visible. On smaller screens it stays a closed off-canvas drawer.
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      setIsSidebarOpen(true);
+    }
+  }, []);
+
+  // After navigating on a small screen, close the drawer so it never sits on top
+  // of the page. On desktop this is a no-op (the rail is not an overlay).
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setIsSidebarOpen(false);
+    }
+  }, [pathname]);
 
   const activePath = useMemo(() => {
     if (!pathname) return "/student/dashboard";
@@ -59,7 +76,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-brand-200 bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-brand-200 bg-white/90 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6">
           {/* decorative curved sweep, right side — muted emerald → muted gold */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
             <svg
@@ -86,24 +103,27 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
             </svg>
           </div>
 
-          <div className="relative flex items-center gap-3">
+          <div className="relative flex min-w-0 flex-1 items-center gap-3">
             <button
               type="button"
               aria-label="Toggle sidebar"
               onClick={() => setIsSidebarOpen(true)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-brand-200 bg-white text-slate-600 hover:bg-brand-50 lg:hidden"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand-200 bg-white text-slate-600 hover:bg-brand-50 lg:hidden"
             >
               <Menu size={18} />
             </button>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-widest text-brand-600">Student Portal</p>
-              <p className="text-sm font-semibold text-foreground">
+              <p className="truncate text-sm font-semibold text-foreground">
                 Good day, <span className="font-semibold text-brand-700">{studentName.split(" ")[0]}</span>
               </p>
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative flex shrink-0 items-center gap-2.5">
+            <StudentMessageBell />
+
+            <div className="relative">
             <button
               type="button"
               onClick={() => setIsProfileOpen((prev) => !prev)}
@@ -122,7 +142,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
             </button>
 
             {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-brand-200 bg-white p-4 shadow-panel">
+              <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-brand-200 bg-white p-4 shadow-panel">
                 <div className="flex items-center gap-3 pb-3 border-b border-brand-100">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-base font-bold text-white flex-shrink-0">
                     {getInitials(studentName)}
@@ -151,6 +171,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                 </div>
               </div>
             )}
+            </div>
           </div>
         </header>
 

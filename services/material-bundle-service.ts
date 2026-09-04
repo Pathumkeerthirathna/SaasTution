@@ -1,6 +1,7 @@
 import { AppError } from "@/lib/error-handler";
 import { removeBundleItemFile } from "@/lib/material-bundle-file";
 import { prisma } from "@/lib/prisma";
+import { emitStudentDataChange } from "@/lib/session-events";
 import type {
   CreateMaterialBundleInput,
   CreateMaterialBundleItemInput,
@@ -70,6 +71,7 @@ async function assertTeacherOwnsBundleItem(teacherId: string, bundleId: string, 
       bundleId: true,
       type: true,
       fileUrl: true,
+      bundle: { select: { classId: true, bundleStatus: true } },
     },
   });
 
@@ -206,9 +208,9 @@ export async function updateMaterialBundleForTeacher(
   bundleId: string,
   input: UpdateMaterialBundleInput
 ) {
-  await assertTeacherOwnsBundle(teacherId, bundleId);
+  const existing = await assertTeacherOwnsBundle(teacherId, bundleId);
 
-  return prisma.materialBundle.update({
+  const result = await prisma.materialBundle.update({
     where: {
       id: bundleId,
     },
@@ -234,10 +236,17 @@ export async function updateMaterialBundleForTeacher(
       createdAt: true,
     },
   });
+
+  // Notify students if this bundle is (or just became) visible to them.
+  if (existing.bundleStatus === "SENT" || result.bundleStatus === "SENT") {
+    emitStudentDataChange({ classId: result.classId });
+  }
+
+  return result;
 }
 
 export async function deleteMaterialBundleForTeacher(teacherId: string, bundleId: string) {
-  await assertTeacherOwnsBundle(teacherId, bundleId);
+  const bundle = await assertTeacherOwnsBundle(teacherId, bundleId);
 
   // Soft delete: status 1 hides the bundle (and its items) everywhere while
   // keeping the row and its files intact.
@@ -249,6 +258,10 @@ export async function deleteMaterialBundleForTeacher(teacherId: string, bundleId
       status: 1,
     },
   });
+
+  if (bundle.bundleStatus === "SENT") {
+    emitStudentDataChange({ classId: bundle.classId });
+  }
 }
 
 export async function getMaterialBundleDetailsForTeacher(teacherId: string, bundleId: string) {
@@ -395,9 +408,9 @@ export async function addMaterialBundleItemForTeacher(params: {
     sizeBytes: number;
   };
 }) {
-  await assertTeacherOwnsBundle(params.teacherId, params.bundleId);
+  const bundle = await assertTeacherOwnsBundle(params.teacherId, params.bundleId);
 
-  return prisma.materialBundleItem.create({
+  const created = await prisma.materialBundleItem.create({
     data: {
       bundleId: params.bundleId,
       type: params.input.type,
@@ -425,6 +438,12 @@ export async function addMaterialBundleItemForTeacher(params: {
       createdAt: true,
     },
   });
+
+  if (bundle.bundleStatus === "SENT") {
+    emitStudentDataChange({ classId: bundle.classId });
+  }
+
+  return created;
 }
 
 export async function updateMaterialBundleItemForTeacher(
@@ -483,11 +502,15 @@ export async function updateMaterialBundleItemForTeacher(
     await removeBundleItemFile(item.fileUrl);
   }
 
+  if (item.bundle.bundleStatus === "SENT") {
+    emitStudentDataChange({ classId: item.bundle.classId });
+  }
+
   return updated;
 }
 
 export async function deleteMaterialBundleItemForTeacher(teacherId: string, bundleId: string, itemId: string) {
-  await assertTeacherOwnsBundleItem(teacherId, bundleId, itemId);
+  const item = await assertTeacherOwnsBundleItem(teacherId, bundleId, itemId);
 
   // Soft delete — keep the row, its file, and any submissions.
   await prisma.materialBundleItem.update({
@@ -498,6 +521,10 @@ export async function deleteMaterialBundleItemForTeacher(teacherId: string, bund
       status: 1,
     },
   });
+
+  if (item.bundle.bundleStatus === "SENT") {
+    emitStudentDataChange({ classId: item.bundle.classId });
+  }
 }
 
 export async function saveMaterialBundleRecipientsForTeacher(
@@ -565,6 +592,9 @@ export async function saveMaterialBundleRecipientsForTeacher(
       },
     });
   });
+
+  // The bundle is now visible to its recipients — push it to their open pages.
+  emitStudentDataChange({ classId: bundle.classId });
 
   return getMaterialBundleDetailsForTeacher(teacherId, bundleId);
 }

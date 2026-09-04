@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 
 export type EnrolmentPeriod = {
@@ -730,6 +731,9 @@ export async function setMonthlyFeeAmount(params: {
         })
       )
     );
+
+    // Realtime: the affected students' payment pages should reflect the new amount.
+    emitStudentDataChange({ classId });
   }
 
   return buildReadOnlySheet(classInfo, year, month);
@@ -793,6 +797,7 @@ export async function updateStudentFeeAdjustment(params: {
       lateJoinDeduct: true,
       waiverAmount: true,
       payments: { select: { status: true } },
+      classStudent: { select: { classId: true } },
     },
   });
 
@@ -843,6 +848,9 @@ export async function updateStudentFeeAdjustment(params: {
       finalAmount: true,
     },
   });
+
+  // Realtime: the student's payment page should reflect the new adjustment.
+  emitStudentDataChange({ classId: fee.classStudent.classId });
 
   return updated;
 }

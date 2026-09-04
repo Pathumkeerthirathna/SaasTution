@@ -101,7 +101,7 @@ export function LiveBroadcastCard({
       className={`overflow-hidden rounded-2xl border-2 shadow-panel ${t.section}`}
     >
       <div
-        className={`flex items-center gap-3 border-b px-5 py-4 ${t.header}`}
+        className={`flex items-center gap-3 border-b px-4 py-4 sm:px-5 ${t.header}`}
       >
         <span className="relative flex h-3 w-3">
           <span
@@ -119,7 +119,7 @@ export function LiveBroadcastCard({
         </h2>
       </div>
 
-      <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
         {broadcastsToShow.map((broadcast) => {
           const elapsed = mounted ? formatElapsed(broadcast.startedAt) : null;
           const startedClock = formatStartTime(broadcast.startedAt);
@@ -133,10 +133,10 @@ export function LiveBroadcastCard({
                   <p className={`text-[11px] font-semibold uppercase tracking-wide opacity-70 ${t.title}`}>
                     Live streaming started
                   </p>
-                  <p className={`mt-0.5 truncate font-bold ${t.title}`}>
+                  <p className={`mt-0.5 break-words font-bold sm:truncate ${t.title}`}>
                     {broadcast.className}
                   </p>
-                  <p className="truncate text-xs text-muted">
+                  <p className="break-words text-xs text-muted sm:truncate">
                     Lecture: {broadcast.lectureTitle}
                   </p>
                 </div>

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { AssignmentSubmitButton } from "@/components/student-portal/assignment-submit-button";
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 import { dashRangeToYmd } from "@/lib/dashboard-range";
 
 type ClassOption = { id: string; name: string };
@@ -289,6 +290,26 @@ export function LectureListClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId, range.from, range.to, page, scheduledOnly, unviewedNotesOnly, missedOnly, fetchItems]);
 
+  // Realtime: a teacher adding/removing a lecture, note, assignment or quiz signals
+  // `counts-stale`; re-pull the list (and the open panel's detail) with current filters.
+  useStudentLiveRefetch(() => {
+    void fetchItems(reqRef.current);
+    const openId = panelLectureId;
+    if (openId) {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/student/lectures/${openId}`, { cache: "no-store" });
+          const payload = (await res.json()) as { success: boolean; data?: { lecture: LectureDetail } };
+          if (res.ok && payload.success && payload.data) {
+            setDetailByLecture((prev) => ({ ...prev, [openId]: payload.data!.lecture }));
+          }
+        } catch {
+          /* keep the cached detail on failure */
+        }
+      })();
+    }
+  });
+
   const ensureDetail = useCallback(
     async (lectureId: string) => {
       if (detailByLecture[lectureId]) return detailByLecture[lectureId];
@@ -525,10 +546,10 @@ export function LectureListClient() {
                     <CalendarClock size={16} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="truncate text-sm font-semibold text-slate-800">{item.className}</h3>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <h3 className="text-sm font-semibold text-slate-800 break-words sm:truncate">{item.className}</h3>
                           <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
                             No lecture yet
                           </span>
@@ -570,10 +591,10 @@ export function LectureListClient() {
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <h3 className="truncate text-sm font-semibold text-slate-900">{item.title}</h3>
+                          <h3 className="text-sm font-semibold text-slate-900 break-words sm:truncate">{item.title}</h3>
                           {upcoming ? (
                             <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
                               Upcoming
@@ -584,7 +605,7 @@ export function LectureListClient() {
                             </span>
                           ) : null}
                         </div>
-                        <p className="truncate text-xs text-slate-500">
+                        <p className="text-xs text-slate-500 break-words sm:truncate">
                           {item.className}
                           {timeLabel ? (
                             <span className="text-slate-400"> · {timeLabel}</span>
@@ -763,7 +784,7 @@ export function LectureListClient() {
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 {panelDetail.className}
               </p>
-              <h2 className="mt-0.5 truncate text-sm font-semibold text-slate-900">{panelDetail.title}</h2>
+              <h2 className="mt-0.5 text-sm font-semibold text-slate-900 break-words sm:truncate">{panelDetail.title}</h2>
               <p className="text-xs text-slate-500">{formatLectureDate(panelDetail.date)}</p>
             </div>
           ) : (
@@ -833,7 +854,7 @@ export function LectureListClient() {
                           {note.kind === "NOTE" ? "Note" : "Material"}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-medium text-slate-900">{note.title}</p>
+                          <p className="text-xs font-medium text-slate-900 break-words sm:truncate">{note.title}</p>
                           <p className="text-[10px] text-slate-500">{formatBytes(note.sizeBytes)}</p>
                         </div>
                       </div>
@@ -863,8 +884,8 @@ export function LectureListClient() {
 
               {previewUrl ? (
                 <div className="mt-4">
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-xs font-medium text-slate-700">
+                  <div className="mb-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                    <p className="min-w-0 text-xs font-medium text-slate-700 break-words sm:truncate">
                       {previewNote?.title ?? "Preview"}
                     </p>
                     <div className="flex shrink-0 gap-1.5">
@@ -888,7 +909,7 @@ export function LectureListClient() {
                     key={previewUrl}
                     src={previewUrl}
                     title={previewNote?.title ?? "PDF Preview"}
-                    className="h-[440px] w-full rounded-xl border border-slate-200"
+                    className="h-[60vh] w-full rounded-xl border border-slate-200 sm:h-[440px]"
                   />
                 </div>
               ) : null}
@@ -906,7 +927,7 @@ export function LectureListClient() {
                       : null;
                     return (
                       <article key={a.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                           <div className="min-w-0 flex-1">
                             <h3 className="text-xs font-semibold text-slate-900">{a.title}</h3>
                             <p className="text-[11px] text-slate-500">
@@ -921,7 +942,7 @@ export function LectureListClient() {
                               <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{a.description}</p>
                             ) : null}
                           </div>
-                          <div className="shrink-0">
+                          <div className="sm:shrink-0">
                             <AssignmentSubmitButton
                               assignmentId={a.id}
                               dueDate={dueDate}

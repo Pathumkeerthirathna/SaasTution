@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import type { PaginationMeta } from "@/lib/api-types";
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 
 type ClassOption = { id: string; name: string };
 
@@ -153,6 +154,9 @@ function StudentMaterialBundlesPageInner() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // Realtime: refresh tutes/papers whenever a bundle is sent or an item changes.
+  useStudentLiveRefetch(() => void loadData());
 
   async function confirmDelivery(bundleId: string) {
     setConfirmingId(bundleId);
@@ -364,7 +368,7 @@ function StudentMaterialBundlesPageInner() {
                   key={bundle.id}
                   className={`rounded-lg border bg-white p-3 ${received ? "border-emerald-200" : "border-slate-200"}`}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <h3 className="truncate text-sm font-semibold text-slate-900">{bundle.title}</h3>

@@ -94,7 +94,7 @@ export function StudentClassLiveBadge({
             />
             <div
               role="dialog"
-              className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl"
+              className="fixed z-50 w-[min(16rem,calc(100vw-1rem))] rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl"
               style={{ top: coords?.top ?? -9999, right: coords?.right ?? 8 }}
             >
             <div className="flex items-start justify-between gap-2">

@@ -63,14 +63,14 @@ export function SummaryCard({ title, value, helper, icon, color = "blue" }: Summ
 export function Panel({ id, title, subtitle, actions, contentClassName, children }: PanelProps) {
   return (
     <section id={id} className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-      <header className="flex flex-col gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <header className="flex flex-col gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50 to-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
+        <div className="min-w-0">
           <h2 className="text-lg font-bold text-foreground sm:text-xl">{title}</h2>
           {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </header>
-      <div className={contentClassName ?? "p-5 sm:p-6"}>{children}</div>
+      <div className={contentClassName ?? "p-4 sm:p-6"}>{children}</div>
     </section>
   );
 }

@@ -297,7 +297,7 @@ export function QuizAttemptAction({
 
   return (
     <>
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-start gap-1 sm:items-end">
         {submission ? (
           <StatusBadge label="Completed" tone="completed" />
         ) : currentPhase === "upcoming" ? (
@@ -326,7 +326,7 @@ export function QuizAttemptAction({
         ) : null}
 
         {submission ? (
-          <div className="flex flex-col items-end gap-0.5">
+          <div className="flex flex-col items-start gap-0.5 sm:items-end">
             <p className="text-xs font-semibold text-slate-700">
               Marks: {submission.score}/{submission.totalQuestions}
               <span className="ml-1 font-normal text-slate-400">
@@ -403,7 +403,7 @@ export function QuizAttemptAction({
           <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl border-l border-brand-200 bg-white shadow-2xl">
             {panelMode === "review" ? (
               <div className="flex h-full flex-col">
-                <div className="border-b border-brand-200 px-5 py-4">
+                <div className="border-b border-brand-200 px-4 py-4 sm:px-5">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-slate-900">
                       {reviewDetail?.quiz.title ?? "Review Answers"}
@@ -432,7 +432,7 @@ export function QuizAttemptAction({
                   ) : null}
                 </div>
 
-                <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
                   {isLoadingDetail ? <p className="text-sm text-slate-600">Loading review...</p> : null}
 
                   {errorMessage ? (
@@ -511,7 +511,7 @@ export function QuizAttemptAction({
                     : null}
                 </div>
 
-                <div className="flex justify-end gap-2 border-t border-brand-200 px-5 py-4">
+                <div className="flex justify-end gap-2 border-t border-brand-200 px-4 py-4 sm:px-5">
                   <button
                     type="button"
                     onClick={closePanel}
@@ -532,7 +532,7 @@ export function QuizAttemptAction({
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="flex h-full flex-col">
-                <div className="border-b border-brand-200 px-5 py-4">
+                <div className="border-b border-brand-200 px-4 py-4 sm:px-5">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-slate-900">{detail?.quiz.title ?? "Quiz"}</h2>
                     <button
@@ -570,7 +570,7 @@ export function QuizAttemptAction({
                   </div>
                 </div>
 
-                <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
                   {isLoadingDetail ? <p className="text-sm text-slate-600">Loading quiz...</p> : null}
 
                   {justSubmitted && submission ? (
@@ -652,7 +652,7 @@ export function QuizAttemptAction({
                   ) : null}
                 </div>
 
-                <div className="flex justify-end gap-2 border-t border-brand-200 px-5 py-4">
+                <div className="flex justify-end gap-2 border-t border-brand-200 px-4 py-4 sm:px-5">
                   {justSubmitted ? (
                     <button
                       type="button"

@@ -99,7 +99,7 @@ export function AssignmentSubmitButton({ assignmentId, dueDate, initialSubmissio
 
   if (submission) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-start gap-1 sm:items-end">
         <StatusBadge label="SUBMITTED" tone="completed" />
         <p className="text-xs text-slate-500">
           {submission.submittedAt.toLocaleDateString(undefined, {
@@ -142,7 +142,7 @@ export function AssignmentSubmitButton({ assignmentId, dueDate, initialSubmissio
   }
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex flex-col items-start gap-1.5 sm:items-end">
       {isOverdue ? <StatusBadge label="OVERDUE" tone="overdue" /> : null}
       <button
         type="button"
@@ -208,7 +208,7 @@ function SubmissionSidePanel({
       />
       <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-brand-200 bg-white shadow-2xl">
         <form onSubmit={onSubmit} className="flex h-full flex-col">
-          <div className="border-b border-brand-200 px-5 py-4">
+          <div className="border-b border-brand-200 px-4 py-4 sm:px-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold text-slate-900">
                 {isResubmit ? "Update submission" : "Submit assignment"}
@@ -226,7 +226,7 @@ function SubmissionSidePanel({
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
             <div>
               <label htmlFor={`submission-file-${assignmentId}`} className="mb-1.5 block text-sm font-medium text-slate-700">
                 PDF file <span className="text-red-500">*</span>
@@ -282,7 +282,7 @@ function SubmissionSidePanel({
             ) : null}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-brand-200 px-5 py-4">
+          <div className="flex justify-end gap-2 border-t border-brand-200 px-4 py-4 sm:px-5">
             <button
               type="button"
               onClick={onClose}

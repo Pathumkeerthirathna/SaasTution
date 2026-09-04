@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 
 import { QuizAttemptAction } from "@/components/student-portal/quiz-attempt-action";
+import { focusElementId, useFocusHighlight } from "@/components/student-portal/use-focus-highlight";
+import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 import type { PaginationMeta } from "@/lib/api-types";
 
 type ClassOption = { id: string; name: string };
@@ -167,8 +169,12 @@ function StudentQuizzesPageInner() {
   });
   const [todoOnly, setTodoOnly] = useState(() => searchParams.get("todo") === "1");
   const [page, setPage] = useState(1);
+  const [liveTick, setLiveTick] = useState(0);
 
   const dueRange = useMemo(() => computeDueRange(duePreset), [duePreset]);
+
+  // Realtime: re-run the current query when the server signals a coursework change.
+  useStudentLiveRefetch(() => setLiveTick((n) => n + 1));
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +220,7 @@ function StudentQuizzesPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [classId, lectureId, dueRange.from, dueRange.to, page]);
+  }, [classId, lectureId, dueRange.from, dueRange.to, page, liveTick]);
 
   const lectureOptions = useMemo(
     () => (classId ? lectures.filter((l) => l.classId === classId) : lectures),
@@ -233,6 +239,8 @@ function StudentQuizzesPageInner() {
 
   const now = Date.now();
   const visibleRecords = todoOnly ? records.filter((q) => !q.submission) : records;
+
+  useFocusHighlight(!isLoading && visibleRecords.length > 0);
 
   return (
     <section className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-card">
@@ -362,7 +370,8 @@ function StudentQuizzesPageInner() {
               return (
                 <article
                   key={quiz.id}
-                  className={`rounded-lg border bg-white p-3 ${
+                  id={focusElementId(quiz.id)}
+                  className={`scroll-mt-24 rounded-lg border bg-white p-3 transition-shadow ${
                     missed
                       ? "border-rose-200"
                       : phase === "open" && !sub
@@ -370,7 +379,7 @@ function StudentQuizzesPageInner() {
                         : "border-slate-200"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       {/* Lecture context */}
                       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
@@ -440,7 +449,7 @@ function StudentQuizzesPageInner() {
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="sm:shrink-0">
                       <QuizAttemptAction
                         quizId={quiz.id}
                         maxAttempts={quiz.maxAttempts ?? null}

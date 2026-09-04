@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/error-handler";
 import { sendClassAnnouncementEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
-import { getMessagingProvider } from "@/services/messaging-provider";
+import { emitStudentDataChange } from "@/lib/session-events";
 
 const DELIVERY_STATUS = {
   QUEUED: "QUEUED",
@@ -29,71 +29,51 @@ async function assertTeacherOwnsClass(classId: string, teacherId: string) {
   return classroom;
 }
 
-export async function sendMessageToClassStudents(params: {
+type MessageChannel = "email" | "whatsapp";
+
+export async function sendClassMessage(params: {
   teacherId: string;
   classId: string;
   content: string;
-  channel?: "email" | "whatsapp";
+  channels: MessageChannel[];
 }) {
-  const channel = params.channel ?? "email";
+  // No channel selected = post in the app only. The Message + per-student
+  // MessageDelivery rows are always written and pushed over SSE regardless.
+  const wantsEmail = params.channels.includes("email");
+  const wantsWhatsApp = params.channels.includes("whatsapp");
+  const inAppOnly = !wantsEmail && !wantsWhatsApp;
+
   const classroom = await assertTeacherOwnsClass(params.classId, params.teacherId);
 
-  if (channel === "whatsapp") {
-    const classStudents = await prisma.classStudent.findMany({
-      where: { classId: params.classId, isActive: true, student: { status: 0 } },
-      select: { student: { select: { id: true, contact: true } } },
-    });
-
-    const recipients = classStudents.map((entry) => ({
-      studentId: entry.student.id,
-      contact: entry.student.contact,
-    }));
-
-    const savedMessage = await prisma.message.create({
-      data: {
-        classId: params.classId,
-        content: params.content,
-        deliveries: {
-          createMany: {
-            data: recipients.map((recipient) => ({
-              studentId: recipient.studentId,
-              status: DELIVERY_STATUS.QUEUED,
-              provider: "whatsapp",
-            })),
-          },
-        },
-      },
-      select: { id: true, classId: true, content: true, createdAt: true },
-    });
-
-    return {
-      message: savedMessage,
-      delivery: {
-        provider: "whatsapp",
-        delivered: 0,
-        failed: 0,
-        queued: recipients.length,
-      },
-      totalRecipients: recipients.length,
-      whatsappUrl: `https://wa.me/?text=${encodeURIComponent(params.content)}`,
-    };
-  }
-
-  // Email channel
   const classStudents = await prisma.classStudent.findMany({
     where: { classId: params.classId, isActive: true, student: { status: 0 } },
     select: {
-      student: {
-        select: { id: true, name: true, email: true },
-      },
+      student: { select: { id: true, name: true, email: true, contact: true } },
     },
   });
 
-  const recipients = classStudents.map((entry) => ({
-    studentId: entry.student.id,
-    name: entry.student.name,
-    email: entry.student.email,
-  }));
+  // A student can hold more than one enrolment row for the same class — dedupe by
+  // id so the MessageDelivery `@@unique([messageId, studentId])` never collides.
+  const recipientMap = new Map<
+    string,
+    { id: string; name: string; email: string | null; contact: string }
+  >();
+  for (const entry of classStudents) {
+    if (!recipientMap.has(entry.student.id)) {
+      recipientMap.set(entry.student.id, entry.student);
+    }
+  }
+  const recipients = [...recipientMap.values()];
+
+  if (recipients.length === 0) {
+    throw new AppError(
+      "This class has no active students to message.",
+      409,
+      "NO_RECIPIENTS"
+    );
+  }
+
+  const primaryProvider = wantsEmail ? "email" : wantsWhatsApp ? "whatsapp" : "app";
 
   const savedMessage = await prisma.message.create({
     data: {
@@ -102,64 +82,86 @@ export async function sendMessageToClassStudents(params: {
       deliveries: {
         createMany: {
           data: recipients.map((recipient) => ({
-            studentId: recipient.studentId,
-            status: DELIVERY_STATUS.QUEUED,
+            studentId: recipient.id,
+            // In-app delivery lands the moment it's saved; external channels stay queued.
+            status: inAppOnly ? DELIVERY_STATUS.SENT : DELIVERY_STATUS.QUEUED,
+            provider: primaryProvider,
           })),
+          skipDuplicates: true,
         },
       },
     },
     select: { id: true, classId: true, content: true, createdAt: true },
   });
 
-  const emailResults = await Promise.all(
-    recipients.map(async (recipient) => {
-      if (!recipient.email) {
-        return {
-          studentId: recipient.studentId,
-          status: DELIVERY_STATUS.FAILED,
-          error: "No email address on file",
-        };
-      }
+  let email: { sent: number; failed: number } | null = null;
 
-      try {
-        await sendClassAnnouncementEmail({
-          to: recipient.email,
-          studentName: recipient.name,
-          className: classroom.name,
-          content: params.content,
-        });
-        return { studentId: recipient.studentId, status: DELIVERY_STATUS.SENT, error: undefined as string | undefined };
-      } catch (err) {
-        return {
-          studentId: recipient.studentId,
-          status: DELIVERY_STATUS.FAILED,
-          error: err instanceof Error ? err.message : "Send failed",
-        };
-      }
-    })
-  );
+  if (wantsEmail) {
+    const results = await Promise.all(
+      recipients.map(async (recipient) => {
+        if (!recipient.email) {
+          return {
+            studentId: recipient.id,
+            status: DELIVERY_STATUS.FAILED,
+            error: "No email address on file" as string | undefined,
+          };
+        }
 
-  await Promise.all(
-    emailResults.map((result) =>
-      prisma.messageDelivery.updateMany({
-        where: { messageId: savedMessage.id, studentId: result.studentId },
-        data: { status: result.status, provider: "email", error: result.error },
+        try {
+          await sendClassAnnouncementEmail({
+            to: recipient.email,
+            studentName: recipient.name,
+            className: classroom.name,
+            content: params.content,
+          });
+          return {
+            studentId: recipient.id,
+            status: DELIVERY_STATUS.SENT,
+            error: undefined as string | undefined,
+          };
+        } catch (err) {
+          console.error("[message-service] announcement email failed", {
+            classId: params.classId,
+            studentId: recipient.id,
+            error: err instanceof Error ? err.message : err,
+          });
+          return {
+            studentId: recipient.id,
+            status: DELIVERY_STATUS.FAILED,
+            error: err instanceof Error ? err.message : "Send failed",
+          };
+        }
       })
-    )
-  );
+    );
 
-  const delivered = emailResults.filter((r) => r.status === DELIVERY_STATUS.SENT).length;
-  const failed = emailResults.filter((r) => r.status === DELIVERY_STATUS.FAILED).length;
+    await Promise.all(
+      results.map((result) =>
+        prisma.messageDelivery.updateMany({
+          where: { messageId: savedMessage.id, studentId: result.studentId },
+          data: { status: result.status, provider: "email", error: result.error },
+        })
+      )
+    );
+
+    email = {
+      sent: results.filter((r) => r.status === DELIVERY_STATUS.SENT).length,
+      failed: results.filter((r) => r.status === DELIVERY_STATUS.FAILED).length,
+    };
+  }
+
+  // Tell every connected student of this class to re-pull (header bell + dashboard).
+  emitStudentDataChange({ classId: params.classId });
 
   return {
     message: savedMessage,
-    delivery: {
-      provider: "email",
-      delivered,
-      failed,
-      queued: 0,
-    },
-    totalRecipients: recipients.length,
+    recipientCount: recipients.length,
+    email,
+    whatsapp: wantsWhatsApp
+      ? {
+          url: `https://wa.me/?text=${encodeURIComponent(params.content)}`,
+          recipientCount: recipients.filter((r) => r.contact.trim().length > 0).length,
+        }
+      : null,
   };
 }
 
