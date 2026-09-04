@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, Ref, useEffect, useState } from "react";
 import {
   MonitorPlay,
   Users,
@@ -40,6 +40,9 @@ type MeetingCardProps = {
   youtubeReauthRequired?: boolean;
 
   showHeader?: boolean;
+
+  /** Anchor for the "Start YouTube Live" privacy popover, rendered by the parent. */
+  startLiveButtonRef?: Ref<HTMLButtonElement>;
 };
 
 export default function MeetingCard({
@@ -62,6 +65,7 @@ export default function MeetingCard({
   liveStartFailed = false,
   youtubeLiveUrl,
   showHeader = true,
+  startLiveButtonRef,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -148,22 +152,36 @@ export default function MeetingCard({
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0B1120]">
 
-      {/* HEADER */}
+      {/* HEADER — navy/blue for the teacher, green for the student. */}
       {showHeader && (
-      <div className="flex h-[80px] shrink-0 items-center justify-between border-b border-[#1E293B] bg-[#111827] px-5 py-3">
+      <div
+        className={`flex h-[80px] shrink-0 items-center justify-between border-b px-5 py-3 ${
+          role === "student"
+            ? "border-[#1C332B] bg-[#10231D]"
+            : "border-[#1E293B] bg-[#112D5C]"
+        }`}
+      >
 
         <div className="flex items-center gap-3">
           <MonitorPlay
-            className="text-[#3B82F6]"
+            className={role === "student" ? "text-white" : "text-[#3B82F6]"}
             size={22}
           />
 
           <div>
-            <h2 className="font-semibold text-[#F8FAFC]">
+            <h2
+              className={`font-semibold ${
+                role === "student" ? "text-white" : "text-[#F8FAFC]"
+              }`}
+            >
               {lectureTitle}
             </h2>
 
-            <p className="text-xs text-[#94A3B8]">
+            <p
+              className={`text-xs ${
+                role === "student" ? "text-white/70" : "text-[#94A3B8]"
+              }`}
+            >
               {className}
             </p>
           </div>
@@ -228,6 +246,7 @@ export default function MeetingCard({
 
              {!isLive ? (
                 <button
+                  ref={startLiveButtonRef}
                   type="button"
                   onClick={handleStartLive}
                   disabled={isStartingLive}

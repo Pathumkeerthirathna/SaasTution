@@ -144,6 +144,8 @@ export function LiveDashboardSection({
                 </div>
                 <Link
                   href={`/session/join?sessionId=${session.id}&role=student&studentId=${studentId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn-primary inline-flex items-center gap-1.5 self-start"
                 >
                   <Play size={13} /> Join Now

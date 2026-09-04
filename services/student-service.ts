@@ -1463,6 +1463,72 @@ export async function getStudentAttendanceSummary(
   return summary;
 }
 
+/**
+ * Per-student attendance percentage for one class, for the teacher's in-session
+ * Attendance panel. A lecture counts as "attended" when the student has an
+ * attendance record on any of that lecture's sessions.
+ */
+export async function getClassAttendanceSummaryForTeacher(params: {
+  teacherId: string;
+  classId: string;
+}) {
+  await assertTeacherOwnsClass(params.classId, params.teacherId);
+
+  const [students, lectures] = await Promise.all([
+    prisma.classStudent.findMany({
+      where: {
+        classId: params.classId,
+        isActive: true,
+        student: { status: 0 },
+      },
+      orderBy: { assignedAt: "asc" },
+      select: { student: { select: { id: true, name: true } } },
+    }),
+    prisma.lecture.findMany({
+      where: { classId: params.classId, status: 0 },
+      select: {
+        id: true,
+        sessions: {
+          select: {
+            attendance: { select: { studentId: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const totalLectures = lectures.length;
+
+  // lectureId -> set of studentIds who attended it
+  const attendedByLecture = lectures.map(
+    (lecture) =>
+      new Set(
+        lecture.sessions.flatMap((session) =>
+          session.attendance.map((a) => a.studentId)
+        )
+      )
+  );
+
+  return students.map(({ student }) => {
+    const attendedLectures = attendedByLecture.filter((set) =>
+      set.has(student.id)
+    ).length;
+
+    const attendancePercentage =
+      totalLectures === 0
+        ? 0
+        : Math.round((attendedLectures / totalLectures) * 100);
+
+    return {
+      studentId: student.id,
+      name: student.name,
+      attendedLectures,
+      totalLectures,
+      attendancePercentage,
+    };
+  });
+}
+
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

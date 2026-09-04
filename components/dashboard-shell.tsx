@@ -89,7 +89,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
     <div className="flex min-h-screen w-full bg-background-soft text-foreground">
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-gradient-to-b from-[#2d68a5] via-[#244f8f] to-[#173d6d] text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.12] ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-[#32598A] text-white shadow-panel transition-[transform,width] duration-220 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-xl lg:border-r lg:border-white/[0.12] ${
           isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-20"
         }`}
       >
@@ -162,7 +162,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-brand-100 bg-white px-4 py-3 sm:px-6">
-          {/* decorative curved sweep, right side — muted blue → muted orange */}
+          {/* decorative curved sweep, right side — muted blue → white */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
             <svg
               className="absolute right-0 top-0 h-full w-[64%] min-w-[440px]"
@@ -173,8 +173,8 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
                 <linearGradient id="hdr-sweep" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="#8ea6d6" stopOpacity="0" />
                   <stop offset="34%" stopColor="#8ea6d6" stopOpacity="0.28" />
-                  <stop offset="68%" stopColor="#d7b28a" stopOpacity="0.30" />
-                  <stop offset="100%" stopColor="#dda06c" stopOpacity="0.38" />
+                  <stop offset="68%" stopColor="#ffffff" stopOpacity="0.30" />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0.38" />
                 </linearGradient>
               </defs>
               <path d="M172 0 C 122 34 98 60 46 96 L 440 96 L 440 0 Z" fill="url(#hdr-sweep)" />

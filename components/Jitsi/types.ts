@@ -102,3 +102,14 @@ export type ClassroomStudent = {
   displayName: string;
   email: string | null;
 };
+
+export type ChatMessage = {
+  id: string;
+  /** Display name of the sender. */
+  author: string;
+  body: string;
+  /** ISO-8601 timestamp. */
+  at: string;
+  /** True when this device sent the message. */
+  self: boolean;
+};

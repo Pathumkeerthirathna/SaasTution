@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import type {
+  ChatMessage,
   JitsiParticipant,
   JoinInfo,
   UserRole,
@@ -26,6 +27,22 @@ export type JitsiControls = {
     purpose:YouTubeStreamPurpose
   ) => void;
   stopYouTubeLive: () => void;
+
+  /** Moderator: mute every remote participant's microphone. */
+  muteEveryone: () => void;
+
+  /**
+   * Moderator: mute a single participant's mic (`muted = true`) or ask them to
+   * unmute (`muted = false`). Jitsi does not allow silently force-unmuting a
+   * participant, so unmute sends a request.
+   */
+  setParticipantAudioMuted: (
+    participantId: string,
+    muted: boolean
+  ) => void;
+
+  /** Send a chat message to everyone in the meeting (Jitsi group chat). */
+  sendChatMessage: (message: string) => void;
 };
 
 type YouTubeStreamPurpose =
@@ -62,6 +79,9 @@ type UseJitsiProps = {
     isLive: boolean
   ) => void;
 
+  /** Fired for every chat message (remote arrivals + this device's own sends). */
+  onChatMessage?: (message: ChatMessage) => void;
+
 };
 
 export default function useJitsi({
@@ -76,14 +96,31 @@ export default function useJitsi({
   onParticipantsChanged,
   onParticipantStatusChanged,
   onRecordingStatusChanged,
-  onLiveStatusChanged
-  
+  onLiveStatusChanged,
+  onChatMessage,
+
 }: UseJitsiProps) {
 
   const apiRef = useRef<any>(null);
 
   const youtubeStreamPurposeRef =
   useRef<YouTubeStreamPurpose | null>(null);
+
+  // Kept in refs so the (deps: []) imperative handle and the Jitsi listeners
+  // always call the latest callback / see the latest local display name.
+  const onChatMessageRef = useRef(onChatMessage);
+  onChatMessageRef.current = onChatMessage;
+
+  const localName =
+    role === "teacher"
+      ? teacherName
+      : joinInfo.student?.name ?? "Student";
+  const localNameRef = useRef(localName);
+  localNameRef.current = localName;
+
+  const chatSeqRef = useRef(0);
+  const nextChatId = () =>
+    `chat-${Date.now().toString(36)}-${(chatSeqRef.current += 1)}`;
 
   useImperativeHandle(
     controlsRef,
@@ -171,6 +208,54 @@ export default function useJitsi({
           "stopRecording",
           "stream"
         );
+      },
+
+      muteEveryone: () => {
+        if (!apiRef.current) {
+          console.warn("Jitsi API is not ready");
+          return;
+        }
+
+        console.log("🔇 Muting everyone (audio)...");
+
+        apiRef.current.executeCommand("muteEveryone", "audio");
+      },
+
+      setParticipantAudioMuted: (participantId, muted) => {
+        if (!apiRef.current) {
+          console.warn("Jitsi API is not ready");
+          return;
+        }
+
+        console.log(
+          muted ? "🔇 Muting participant" : "🔈 Asking participant to unmute",
+          participantId
+        );
+
+        if (muted) {
+          // Moderator-only: mutes just this one remote participant's mic.
+          apiRef.current.executeCommand(
+            "muteRemoteParticipant",
+            participantId,
+            "audio"
+          );
+        } else {
+          // Jitsi does not allow force-unmute; this sends an unmute request.
+          apiRef.current.executeCommand("askToUnmute", participantId);
+        }
+      },
+
+      sendChatMessage: (message) => {
+        const text = message.trim();
+        if (!text || !apiRef.current) {
+          return;
+        }
+
+        // Empty `to` + ignorePrivacy = send to everyone in the meeting. The
+        // `outgoingMessage` listener below echoes it into our panel — it also
+        // catches messages sent through Jitsi's own chat button, so both entry
+        // points stay in sync.
+        apiRef.current.executeCommand("sendChatMessage", text, "", true);
       },
     }),
     []
@@ -554,6 +639,58 @@ export default function useJitsi({
         }
     };
 
+    /*
+     * ============================================================
+     * CHAT — Jitsi's own realtime chat, mirrored into our UI.
+     * `incomingMessage` fires only for messages from other participants;
+     * our own sends are echoed locally by `sendChatMessage` above.
+     * ============================================================
+     */
+    const handleIncomingMessage = (event: unknown) => {
+      const data = event as {
+        from?: string;
+        nick?: string;
+        message?: string;
+        privateMessage?: boolean;
+        stamp?: string;
+      };
+
+      console.log("💬 INCOMING CHAT MESSAGE:", data);
+
+      if (!data.message) {
+        return;
+      }
+
+      onChatMessageRef.current?.({
+        id: nextChatId(),
+        author: data.nick?.trim() || "Participant",
+        body: data.message,
+        at: data.stamp ?? new Date().toISOString(),
+        self: false,
+      });
+    };
+
+    // Fires for every message *this* device sends — through our chat panel's
+    // `sendChatMessage` control or Jitsi's own built-in chat button — so both
+    // entry points land in the same panel without double-counting.
+    const handleOutgoingMessage = (event: unknown) => {
+      const data = event as { message?: string; privateMessage?: boolean };
+
+      console.log("💬 OUTGOING CHAT MESSAGE:", data);
+
+      if (!data.message) {
+        return;
+      }
+
+      onChatMessageRef.current?.({
+        id: nextChatId(),
+        author: localNameRef.current,
+        body: data.message,
+        at: new Date().toISOString(),
+        self: true,
+      });
+    };
+
     const handleRecordingStatusChanged = (
       event: unknown
     ) => {
@@ -683,6 +820,16 @@ export default function useJitsi({
       handleRecordingStatusChanged
     );
 
+    api.addListener(
+      "incomingMessage",
+      handleIncomingMessage
+    );
+
+    api.addListener(
+      "outgoingMessage",
+      handleOutgoingMessage
+    );
+
     /*
      * ============================================================
      * BROWSER CLOSE / REFRESH
@@ -741,7 +888,17 @@ export default function useJitsi({
         "recordingStatusChanged",
         handleRecordingStatusChanged
       );
-      
+
+      api.removeListener(
+        "incomingMessage",
+        handleIncomingMessage
+      );
+
+      api.removeListener(
+        "outgoingMessage",
+        handleOutgoingMessage
+      );
+
       api.dispose();
 
       apiRef.current = null;

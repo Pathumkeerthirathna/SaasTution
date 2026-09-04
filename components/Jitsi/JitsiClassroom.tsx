@@ -9,7 +9,7 @@ import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 
 import { useCallback,useRef, useEffect, useState } from "react";
-import { ClassroomStudent, JitsiParticipant } from "./types";
+import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "../class-management-panel";
 
@@ -71,6 +71,47 @@ const [classStudents, setClassStudents] =
   const [showYoutubePrivacy, setShowYoutubePrivacy] =
   useState(false);
 
+  // Anchors the "Start YouTube Live" popover under the Start Live button
+  // instead of centering it as a full-screen modal.
+  const startLiveButtonRef = useRef<HTMLButtonElement>(null);
+  const youtubePrivacyPopoverRef = useRef<HTMLDivElement>(null);
+  const [youtubePrivacyPos, setYoutubePrivacyPos] =
+    useState<{ top: number; right: number } | null>(null);
+
+  const placeYoutubePrivacyPopover = useCallback(() => {
+    const rect = startLiveButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setYoutubePrivacyPos({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showYoutubePrivacy) return;
+
+    placeYoutubePrivacyPopover();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowYoutubePrivacy(false);
+    }
+
+    // Outside-click is handled by the transparent full-screen overlay rendered
+    // with the popover below, not a document listener: most of the screen is
+    // the Jitsi meeting iframe, and clicks inside a cross-origin iframe never
+    // bubble up to this page's document, so a document-level listener would
+    // silently miss them.
+    window.addEventListener("resize", placeYoutubePrivacyPopover);
+    window.addEventListener("scroll", placeYoutubePrivacyPopover, true);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", placeYoutubePrivacyPopover);
+      window.removeEventListener("scroll", placeYoutubePrivacyPopover, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showYoutubePrivacy, placeYoutubePrivacyPopover]);
+
   const jitsiMeetingRef =
   useRef<JitsiControls | null>(null);
 
@@ -89,6 +130,21 @@ const [classStudents, setClassStudents] =
 
   const [meetingReady, setMeetingReady] =
     useState(false);
+
+  // Realtime chat — backed by Jitsi's own group chat, mirrored into our panel.
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  const handleChatMessage = useCallback((message: ChatMessage) => {
+    setChatMessages((prev) => {
+      // Cap history so a long class doesn't grow this without bound.
+      const next = [...prev, message];
+      return next.length > 300 ? next.slice(next.length - 300) : next;
+    });
+  }, []);
+
+  const sendChat = useCallback((text: string) => {
+    jitsiMeetingRef.current?.sendChatMessage(text);
+  }, []);
 
 
   const handleParticipantsChanged = useCallback(
@@ -458,6 +514,7 @@ const [classStudents, setClassStudents] =
         isStartingLive={isStartingLive}
         liveStartFailed={liveStartFailed}
         showHeader={meetingReady}
+        startLiveButtonRef={startLiveButtonRef}
         youtubeLiveUrl={youtubeLiveUrl}
         youtubeChannelTitle={
           joinInfo.youtube?.channelTitle
@@ -716,6 +773,7 @@ const [classStudents, setClassStudents] =
             role={role}
             teacherName={teacherName}
             onParticipantsChanged={handleParticipantsChanged}
+            onChatMessage={handleChatMessage}
             onParticipantStatusChanged={(
               participantId,
               status
@@ -745,9 +803,22 @@ const [classStudents, setClassStudents] =
         </PermissionGate>
       </MeetingCard>
 
-      {showYoutubePrivacy && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="w-full max-w-sm rounded-2xl border border-[#1E293B] bg-[#172033] p-5 shadow-2xl">
+      {showYoutubePrivacy && youtubePrivacyPos && (
+        <>
+        {/* Transparent click-catcher: most of the screen is the Jitsi meeting
+            iframe, whose clicks never bubble to this document, so we can't
+            rely on a document-level "outside click" listener to close this. */}
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => setShowYoutubePrivacy(false)}
+          className="fixed inset-0 z-40 cursor-default"
+        />
+        <div
+          ref={youtubePrivacyPopoverRef}
+          className="fixed z-50 w-[384px] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[#1E293B] bg-[#112D5C] p-5 shadow-2xl"
+          style={{ top: youtubePrivacyPos.top, right: youtubePrivacyPos.right }}
+        >
 
           <div className="mb-5">
             <h3 className="text-lg font-semibold text-[#F8FAFC]">
@@ -770,7 +841,7 @@ const [classStudents, setClassStudents] =
               className={`w-full rounded-xl border p-4 text-left transition ${
                 youtubePrivacy === "public"
                   ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1E293B] bg-[#1E293B]/50 hover:bg-[#1E293B]"
+                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
               }`}
             >
               <div className="font-semibold text-[#F8FAFC]">
@@ -791,7 +862,7 @@ const [classStudents, setClassStudents] =
               className={`w-full rounded-xl border p-4 text-left transition ${
                 youtubePrivacy === "unlisted"
                   ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1E293B] bg-[#1E293B]/50 hover:bg-[#1E293B]"
+                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
               }`}
             >
               <div className="font-semibold text-[#F8FAFC]">
@@ -812,15 +883,20 @@ const [classStudents, setClassStudents] =
               className={`w-full rounded-xl border p-4 text-left transition ${
                 youtubePrivacy === "private"
                   ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1E293B] bg-[#1E293B]/50 hover:bg-[#1E293B]"
+                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
               }`}
             >
-              <div className="font-semibold text-[#F8FAFC]">
-                Private
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-[#F8FAFC]">
+                  Private
+                </span>
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                  Not recommended
+                </span>
               </div>
 
               <div className="mt-1 text-xs text-[#94A3B8]">
-                Only you and authorized viewers can watch.
+                Only you, the account owner, can view it.
               </div>
             </button>
 
@@ -863,7 +939,7 @@ const [classStudents, setClassStudents] =
           </div>
 
         </div>
-      </div>
+        </>
     )}
 
       {/* RIGHT SIDEBAR */}
@@ -877,6 +953,12 @@ const [classStudents, setClassStudents] =
           role={role}
           participants={participants}
           ClassroomStudents={classStudents}
+          onMuteEveryone={() => jitsiMeetingRef.current?.muteEveryone()}
+          onMuteParticipant={(participantId, muted) =>
+            jitsiMeetingRef.current?.setParticipantAudioMuted(participantId, muted)
+          }
+          chatMessages={chatMessages}
+          onSendChat={sendChat}
         />
       )}
 

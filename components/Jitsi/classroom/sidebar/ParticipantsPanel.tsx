@@ -28,6 +28,8 @@ type ParticipantsPanelProps = {
   lectureTitle?: string;
   className?: string;
   classId?: string;
+  onMuteEveryone?: () => void;
+  onMuteParticipant?: (participantId: string, muted: boolean) => void;
 };
 
 export default function ParticipantsPanel({
@@ -35,6 +37,8 @@ export default function ParticipantsPanel({
   lectureTitle,
   className,
   classId,
+  onMuteEveryone,
+  onMuteParticipant,
 }: ParticipantsPanelProps) {
 
   console.log(participants);
@@ -81,6 +85,12 @@ const absentStudents = ClassroomStudents?.filter(
 
 console.log(presentStudents);
 console.log(absentStudents);
+
+  // Match a class student to their live Jitsi participant (by display name, the
+  // same key the present/absent split already uses) so we can show mic/camera
+  // state and let the teacher mute them.
+  const participantFor = (displayName: string) =>
+    participants.find((p) => p.displayName === displayName);
 
   const handleSendNotifyEmails = async () => {
     if (!classId || selectedAbsentIds.size === 0) {
@@ -141,11 +151,11 @@ console.log(absentStudents);
 
   if (role === "student") {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col text-slate-900">
 
         {participants.length === 0 ? (
 
-          <div className="rounded-lg bg-[#1E293B] p-5 text-center text-sm text-[#94A3B8]">
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-400">
             Waiting for participants...
           </div>
 
@@ -176,16 +186,31 @@ console.log(absentStudents);
       {/* PRESENT */}
       <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
 
-        <div className="mb-2 flex shrink-0 items-center gap-2">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
 
-          <h3 className="text-sm font-semibold text-slate-900">
-            Present
-          </h3>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Present
+            </h3>
 
-          <span className="rounded-full bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700">
-            {presentStudents?.length ?? 0}
-          </span>
+            <span className="rounded-full bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700">
+              {presentStudents?.length ?? 0}
+            </span>
+          </div>
+
+          {onMuteEveryone ? (
+            <button
+              type="button"
+              title="Mute everyone's microphone"
+              disabled={!presentStudents || presentStudents.length === 0}
+              onClick={() => onMuteEveryone()}
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <MicOff size={12} />
+              Mute all
+            </button>
+          ) : null}
         </div>
 
         <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -194,27 +219,69 @@ console.log(absentStudents);
               No students
             </div>
           ) : (
-            presentStudents?.map((student) => (
-              <div
-                key={student.studentId}
-                className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2"
-              >
-                {/* Learning / Present Icon */}
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-100">
-                  <BookOpenCheck
-                    size={14}
-                    className="text-emerald-700"
-                  />
-                </div>
+            presentStudents?.map((student) => {
+              const participant = participantFor(student.displayName);
+              const audioMuted = participant?.status?.audioMuted ?? true;
+              const videoMuted = participant?.status?.videoMuted ?? true;
 
-                {/* Student */}
-                <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-slate-900">
-                    {student.displayName}
-                  </span>
+              return (
+                <div
+                  key={student.studentId}
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2"
+                >
+                  {/* Learning / Present Icon */}
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-100">
+                    <BookOpenCheck
+                      size={14}
+                      className="text-emerald-700"
+                    />
+                  </div>
+
+                  {/* Student */}
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-900">
+                      {student.displayName}
+                    </span>
+                  </div>
+
+                  {/* Live mic / camera state — the mic icon is the mute toggle:
+                      click a red (muted) mic to ask the student to unmute, click
+                      a green (live) mic to mute them. */}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {onMuteParticipant && participant ? (
+                      <button
+                        type="button"
+                        title={
+                          audioMuted
+                            ? "Ask this student to unmute"
+                            : "Mute this student"
+                        }
+                        onClick={() =>
+                          onMuteParticipant(participant.participantId, !audioMuted)
+                        }
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-slate-100"
+                      >
+                        {audioMuted ? (
+                          <MicOff size={15} className="text-red-500" />
+                        ) : (
+                          <Mic size={15} className="text-emerald-600" />
+                        )}
+                      </button>
+                    ) : audioMuted ? (
+                      <MicOff size={15} className="text-red-500" />
+                    ) : (
+                      <Mic size={15} className="text-emerald-600" />
+                    )}
+
+                    {videoMuted ? (
+                      <CameraOff size={15} className="text-red-500" />
+                    ) : (
+                      <Camera size={15} className="text-emerald-600" />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -401,28 +468,28 @@ function ParticipantRow({
   participant: JitsiParticipant;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg bg-[#1E293B] px-3 py-2">
+    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
 
       <div className="flex items-center gap-2.5">
 
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#3B82F6] text-sm font-semibold text-white">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
 
           {participant.displayName?.charAt(0) ?? "?"}
 
         </div>
 
-        <div>
+        <div className="min-w-0">
 
           <div className="flex items-center gap-1.5">
 
-            <span className="text-sm font-medium text-[#F8FAFC]">
+            <span className="truncate text-sm font-medium text-slate-900">
               {participant.displayName ?? "Unknown User"}
             </span>
 
             {participant.role === "moderator" && (
               <Crown
                 size={14}
-                className="text-yellow-400"
+                className="shrink-0 text-amber-500"
               />
             )}
 
@@ -432,29 +499,29 @@ function ParticipantRow({
 
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
 
         {participant.status?.audioMuted ?? false ? (
           <MicOff
             size={15}
-            className="text-red-400"
+            className="text-red-500"
           />
         ) : (
           <Mic
             size={15}
-            className="text-[#22C55E]"
+            className="text-emerald-600"
           />
         )}
 
         {participant.status?.videoMuted ?? false ? (
           <CameraOff
             size={15}
-            className="text-red-400"
+            className="text-red-500"
           />
         ) : (
           <Camera
             size={15}
-            className="text-[#22C55E]"
+            className="text-emerald-600"
           />
         )}
 

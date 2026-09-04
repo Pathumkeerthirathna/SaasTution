@@ -398,16 +398,16 @@ export default async function DashboardPage() {
     <div className="flex w-full flex-col gap-6 pb-6">
 
       {/* ── 1. Hero + Top Summary ──────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 p-6 text-white shadow-panel sm:p-8">
+      <section className="relative overflow-hidden rounded-3xl bg-[#32598A] p-6 text-white shadow-panel sm:p-8">
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute -bottom-8 right-24 h-28 w-28 rounded-full bg-white/5" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-100">Teacher Dashboard</p>
-            <h1 className="mt-2 text-2xl font-bold sm:text-3xl">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-blue-300">Teacher Dashboard</p>
+            <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
               Welcome back, {teacher.name.split(" ")[0]}
             </h1>
-            <p className="mt-1.5 text-sm text-emerald-100">
+            <p className="mt-1.5 text-sm text-white/70">
               {todayLabel} · Full control of your teaching workspace.
             </p>
           </div>

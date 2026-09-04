@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type {
+  ChatMessage,
   JoinInfo,
   UserRole,
   JitsiParticipant,
@@ -47,6 +48,8 @@ type JitsiMeetingProps = {
     isLive: boolean
   ) => void;
 
+  onChatMessage?: (message: ChatMessage) => void;
+
 };
 
 const JitsiMeeting = forwardRef<
@@ -60,7 +63,8 @@ const JitsiMeeting = forwardRef<
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
-    onLiveStatusChanged
+    onLiveStatusChanged,
+    onChatMessage
   },
   ref
 ) {
@@ -127,6 +131,24 @@ const JitsiMeeting = forwardRef<
 
         controlsRef.current?.stopYouTubeLive();
       },
+
+      muteEveryone: () => {
+        controlsRef.current?.muteEveryone();
+      },
+
+      setParticipantAudioMuted: (
+        participantId: string,
+        muted: boolean
+      ) => {
+        controlsRef.current?.setParticipantAudioMuted(
+          participantId,
+          muted
+        );
+      },
+
+      sendChatMessage: (message: string) => {
+        controlsRef.current?.sendChatMessage(message);
+      },
     }),
     []
   );
@@ -144,6 +166,7 @@ const JitsiMeeting = forwardRef<
     onParticipantStatusChanged,
     onRecordingStatusChanged,
     onLiveStatusChanged,
+    onChatMessage,
   });
 
   return (
