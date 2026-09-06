@@ -9,6 +9,7 @@ import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 
 import { useCallback,useRef, useEffect, useState } from "react";
+import type { MutableRefObject } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
@@ -204,6 +205,15 @@ const [classStudents, setClassStudents] =
   const [youtubeReauthRequired, setYoutubeReauthRequired] =
   useState(false);
 
+  // Set when a start-live/start-recording attempt fails with
+  // YOUTUBE_NOT_CONNECTED — i.e. the connection was there when the page
+  // loaded (or never checked yet) but YouTube rejected it as not connected
+  // at all. Overrides the header's Record/Start Live buttons with a single
+  // "Connect YouTube" button, the same as if joinInfo had loaded with no
+  // connection to begin with.
+  const [youtubeConnectionLost, setYoutubeConnectionLost] =
+  useState(false);
+
   // The Jitsi conference reports these independently of PermissionGate's
   // device-permission "ready" state — Record/Start Live must stay hidden
   // until the conference has actually joined AND Jitsi confirms the local
@@ -304,6 +314,41 @@ const [classStudents, setClassStudents] =
 
   const [youtubeLiveUrl, setYoutubeLiveUrl] =
     useState<string | null>(null);
+
+  // Recording and Live share one Jitsi → YouTube stream, which Jibri takes
+  // a few seconds to actually join once told to start. These resolvers let
+  // handleStartYouTubeRecording/handleStartYouTubeLive await Jitsi's own
+  // `recordingStatusChanged` confirmation (surfaced as
+  // onRecordingStatusChanged/onLiveStatusChanged below) instead of marking
+  // isRecording/isLive true the moment the start API call merely succeeds —
+  // that's what keeps the *other* button disabled for the whole handoff.
+  const recordingStreamConfirmedResolverRef =
+    useRef<(() => void) | null>(null);
+
+  const liveStreamConfirmedResolverRef =
+    useRef<(() => void) | null>(null);
+
+  function waitForYoutubeStreamConfirmation(
+    resolverRef: MutableRefObject<(() => void) | null>,
+    timeoutMs = 25000
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        resolverRef.current = null;
+        reject(
+          new Error(
+            "Timed out waiting for Jitsi to confirm the YouTube stream started."
+          )
+        );
+      }, timeoutMs);
+
+      resolverRef.current = () => {
+        clearTimeout(timeoutId);
+        resolverRef.current = null;
+        resolve();
+      };
+    });
+  }
 
   // const testRecordingControl = () => {
   //   jitsiMeetingRef.current?.startRecording();
@@ -412,6 +457,45 @@ const [classStudents, setClassStudents] =
       void loadClassStudents();
 
 }, [joinInfo]);
+
+  // A teacher who closed the browser (or lost connection) without pressing
+  // "Stop Recording" leaves the server-side Jibri → YouTube recording
+  // running unattended. When they come back to this lecture, reconcile the
+  // UI against YouTube itself rather than trusting a possibly-stale
+  // YouTubeRecording row, so "Stop Recording" reappears only if the
+  // recording is confirmed still live on the channel.
+  useEffect(() => {
+    const lectureId = joinInfo?.lecture?.id;
+
+    if (!joinInfo || role !== "teacher" || !lectureId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/youtube/lecture/recording/status?lectureId=${lectureId}`
+        );
+
+        const data = await response.json();
+
+        if (!cancelled && data.success && data.isRecording) {
+          setIsRecording(true);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to check existing YouTube recording status:",
+          error
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [joinInfo, role]);
 
   // Loading
   if (loading) {
@@ -526,6 +610,7 @@ const [classStudents, setClassStudents] =
       }
 
       setYoutubeReauthRequired(false);
+      setYoutubeConnectionLost(false);
 
       if (!data.streamName) {
         throw new Error(
@@ -561,6 +646,14 @@ const [classStudents, setClassStudents] =
             "live"
           );
 
+          console.log(
+            "⏳ Waiting for Jitsi to confirm the live stream has actually started..."
+          );
+
+          await waitForYoutubeStreamConfirmation(
+            liveStreamConfirmedResolverRef
+          );
+
       } else {
 
         console.log(
@@ -569,7 +662,9 @@ const [classStudents, setClassStudents] =
 
       }
 
-      // API succeeded → mark YouTube Live as active
+      // Only now — after Jibri has actually confirmed the stream, not just
+      // after the start API call succeeded — mark Live as active. This is
+      // what keeps Record disabled for the whole handoff.
       setIsLive(true);
 
       announce("Live stream has started.");
@@ -591,6 +686,7 @@ const [classStudents, setClassStudents] =
       );
 
       if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
+        setYoutubeConnectionLost(true);
         showYoutubeActionToast(friendlyMessage, "Connect YouTube");
       } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
         showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
@@ -654,6 +750,7 @@ const [classStudents, setClassStudents] =
       }
 
       setYoutubeReauthRequired(false);
+      setYoutubeConnectionLost(false);
 
       if (!data.streamName) {
         throw new Error(
@@ -671,15 +768,6 @@ const [classStudents, setClassStudents] =
         "🚀 Starting Jitsi → YouTube recording..."
       );
 
-       setIsRecording(true);
-
-       announce("Recording has started.");
-
-      // jitsiMeetingRef.current?.startYouTubeLive(
-      //   data.streamName,
-      //   data.broadcastId
-      // );
-
       if (data.alreadyStreaming) {
         console.log(
           "♻️ YouTube reusable stream is already active. Reusing it."
@@ -694,9 +782,23 @@ const [classStudents, setClassStudents] =
           data.broadcastId,
           "recording"
         );
+
+        console.log(
+          "⏳ Waiting for Jitsi to confirm the recording stream has actually started..."
+        );
+
+        await waitForYoutubeStreamConfirmation(
+          recordingStreamConfirmedResolverRef
+        );
       }
 
-     
+      // Only now — after Jibri has actually confirmed the stream, not just
+      // after the start API call succeeded — mark recording as active. This
+      // is what keeps Start Live disabled for the whole handoff.
+      setIsRecording(true);
+
+      announce("Recording has started.");
+
     } catch (error) {
       console.error(
         "❌ Failed to start YouTube recording:",
@@ -710,6 +812,7 @@ const [classStudents, setClassStudents] =
       );
 
       if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
+        setYoutubeConnectionLost(true);
         showYoutubeActionToast(friendlyMessage, "Connect YouTube");
       } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
         showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
@@ -755,9 +858,11 @@ const [classStudents, setClassStudents] =
         startLiveButtonRef={startLiveButtonRef}
         youtubeLiveUrl={youtubeLiveUrl}
         youtubeChannelTitle={
-          joinInfo.youtube?.channelTitle
+          youtubeConnectionLost ? null : joinInfo.youtube?.channelTitle
         }
-        youtubeStatus={joinInfo.youtube?.status}
+        youtubeStatus={
+          youtubeConnectionLost ? null : joinInfo.youtube?.status
+        }
         youtubeReauthRequired={youtubeReauthRequired}
         onReconnectYoutube={goToYouTubeOAuthConnect}
         onStartRecording={() => {
@@ -989,6 +1094,10 @@ const [classStudents, setClassStudents] =
                 recording
               );
 
+              if (recording && recordingStreamConfirmedResolverRef.current) {
+                recordingStreamConfirmedResolverRef.current();
+              }
+
               //setIsRecording(recording);
             }}
             onLiveStatusChanged={(live) => {
@@ -996,6 +1105,10 @@ const [classStudents, setClassStudents] =
                 "🔴 CLASSROOM LIVE STATUS:",
                 live
               );
+
+              if (live && liveStreamConfirmedResolverRef.current) {
+                liveStreamConfirmedResolverRef.current();
+              }
 
               // Only update the Live button state when
               // the teacher explicitly started YouTube Live.

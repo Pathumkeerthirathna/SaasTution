@@ -9,8 +9,9 @@ import {
     updateYouTubeLiveBroadcastPrivacy,
     transitionYouTubeLiveBroadcast,
     createYouTubeLiveStream
-    
+
 } from "@/lib/youtube-live";
+import type { YouTubeLiveBroadcast } from "@/lib/youtube-live";
 
 import { YouTubeBroadcastStatus, YouTubePrivacy } from "@prisma/client";
 
@@ -1267,12 +1268,87 @@ export async function checkYouTubeRecordingStatus(
 
     /*
      * Get THIS particular recording broadcast.
+     *
+     * YouTube can end up not recognizing this broadcast at all (deleted,
+     * expired, etc.) even though our row still says READY/LIVE — that must
+     * not crash the status check. Treat it the same as "no longer live":
+     * self-heal the row to COMPLETE and report isRecording: false.
      */
-    const broadcast =
-        await getYouTubeLiveBroadcast(
-            connection.refreshTokenEncrypted,
-            recording.broadcastId
+    let broadcast: YouTubeLiveBroadcast | null = null;
+    let broadcastDefinitelyGone = false;
+
+    try {
+        broadcast =
+            await getYouTubeLiveBroadcast(
+                connection.refreshTokenEncrypted,
+                recording.broadcastId
+            );
+    } catch (error) {
+        // A "not found" response means YouTube has definitively deleted or
+        // expired this broadcast — that's a real "it's over" signal, safe
+        // to self-heal. Any other failure (network blip, YouTube API
+        // hiccup) is inconclusive, so the recording's DB status is left
+        // alone rather than risking marking a genuinely-live recording as
+        // COMPLETE.
+        broadcastDefinitelyGone =
+            error instanceof Error &&
+            error.message.includes("not found");
+
+        console.error(
+            "YouTube broadcast lookup failed while checking recording status:",
+            error
         );
+    }
+
+    if (!broadcast) {
+        if (
+            broadcastDefinitelyGone &&
+            recording.status !==
+                YouTubeBroadcastStatus.COMPLETE
+        ) {
+            await prisma.youTubeRecording.update({
+                where: {
+                    id: recording.id,
+                },
+                data: {
+                    status:
+                        YouTubeBroadcastStatus.COMPLETE,
+
+                    endedAt:
+                        new Date(),
+                },
+            });
+        }
+
+        return {
+            recordingId:
+                recording.id,
+
+            streamStatus:
+                liveStream.status?.streamStatus,
+
+            broadcastStatus:
+                undefined,
+
+            isRecording:
+                false,
+
+            privacy:
+                undefined,
+
+            broadcastId:
+                recording.broadcastId,
+
+            videoId:
+                recording.videoId,
+
+            youtubeUrl:
+                recording.youtubeUrl,
+
+            streamId:
+                liveStreamId,
+        };
+    }
 
     const streamStatus =
         liveStream.status?.streamStatus;
@@ -1315,7 +1391,20 @@ export async function checkYouTubeRecordingStatus(
 
     /*
      * Keep our database status synchronized with YouTube.
+     *
+     * Only "complete" and "revoked" mean YouTube considers this broadcast
+     * definitively over. Everything else — "ready", "testing", "live", and
+     * transitional states like "liveStarting"/"testStarting" that a
+     * broadcast passes through for a few seconds right after starting —
+     * must still count as ongoing. A deny-list (rather than an allow-list
+     * of "known ongoing" statuses) means a transitional status we didn't
+     * anticipate never gets mistaken for "ended" and wrongly marks a
+     * still-live recording as COMPLETE.
      */
+    const isStillOngoingOnYoutube =
+        broadcastStatus !== "complete" &&
+        broadcastStatus !== "revoked";
+
     if (
         broadcastStatus === "live" &&
         recording.status !==
@@ -1333,7 +1422,7 @@ export async function checkYouTubeRecordingStatus(
     }
 
     if (
-        broadcastStatus === "complete" &&
+        !isStillOngoingOnYoutube &&
         recording.status !==
             YouTubeBroadcastStatus.COMPLETE
     ) {
@@ -1358,6 +1447,9 @@ export async function checkYouTubeRecordingStatus(
         streamStatus,
 
         broadcastStatus,
+
+        isRecording:
+            isStillOngoingOnYoutube,
 
         privacy:
             broadcast.status

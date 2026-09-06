@@ -2,6 +2,7 @@ import { requireStudentSession, requireTeacherSession } from "@/lib/auth-session
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { subscribeLiveChanges } from "@/lib/session-events";
+import { getYouTubeLiveBroadcast } from "@/lib/youtube-live";
 import { YouTubeBroadcastStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -15,6 +16,19 @@ type LiveStatusPayload = {
   isLive: boolean;
   youtubeUrl: string | null;
 };
+
+// Only these two lifeCycleStatus values mean YouTube considers the
+// broadcast definitively over. Everything else — including transitional
+// states like "liveStarting"/"testStarting" that a broadcast passes
+// through for a few seconds right after starting — must still count as
+// ongoing. Using a deny-list here (instead of an allow-list of "known
+// ongoing" statuses) means a status we didn't anticipate never gets
+// mistaken for "ended" and wrongly closes out a broadcast that's still
+// actually live.
+const ENDED_YOUTUBE_LIFECYCLE_STATUSES = new Set([
+  "complete",
+  "revoked",
+]);
 
 async function getLiveSnapshot(
   lectureId: string | null
@@ -31,13 +45,96 @@ async function getLiveSnapshot(
       },
     },
     orderBy: { createdAt: "desc" },
-    select: { youtubeUrl: true },
+    select: {
+      id: true,
+      broadcastId: true,
+      youtubeUrl: true,
+      status: true,
+      lecture: { select: { class: { select: { teacherId: true } } } },
+    },
   });
 
-  return {
-    isLive: Boolean(liveBroadcast),
-    youtubeUrl: liveBroadcast?.youtubeUrl ?? null,
-  };
+  // No candidate row in YouTubeLiveBroadcast at all — nothing is live.
+  if (!liveBroadcast) {
+    return { isLive: false, youtubeUrl: null };
+  }
+
+  // A database row alone isn't trusted: confirm the teacher's YouTube
+  // channel still reports this exact broadcast as ongoing before telling
+  // the client to show "Stop Live". A teacher without a live YouTube
+  // connection has nothing to verify against.
+  const connection = await prisma.youTubeConnection.findUnique({
+    where: { teacherId: liveBroadcast.lecture.class.teacherId },
+    select: { refreshTokenEncrypted: true },
+  });
+
+  if (!connection) {
+    return { isLive: false, youtubeUrl: null };
+  }
+
+  try {
+    const broadcast = await getYouTubeLiveBroadcast(
+      connection.refreshTokenEncrypted,
+      liveBroadcast.broadcastId
+    );
+
+    const lifeCycleStatus = broadcast.status?.lifeCycleStatus;
+
+    if (lifeCycleStatus && ENDED_YOUTUBE_LIFECYCLE_STATUSES.has(lifeCycleStatus)) {
+      // The channel says this broadcast has ended (or was revoked) even
+      // though our row still looked active — self-heal the stale row so
+      // future checks don't keep re-verifying it against YouTube.
+      await prisma.youTubeLiveBroadcast
+        .update({
+          where: { id: liveBroadcast.id },
+          data: { status: YouTubeBroadcastStatus.COMPLETE, endedAt: new Date() },
+        })
+        .catch(() => {});
+
+      return { isLive: false, youtubeUrl: null };
+    }
+
+    if (
+      lifeCycleStatus === "live" &&
+      liveBroadcast.status !== YouTubeBroadcastStatus.LIVE
+    ) {
+      await prisma.youTubeLiveBroadcast
+        .update({
+          where: { id: liveBroadcast.id },
+          data: { status: YouTubeBroadcastStatus.LIVE },
+        })
+        .catch(() => {});
+    }
+
+    return { isLive: true, youtubeUrl: liveBroadcast.youtubeUrl };
+  } catch (error) {
+    console.error(
+      "Failed to verify YouTube broadcast status against the channel:",
+      error
+    );
+
+    // A "not found" response is a definitive signal — YouTube has deleted
+    // or expired this broadcast — so self-heal the stale row instead of
+    // leaving it stuck as READY/LIVE forever. Any other failure (network
+    // blip, YouTube API hiccup) is inconclusive, so fall back to trusting
+    // the database row rather than hiding "Stop Live" for a class that may
+    // well still be live.
+    const broadcastDefinitelyGone =
+      error instanceof Error && error.message.includes("not found");
+
+    if (broadcastDefinitelyGone) {
+      await prisma.youTubeLiveBroadcast
+        .update({
+          where: { id: liveBroadcast.id },
+          data: { status: YouTubeBroadcastStatus.REVOKED, endedAt: new Date() },
+        })
+        .catch(() => {});
+
+      return { isLive: false, youtubeUrl: null };
+    }
+
+    return { isLive: true, youtubeUrl: liveBroadcast.youtubeUrl };
+  }
 }
 
 export async function GET(

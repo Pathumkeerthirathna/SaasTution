@@ -100,13 +100,51 @@ export async function POST(
             );
         }
 
-        const broadcast =
-            await getYouTubeLiveBroadcast(
-                connection.refreshTokenEncrypted,
-                liveBroadcast.broadcastId
-            );
+        // YouTube can no longer recognize this broadcast at all (deleted,
+        // expired, etc.) even though our row still says READY/LIVE. That
+        // must not block the teacher from stopping — treat it as already
+        // ended on YouTube's side and just heal our own row.
+        let broadcast: Awaited<ReturnType<typeof getYouTubeLiveBroadcast>> | null = null;
 
-        
+        try {
+            broadcast =
+                await getYouTubeLiveBroadcast(
+                    connection.refreshTokenEncrypted,
+                    liveBroadcast.broadcastId
+                );
+        } catch (error) {
+            console.error(
+                "YouTube broadcast lookup failed while stopping — treating as already ended:",
+                error
+            );
+        }
+
+        if (!broadcast) {
+            await prisma.youTubeLiveBroadcast.update({
+                where: { id: liveBroadcast.id },
+                data: {
+                    status: YouTubeBroadcastStatus.REVOKED,
+                    endedAt: new Date(),
+                },
+            });
+
+            emitLiveChange({ classId: lecture.classId, kind: "youtube", event: "ended" });
+
+            return NextResponse.json({
+                success: true,
+
+                broadcastId:
+                    liveBroadcast.broadcastId,
+
+                youtubeUrl:
+                    liveBroadcast.youtubeUrl,
+
+                status: "REVOKED",
+
+                message:
+                    "This broadcast no longer exists on YouTube; it has been marked as ended.",
+            });
+        }
 
         // let updatedBroadcast = broadcast;
 
@@ -155,16 +193,36 @@ export async function POST(
             let completedBroadcast =
                 broadcast;
 
+            // Only skip the transition call when YouTube already considers
+            // the broadcast over — for every other status, including
+            // transitional ones like "liveStarting"/"testStarting" that a
+            // broadcast can be sitting in right when the teacher hits stop,
+            // it still needs to be told to complete. Otherwise the DB row
+            // gets marked COMPLETE below while YouTube keeps the broadcast
+            // running.
             if (
-                lifecycleStatus === "live" ||
-                lifecycleStatus === "ready"
+                lifecycleStatus !== "complete" &&
+                lifecycleStatus !== "revoked"
             ) {
-                completedBroadcast =
-                    await transitionYouTubeLiveBroadcast(
-                        connection.refreshTokenEncrypted,
-                        liveBroadcast.broadcastId,
-                        "complete"
+                try {
+                    completedBroadcast =
+                        await transitionYouTubeLiveBroadcast(
+                            connection.refreshTokenEncrypted,
+                            liveBroadcast.broadcastId,
+                            "complete"
+                        );
+                } catch (error) {
+                    // Some lifecycle states (e.g. "created", before the
+                    // broadcast was ever bound to a stream) reject a direct
+                    // transition to "complete". The teacher's stop action
+                    // must still succeed and our row still needs to stop
+                    // showing as live — only the extra YouTube-side
+                    // transition is skipped.
+                    console.error(
+                        "Failed to transition YouTube broadcast to complete while stopping:",
+                        error
                     );
+                }
             }
 
         // Keep our row in sync so the broadcast stops showing as live

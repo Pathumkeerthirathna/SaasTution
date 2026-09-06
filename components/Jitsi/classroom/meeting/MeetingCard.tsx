@@ -98,8 +98,18 @@ export default function MeetingCard({
     setIsStoppingLive(false);
   }, [isLive]);
 
+  // Recording and Live share the same underlying Jitsi → YouTube stream, so
+  // starting/stopping either one while the other is mid-transition can race.
+  // Record, Stop Recording, Start Live and Stop Live all stay disabled
+  // together while any one of these four actions is in flight.
+  const isYoutubeActionBusy =
+    isStartingRecording ||
+    isStoppingRecording ||
+    Boolean(isStartingLive) ||
+    isStoppingLive;
+
   const handleStartRecording = async () => {
-    if (isStartingRecording || isStoppingRecording) return;
+    if (isYoutubeActionBusy) return;
 
     setRecordingStartFailed(false);
 
@@ -114,7 +124,7 @@ export default function MeetingCard({
   };
 
   const handleStopRecording = async () => {
-    if (isStartingRecording || isStoppingRecording) return;
+    if (isYoutubeActionBusy) return;
     setIsStoppingRecording(true);
     try {
       await onStopRecording?.();
@@ -125,7 +135,7 @@ export default function MeetingCard({
   };
 
   const handleStartLive = async () => {
-    if (isStartingLive || isStoppingLive) return;
+    if (isYoutubeActionBusy) return;
 
     try {
       await onStartLive?.();
@@ -146,7 +156,7 @@ export default function MeetingCard({
   };
 
   const handleStopLive = async () => {
-    if (isStartingLive || isStoppingLive) return;
+    if (isYoutubeActionBusy) return;
     setIsStoppingLive(true);
     try {
       await onStopLive?.();
@@ -233,6 +243,18 @@ export default function MeetingCard({
                   <Loader2 size={16} className="animate-spin" />
                   Connecting to session...
                 </div>
+             ) : !youtubeStatus && !isLive && !isRecording ? (
+                // No YouTubeConnection row for this teacher at all — Record,
+                // Start Live, Stop Recording and Stop Live all require one,
+                // so only a way to connect is shown here.
+                <button
+                  type="button"
+                  onClick={handleReconnectYoutube}
+                  className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569]"
+                >
+                  <Video size={16} />
+                  Connect YouTube
+                </button>
              ) : youtubeReauthRequired && !isLive && !isRecording ? (
                 <button
                   type="button"
@@ -249,7 +271,7 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleStartRecording}
-                  disabled={isStartingRecording}
+                  disabled={isYoutubeActionBusy}
                   className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingRecording ? (
@@ -273,7 +295,7 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleStopRecording}
-                  disabled={isStoppingRecording}
+                  disabled={isYoutubeActionBusy}
                   className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-400 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStoppingRecording ? (
@@ -290,7 +312,7 @@ export default function MeetingCard({
                   ref={startLiveButtonRef}
                   type="button"
                   onClick={handleStartLive}
-                  disabled={isStartingLive}
+                  disabled={isYoutubeActionBusy}
                   className="flex items-center gap-2 rounded-full bg-[#EF4444] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingLive ? (
@@ -312,7 +334,7 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleStopLive}
-                  disabled={isStoppingLive}
+                  disabled={isYoutubeActionBusy}
                   className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStoppingLive ? (
