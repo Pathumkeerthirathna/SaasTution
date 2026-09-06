@@ -1,8 +1,15 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { getCurrentMonthKey, getPaymentDueDate, getPaymentWeekLabel, isValidMonthKey } from "@/lib/payment-validation";
+import {
+  getCurrentMonthKey,
+  getPaymentDueDate,
+  getPaymentDueStatus,
+  getPaymentWeekLabel,
+  isValidMonthKey,
+} from "@/lib/payment-validation";
 import { prisma } from "@/lib/prisma";
+import { nowInSriLanka } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +143,8 @@ export async function GET(
       .reduce((sum, payment) => sum + payment.amount, 0);
     const expectedAmount = enrolledStudents.length * classItem.monthlyFee;
     const dueDate = getPaymentDueDate(month, classItem.paymentDueWeek as 1 | 2 | 3 | 4);
-    const now = new Date();
+    const now = nowInSriLanka();
+    const dueStatus = getPaymentDueStatus(dueDate, now);
 
     return apiSuccess({
       class: classItem,
@@ -145,7 +153,8 @@ export async function GET(
         dueWeek: classItem.paymentDueWeek,
         dueWeekLabel: getPaymentWeekLabel(classItem.paymentDueWeek as 1 | 2 | 3 | 4),
         dueDate: dueDate.toISOString(),
-        isPastDue: now > dueDate,
+        isPastDue: dueStatus === "OVERDUE",
+        isDueSoon: dueStatus === "DUE_SOON",
         enrolledCount: enrolledStudents.length,
         submittedCount,
         confirmedCount,

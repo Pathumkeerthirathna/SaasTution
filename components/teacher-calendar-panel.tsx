@@ -536,12 +536,21 @@ function EventHoverPopover({
   );
 }
 
-function EntryChip({ event }: { event: CalendarEvent }) {
+function EntryChip({
+  event,
+  clamp = true,
+}: {
+  event: CalendarEvent;
+  /** Single-line + ellipsis (tight desktop grid cell) vs full wrapped text (mobile list row). */
+  clamp?: boolean;
+}) {
+  const clampCls = clamp ? "truncate" : "break-words";
+
   if (event.kind === "event") {
     return (
       <EventHoverPopover event={event}>
         <div
-          className="flex items-center gap-1 truncate rounded border px-1.5 py-0.5 text-[10px]"
+          className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${clampCls}`}
           style={{
             borderColor: `${event.color ?? DEFAULT_COLOR}66`,
             background: `${event.color ?? DEFAULT_COLOR}14`,
@@ -568,7 +577,7 @@ function EntryChip({ event }: { event: CalendarEvent }) {
     : "border-amber-300 border-dashed bg-amber-50 text-amber-700";
 
   return (
-    <div className={`truncate rounded border px-1.5 py-0.5 text-[10px] ${tone}`}>
+    <div className={`rounded border px-1.5 py-0.5 text-[10px] ${clampCls} ${tone}`}>
       {event.startTime ? (
         <span className="font-semibold">{event.startTime} </span>
       ) : null}
@@ -596,7 +605,8 @@ function MonthGrid({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200">
-      <div className="grid grid-cols-7 bg-slate-50 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      {/* Weekday header — only meaningful once the grid layout is in play (sm+) */}
+      <div className="hidden grid-cols-7 bg-slate-50 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:grid">
         {WEEKDAYS.map((label) => (
           <div key={label} className="py-1.5">
             {label}
@@ -604,7 +614,13 @@ function MonthGrid({
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
+      {/*
+       * Below `sm` there's no room for a 7-column grid without either scrolling
+       * horizontally or clipping every event, so each day renders as a full-width
+       * row with every event listed in full instead. At `sm` and up this becomes
+       * the original 7-column month grid, unchanged.
+       */}
+      <div className="grid grid-cols-1 sm:grid-cols-7">
         {days.map((day) => {
           const key = ymd(day);
           const dayEvents = eventsByDay.get(key) ?? [];
@@ -614,11 +630,49 @@ function MonthGrid({
           return (
             <div
               key={key}
-              className={`group relative min-h-[96px] border-b border-r border-slate-100 p-1 ${
+              className={`group relative border-b border-slate-100 p-2 sm:min-h-[96px] sm:border-r sm:p-1 ${
                 inMonth ? "bg-white" : "bg-slate-50/60"
               }`}
             >
-              <div className="flex items-center justify-between">
+              {/* Mobile row header: weekday + full date, shown only below sm */}
+              <div className="flex items-center justify-between sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => onPickDay(day)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold ${
+                    isToday
+                      ? "bg-brand-700 text-white"
+                      : inMonth
+                      ? "text-slate-700 hover:bg-slate-100"
+                      : "text-slate-400"
+                  }`}
+                >
+                  <span>
+                    {day.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                    })}
+                  </span>
+                  {!inMonth ? (
+                    <span className="text-[10px] font-normal text-slate-400">
+                      (adjacent month)
+                    </span>
+                  ) : null}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onAdd(key)}
+                  title="Add event"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-white hover:bg-brand-700"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+
+              {/* Desktop day-number row, shown only sm and up */}
+              <div className="hidden items-center justify-between sm:flex">
                 <button
                   type="button"
                   onClick={() => onPickDay(day)}
@@ -643,7 +697,40 @@ function MonthGrid({
                 </button>
               </div>
 
-              <div className="mt-1 space-y-0.5">
+              {/* Mobile: every event listed in full, nothing clipped or hidden behind "+N more" */}
+              <div className="mt-1.5 space-y-1 sm:hidden">
+                {dayEvents.length === 0 ? (
+                  <p className="text-[11px] text-slate-300">No events</p>
+                ) : (
+                  dayEvents.map((event) =>
+                    event.kind === "schedule" && event.lecture ? (
+                      <Link
+                        key={event.key}
+                        href={`/dashboard/lectures?focusLectureId=${event.lecture.id}`}
+                        className="block w-full text-left"
+                      >
+                        <EntryChip event={event} clamp={false} />
+                      </Link>
+                    ) : (
+                      <button
+                        key={event.key}
+                        type="button"
+                        onClick={() =>
+                          event.kind === "event"
+                            ? onOpenEvent(event)
+                            : onPickDay(day)
+                        }
+                        className="block w-full text-left"
+                      >
+                        <EntryChip event={event} clamp={false} />
+                      </button>
+                    )
+                  )
+                )}
+              </div>
+
+              {/* Desktop: original compact chips, capped at 3 + "+N more" — unchanged */}
+              <div className="mt-1 hidden space-y-0.5 sm:block">
                 {dayEvents.slice(0, 3).map((event) => (
                   event.kind === "schedule" && event.lecture ? (
                     <Link
@@ -826,8 +913,8 @@ function EntryCard({
             />
             <div className="min-w-0">
               <p
-                className={`truncate font-semibold text-slate-900 ${
-                  compact ? "text-[11px]" : "text-sm"
+                className={`break-words font-semibold text-slate-900 ${
+                  compact ? "text-[11px] sm:truncate" : "text-sm"
                 }`}
               >
                 {event.className}
@@ -870,8 +957,8 @@ function EntryCard({
         />
         <div className="min-w-0">
           <p
-            className={`truncate font-semibold text-slate-900 ${
-              compact ? "text-[11px]" : "text-sm"
+            className={`break-words font-semibold text-slate-900 ${
+              compact ? "text-[11px] sm:truncate" : "text-sm"
             }`}
           >
             {event.className}
@@ -885,14 +972,18 @@ function EntryCard({
           {!event.scheduled && event.lecture ? (
             <Link
               href={`/dashboard/lectures?focusLectureId=${event.lecture.id}`}
-              className="mt-0.5 block truncate text-[10px] font-medium text-sky-700 underline decoration-dotted underline-offset-2 hover:text-sky-900"
+              className={`mt-0.5 block break-words text-[10px] font-medium text-sky-700 underline decoration-dotted underline-offset-2 hover:text-sky-900 ${
+                compact ? "sm:truncate" : ""
+              }`}
             >
               Extra lecture: {event.lecture.title}
             </Link>
           ) : event.lecture ? (
             <Link
               href={`/dashboard/lectures?focusLectureId=${event.lecture.id}`}
-              className="mt-0.5 block truncate text-[10px] font-medium text-emerald-700 underline decoration-dotted underline-offset-2 hover:text-emerald-900"
+              className={`mt-0.5 block break-words text-[10px] font-medium text-emerald-700 underline decoration-dotted underline-offset-2 hover:text-emerald-900 ${
+                compact ? "sm:truncate" : ""
+              }`}
             >
               Lecture: {event.lecture.title}
             </Link>
@@ -1335,7 +1426,7 @@ function TypesManager({
                   ) : null}
                 </p>
                 {type.description ? (
-                  <p className="truncate text-[10px] text-slate-500">
+                  <p className="break-words text-[10px] text-slate-500">
                     {type.description}
                   </p>
                 ) : null}

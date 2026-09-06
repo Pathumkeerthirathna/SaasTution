@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { startOfTodaySriLankaUtc } from "@/lib/time";
 
 const WEEKDAY_NAMES = [
   "SUNDAY",
@@ -11,32 +12,13 @@ const WEEKDAY_NAMES = [
 ] as const;
 
 export type TeacherDashboardMetrics = {
-  payments: { due: number; total: number; dueAmountLkr: number };
   lectures: { scheduled: number; total: number };
   events: { pending: number; total: number };
-  schedules: { pending: number; total: number };
   materials: { pendingToSend: number; total: number };
+  papers: { notReviewed: number; total: number };
+  bundlePapers: { notReviewed: number; total: number };
+  assignments: { notReviewed: number; total: number };
 };
-
-/** Every `{ year, month }` pair (1-indexed month) the [from, to] range touches. */
-function monthsInRange(from: Date, to: Date): { year: number; month: number }[] {
-  const pairs: { year: number; month: number }[] = [];
-  let y = from.getUTCFullYear();
-  let m = from.getUTCMonth(); // 0-indexed
-  const endY = to.getUTCFullYear();
-  const endM = to.getUTCMonth();
-
-  while (y < endY || (y === endY && m <= endM)) {
-    pairs.push({ year: y, month: m + 1 });
-    m += 1;
-    if (m > 11) {
-      m = 0;
-      y += 1;
-    }
-  }
-
-  return pairs;
-}
 
 function dayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -52,56 +34,22 @@ export async function getTeacherDashboardMetrics(
   from: Date,
   to: Date
 ): Promise<TeacherDashboardMetrics> {
-  const now = new Date();
+  // "Pending" events are the ones still ahead — today (even if already
+  // started) through the end of the selected range.
+  const todayStartUtc = startOfTodaySriLankaUtc();
+  const pendingEventsFrom = todayStartUtc > from ? todayStartUtc : from;
 
   const [
-    feeRows,
-    lecturesTotal,
-    lecturesScheduled,
     eventsTotal,
     eventsPending,
-    schedulesTotal,
     schedules,
     rangeLectures,
     materialsTotal,
     materialsPending,
+    papersInRange,
+    bundlePapersInRange,
+    assignmentsInRange,
   ] = await Promise.all([
-    // payments — one row per student-month obligation in the range
-    prisma.classStudentFee.findMany({
-      where: {
-        status: 0,
-        classStudent: {
-          class: { teacherId, status: 0 },
-          student: { status: 0 },
-        },
-        OR: monthsInRange(from, to),
-      },
-      select: {
-        finalAmount: true,
-        payments: {
-          where: { status: "CONFIRMED" },
-          select: { id: true },
-          take: 1,
-        },
-      },
-    }),
-
-    prisma.lecture.count({
-      where: {
-        status: 0,
-        class: { teacherId, status: 0 },
-        date: { gte: from, lte: to },
-      },
-    }),
-    prisma.lecture.count({
-      where: {
-        status: 0,
-        classStatus: "SCHEDULED",
-        class: { teacherId, status: 0 },
-        date: { gte: from, lte: to },
-      },
-    }),
-
     prisma.teacherCalendarEvent.count({
       where: {
         teacherId,
@@ -113,14 +61,10 @@ export async function getTeacherDashboardMetrics(
       where: {
         teacherId,
         status: 0,
-        startDateTime: { gte: from, lte: to },
-        endDateTime: { gt: now },
+        startDateTime: { gte: pendingEventsFrom, lte: to },
       },
     }),
 
-    prisma.classSchedule.count({
-      where: { class: { teacherId, status: 0 } },
-    }),
     prisma.classSchedule.findMany({
       where: { class: { teacherId, status: 0 } },
       select: { classId: true, dayOfWeek: true },
@@ -154,25 +98,70 @@ export async function getTeacherDashboardMetrics(
         },
       },
     }),
+
+    // papers added in range, with just enough of each paper's submissions to
+    // tell whether it still has an unmarked (submitted) answer.
+    prisma.classPaper.findMany({
+      where: {
+        status: 0,
+        class: { teacherId, status: 0 },
+        createdAt: { gte: from, lte: to },
+      },
+      select: {
+        id: true,
+        submissions: {
+          where: { submitted: true, marks: null },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    }),
+
+    // bundle ("physical") papers sent in range, with just enough of each
+    // paper's submissions to tell whether it still has an unreviewed answer.
+    prisma.materialBundleItem.findMany({
+      where: {
+        status: 0,
+        type: "PAPER",
+        createdAt: { gte: from, lte: to },
+        bundle: { status: 0, class: { teacherId, status: 0 } },
+      },
+      select: {
+        id: true,
+        submissions: {
+          where: { reviewedAt: null },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    }),
+
+    // assignments due in range, with just enough of each assignment's
+    // submissions to tell whether it still has an unreviewed answer.
+    prisma.assignment.findMany({
+      where: {
+        status: 0,
+        lecture: { status: 0, class: { teacherId, status: 0 } },
+        dueDate: { gte: from, lte: to },
+      },
+      select: {
+        id: true,
+        submissions: {
+          where: { reviewedAt: null },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    }),
   ]);
 
-  // ── payments ────────────────────────────────────────────────────────────
-  const paymentsTotal = feeRows.length;
-  let paymentsDue = 0;
-  let dueAmountLkr = 0;
-  for (const fee of feeRows) {
-    if (fee.payments.length === 0) {
-      paymentsDue += 1;
-      dueAmountLkr += fee.finalAmount;
-    }
-  }
-
-  // ── schedules pending: occurrences in range with no lecture that day ────
+  // ── schedule occurrences in range: with vs. without a lecture added ─────
   const lectureDayKeys = new Set(
     rangeLectures.map((l) => `${l.classId}|${dayKey(l.date)}`)
   );
 
   let schedulesPending = 0;
+  let scheduleOccurrencesInRange = 0;
   for (const schedule of schedules) {
     const targetDow = WEEKDAY_NAMES.indexOf(
       schedule.dayOfWeek as (typeof WEEKDAY_NAMES)[number]
@@ -187,6 +176,7 @@ export async function getTeacherDashboardMetrics(
     );
 
     while (cursor.getTime() <= to.getTime()) {
+      scheduleOccurrencesInRange += 1;
       if (!lectureDayKeys.has(`${schedule.classId}|${dayKey(cursor)}`)) {
         schedulesPending += 1;
       }
@@ -194,15 +184,30 @@ export async function getTeacherDashboardMetrics(
     }
   }
 
+  // "Lectures scheduled" = of all this range's class-schedule occurrences,
+  // how many already have a lecture added by the teacher.
+  const lecturesAdded = scheduleOccurrencesInRange - schedulesPending;
+
+  // A paper counts as "not reviewed" if any student's submitted answer on it
+  // still has no marks.
+  const papersTotal = papersInRange.length;
+  const papersNotReviewed = papersInRange.filter((p) => p.submissions.length > 0).length;
+
+  // Same idea for bundle ("physical") papers, using reviewedAt instead of marks.
+  const bundlePapersTotal = bundlePapersInRange.length;
+  const bundlePapersNotReviewed = bundlePapersInRange.filter((p) => p.submissions.length > 0).length;
+
+  // An assignment counts as "not reviewed" if any student's submission on it
+  // still has no review (reviewedAt null).
+  const assignmentsTotal = assignmentsInRange.length;
+  const assignmentsNotReviewed = assignmentsInRange.filter((a) => a.submissions.length > 0).length;
+
   return {
-    payments: {
-      due: paymentsDue,
-      total: paymentsTotal,
-      dueAmountLkr,
-    },
-    lectures: { scheduled: lecturesScheduled, total: lecturesTotal },
+    lectures: { scheduled: lecturesAdded, total: scheduleOccurrencesInRange },
     events: { pending: eventsPending, total: eventsTotal },
-    schedules: { pending: schedulesPending, total: schedulesTotal },
     materials: { pendingToSend: materialsPending, total: materialsTotal },
+    papers: { notReviewed: papersNotReviewed, total: papersTotal },
+    bundlePapers: { notReviewed: bundlePapersNotReviewed, total: bundlePapersTotal },
+    assignments: { notReviewed: assignmentsNotReviewed, total: assignmentsTotal },
   };
 }

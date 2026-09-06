@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, LogOut, ChevronDown, Hash } from "lucide-react";
 
 import { StudentSidebar } from "@/components/student-portal/student-sidebar";
@@ -27,6 +27,23 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isProfileOpen) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isProfileOpen]);
 
   // On desktop (lg+) the sidebar is a persistent rail — start it expanded so every
   // nav label is visible. On smaller screens it stays a closed off-canvas drawer.
@@ -123,7 +140,7 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
           <div className="relative flex shrink-0 items-center gap-2.5">
             <StudentMessageBell />
 
-            <div className="relative">
+            <div className="relative" ref={profileMenuRef}>
             <button
               type="button"
               onClick={() => setIsProfileOpen((prev) => !prev)}

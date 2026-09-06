@@ -101,6 +101,7 @@ export async function POST(
         maxAttempts: true,
         startDateTime: true,
         endDateTime: true,
+        lecture: { select: { classId: true } },
         questions: {
           orderBy: {
             orderIndex: "asc",
@@ -246,7 +247,10 @@ export async function POST(
       });
     });
 
-    emitStudentDataChange({ studentId: studentSession.studentId });
+    emitStudentDataChange({
+      studentId: studentSession.studentId,
+      classId: quiz.lecture.classId,
+    });
 
     return apiSuccess(
       {

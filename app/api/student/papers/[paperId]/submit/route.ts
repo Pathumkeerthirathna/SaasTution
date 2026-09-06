@@ -31,7 +31,7 @@ export async function POST(
       select: {
         id: true,
         submissionPdfUrl: true,
-        classPaper: { select: { startTime: true, endTime: true } },
+        classPaper: { select: { startTime: true, endTime: true, classId: true } },
       },
     });
 
@@ -72,7 +72,10 @@ export async function POST(
       if (old) await unlink(old).catch(() => undefined);
     }
 
-    emitStudentDataChange({ studentId: session.studentId });
+    emitStudentDataChange({
+      studentId: session.studentId,
+      classId: row.classPaper.classId,
+    });
 
     return apiSuccess(
       { submissionId: updated.id, submittedAt: updated.submittedAt?.toISOString() ?? null },

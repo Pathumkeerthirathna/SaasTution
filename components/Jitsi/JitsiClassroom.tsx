@@ -9,6 +9,7 @@ import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 
 import { useCallback,useRef, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "../class-management-panel";
@@ -17,10 +18,151 @@ import type { JitsiControls } from "./hooks/useJitsi";
 import toast from "react-hot-toast";
 import { getYoutubeFriendlyErrorMessage } from "@/lib/youtube-error-messages";
 import { announce } from "@/lib/voice-announcer";
+import { RotateCcw, Video, X, XCircle } from "lucide-react";
 
+function goToYouTubeOAuthConnect() {
+  const returnTo = `${window.location.pathname}${window.location.search}`;
 
+  window.location.href =
+    `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+function showYoutubeActionToast(
+  message: string,
+  buttonLabel: string
+) {
+  toast.custom((t) => (
+    <div
+      className={`${
+        t.visible ? "animate-enter" : "animate-leave"
+      } flex max-w-sm items-start gap-3 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-black/5`}
+    >
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+        <XCircle className="h-4 w-4" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] leading-5 text-slate-700">
+          {message}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => {
+            toast.dismiss(t.id);
+            goToYouTubeOAuthConnect();
+          }}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-red-700"
+        >
+          {buttonLabel === "Reconnect YouTube" ? (
+            <RotateCcw className="h-3.5 w-3.5" />
+          ) : (
+            <Video className="h-3.5 w-3.5" />
+          )}
+          {buttonLabel}
+        </button>
+      </div>
+    </div>
+  ));
+}
+
+const YOUTUBE_OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  DENIED: "YouTube authorization was cancelled.",
+  MISSING_CODE:
+    "YouTube authorization did not complete. Please try again.",
+  INVALID_STATE:
+    "Your YouTube connection request expired. Please try again.",
+  TOKEN_EXCHANGE_FAILED:
+    "Could not complete YouTube authorization. Please try again.",
+  NO_ACCESS_TOKEN:
+    "Google did not authorize access. Please try again.",
+  CHANNEL_LOOKUP_FAILED:
+    "Could not check your YouTube channel. Please try again.",
+  NO_REFRESH_TOKEN:
+    "Please reconnect and allow offline access when Google asks.",
+  CONFIG_MISSING:
+    "YouTube connection is temporarily unavailable. Please try again later.",
+};
+
+function showYoutubeNoChannelToast() {
+  toast.custom(
+    (t) => (
+      <div
+        className={`${
+          t.visible ? "animate-enter" : "animate-leave"
+        } w-full max-w-sm rounded-xl bg-white p-4 shadow-lg ring-1 ring-black/5`}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <XCircle className="h-4 w-4" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[13px] font-semibold text-slate-800">
+                No YouTube Channel Found
+              </p>
+
+              <button
+                type="button"
+                onClick={() => toast.dismiss(t.id)}
+                className="shrink-0 rounded-md p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <p className="mt-1 text-[12.5px] leading-5 text-slate-600">
+              The Google account you signed in with doesn&apos;t have a
+              YouTube channel yet. Create one, then connect again:
+            </p>
+
+            <ol className="mt-2 list-decimal space-y-1 pl-4 text-[12px] leading-5 text-slate-600">
+              <li>
+                Go to youtube.com and sign in with the same Google
+                account.
+              </li>
+              <li>
+                Click your profile picture, then &quot;Create a
+                channel&quot;.
+              </li>
+              <li>Come back here and click &quot;Try Again&quot; below.</li>
+            </ol>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a
+                href="https://www.youtube.com/account"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-[12.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Open YouTube
+              </a>
+
+              <button
+                type="button"
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  goToYouTubeOAuthConnect();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-red-700"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+    { duration: 20000 }
+  );
+}
 
 export default function JitsiClassroom() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const {
     joinInfo,
     loading,
@@ -62,6 +204,19 @@ const [classStudents, setClassStudents] =
   const [youtubeReauthRequired, setYoutubeReauthRequired] =
   useState(false);
 
+  // The Jitsi conference reports these independently of PermissionGate's
+  // device-permission "ready" state — Record/Start Live must stay hidden
+  // until the conference has actually joined AND Jitsi confirms the local
+  // user is really a moderator, otherwise going live can silently fail.
+  const [isConferenceJoined, setIsConferenceJoined] =
+  useState(false);
+
+  const [isModerator, setIsModerator] =
+  useState(false);
+
+  const isConferenceReady =
+    role !== "teacher" || (isConferenceJoined && isModerator);
+
   const [youtubePrivacy, setYoutubePrivacy] =
   useState<"public" | "unlisted" | "private">(
     "unlisted"
@@ -85,6 +240,35 @@ const [classStudents, setClassStudents] =
       top: rect.bottom + 8,
       right: Math.max(8, window.innerWidth - rect.right),
     });
+  }, []);
+
+  // Surface any error the YouTube OAuth callback redirected back with, then
+  // strip it from the URL so refreshing the page doesn't re-show it.
+  useEffect(() => {
+    const oauthError = searchParams.get("youtubeOauthError");
+
+    if (!oauthError) return;
+
+    if (oauthError === "NO_CHANNEL") {
+      showYoutubeNoChannelToast();
+    } else {
+      toast.error(
+        YOUTUBE_OAUTH_ERROR_MESSAGES[oauthError] ??
+          "Failed to connect your YouTube account. Please try again."
+      );
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("youtubeOauthError");
+
+    const query = params.toString();
+
+    router.replace(
+      query
+        ? `${window.location.pathname}?${query}`
+        : window.location.pathname
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -127,6 +311,41 @@ const [classStudents, setClassStudents] =
 
   const [youtubeLiveReusedRecording, setYoutubeLiveReusedRecording] =
     useState(false);
+
+  // Real-time "is this class live on YouTube right now" signal, pushed via
+  // SSE so students see the stream start without refreshing — the Jitsi
+  // `recordingStatusChanged` event alone isn't reliable for this (it's only
+  // acted on by the client that initiated the start).
+  useEffect(() => {
+    const sessionId = joinInfo?.session?.id;
+
+    if (!sessionId) return;
+
+    const source = new EventSource(
+      `/api/sessions/${sessionId}/live-updates?role=${role}`
+    );
+
+    const handleLiveStatus = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          isLive: boolean;
+          youtubeUrl: string | null;
+        };
+
+        setIsLive(data.isLive);
+        setYoutubeLiveUrl(data.youtubeUrl);
+      } catch {
+        /* ignore malformed payloads */
+      }
+    };
+
+    source.addEventListener("live-status", handleLiveStatus);
+
+    return () => {
+      source.removeEventListener("live-status", handleLiveStatus);
+      source.close();
+    };
+  }, [joinInfo?.session?.id, role]);
 
   const [meetingReady, setMeetingReady] =
     useState(false);
@@ -270,6 +489,8 @@ const [classStudents, setClassStudents] =
 
     setLiveStartFailed(false);
 
+    let youtubeErrorCode: string | null = null;
+
     try {
       const response = await fetch(
         "/api/youtube/lecture/start",
@@ -291,6 +512,8 @@ const [classStudents, setClassStudents] =
         "🎥 YOUTUBE LIVE START RESPONSE:",
         data
       );
+
+      youtubeErrorCode = data?.code ?? null;
 
       if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
         setYoutubeReauthRequired(true);
@@ -361,14 +584,19 @@ const [classStudents, setClassStudents] =
       setIsLive(false);
       setLiveStartFailed(true);
 
-      toast.error(
-        getYoutubeFriendlyErrorMessage(
-          error instanceof Error
-            ? error.message
-            : undefined,
-          "live"
-        )
+      const friendlyMessage = getYoutubeFriendlyErrorMessage(
+        error instanceof Error ? error.message : undefined,
+        "live",
+        youtubeErrorCode
       );
+
+      if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
+        showYoutubeActionToast(friendlyMessage, "Connect YouTube");
+      } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
+        showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
+      } else {
+        toast.error(friendlyMessage);
+      }
 
       throw error;
     }
@@ -387,6 +615,8 @@ const [classStudents, setClassStudents] =
       console.error("❌ No lecture ID available.");
       return;
     }
+
+    let youtubeErrorCode: string | null = null;
 
     try {
       const response = await fetch(
@@ -410,6 +640,8 @@ const [classStudents, setClassStudents] =
         "🎥 YOUTUBE RECORDING START RESPONSE:",
         data
       );
+
+      youtubeErrorCode = data?.code ?? null;
 
       if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
         setYoutubeReauthRequired(true);
@@ -471,14 +703,19 @@ const [classStudents, setClassStudents] =
         error
       );
 
-      toast.error(
-        getYoutubeFriendlyErrorMessage(
-          error instanceof Error
-            ? error.message
-            : undefined,
-          "recording"
-        )
+      const friendlyMessage = getYoutubeFriendlyErrorMessage(
+        error instanceof Error ? error.message : undefined,
+        "recording",
+        youtubeErrorCode
       );
+
+      if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
+        showYoutubeActionToast(friendlyMessage, "Connect YouTube");
+      } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
+        showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
+      } else {
+        toast.error(friendlyMessage);
+      }
 
       throw error;
     }
@@ -513,6 +750,7 @@ const [classStudents, setClassStudents] =
         isLive={isLive}
         isStartingLive={isStartingLive}
         liveStartFailed={liveStartFailed}
+        isConferenceReady={isConferenceReady}
         showHeader={meetingReady}
         startLiveButtonRef={startLiveButtonRef}
         youtubeLiveUrl={youtubeLiveUrl}
@@ -521,11 +759,7 @@ const [classStudents, setClassStudents] =
         }
         youtubeStatus={joinInfo.youtube?.status}
         youtubeReauthRequired={youtubeReauthRequired}
-        onReconnectYoutube={() => {
-          const returnTo = `${window.location.pathname}${window.location.search}`;
-          window.location.href =
-            `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
-        }}
+        onReconnectYoutube={goToYouTubeOAuthConnect}
         onStartRecording={() => {
            console.log("🎥 RECORD BUTTON CLICKED");
 
@@ -769,6 +1003,8 @@ const [classStudents, setClassStudents] =
                 setIsLive(live);
               }
             }}
+            onConferenceJoined={() => setIsConferenceJoined(true)}
+            onModeratorStatusChanged={setIsModerator}
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}
@@ -959,6 +1195,12 @@ const [classStudents, setClassStudents] =
           }
           chatMessages={chatMessages}
           onSendChat={sendChat}
+          onSetVideoQuality={(heightPx) =>
+            jitsiMeetingRef.current?.setVideoQuality(heightPx)
+          }
+          onSetNoiseSuppression={(enabled) =>
+            jitsiMeetingRef.current?.setNoiseSuppression(enabled)
+          }
         />
       )}
 

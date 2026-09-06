@@ -94,7 +94,7 @@ export async function POST(
       return paymentUpdate;
     });
 
-    emitStudentDataChange({ studentId: payment.studentId });
+    emitStudentDataChange({ studentId: payment.studentId, classId });
 
     return apiSuccess({ payment: updated }, { message: status === "CONFIRMED" ? "Payment confirmed." : "Clarification requested." });
   } catch (error) {

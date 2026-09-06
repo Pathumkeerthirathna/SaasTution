@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAppSession } from "@/lib/auth-session";
+import { getOptionalSession, requireAppSession } from "@/lib/auth-session";
 
 import {
   getTeacherMediums,
+  isProfilePublic,
   updateTeacherMediums,
 } from "@/services/teacher-profile-service";
 
@@ -16,6 +17,13 @@ export async function GET(request:Request) {
 
     if (!teacherId) {
       throw new Error("Teacher id is required.");
+    }
+
+    const session = await getOptionalSession();
+    const isOwner = session?.role === "TEACHER" && session.userId === teacherId;
+
+    if (!isOwner && !(await isProfilePublic(teacherId))) {
+      return NextResponse.json([]);
     }
 
     const mediums =

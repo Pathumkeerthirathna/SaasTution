@@ -145,7 +145,7 @@ export async function POST(
           },
         },
       },
-      select: { id: true, dueDate: true },
+      select: { id: true, dueDate: true, lecture: { select: { classId: true } } },
     });
 
     if (!assignment) {
@@ -220,7 +220,10 @@ export async function POST(
       await unlink(oldPath).catch(() => undefined);
     }
 
-    emitStudentDataChange({ studentId: studentSession.studentId });
+    emitStudentDataChange({
+      studentId: studentSession.studentId,
+      classId: assignment.lecture.classId,
+    });
 
     return apiSuccess({ submission }, { message: "Assignment submitted successfully.", status: 201 });
   } catch (error) {

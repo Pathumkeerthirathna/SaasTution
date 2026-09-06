@@ -154,10 +154,10 @@ export function StudentPayments({ studentId, data }: StudentPaymentsProps) {
                   onClick={() =>
                     setOpenClassId(open ? null : item.classId)
                   }
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold text-slate-900">
+                    <p className="break-words text-[13px] font-semibold text-slate-900 sm:truncate">
                       {item.className}
                     </p>
                     <p className="text-[11px] text-slate-500">

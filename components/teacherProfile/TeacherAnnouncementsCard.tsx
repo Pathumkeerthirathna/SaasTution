@@ -242,9 +242,9 @@ export default function TeacherAnnouncementsCard({ teacherId, isPublic }: Props)
                 ? `Limit of ${MAX_TEACHER_ANNOUNCEMENTS} announcements reached`
                 : "Add announcement"
             }
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#4D6C90] px-2.5 py-1 text-[12.5px] font-medium text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3 w-3" />
             Add
           </button>
         )}
@@ -270,7 +270,7 @@ export default function TeacherAnnouncementsCard({ teacherId, isPublic }: Props)
             {!isPublic && (
               <button
                 onClick={openAddDrawer}
-                className="mt-3 rounded-lg bg-orange-500 px-3 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
+                className="mt-3 rounded-md bg-[#4D6C90] px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-[#3B5776]"
               >
                 Add First Announcement
               </button>
@@ -369,7 +369,7 @@ export default function TeacherAnnouncementsCard({ teacherId, isPublic }: Props)
                         aria-current={index === activeIndex}
                         className={`h-2 rounded-full transition-all ${
                           index === activeIndex
-                            ? "w-5 bg-orange-500"
+                            ? "w-5 bg-[#4D6C90]"
                             : "w-2 bg-slate-300 hover:bg-slate-400"
                         }`}
                       />

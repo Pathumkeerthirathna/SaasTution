@@ -24,9 +24,14 @@ export async function POST(request: NextRequest) {
             where: {
                 id: lectureId,
             },
+            include: {
+                class: {
+                    select: { teacherId: true },
+                },
+            },
         });
 
-        if (!lecture) {
+        if (!lecture || lecture.class.teacherId !== teacherSession.teacherId) {
             return NextResponse.json(
                 {
                     error: "Lecture not found.",
@@ -34,17 +39,6 @@ export async function POST(request: NextRequest) {
                 { status: 404 }
             );
         }
-
-        /*
-         * IMPORTANT:
-         *
-         * Make sure the lecture belongs to the
-         * currently logged-in teacher.
-         *
-         * We will replace this with the exact
-         * Class → Teacher relationship from your
-         * schema once we inspect it.
-         */
 
         const connection =
             await prisma.youTubeConnection.findUnique({

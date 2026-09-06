@@ -94,7 +94,7 @@ export function DashboardCountdown({ items }: Props) {
             </span>
           </div>
 
-          <p className="mt-0.5 truncate text-[13px] text-slate-700">
+          <p className="mt-0.5 break-words text-[13px] text-slate-700 sm:truncate">
             <span className="font-medium">{next.title}</span>
             {next.subtitle ? <span className="text-slate-500"> · {next.subtitle}</span> : null}
           </p>

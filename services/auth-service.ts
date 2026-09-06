@@ -82,6 +82,7 @@ export async function registerTeacher(input: {
   name: string;
   email: string;
   password: string;
+  contact: string;
 }) {
   const existingTeacher = await findTeacherByEmail(input.email);
 
@@ -100,12 +101,14 @@ export async function registerTeacher(input: {
       name: input.name,
       email: input.email,
       password: hashedPassword,
+      contact: input.contact,
       profileSections: defaultProfileSectionsCreateInput(),
     },
     select: {
       id: true,
       name: true,
       email: true,
+      contact: true,
       createdAt: true,
     },
   });
@@ -122,6 +125,25 @@ export async function loginTeacher(email: string, password: string) {
 
   if (!isPasswordValid) {
     throw new AppError("Invalid email or password.", 401, "INVALID_CREDENTIALS");
+  }
+
+  if (teacher.isBlocked) {
+    throw new AppError(
+      teacher.blockReason
+        ? `Your account has been blocked by the administrator. Reason: ${teacher.blockReason}`
+        : "Your account has been blocked by the administrator.",
+      403,
+      "TEACHER_BLOCKED",
+      { reason: teacher.blockReason ?? null }
+    );
+  }
+
+  if (teacher.isRejected) {
+    throw new AppError(
+      "Your account has been rejected. Please contact our hotline for more information.",
+      403,
+      "TEACHER_REGISTRATION_REJECTED"
+    );
   }
 
   return {

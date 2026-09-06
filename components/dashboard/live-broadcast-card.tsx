@@ -205,10 +205,10 @@ function LivePlayerModal({
           className="w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-black shadow-2xl"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
-            <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-white">
-              <Radio size={13} className="flex-shrink-0" />
-              <span className="truncate">
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-2.5">
+            <p className="flex min-w-0 items-start gap-1.5 text-xs font-medium text-white">
+              <Radio size={13} className="mt-0.5 flex-shrink-0" />
+              <span className="break-words sm:truncate">
                 {broadcast.className} · {broadcast.lectureTitle}
               </span>
             </p>

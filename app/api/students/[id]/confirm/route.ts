@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireTeacherSession } from "@/lib/auth-session";
 import { confirmStudent } from "../../../../../services/student-service";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  console.log("🔥 Confirm route called");
-
   try {
-    await confirmStudent(params.id);
+    const session = await requireTeacherSession();
+    await confirmStudent(session.teacherId, params.id);
 
     return NextResponse.json({
       success: true,

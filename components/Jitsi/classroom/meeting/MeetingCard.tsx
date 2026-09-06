@@ -27,6 +27,14 @@ type MeetingCardProps = {
   isStartingLive?: boolean;
   liveStartFailed?: boolean;
 
+  /**
+   * True once the Jitsi conference has actually joined and the local
+   * teacher is confirmed as a real Jitsi moderator. Record/Start Live stay
+   * hidden behind a "Connecting..." indicator until this is true, since
+   * going live before it's confirmed can fail silently.
+   */
+  isConferenceReady?: boolean;
+
   youtubeLiveUrl?: string | null;
 
   onStartRecording?: () => void | Promise<void>;
@@ -63,6 +71,7 @@ export default function MeetingCard({
   youtubeReauthRequired = false,
   isStartingLive,
   liveStartFailed = false,
+  isConferenceReady = false,
   youtubeLiveUrl,
   showHeader = true,
   startLiveButtonRef,
@@ -189,10 +198,42 @@ export default function MeetingCard({
 
         <div className="flex items-center gap-5">
 
+          {role === "student" && isLive && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-3 py-1.5">
+                <Radio
+                  size={16}
+                  className="animate-pulse text-[#EF4444]"
+                />
+
+                <span className="font-semibold text-[#EF4444]">
+                  LIVE
+                </span>
+              </div>
+
+              {youtubeLiveUrl && (
+                <a
+                  href={youtubeLiveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#DC2626]"
+                >
+                  <MonitorPlay size={16} />
+                  Watch on YouTube
+                </a>
+              )}
+            </div>
+          )}
+
           {role === "teacher" && (
             <div className="flex items-center gap-2">
 
-             {youtubeReauthRequired && !isLive && !isRecording ? (
+             {!isConferenceReady ? (
+                <div className="flex items-center gap-2 rounded-full bg-[#1E293B] px-4 py-2 text-sm font-medium text-[#94A3B8]">
+                  <Loader2 size={16} className="animate-spin" />
+                  Connecting to session...
+                </div>
+             ) : youtubeReauthRequired && !isLive && !isRecording ? (
                 <button
                   type="button"
                   onClick={handleReconnectYoutube}

@@ -10,13 +10,46 @@ export async function GET(request: NextRequest) {
     const clientSecret = process.env.GOOGLE_YOUTUBE_CLIENT_SECRET;
     const redirectUri = process.env.GOOGLE_YOUTUBE_REDIRECT_URI;
 
+    /*
+     * Recover where the teacher started the connection flow from so we can
+     * always bounce them back to their session, even when something below
+     * goes wrong. This is only used to pick a redirect target, never to
+     * grant any privileged action, so it's safe to read before the OAuth
+     * state is verified.
+     */
+    const storedStateCookie =
+        request.cookies.get("youtube_oauth_state")?.value;
+
+    let oauthState: { state: string; returnTo: string } | null = null;
+
+    try {
+        oauthState = storedStateCookie
+            ? JSON.parse(storedStateCookie)
+            : null;
+    } catch {
+        oauthState = null;
+    }
+
+    const rawReturnTo = oauthState?.returnTo || "/";
+
+    // Only allow redirects to internal application paths.
+    const safeReturnTo =
+        rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//")
+            ? rawReturnTo
+            : "/";
+
+    function redirectWithError(errorCode: string) {
+        const url = new URL(safeReturnTo, request.url);
+        url.searchParams.set("youtubeOauthError", errorCode);
+
+        const response = NextResponse.redirect(url);
+        response.cookies.delete("youtube_oauth_state");
+        return response;
+    }
+
     if (!clientId || !clientSecret || !redirectUri) {
-        return NextResponse.json(
-            {
-                error: "YouTube OAuth configuration is missing.",
-            },
-            { status: 500 }
-        );
+        console.error("YouTube OAuth configuration is missing.");
+        return redirectWithError("CONFIG_MISSING");
     }
 
     const { searchParams } = new URL(request.url);
@@ -27,78 +60,22 @@ export async function GET(request: NextRequest) {
 
     // Teacher denied authorization
     if (error) {
-        return NextResponse.json(
-            {
-                error: "YouTube authorization was not completed.",
-                details: error,
-            },
-            { status: 400 }
-        );
+        return redirectWithError("DENIED");
     }
 
     if (!code || !returnedState) {
-        return NextResponse.json(
-            {
-                error: "Missing authorization code or state.",
-            },
-            { status: 400 }
-        );
+        return redirectWithError("MISSING_CODE");
     }
 
     // Verify OAuth state
-    // const storedState =
-    //     request.cookies.get("youtube_oauth_state")?.value;
-
-    // if (!storedState || storedState !== returnedState) {
-    //     return NextResponse.json(
-    //         {
-    //             error: "Invalid OAuth state.",
-    //         },
-    //         { status: 400 }
-    //     );
-    // }
-
-    const storedStateCookie =
-    request.cookies.get("youtube_oauth_state")?.value;
-
-    if (!storedStateCookie) {
-        return NextResponse.json(
-            {
-                error: "Invalid OAuth state.",
-            },
-            { status: 400 }
-        );
-    }
-
-    let oauthState: {
-        state: string;
-        returnTo: string;
-    };
-
-    try {
-        oauthState = JSON.parse(storedStateCookie);
-    } catch {
-        return NextResponse.json(
-            {
-                error: "Invalid OAuth state.",
-            },
-            { status: 400 }
-        );
-    }
-
     if (
+        !storedStateCookie ||
+        !oauthState ||
         !oauthState.state ||
         oauthState.state !== returnedState
     ) {
-        return NextResponse.json(
-            {
-                error: "Invalid OAuth state.",
-            },
-            { status: 400 }
-        );
+        return redirectWithError("INVALID_STATE");
     }
-
-    const returnTo = oauthState.returnTo || "/";
 
     // Exchange authorization code for Google tokens
     const tokenResponse = await fetch(
@@ -127,13 +104,7 @@ export async function GET(request: NextRequest) {
             errorDetails
         );
 
-        return NextResponse.json(
-            {
-                error:
-                    "Failed to exchange authorization code.",
-            },
-            { status: 500 }
-        );
+        return redirectWithError("TOKEN_EXCHANGE_FAILED");
     }
 
     const tokenData = await tokenResponse.json();
@@ -147,13 +118,8 @@ export async function GET(request: NextRequest) {
         | undefined;
 
     if (!accessToken) {
-        return NextResponse.json(
-            {
-                error:
-                    "Google did not return an access token.",
-            },
-            { status: 500 }
-        );
+        console.error("Google did not return an access token.");
+        return redirectWithError("NO_ACCESS_TOKEN");
     }
 
     /*
@@ -178,13 +144,7 @@ export async function GET(request: NextRequest) {
             errorDetails
         );
 
-        return NextResponse.json(
-            {
-                error:
-                    "Unable to retrieve the YouTube channel.",
-            },
-            { status: 500 }
-        );
+        return redirectWithError("CHANNEL_LOOKUP_FAILED");
     }
 
     const channelData = await channelResponse.json();
@@ -192,13 +152,7 @@ export async function GET(request: NextRequest) {
     const channel = channelData.items?.[0];
 
     if (!channel?.id) {
-        return NextResponse.json(
-            {
-                error:
-                    "No YouTube channel was found for this Google account.",
-            },
-            { status: 400 }
-        );
+        return redirectWithError("NO_CHANNEL");
     }
 
     const channelId = channel.id as string;
@@ -228,13 +182,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!refreshTokenEncrypted) {
-        return NextResponse.json(
-            {
-                error:
-                    "Google did not provide a refresh token. Please reconnect YouTube and grant offline access.",
-            },
-            { status: 400 }
-        );
+        return redirectWithError("NO_REFRESH_TOKEN");
     }
 
     /*
@@ -259,16 +207,6 @@ export async function GET(request: NextRequest) {
             status: "CONNECTED",
         },
     });
-
-    // OAuth state is no longer needed.
-     /*
-     * Only allow redirects to internal application paths.
-     */
-    const safeReturnTo =
-        returnTo.startsWith("/") &&
-        !returnTo.startsWith("//")
-            ? returnTo
-            : "/";
 
     /*
      * Redirect teacher back to where

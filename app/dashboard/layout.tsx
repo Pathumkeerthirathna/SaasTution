@@ -45,6 +45,8 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     select: {
       name: true,
       email: true,
+      isConfirmed: true,
+      isRejected: true,
     },
   });
 
@@ -52,8 +54,15 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     redirect("/login");
   }
 
+  const isPending = !teacher.isConfirmed && !teacher.isRejected;
+
   return (
-    <DashboardShell role="TEACHER" name={teacher.name} email={teacher.email}>
+    <DashboardShell
+      role="TEACHER"
+      name={teacher.name}
+      email={teacher.email}
+      isPending={isPending}
+    >
       {children}
     </DashboardShell>
   );

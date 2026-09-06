@@ -43,6 +43,16 @@ export type JitsiControls = {
 
   /** Send a chat message to everyone in the meeting (Jitsi group chat). */
   sendChatMessage: (message: string) => void;
+
+  /**
+   * Teacher only: sets the send (and receive) video resolution, in pixels of
+   * frame height — e.g. 720, 480, 320, 180. Students receive the teacher's
+   * video at this resolution.
+   */
+  setVideoQuality: (heightPx: number) => void;
+
+  /** Enable/disable noise suppression on the local (teacher's) microphone track. */
+  setNoiseSuppression: (enabled: boolean) => void;
 };
 
 type YouTubeStreamPurpose =
@@ -82,6 +92,12 @@ type UseJitsiProps = {
   /** Fired for every chat message (remote arrivals + this device's own sends). */
   onChatMessage?: (message: ChatMessage) => void;
 
+  /** Fired once the local user's Jitsi conference has actually joined. */
+  onConferenceJoined?: () => void;
+
+  /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
+  onModeratorStatusChanged?: (isModerator: boolean) => void;
+
 };
 
 export default function useJitsi({
@@ -98,6 +114,8 @@ export default function useJitsi({
   onRecordingStatusChanged,
   onLiveStatusChanged,
   onChatMessage,
+  onConferenceJoined,
+  onModeratorStatusChanged,
 
 }: UseJitsiProps) {
 
@@ -106,10 +124,20 @@ export default function useJitsi({
   const youtubeStreamPurposeRef =
   useRef<YouTubeStreamPurpose | null>(null);
 
+  // Set from `videoConferenceJoined` so `participantRoleChanged` events can
+  // be matched against the local participant.
+  const localParticipantIdRef = useRef<string | null>(null);
+
   // Kept in refs so the (deps: []) imperative handle and the Jitsi listeners
   // always call the latest callback / see the latest local display name.
   const onChatMessageRef = useRef(onChatMessage);
   onChatMessageRef.current = onChatMessage;
+
+  const onConferenceJoinedRef = useRef(onConferenceJoined);
+  onConferenceJoinedRef.current = onConferenceJoined;
+
+  const onModeratorStatusChangedRef = useRef(onModeratorStatusChanged);
+  onModeratorStatusChangedRef.current = onModeratorStatusChanged;
 
   const localName =
     role === "teacher"
@@ -256,6 +284,28 @@ export default function useJitsi({
         // catches messages sent through Jitsi's own chat button, so both entry
         // points stay in sync.
         apiRef.current.executeCommand("sendChatMessage", text, "", true);
+      },
+
+      setVideoQuality: (heightPx) => {
+        if (!apiRef.current) {
+          console.warn("Jitsi API is not ready");
+          return;
+        }
+
+        console.log("🎚️ Setting video quality:", heightPx);
+
+        apiRef.current.executeCommand("setVideoQuality", heightPx);
+      },
+
+      setNoiseSuppression: (enabled) => {
+        if (!apiRef.current) {
+          console.warn("Jitsi API is not ready");
+          return;
+        }
+
+        console.log("🔇 Setting noise suppression:", enabled);
+
+        apiRef.current.executeCommand("setNoiseSuppressionEnabled", { enabled });
       },
     }),
     []
@@ -584,15 +634,23 @@ export default function useJitsi({
      * ============================================================
      */
 
-    const handleJoined = () => {
+    const handleJoined = (event: unknown) => {
 
       console.log(
         "Jitsi conference joined"
       );
 
+      const data = event as { id?: string } | undefined;
+
+      if (data?.id) {
+        localParticipantIdRef.current = data.id;
+      }
+
       updateParticipants();
 
       void markJoined();
+
+      onConferenceJoinedRef.current?.();
     };
 
 
@@ -605,6 +663,29 @@ export default function useJitsi({
     const handleLeftConference = () => {
 
       void markLeft();
+    };
+
+    /*
+     * ============================================================
+     * PARTICIPANT ROLE CHANGED
+     * ============================================================
+     * Jitsi's real moderator status — used to gate moderator-only actions
+     * (recording / going live) until it's actually confirmed, instead of
+     * guessing from the display name.
+     */
+
+    const handleParticipantRoleChanged = (event: unknown) => {
+      const data = event as
+        | { id?: string; role?: string }
+        | undefined;
+
+      if (!data?.id || data.id !== localParticipantIdRef.current) {
+        return;
+      }
+
+      onModeratorStatusChangedRef.current?.(
+        data.role === "moderator"
+      );
     };
 
     const handleParticipantMuted = (event: unknown) => {
@@ -801,6 +882,11 @@ export default function useJitsi({
     );
 
     api.addListener(
+      "participantRoleChanged",
+      handleParticipantRoleChanged
+    );
+
+    api.addListener(
       "participantJoined",
       handleParticipantJoined
     );
@@ -867,6 +953,11 @@ export default function useJitsi({
       api.removeListener(
         "videoConferenceLeft",
         handleLeftConference
+      );
+
+      api.removeListener(
+        "participantRoleChanged",
+        handleParticipantRoleChanged
       );
 
       api.removeListener(

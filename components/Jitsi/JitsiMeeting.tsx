@@ -50,6 +50,12 @@ type JitsiMeetingProps = {
 
   onChatMessage?: (message: ChatMessage) => void;
 
+  /** Fired once the local user's Jitsi conference has actually joined. */
+  onConferenceJoined?: () => void;
+
+  /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
+  onModeratorStatusChanged?: (isModerator: boolean) => void;
+
 };
 
 const JitsiMeeting = forwardRef<
@@ -64,7 +70,9 @@ const JitsiMeeting = forwardRef<
     onParticipantStatusChanged,
     onRecordingStatusChanged,
     onLiveStatusChanged,
-    onChatMessage
+    onChatMessage,
+    onConferenceJoined,
+    onModeratorStatusChanged,
   },
   ref
 ) {
@@ -149,6 +157,14 @@ const JitsiMeeting = forwardRef<
       sendChatMessage: (message: string) => {
         controlsRef.current?.sendChatMessage(message);
       },
+
+      setVideoQuality: (heightPx: number) => {
+        controlsRef.current?.setVideoQuality(heightPx);
+      },
+
+      setNoiseSuppression: (enabled: boolean) => {
+        controlsRef.current?.setNoiseSuppression(enabled);
+      },
     }),
     []
   );
@@ -167,6 +183,8 @@ const JitsiMeeting = forwardRef<
     onRecordingStatusChanged,
     onLiveStatusChanged,
     onChatMessage,
+    onConferenceJoined,
+    onModeratorStatusChanged,
   });
 
   return (

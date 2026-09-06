@@ -78,7 +78,7 @@ export function StudentProfileTabs({
   return (
     <>
       <div className="mb-4 border-b border-slate-200">
-        <div className="flex gap-4 overflow-x-auto">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;

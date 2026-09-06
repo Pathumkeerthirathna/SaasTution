@@ -309,8 +309,8 @@ export function StudentDevices({
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="truncate text-[13px] font-bold leading-tight text-slate-900">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h3 className="break-words text-[13px] font-bold leading-tight text-slate-900 sm:truncate">
                     {device.deviceName ??
                       device.deviceModel ??
                       "Unknown Device"}
@@ -322,7 +322,7 @@ export function StudentDevices({
                     {theme.label}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-[10px] text-slate-500">
+                <p className="mt-0.5 break-words text-[10px] text-slate-500 sm:truncate">
                   {device.browser ?? "Unknown"}
                   {device.browserVersion ? ` ${device.browserVersion}` : ""}
                   {" · "}
@@ -504,8 +504,8 @@ export function StudentDevices({
             )}
 
             {/* Footer */}
-            <div className="mt-2 flex items-center justify-between border-t border-slate-100 px-3 py-2">
-              <span className="truncate text-[10px] text-slate-400">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-slate-100 px-3 py-2">
+              <span className="break-words text-[10px] text-slate-400">
                 {device.approvalRequestedAt
                   ? `Requested ${fmt(device.approvalRequestedAt)}`
                   : `Seen ${fmt(device.firstLoginAt)}`}
@@ -595,12 +595,12 @@ function DetailRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+    <div className="flex items-start justify-between gap-3 py-1.5">
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-500">
         <span className="text-slate-400">{icon}</span>
         {label}
       </span>
-      <span className="truncate text-right text-[11px] font-semibold text-slate-800">
+      <span className="min-w-0 flex-1 break-words text-right text-[11px] font-semibold text-slate-800 sm:truncate">
         {children}
       </span>
     </div>

@@ -1,8 +1,14 @@
+import { TeacherTitle } from "@prisma/client";
+
 export interface UpdateTeacherProfile {
 
    name: string;
 
   slug: string;
+
+  title: TeacherTitle;
+
+  displayName: string;
 
   designation: string;
 

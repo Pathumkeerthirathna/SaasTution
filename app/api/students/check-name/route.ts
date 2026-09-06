@@ -22,18 +22,12 @@ export async function GET(request: NextRequest) {
       ? Number(gradeIdParam)
       : undefined;
 
-  // Optional teacherId
-  let teacherId = searchParams.get("teacherId");
-
-  if (!teacherId) {
-    const teacher = await requireTeacherSession();
-    teacherId = teacher.teacherId;
-  }
+  const teacher = await requireTeacherSession();
 
   const result = await checkIfNameExists(
     registrationNumber,
     studentId,
-    teacherId,
+    teacher.teacherId,
     gradeId
   );
 

@@ -34,9 +34,12 @@ export type TeacherCoursework = {
 };
 
 /**
- * Assignments and quizzes due in [from, to] for the teacher, each with the
- * students who have submitted (assignments) or attempted (quizzes) — used by
- * the dashboard coursework cards. Honours the usual active/soft-delete filters.
+ * Assignments still needing review (at least one submission with no
+ * `reviewedAt`) and quizzes due in [from, to], each with the students who
+ * have submitted (assignments) or attempted (quizzes) — used by the
+ * dashboard coursework cards. Assignments are intentionally NOT scoped to
+ * [from, to] — they should surface until reviewed, regardless of range.
+ * Honours the usual active/soft-delete filters.
  */
 export async function getTeacherCourseworkForRange(
   teacherId: string,
@@ -53,7 +56,7 @@ export async function getTeacherCourseworkForRange(
       where: {
         status: 0,
         lecture: classScope,
-        dueDate: { gte: from, lte: to },
+        submissions: { some: { reviewedAt: null } },
       },
       orderBy: { dueDate: "desc" },
       select: {

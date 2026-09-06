@@ -20,6 +20,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { formatStoredSriLankaDate } from "@/lib/time";
+
 type TeacherClass = {
   id: string;
   name: string;
@@ -60,6 +62,7 @@ type PaymentSummary = {
   dueWeekLabel: string;
   dueDate: string;
   isPastDue: boolean;
+  isDueSoon: boolean;
   enrolledCount: number;
   submittedCount: number;
   confirmedCount: number;
@@ -406,9 +409,21 @@ text-sm"
 >
             <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Clock3 size={13} />Due Window</p>
             <p className="mt-2 text-sm text-muted">{summary.dueWeekLabel} of selected month</p>
-            <p className="mt-1 text-sm text-muted">Due date: <span className="font-semibold text-foreground">{new Date(summary.dueDate).toLocaleDateString()}</span></p>
-            <p className={`mt-1 text-xs font-semibold ${summary.isPastDue ? "text-rose-700" : "text-emerald-700"}`}>
-              {summary.isPastDue ? "Past due period" : "Within due period"}
+            <p className="mt-1 text-sm text-muted">Due date: <span className="font-semibold text-foreground">{formatStoredSriLankaDate(summary.dueDate)}</span></p>
+            <p
+              className={`mt-1 text-xs font-semibold ${
+                summary.isPastDue
+                  ? "text-rose-700"
+                  : summary.isDueSoon
+                  ? "text-amber-700"
+                  : "text-emerald-700"
+              }`}
+            >
+              {summary.isPastDue
+                ? "Past due period"
+                : summary.isDueSoon
+                ? "Due soon"
+                : "Within due period"}
             </p>
           </article>
 

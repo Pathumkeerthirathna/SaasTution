@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAppSession } from "@/lib/auth-session";
+import { getOptionalSession, requireAppSession } from "@/lib/auth-session";
 
 import {
   getSocialLinks,
+  isProfilePublic,
   updateSocialLinks,
 } from "@/services/teacher-profile-service";
+
+const HIDDEN_SOCIAL_LINKS = {
+  facebookUrl: null,
+  youtubeUrl: null,
+  tiktokUrl: null,
+  instagramUrl: null,
+  websiteUrl: null,
+};
 
 export async function GET(request:Request) {
   try {
@@ -16,6 +25,13 @@ export async function GET(request:Request) {
 
     if (!teacherId) {
       throw new Error("Teacher id is required.");
+    }
+
+    const session = await getOptionalSession();
+    const isOwner = session?.role === "TEACHER" && session.userId === teacherId;
+
+    if (!isOwner && !(await isProfilePublic(teacherId))) {
+      return NextResponse.json(HIDDEN_SOCIAL_LINKS);
     }
 
     const data =

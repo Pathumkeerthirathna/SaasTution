@@ -142,9 +142,9 @@ export function StudentProfileHeader({
             </p>
 
             {/* Email under contact number */}
-            <p className="mt-0.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
-              <Mail className="h-3.5 w-3.5 text-slate-400" />
-              <span className="truncate">{student.email || "—"}</span>
+            <p className="mt-0.5 flex items-start gap-1.5 text-[12px] font-medium text-slate-700">
+              <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="break-words sm:truncate">{student.email || "—"}</span>
             </p>
 
             {/* Counts + metrics under contact number */}

@@ -1167,12 +1167,21 @@ export async function checkYouTubeRecordingStatus(
             },
             select: {
                 id: true,
+                class: {
+                    select: { teacherId: true },
+                },
             },
         });
 
     if (!lecture) {
         throw new Error(
             "Lecture not found."
+        );
+    }
+
+    if (lecture.class.teacherId !== teacherId) {
+        throw new Error(
+            "You are not authorized to view this lecture's recording status."
         );
     }
 

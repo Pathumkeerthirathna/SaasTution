@@ -91,6 +91,7 @@ type FeeSheet = {
   processed: boolean;
   dueDate: string;
   isPastDue: boolean;
+  isDueSoon: boolean;
   rows: FeeRow[];
 };
 
@@ -125,17 +126,26 @@ export function ClassFeeSheetPanel() {
   const now = useMemo(() => new Date(), []);
 
   const [classes, setClasses] = useState<ClassOption[]>([]);
+  // "" means "All classes".
   const [classId, setClassId] = useState("");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [classesError, setClassesError] = useState<string | null>(null);
+  const [classesLoading, setClassesLoading] = useState(true);
 
-  const [sheet, setSheet] = useState<FeeSheet | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [savingFeeId, setSavingFeeId] = useState<string | null>(null);
-  const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
-  const [isReprocessing, setIsReprocessing] = useState(false);
-  const [feeHistory, setFeeHistory] = useState<ClassFeeHistoryEntry[]>([]);
+  // Each mounted ClassFeeSheetDetail reports its own expected total here, so
+  // the header can show a combined sum across every class currently shown.
+  const [expectedTotals, setExpectedTotals] = useState<Record<string, number>>({});
+  const handleExpectedTotalChange = useCallback((id: string, expected: number) => {
+    setExpectedTotals((prev) =>
+      prev[id] === expected ? prev : { ...prev, [id]: expected }
+    );
+  }, []);
+  const relevantClassIds = classId ? [classId] : classes.map((c) => c.id);
+  const combinedExpectedTotal = relevantClassIds.reduce(
+    (sum, id) => sum + (expectedTotals[id] ?? 0),
+    0
+  );
 
   // The month grid has a fixed 4×3 layout; the class and year lists scroll
   // within that same height.
@@ -159,12 +169,6 @@ export function ClassFeeSheetPanel() {
     return Array.from({ length: YEARS_BACK }, (_, index) => start - index);
   }, [now]);
 
-  const nowYear = now.getFullYear();
-  const nowMonth = now.getMonth() + 1;
-  const isFutureSelection =
-    year > nowYear || (year === nowYear && month > nowMonth);
-  const willProcess = !isFutureSelection;
-
   useEffect(() => {
     let cancelled = false;
 
@@ -178,16 +182,13 @@ export function ClassFeeSheetPanel() {
 
         if (cancelled) return;
 
-        const list = payload.data ?? [];
-        setClasses(list);
-
-        if (list.length > 0) {
-          setClassId((current) => current || list[0].id);
-        }
+        setClasses(payload.data ?? []);
       } catch {
         if (!cancelled) {
-          setErrorMessage("Failed to load classes.");
+          setClassesError("Failed to load classes.");
         }
+      } finally {
+        if (!cancelled) setClassesLoading(false);
       }
     })();
 
@@ -195,6 +196,246 @@ export function ClassFeeSheetPanel() {
       cancelled = true;
     };
   }, []);
+
+  return (
+    <section className="space-y-4">
+      <article className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#32598A] text-white">
+              <CircleDollarSign size={18} />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                Monthly Fees
+              </h2>
+              <p className="text-xs text-slate-500">
+                Fee sheet per class, year and month. The current month is
+                generated and kept in sync automatically.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] px-3 py-2 text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
+              {classId ? "Expected total" : "Expected total · all classes"}
+            </p>
+            <p className="text-lg font-bold text-[#1a3049]">
+              {rupees(combinedExpectedTotal)}
+            </p>
+          </div>
+        </div>
+
+        {/* Selectors — three matching tile pickers */}
+        <div className="grid gap-3 lg:grid-cols-3">
+
+          {/* Class */}
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Class
+            </p>
+            <div
+              className="scrollbar-thin space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
+              style={{ maxHeight: selectorMaxHeight }}
+            >
+              <button
+                type="button"
+                onClick={() => setClassId("")}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
+                  classId === ""
+                    ? "bg-[#32598A] text-white shadow-sm"
+                    : "bg-white text-slate-600 hover:bg-[#eef3f8]"
+                }`}
+              >
+                <Users
+                  size={12}
+                  className={`shrink-0 ${classId === "" ? "text-white" : "text-slate-400"}`}
+                />
+                <span>All classes</span>
+              </button>
+
+              {classesLoading ? (
+                <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-slate-400">
+                  <Loader2 size={12} className="animate-spin" />
+                  Loading classes...
+                </p>
+              ) : classes.length === 0 ? (
+                <p className="px-2 py-1.5 text-xs text-slate-400">No classes</p>
+              ) : (
+                classes.map((item) => {
+                  const selected = item.id === classId;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setClassId(item.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
+                        selected
+                          ? "bg-[#32598A] text-white shadow-sm"
+                          : "bg-white text-slate-600 hover:bg-[#eef3f8]"
+                      }`}
+                    >
+                      <BookOpen
+                        size={12}
+                        className={`shrink-0 ${selected ? "text-white" : "text-slate-400"}`}
+                      />
+                      <span className="break-words">{item.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Year */}
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Year
+            </p>
+            <div
+              className="scrollbar-thin grid grid-cols-3 gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
+              style={{ maxHeight: selectorMaxHeight }}
+            >
+              {yearOptions.map((option) => {
+                const selected = option === year;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setYear(option)}
+                    className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                      selected
+                        ? "bg-[#32598A] text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-[#eef3f8]"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Month — 4 per row */}
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Month
+            </p>
+            <div
+              ref={monthGridRef}
+              className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5"
+            >
+              {MONTHS.map((label, index) => {
+                const value = index + 1;
+                const selected = value === month;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setMonth(value)}
+                    className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                      selected
+                        ? "bg-[#32598A] text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-[#eef3f8]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {classesError ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {classesError}
+          </p>
+        ) : null}
+
+        {classId ? (
+          <ClassFeeSheetDetail
+            classId={classId}
+            year={year}
+            month={month}
+            onExpectedTotalChange={handleExpectedTotalChange}
+          />
+        ) : null}
+      </article>
+
+      {!classId ? (
+        <div className="space-y-4">
+          {classesLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#b9cfe3] bg-[#eef3f8]/60 p-8 text-sm font-medium text-[#264867]">
+              <Loader2 size={16} className="animate-spin" />
+              Loading classes...
+            </div>
+          ) : classes.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+              No classes yet.
+            </p>
+          ) : (
+            classes.map((item) => (
+              <article
+                key={item.id}
+                className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <BookOpen size={14} className="text-[#32598A]" />
+                    {item.name}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setClassId(item.id)}
+                    className="text-xs font-semibold text-[#264867] hover:underline"
+                  >
+                    Manage only this class &rarr;
+                  </button>
+                </div>
+                <ClassFeeSheetDetail
+                  classId={item.id}
+                  year={year}
+                  month={month}
+                  onExpectedTotalChange={handleExpectedTotalChange}
+                />
+              </article>
+            ))
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type ClassFeeSheetDetailProps = {
+  classId: string;
+  year: number;
+  month: number;
+  onExpectedTotalChange?: (classId: string, expected: number) => void;
+};
+
+function ClassFeeSheetDetail({
+  classId,
+  year,
+  month,
+  onExpectedTotalChange,
+}: ClassFeeSheetDetailProps) {
+  const now = useMemo(() => new Date(), []);
+
+  const [sheet, setSheet] = useState<FeeSheet | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [savingFeeId, setSavingFeeId] = useState<string | null>(null);
+  const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const [feeHistory, setFeeHistory] = useState<ClassFeeHistoryEntry[]>([]);
+
+  const nowYear = now.getFullYear();
+  const nowMonth = now.getMonth() + 1;
+  const isFutureSelection =
+    year > nowYear || (year === nowYear && month > nowMonth);
+  const willProcess = !isFutureSelection;
 
   const loadSheet = useCallback(async () => {
     if (!classId) return;
@@ -396,126 +637,12 @@ export function ClassFeeSheetPanel() {
     };
   }, [sheet]);
 
+  useEffect(() => {
+    onExpectedTotalChange?.(classId, totals.expected);
+  }, [classId, totals.expected, onExpectedTotalChange]);
+
   return (
-    <section className="space-y-4">
-      <article className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-600 text-white">
-              <CircleDollarSign size={18} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-                Monthly Fees
-              </h2>
-              <p className="text-xs text-slate-500">
-                Fee sheet per class, year and month. The current month is
-                generated and kept in sync automatically.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Selectors — three matching tile pickers */}
-        <div className="grid gap-3 lg:grid-cols-3">
-
-          {/* Class */}
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Class
-            </p>
-            <div
-              className="scrollbar-thin space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
-              style={{ maxHeight: selectorMaxHeight }}
-            >
-              {classes.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-slate-400">No classes</p>
-              ) : (
-                classes.map((item) => {
-                  const selected = item.id === classId;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setClassId(item.id)}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
-                        selected
-                          ? "bg-teal-600 text-white shadow-sm"
-                          : "bg-white text-slate-600 hover:bg-teal-50"
-                      }`}
-                    >
-                      <BookOpen
-                        size={12}
-                        className={selected ? "text-white" : "text-slate-400"}
-                      />
-                      <span className="truncate">{item.name}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Year */}
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Year
-            </p>
-            <div
-              className="scrollbar-thin grid grid-cols-3 gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5"
-              style={{ maxHeight: selectorMaxHeight }}
-            >
-              {yearOptions.map((option) => {
-                const selected = option === year;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setYear(option)}
-                    className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
-                      selected
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 hover:bg-teal-50"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Month — 4 per row */}
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Month
-            </p>
-            <div
-              ref={monthGridRef}
-              className="grid grid-cols-4 gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5"
-            >
-              {MONTHS.map((label, index) => {
-                const value = index + 1;
-                const selected = value === month;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setMonth(value)}
-                    className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
-                      selected
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 hover:bg-teal-50"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
+    <div className="space-y-4">
         {/* Status strip */}
         {sheet ? (
           <div className="grid gap-2 sm:grid-cols-4">
@@ -541,6 +668,10 @@ export function ClassFeeSheetPanel() {
                 {sheet.isPastDue ? (
                   <span className="ml-1 rounded bg-rose-100 px-1 py-0.5 text-[10px] font-semibold text-rose-600">
                     Past due
+                  </span>
+                ) : sheet.isDueSoon ? (
+                  <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-600">
+                    Due soon
                   </span>
                 ) : null}
               </p>
@@ -572,7 +703,7 @@ export function ClassFeeSheetPanel() {
 
         {/* Processing / loading */}
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-teal-200 bg-teal-50/60 py-8 text-sm font-medium text-teal-700">
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#b9cfe3] bg-[#eef3f8]/60 py-8 text-sm font-medium text-[#264867]">
             <Loader2 size={16} className="animate-spin" />
             {willProcess
               ? "Processing fees for this month..."
@@ -594,7 +725,7 @@ export function ClassFeeSheetPanel() {
                 onClick={() => void reprocess()}
                 disabled={isReprocessing}
                 title="Recompute every fee from the fee applicable at the due date and refresh paid/unpaid status"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#b9cfe3] bg-[#eef3f8] px-3 py-1.5 text-xs font-semibold text-[#264867] transition hover:bg-[#dce7f1] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <RefreshCw
                   size={13}
@@ -620,7 +751,207 @@ export function ClassFeeSheetPanel() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <>
+              {/*
+                Below xl there isn't room for the sidebar (256px) plus this
+                table's 860px minimum without horizontal scrolling, so each
+                student renders as its own card instead — same data, same
+                editable amount/discount/late-deduct/waiver controls and the
+                same expand-to-view-payment-history behaviour, just stacked.
+              */}
+              <div className="space-y-3 xl:hidden">
+                {sheet.rows.map((row) => {
+                  const paidLocked = row.paymentStatus === "PAID";
+                  const locked =
+                    !row.feeId ||
+                    savingFeeId === row.feeId ||
+                    paidLocked;
+                  const rowKey = row.feeId ?? row.classStudentId;
+                  const isExpanded = expandedRowKey === rowKey;
+                  const stop = (event: React.MouseEvent) =>
+                    event.stopPropagation();
+
+                  return (
+                    <div
+                      key={rowKey}
+                      className={`overflow-hidden rounded-xl border border-slate-200 ${
+                        isExpanded ? "bg-slate-50" : "bg-white"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedRowKey((current) =>
+                            current === rowKey ? null : rowKey
+                          )
+                        }
+                        className="flex w-full items-start justify-between gap-2 p-3 text-left"
+                      >
+                        <div className="flex min-w-0 items-start gap-1.5">
+                          {isExpanded ? (
+                            <ChevronDown size={13} className="mt-0.5 shrink-0 text-slate-400" />
+                          ) : (
+                            <ChevronRight size={13} className="mt-0.5 shrink-0 text-slate-400" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="break-words text-xs font-semibold text-slate-900">
+                              {row.studentName}
+                            </p>
+                            {row.registrationNumber ? (
+                              <p className="text-[10px] text-slate-400">
+                                {row.registrationNumber}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          {row.paymentStatus === "PAID" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              <BadgeCheck size={10} />
+                              Paid
+                            </span>
+                          ) : row.paymentStatus === "PENDING" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              <Clock3 size={10} />
+                              Pending
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                              Unpaid
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      <div
+                        className="grid grid-cols-2 gap-x-3 gap-y-2.5 border-t border-slate-100 px-3 py-3 text-xs"
+                        onClick={stop}
+                      >
+                        <div className="col-span-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Assigned
+                          </p>
+                          <div className="mt-0.5 space-y-0.5">
+                            {(row.enrolments.length > 0
+                              ? row.enrolments
+                              : [{ assignedAt: row.assignedAt, removedAt: null }]
+                            ).map((period, index) => (
+                              <div key={index} className="leading-tight">
+                                <span className="text-slate-500">
+                                  {formatStoredSriLankaDate(period.assignedAt)}
+                                </span>
+                                {period.removedAt ? (
+                                  <span className="block text-[10px] font-medium text-rose-500">
+                                    Removed {formatStoredSriLankaDate(period.removedAt)}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Amount
+                          </p>
+                          <div className="mt-0.5">
+                            <AmountCell
+                              row={row}
+                              feeHistory={feeHistory}
+                              currentFee={sheet.currentFee}
+                              studentCount={sheet.rows.length}
+                              paid={paidLocked}
+                              busy={
+                                savingFeeId === row.feeId || savingFeeId === "all"
+                              }
+                              onApply={(amount, applyToAll) =>
+                                void applyAmount(row, amount, applyToAll)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Final
+                          </p>
+                          <p className="mt-0.5 font-bold text-slate-900">
+                            {rupees(row.finalAmount)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Discount
+                          </p>
+                          <div className="mt-0.5">
+                            <AdjustInput
+                              defaultValue={row.discount}
+                              disabled={locked}
+                              onCommit={(value) =>
+                                void saveAdjustment(row, "discount", value)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Late deduct
+                          </p>
+                          <div className="mt-0.5">
+                            <AdjustInput
+                              defaultValue={row.lateJoinDeduct}
+                              disabled={locked}
+                              onCommit={(value) =>
+                                void saveAdjustment(row, "lateJoinDeduct", value)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Waiver
+                          </p>
+                          <div className="mt-0.5">
+                            <AdjustInput
+                              defaultValue={row.waiverAmount}
+                              disabled={locked}
+                              onCommit={(value) =>
+                                void saveAdjustment(row, "waiverAmount", value)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            Due date
+                          </p>
+                          <p className="mt-0.5 text-slate-500">
+                            {formatStoredSriLankaDate(row.dueDate)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {isExpanded ? (
+                        <div className="border-t border-slate-100 bg-slate-50/70 p-3" onClick={stop}>
+                          <PaymentAccordion
+                            payments={row.payments}
+                            finalAmount={row.finalAmount}
+                            classId={sheet.class.id}
+                            onChanged={loadSheet}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto rounded-lg border border-slate-200 xl:block">
               <table className="w-full min-w-[860px] text-left text-xs">
                 <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                   <tr>
@@ -782,12 +1113,13 @@ export function ClassFeeSheetPanel() {
                   })}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
           </>
         ) : null}
-      </article>
-    </section>
+
+    </div>
   );
 }
 
@@ -891,7 +1223,7 @@ function AmountCell({
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
-              className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 transition hover:bg-teal-100"
+              className="rounded border border-[#b9cfe3] bg-[#eef3f8] px-1.5 py-0.5 text-[10px] font-semibold text-[#264867] transition hover:bg-[#dce7f1]"
             >
               Change
             </button>
@@ -900,7 +1232,7 @@ function AmountCell({
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
-            className="w-fit text-[10px] font-medium text-slate-400 underline decoration-dotted underline-offset-2 hover:text-teal-600"
+            className="w-fit text-[10px] font-medium text-slate-400 underline decoration-dotted underline-offset-2 hover:text-[#32598A]"
           >
             Change
           </button>
@@ -910,7 +1242,7 @@ function AmountCell({
       {open ? (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+          <div className="absolute left-0 top-full z-50 mt-1 w-[min(16rem,calc(100vw-2.5rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               Change amount
             </p>
@@ -921,7 +1253,7 @@ function AmountCell({
                   key={option.amount}
                   className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition ${
                     selected === option.amount
-                      ? "border-teal-300 bg-teal-50"
+                      ? "border-[#8fb0cd] bg-[#eef3f8]"
                       : "border-slate-200 hover:bg-slate-50"
                   }`}
                 >
@@ -934,7 +1266,7 @@ function AmountCell({
                     {rupees(option.amount)}
                   </span>
                   {option.current ? (
-                    <span className="rounded-full bg-teal-600 px-1.5 text-[9px] font-semibold text-white">
+                    <span className="rounded-full bg-[#32598A] px-1.5 text-[9px] font-semibold text-white">
                       Current
                     </span>
                   ) : null}
@@ -966,7 +1298,7 @@ function AmountCell({
                 type="button"
                 disabled={busy}
                 onClick={confirmAndApply}
-                className="rounded-md bg-teal-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-[#32598A] px-3 py-1 text-xs font-semibold text-white transition hover:bg-[#264867] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy ? "Updating..." : "Update"}
               </button>
@@ -1209,7 +1541,7 @@ function AdjustInput({
           event.currentTarget.blur();
         }
       }}
-      className="h-8 w-24 rounded-md border border-slate-200 px-2 text-xs text-slate-700 outline-none transition focus:border-teal-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+      className="h-8 w-24 rounded-md border border-slate-200 px-2 text-xs text-slate-700 outline-none transition focus:border-[#3d6690] disabled:cursor-not-allowed disabled:bg-slate-50"
     />
   );
 }

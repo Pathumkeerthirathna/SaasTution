@@ -48,7 +48,7 @@ export default function TeacherClassesCard({
         {!isPublic ? (
           <button
             onClick={() => router.push("/dashboard/classes")}
-            className="inline-flex h-8 items-center rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 text-[14px] font-semibold text-white shadow-sm transition hover:shadow-md hover:from-emerald-700 hover:to-emerald-800"
+            className="inline-flex h-7 items-center rounded-md bg-[#4D6C90] px-2.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#3B5776] hover:shadow-md"
           >
             Manage Classes
           </button>
@@ -87,16 +87,20 @@ export default function TeacherClassesCard({
                 className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:ring-teal-100"
               >
                 {/* Header */}
-                <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-36 text-white`}>
+                <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-4 text-white sm:pr-36`}>
                   <div className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full ${theme.glow1} blur-2xl`} />
                   <div className={`pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full ${theme.glow2} blur-2xl`} />
 
-                  <ClassBookBadge
-                    label={bookLabel}
-                    number={bookNumber}
-                    bookGradient={theme.bookGradient}
-                    numberColor={theme.numberColor}
-                  />
+                  {/* Decorative book graphic — dropped on small screens so the class
+                      name below always has the full card width to itself. */}
+                  <div className="hidden sm:block">
+                    <ClassBookBadge
+                      label={bookLabel}
+                      number={bookNumber}
+                      bookGradient={theme.bookGradient}
+                      numberColor={theme.numberColor}
+                    />
+                  </div>
 
                   <div className="relative flex items-start gap-2">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 shadow-inner backdrop-blur">
@@ -105,7 +109,7 @@ export default function TeacherClassesCard({
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <h3 className="truncate text-[16px] font-bold leading-tight tracking-tight text-white">
+                        <h3 className="break-words text-[16px] font-bold leading-tight tracking-tight text-white sm:truncate">
                           {item.name}
                         </h3>
 
@@ -118,8 +122,8 @@ export default function TeacherClassesCard({
                     </div>
                   </div>
 
-                  <div className="relative mt-2 flex items-center justify-between border-t border-white/10 pt-2">
-                    <span className={`truncate text-[12px] ${theme.metaText}`}>
+                  <div className="relative mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/10 pt-2">
+                    <span className={`break-words text-[12px] sm:truncate ${theme.metaText}`}>
                       {item.schedule || "Schedule not set"}
                     </span>
 
@@ -149,7 +153,7 @@ export default function TeacherClassesCard({
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                             Fee
                           </p>
-                          <p className="truncate text-[16px] font-bold text-slate-900">
+                          <p className="break-words text-[16px] font-bold text-slate-900 sm:truncate">
                             Rs. {item.monthlyFee.toLocaleString()}
                           </p>
                         </div>
@@ -215,9 +219,9 @@ export default function TeacherClassesCard({
                             : `/dashboard/publicclasses/${item.id}`
                         );
                       }}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-900 to-teal-600 py-2 text-[14px] font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110"
+                      className="flex w-full items-center justify-center gap-1 rounded-md bg-[#4D6C90] py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#3B5776] hover:shadow-md"
                     >
-                      <Eye size={13} />
+                      <Eye size={12} />
                       View Class
                     </button>
                   </div>

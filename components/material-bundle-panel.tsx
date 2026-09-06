@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   BookOpen,
   Calendar,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   FileText,
   Files,
   Eye,
@@ -18,6 +20,8 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+import { BundlePaperSubmissionsModal } from "@/components/bundle-paper-submissions-modal";
 
 type ClassItem = {
   id: string;
@@ -196,7 +200,7 @@ function AccordionItemForm({
           type="file"
           accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
           onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-          className="block w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] file:mr-2 file:rounded file:border-0 file:bg-teal-50 file:px-1.5 file:py-0.5 file:text-[10px] file:font-semibold file:text-teal-700"
+          className="block w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] file:mr-2 file:rounded file:border-0 file:bg-[#eef3f8] file:px-1.5 file:py-0.5 file:text-[10px] file:font-semibold file:text-[#264867]"
         />
       </div>
       {type === "PAPER" ? (
@@ -240,9 +244,20 @@ function AccordionItemForm({
 
 export function MaterialBundlePanel() {
   const now = new Date();
+  const searchParams = useSearchParams();
+  const deepLinkBundleId = searchParams.get("bundleId");
+  const deepLinkItemId = searchParams.get("itemId");
+  const deepLinkSubmissionId = searchParams.get("focus");
+  const hasAutoOpenedDeepLink = useRef(false);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [bundles, setBundles] = useState<BundleListItem[]>([]);
+
+  const [submissionsModal, setSubmissionsModal] = useState<{
+    bundleId: string;
+    itemId: string;
+    itemTitle: string;
+  } | null>(null);
 
   const [filterClassId, setFilterClassId] = useState("");
   const [filterYear, setFilterYear] = useState("");
@@ -644,6 +659,20 @@ export function MaterialBundlePanel() {
     }
   }
 
+  // Deep link from the dashboard's "Paper submissions to review" card:
+  // open the right bundle's Papers tab and the submissions modal for that item.
+  useEffect(() => {
+    if (hasAutoOpenedDeepLink.current || !deepLinkBundleId || !deepLinkItemId) return;
+    if (!bundles.some((b) => b.id === deepLinkBundleId)) return;
+
+    hasAutoOpenedDeepLink.current = true;
+    void toggleBundleAccordion(deepLinkBundleId, "items").then(() => {
+      setExpandedTab("PAPER");
+    });
+    setSubmissionsModal({ bundleId: deepLinkBundleId, itemId: deepLinkItemId, itemTitle: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkBundleId, deepLinkItemId, bundles]);
+
   async function saveRecipients(bundleId: string) {
     setSavingRecipients(true);
     try {
@@ -930,12 +959,12 @@ export function MaterialBundlePanel() {
                     onClick={() => setFilterClassId("")}
                     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
                       filterClassId === ""
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 hover:bg-teal-50"
+                        ? "bg-[#32598A] text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                     }`}
                   >
-                    <BookOpen size={12} className={filterClassId === "" ? "text-white" : "text-slate-400"} />
-                    <span className="truncate">All classes</span>
+                    <BookOpen size={12} className={`shrink-0 ${filterClassId === "" ? "text-white" : "text-slate-400"}`} />
+                    <span className="break-words">All classes</span>
                   </button>
                   {classes.map((item) => {
                     const selected = item.id === filterClassId;
@@ -946,12 +975,12 @@ export function MaterialBundlePanel() {
                         onClick={() => setFilterClassId(item.id)}
                         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
                           selected
-                            ? "bg-teal-600 text-white shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-teal-50"
+                            ? "bg-[#32598A] text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                         }`}
                       >
-                        <BookOpen size={12} className={selected ? "text-white" : "text-slate-400"} />
-                        <span className="truncate">{item.name}</span>
+                        <BookOpen size={12} className={`shrink-0 ${selected ? "text-white" : "text-slate-400"}`} />
+                        <span className="break-words">{item.name}</span>
                       </button>
                     );
                   })}
@@ -967,8 +996,8 @@ export function MaterialBundlePanel() {
                     onClick={() => setFilterYear("")}
                     className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
                       filterYear === ""
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 hover:bg-teal-50"
+                        ? "bg-[#32598A] text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                     }`}
                   >
                     All
@@ -982,8 +1011,8 @@ export function MaterialBundlePanel() {
                         onClick={() => setFilterYear(String(option))}
                         className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
                           selected
-                            ? "bg-teal-600 text-white shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-teal-50"
+                            ? "bg-[#32598A] text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                         }`}
                       >
                         {option}
@@ -1002,8 +1031,8 @@ export function MaterialBundlePanel() {
                     onClick={() => setFilterMonth("")}
                     className={`col-span-4 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
                       filterMonth === ""
-                        ? "bg-teal-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 hover:bg-teal-50"
+                        ? "bg-[#32598A] text-white shadow-sm"
+                        : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                     }`}
                   >
                     All months
@@ -1018,8 +1047,8 @@ export function MaterialBundlePanel() {
                         onClick={() => setFilterMonth(String(value))}
                         className={`rounded-md px-2 py-1.5 text-xs font-semibold transition ${
                           selected
-                            ? "bg-teal-600 text-white shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-teal-50"
+                            ? "bg-[#32598A] text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-[#eef3f8]"
                         }`}
                       >
                         {label}
@@ -1039,13 +1068,13 @@ export function MaterialBundlePanel() {
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Bundle List</p>
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-teal-100 px-2 text-[11px] font-semibold text-teal-700">
+                <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#dce7f1] px-2 text-[11px] font-semibold text-[#264867]">
                   {bundles.length}
                 </span>
                 <button
                   type="button"
                   onClick={openWizard}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-teal-600 px-3 text-xs font-semibold text-white transition hover:bg-teal-700"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#32598A] px-3 text-xs font-semibold text-white transition hover:bg-[#264867]"
                 >
                   <Plus size={14} />
                   New bundle
@@ -1079,19 +1108,19 @@ export function MaterialBundlePanel() {
                     }}
                     className={`h-fit cursor-pointer rounded-lg px-3 py-2.5 text-left transition ${
                       selected
-                        ? "bg-teal-50 ring-1 ring-teal-300"
-                        : "bg-slate-50 hover:bg-teal-50/60"
+                        ? "bg-[#eef3f8] ring-1 ring-[#8fb0cd]"
+                        : "bg-slate-50 hover:bg-[#eef3f8]/60"
                     }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-start gap-2">
                       <span
                         className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white ${
-                          selected ? "text-teal-700" : "text-slate-500"
+                          selected ? "text-[#264867]" : "text-slate-500"
                         }`}
                       >
                         <FileText size={14} />
                       </span>
-                      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-900">
+                      <p className="min-w-0 flex-1 break-words text-[13px] font-semibold text-slate-900">
                         {bundle.title}
                       </p>
 
@@ -1118,7 +1147,7 @@ export function MaterialBundlePanel() {
                           title="Change status"
                           className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] transition ${
                             bundle.bundleStatus === "SENT"
-                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                              ? "bg-[#dce7f1] text-[#264867] hover:bg-[#b9cfe3]"
                               : "bg-slate-200 text-slate-600 hover:bg-slate-300"
                           }`}
                         >
@@ -1150,12 +1179,12 @@ export function MaterialBundlePanel() {
                                   className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] font-semibold transition ${
                                     st === bundle.bundleStatus
                                       ? "cursor-default bg-slate-50 text-slate-400"
-                                      : "text-slate-700 hover:bg-teal-50"
+                                      : "text-slate-700 hover:bg-[#eef3f8]"
                                   }`}
                                 >
                                   <span
                                     className={`h-1.5 w-1.5 rounded-full ${
-                                      st === "SENT" ? "bg-emerald-500" : "bg-slate-400"
+                                      st === "SENT" ? "bg-[#3d6690]" : "bg-slate-400"
                                     }`}
                                   />
                                   {st === bundle.bundleStatus ? `${st} (current)` : `Mark as ${st}`}
@@ -1201,7 +1230,7 @@ export function MaterialBundlePanel() {
                           e.stopPropagation();
                           void toggleBundleAccordion(bundle.id, "items");
                         }}
-                        className="inline-flex items-center gap-0.5 rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-teal-700"
+                        className="inline-flex items-center gap-0.5 rounded-md bg-[#32598A] px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-[#264867]"
                       >
                         View more
                         <ChevronRight
@@ -1245,7 +1274,7 @@ export function MaterialBundlePanel() {
                                 {accStudents.map((st) => (
                                   <label
                                     key={st.id}
-                                    className={`flex items-center gap-2 rounded-md px-1.5 py-1 ${
+                                    className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1.5 py-1 ${
                                       recipientsEditable ? "hover:bg-slate-50" : ""
                                     }`}
                                   >
@@ -1272,7 +1301,7 @@ export function MaterialBundlePanel() {
                                     ) : null}
                                     {!recipientsEditable && st.willReceive ? (
                                       st.receivedAt ? (
-                                        <span className="ml-auto whitespace-nowrap text-[9px] font-semibold text-emerald-600">
+                                        <span className="ml-auto whitespace-nowrap text-[9px] font-semibold text-[#32598A]">
                                           ✓ Received {new Date(st.receivedAt).toLocaleDateString()}
                                         </span>
                                       ) : (
@@ -1294,7 +1323,7 @@ export function MaterialBundlePanel() {
                                   void saveRecipients(bundle.id);
                                 }}
                                 disabled={savingRecipients || accStudents.length === 0}
-                                className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md bg-teal-600 px-2 py-1.5 text-[11px] font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+                                className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md bg-[#32598A] px-2 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#264867] disabled:opacity-60"
                               >
                                 {savingRecipients
                                   ? "Updating..."
@@ -1330,8 +1359,8 @@ export function MaterialBundlePanel() {
                               }}
                               className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
                                 expandedTab === tab
-                                  ? "bg-teal-600 text-white"
-                                  : "bg-white text-slate-500 hover:bg-teal-50"
+                                  ? "bg-[#32598A] text-white"
+                                  : "bg-white text-slate-500 hover:bg-[#eef3f8]"
                               }`}
                             >
                               {tab === "TUTE" ? "Tutes" : "Papers"} (
@@ -1378,11 +1407,11 @@ export function MaterialBundlePanel() {
                                     />
                                   ) : (
                                     <>
-                                      <p className="truncate text-[12px] font-semibold text-slate-800">
+                                      <p className="break-words text-[12px] font-semibold text-slate-800">
                                         {it.title}
                                       </p>
                                       {it.description ? (
-                                        <p className="mt-0.5 truncate text-[10px] text-slate-500">
+                                        <p className="mt-0.5 break-words text-[10px] text-slate-500">
                                           {it.description}
                                         </p>
                                       ) : null}
@@ -1395,7 +1424,7 @@ export function MaterialBundlePanel() {
                                         </p>
                                       ) : null}
                                       {it.fileName ? (
-                                        <p className="mt-0.5 truncate text-[10px] text-slate-400">
+                                        <p className="mt-0.5 break-words text-[10px] text-slate-400">
                                           {it.fileName}
                                         </p>
                                       ) : null}
@@ -1416,6 +1445,23 @@ export function MaterialBundlePanel() {
                                           >
                                             <Eye size={11} />
                                             View
+                                          </button>
+                                        ) : null}
+                                        {it.type === "PAPER" ? (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSubmissionsModal({
+                                                bundleId: bundle.id,
+                                                itemId: it.id,
+                                                itemTitle: it.title,
+                                              });
+                                            }}
+                                            className="inline-flex items-center gap-0.5 rounded bg-[#eef3f8] px-1.5 py-0.5 text-[10px] font-semibold text-[#264867] transition hover:bg-[#dce7f1]"
+                                          >
+                                            <ClipboardCheck size={11} />
+                                            Submissions
                                           </button>
                                         ) : null}
                                         <button
@@ -1447,7 +1493,7 @@ export function MaterialBundlePanel() {
                               ))}
 
                               {accForm?.mode === "add" && accForm.type === expandedTab ? (
-                                <div className="rounded-md border border-teal-200 bg-teal-50/40 p-2">
+                                <div className="rounded-md border border-[#b9cfe3] bg-[#eef3f8]/40 p-2">
                                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
                                     New {expandedTab === "TUTE" ? "tute" : "paper"}
                                   </p>
@@ -1475,7 +1521,7 @@ export function MaterialBundlePanel() {
                                     e.stopPropagation();
                                     accOpenAdd(expandedTab);
                                   }}
-                                  className="mt-1 inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-teal-300 hover:text-teal-700"
+                                  className="mt-1 inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-[#8fb0cd] hover:text-[#264867]"
                                 >
                                   <Plus size={12} />
                                   Add {expandedTab === "TUTE" ? "tute" : "paper"}
@@ -1491,7 +1537,7 @@ export function MaterialBundlePanel() {
               })}
               {!isLoading && bundles.length === 0 ? (
                 <div className="col-span-full rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
+                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white text-[#264867] shadow-sm">
                     <Files size={18} />
                   </span>
                   <p className="mt-3 text-sm font-semibold text-slate-800">No bundles found</p>
@@ -1536,9 +1582,9 @@ export function MaterialBundlePanel() {
             className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2">
-              <p className="truncate text-sm font-semibold text-slate-800">{viewerItem.title}</p>
-              <div className="flex items-center gap-2">
+            <div className="flex items-start justify-between gap-2 border-b border-slate-200 px-4 py-2">
+              <p className="break-words text-sm font-semibold text-slate-800">{viewerItem.title}</p>
+              <div className="flex shrink-0 items-center gap-2">
                 <a
                   href={`/api/material-bundles/${viewerItem.bundleId}/items/${viewerItem.itemId}/file?download=1`}
                   className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
@@ -1576,6 +1622,16 @@ export function MaterialBundlePanel() {
         </div>
       ) : null}
 
+      {submissionsModal ? (
+        <BundlePaperSubmissionsModal
+          bundleId={submissionsModal.bundleId}
+          itemId={submissionsModal.itemId}
+          itemTitle={submissionsModal.itemTitle}
+          focusSubmissionId={deepLinkSubmissionId}
+          onClose={() => setSubmissionsModal(null)}
+        />
+      ) : null}
+
       {isWizardOpen ? (
         <>
           <div
@@ -1587,11 +1643,11 @@ export function MaterialBundlePanel() {
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Add class bundle</p>
-                <h4 className="mt-0.5 truncate text-[13px] font-semibold text-slate-900">
+                <h4 className="mt-0.5 break-words text-[13px] font-semibold text-slate-900">
                   New class bundle
                 </h4>
                 {wzClassId ? (
-                  <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                  <p className="mt-0.5 break-words text-[11px] text-slate-500">
                     {classes.find((c) => c.id === wzClassId)?.name ?? "Class"} &bull; {wzMonthLabel}
                   </p>
                 ) : null}
@@ -1684,8 +1740,8 @@ export function MaterialBundlePanel() {
                         onClick={() => wizardOpenItemForm("TUTE")}
                         className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition ${
                           wzPopover === "TUTE"
-                            ? "border-teal-600 bg-teal-600 text-white"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-teal-50"
+                            ? "border-[#32598A] bg-[#32598A] text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-[#eef3f8]"
                         }`}
                       >
                         <Plus size={13} />
@@ -1696,8 +1752,8 @@ export function MaterialBundlePanel() {
                         onClick={() => wizardOpenItemForm("PAPER")}
                         className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition ${
                           wzPopover === "PAPER"
-                            ? "border-teal-600 bg-teal-600 text-white"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-teal-50"
+                            ? "border-[#32598A] bg-[#32598A] text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-[#eef3f8]"
                         }`}
                       >
                         <Plus size={13} />
@@ -1740,7 +1796,7 @@ export function MaterialBundlePanel() {
                             type="file"
                             accept="application/pdf"
                             onChange={(e) => setWzItemFile(e.target.files?.[0] ?? null)}
-                            className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] file:mr-3 file:rounded-md file:border-0 file:bg-teal-50 file:px-2 file:py-1 file:font-semibold file:text-teal-700"
+                            className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] file:mr-3 file:rounded-md file:border-0 file:bg-[#eef3f8] file:px-2 file:py-1 file:font-semibold file:text-[#264867]"
                           />
                         </label>
                         {wzPopover === "PAPER" ? (
@@ -1800,7 +1856,7 @@ export function MaterialBundlePanel() {
                                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
                                   {item.type}
                                 </span>
-                                <p className="truncate text-[12px] font-semibold text-slate-900">
+                                <p className="break-words text-[12px] font-semibold text-slate-900">
                                   {item.title}
                                 </p>
                               </div>
@@ -1811,14 +1867,14 @@ export function MaterialBundlePanel() {
                                 </p>
                               ) : null}
                               {item.file ? (
-                                <p className="mt-0.5 truncate text-[10px] text-slate-400">{item.file.name}</p>
+                                <p className="mt-0.5 break-words text-[10px] text-slate-400">{item.file.name}</p>
                               ) : null}
                             </div>
                             <div className="flex shrink-0 items-center gap-0.5">
                               <button
                                 type="button"
                                 onClick={() => wizardEditPendingItem(item)}
-                                className="rounded-md p-1 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700"
+                                className="rounded-md p-1 text-slate-400 transition hover:bg-[#eef3f8] hover:text-[#264867]"
                                 aria-label="Edit item"
                               >
                                 <Pencil size={12} />

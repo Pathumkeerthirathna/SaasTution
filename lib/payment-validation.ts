@@ -32,10 +32,27 @@ export function getPaymentWeekLabel(week: PaymentDueWeek) {
   return "Fourth week";
 }
 
+/**
+ * Built from UTC calendar fields (not the server's local timezone) so the
+ * result lines up with `nowInSriLanka()`, which shifts the current instant
+ * onto Sri Lankan wall-clock time and exposes it via the UTC getters.
+ */
 export function getPaymentDueDate(monthKey: string, week: PaymentDueWeek) {
   const [yearPart, monthPart] = monthKey.split("-").map((value) => Number(value));
   const day = week * 7;
-  return new Date(yearPart, monthPart - 1, day, 23, 59, 59, 999);
+  return new Date(Date.UTC(yearPart, monthPart - 1, day, 23, 59, 59, 999));
+}
+
+export const PAYMENT_DUE_SOON_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
+
+export type PaymentDueStatus = "OVERDUE" | "DUE_SOON" | "UPCOMING";
+
+/** `now` must be Sri Lankan wall-clock time, e.g. from `nowInSriLanka()`. */
+export function getPaymentDueStatus(dueDate: Date, now: Date): PaymentDueStatus {
+  const msUntilDue = dueDate.getTime() - now.getTime();
+  if (msUntilDue < 0) return "OVERDUE";
+  if (msUntilDue <= PAYMENT_DUE_SOON_WINDOW_MS) return "DUE_SOON";
+  return "UPCOMING";
 }
 
 export function sanitizeUploadFileName(fileName: string) {

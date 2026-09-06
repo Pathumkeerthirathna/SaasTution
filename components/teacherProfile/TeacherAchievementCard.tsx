@@ -310,9 +310,9 @@ export default function TeacherAchievementCard({
             />
             <button
               onClick={openAddDrawer}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
+              className="inline-flex items-center gap-1 rounded-md bg-[#4D6C90] px-2.5 py-1 text-[12.5px] font-medium text-white transition hover:bg-[#3B5776]"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3 w-3" />
               Add Achievement
             </button>
           </div>
@@ -344,12 +344,14 @@ export default function TeacherAchievementCard({
               Add awards, recognitions or milestones to increase trust among students and parents.
             </p>
 
-            <button
-              onClick={openAddDrawer}
-              className="mt-3 rounded-lg bg-orange-500 px-3 py-1.5 text-[14px] font-medium text-white transition hover:bg-orange-600"
-            >
-              Add First Achievement
-            </button>
+            {!isPublic && (
+              <button
+                onClick={openAddDrawer}
+                className="mt-3 rounded-md bg-[#4D6C90] px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-[#3B5776]"
+              >
+                Add First Achievement
+              </button>
+            )}
 
           </div>
 

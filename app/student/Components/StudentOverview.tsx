@@ -354,42 +354,68 @@ function QuizSection({
                 No quizzes submitted in this period.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px] text-left">
-                  <thead>
-                    <tr className="text-[10px] uppercase tracking-wide text-slate-400">
-                      <th className="px-4 py-2 font-semibold">Quiz</th>
-                      <th className="px-4 py-2 font-semibold">Score</th>
-                      <th className="px-4 py-2 font-semibold">Attempts</th>
-                      <th className="px-4 py-2 text-right font-semibold">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {data.recent.map((quiz) => (
-                      <tr key={quiz.id}>
-                        <td className="px-4 py-2.5 text-[12px] font-medium text-slate-800">
+              <>
+                {/* Below sm a 4-column table can't fit without scrolling, so
+                    each quiz renders as its own row of stacked details instead. */}
+                <div className="divide-y divide-slate-50 sm:hidden">
+                  {data.recent.map((quiz) => (
+                    <div key={quiz.id} className="flex items-start justify-between gap-2 px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="break-words text-[12px] font-medium text-slate-800">
                           {quiz.title}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span
-                            className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${scoreBadge(
-                              quiz.scorePercent
-                            )}`}
-                          >
-                            {quiz.scorePercent}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-[12px] text-slate-600">
-                          {quiz.attempts}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-[12px] text-slate-500">
-                          {shortDate(quiz.submittedAt)}
-                        </td>
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {quiz.attempts} attempt{quiz.attempts === 1 ? "" : "s"} · {shortDate(quiz.submittedAt)}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${scoreBadge(
+                          quiz.scorePercent
+                        )}`}
+                      >
+                        {quiz.scorePercent}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full min-w-[420px] text-left">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-wide text-slate-400">
+                        <th className="px-4 py-2 font-semibold">Quiz</th>
+                        <th className="px-4 py-2 font-semibold">Score</th>
+                        <th className="px-4 py-2 font-semibold">Attempts</th>
+                        <th className="px-4 py-2 text-right font-semibold">Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {data.recent.map((quiz) => (
+                        <tr key={quiz.id}>
+                          <td className="px-4 py-2.5 text-[12px] font-medium text-slate-800">
+                            {quiz.title}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span
+                              className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${scoreBadge(
+                                quiz.scorePercent
+                              )}`}
+                            >
+                              {quiz.scorePercent}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-[12px] text-slate-600">
+                            {quiz.attempts}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-[12px] text-slate-500">
+                            {shortDate(quiz.submittedAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 

@@ -285,7 +285,7 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
     });
 
     // Realtime: the student's "My Classes" page should show this class immediately.
-    emitStudentDataChange({ studentId });
+    emitStudentDataChange({ studentId, classId });
 
     return {
       ...record,
@@ -492,6 +492,7 @@ export async function listAllStudentsByTeacher(params: {
   
 }) {
   const where = {
+    teacherId: params.teacherId,
     status: {
       not: 2,
     },
@@ -664,6 +665,14 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
   const student = await prisma.student.findFirst({
     where: {
       id: studentId,
+      // The student must have been assigned (currently or in the past) to
+      // one of this teacher's classes — otherwise this teacher has no
+      // business seeing their profile.
+      classes: {
+        some: {
+          class: { teacherId },
+        },
+      },
     },
     select: {
       id: true,
@@ -711,20 +720,6 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
   if (!student) {
     throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
   }
-
-  // const hasTeacherClass = student.classes.length > 0;
-  // const hasTeacherHistory = await prisma.classStudent.count({
-  //   where: {
-  //     studentId,
-  //     class: {
-  //       teacherId,
-  //     },
-  //   },
-  // });
-
-  // if (!hasTeacherClass && hasTeacherHistory === 0) {
-  //   throw new AppError("Student not available for this teacher.", 403, "FORBIDDEN");
-  // }
 
   const assignmentHistory = await prisma.classStudent.findMany({
     where: {
@@ -797,6 +792,7 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
     await prisma.student.findFirst({
       where: {
         registrationNumber: input.registrationNumber,
+        teacherId,
         NOT: {
           id: studentId,
         },
@@ -941,7 +937,7 @@ export async function removeStudentFromClassForTeacher(params: {
   });
 
   // Realtime: the student's "My Classes" page should drop this class immediately.
-  emitStudentDataChange({ studentId: params.studentId });
+  emitStudentDataChange({ studentId: params.studentId, classId: params.classId });
 
   return result;
 }
@@ -2159,10 +2155,11 @@ export async function checkIfNameExists(
 }
 
 
-export async function confirmStudent(studentId: string) {
-  const student = await prisma.student.findUnique({
+export async function confirmStudent(teacherId: string, studentId: string) {
+  const student = await prisma.student.findFirst({
     where: {
       id: studentId,
+      teacherId,
     },
     select: {
       id: true,
@@ -2189,9 +2186,10 @@ export async function confirmStudent(studentId: string) {
   });
 }
 
-export async function confirmAllPendingStudents() {
+export async function confirmAllPendingStudents(teacherId: string) {
   const result = await prisma.student.updateMany({
     where: {
+      teacherId,
       confirmationStatus: StudentConfirmationStatus.PENDING,
     },
     data: {
@@ -2204,10 +2202,11 @@ export async function confirmAllPendingStudents() {
 }
 
 
-export async function declineStudent(studentId: string) {
-  const student = await prisma.student.findUnique({
+export async function declineStudent(teacherId: string, studentId: string) {
+  const student = await prisma.student.findFirst({
     where: {
       id: studentId,
+      teacherId,
     },
     select: {
       id: true,

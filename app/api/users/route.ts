@@ -1,10 +1,13 @@
 import { apiSuccess } from "@/lib/api-response";
+import { requireAdminSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createUser, listUsers } from "@/services/user-service";
 
 export async function GET(request: Request) {
   try {
+    await requireAdminSession();
+
     const { searchParams } = new URL(request.url);
     const pagination = parsePaginationParams(searchParams);
 
@@ -23,6 +26,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireAdminSession();
+
     const body = (await request.json()) as {
       email?: string;
       name?: string;

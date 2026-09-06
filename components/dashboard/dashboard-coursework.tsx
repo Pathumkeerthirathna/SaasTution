@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ClipboardList, FileText, HelpCircle } from "lucide-react";
 
+import { useTeacherLiveRefetch } from "@/components/dashboard/use-teacher-live-events";
+
 type Submission = {
   id: string;
   studentName: string;
@@ -85,8 +87,12 @@ export function DashboardCoursework() {
   const [data, setData] = useState<Coursework | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
 
   const { from, to } = useMemo(() => rangeToDates(range), [range]);
+
+  // Realtime: re-pull when a student submits an assignment/quiz or a teacher edits one.
+  useTeacherLiveRefetch(() => setLiveTick((n) => n + 1));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,7 +121,7 @@ export function DashboardCoursework() {
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [from, to]);
+  }, [from, to, liveTick]);
 
   const skeleton = (
     <div className="space-y-2.5">
@@ -127,25 +133,8 @@ export function DashboardCoursework() {
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-1 self-start rounded-xl border border-brand-100 bg-white p-1 shadow-card">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            type="button"
-            onClick={() => setRange(r.key)}
-            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-              range === r.key
-                ? "bg-brand-700 text-white shadow-soft"
-                : "text-brand-700 hover:bg-brand-50"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
-
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {/* Assignments */}
+        {/* Assignments — not range-scoped: shows whatever still needs review. */}
         <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
           <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-amber-50 to-white px-5 py-4">
             <div className="flex items-center gap-2">
@@ -168,7 +157,7 @@ export function DashboardCoursework() {
               skeleton
             ) : (data?.assignments.length ?? 0) === 0 ? (
               <p className="rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-4 text-sm text-muted">
-                No assignments due in this range.
+                No assignment submissions are waiting to be reviewed.
               </p>
             ) : (
               <div className="space-y-3">
@@ -179,7 +168,7 @@ export function DashboardCoursework() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{a.title}</p>
+                        <p className="break-words text-sm font-semibold text-foreground sm:truncate">{a.title}</p>
                         <p className="mt-0.5 text-xs text-muted">
                           {a.className} &middot; {a.lectureTitle}
                         </p>
@@ -200,20 +189,20 @@ export function DashboardCoursework() {
                         {a.submissions.slice(0, MAX_ROWS).map((s) => (
                           <li
                             key={s.id}
-                            className="flex items-center justify-between gap-2 text-xs"
+                            className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"
                           >
-                            <span className="flex min-w-0 items-center gap-1.5 text-foreground">
+                            <span className="flex min-w-0 items-start gap-1.5 text-foreground">
                               {s.hasFile && (
-                                <FileText size={11} className="flex-shrink-0 text-brand-500" />
+                                <FileText size={11} className="mt-0.5 flex-shrink-0 text-brand-500" />
                               )}
-                              <span className="truncate">
+                              <span className="break-words sm:truncate">
                                 {s.studentName}
                                 {s.registrationNumber && (
                                   <span className="text-muted"> ({s.registrationNumber})</span>
                                 )}
                               </span>
                             </span>
-                            <span className="flex-shrink-0 text-muted">
+                            <span className="text-muted sm:flex-shrink-0">
                               {shortDate(s.submittedAt)}
                             </span>
                           </li>
@@ -232,9 +221,9 @@ export function DashboardCoursework() {
           </div>
         </article>
 
-        {/* Quizzes */}
+        {/* Quizzes — range-scoped via the tabs below. */}
         <article className="overflow-hidden rounded-2xl border border-brand-200 bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-brand-100 bg-gradient-to-r from-violet-50 to-white px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-100 bg-gradient-to-r from-violet-50 to-white px-5 py-4">
             <div className="flex items-center gap-2">
               <HelpCircle size={16} className="text-violet-500" />
               <h2 className="font-bold text-foreground">Quizzes &amp; results</h2>
@@ -245,6 +234,22 @@ export function DashboardCoursework() {
             >
               View all <ArrowRight size={12} />
             </Link>
+          </div>
+          <div className="flex flex-wrap gap-1 border-b border-brand-100 bg-white p-3">
+            {RANGES.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => setRange(r.key)}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                  range === r.key
+                    ? "bg-brand-700 text-white shadow-soft"
+                    : "text-brand-700 hover:bg-brand-50"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
           <div className="p-5">
             {error ? (
@@ -266,7 +271,7 @@ export function DashboardCoursework() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{q.title}</p>
+                        <p className="break-words text-sm font-semibold text-foreground sm:truncate">{q.title}</p>
                         <p className="mt-0.5 text-xs text-muted">
                           {q.className} &middot; {q.totalQuestions} question
                           {q.totalQuestions !== 1 ? "s" : ""}
@@ -289,15 +294,15 @@ export function DashboardCoursework() {
                           return (
                             <li
                               key={s.id}
-                              className="flex items-center justify-between gap-2 text-xs"
+                              className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"
                             >
-                              <span className="min-w-0 truncate text-foreground">
+                              <span className="min-w-0 break-words text-foreground sm:truncate">
                                 {s.studentName}
                                 {s.registrationNumber && (
                                   <span className="text-muted"> ({s.registrationNumber})</span>
                                 )}
                               </span>
-                              <span className="flex flex-shrink-0 items-center gap-1.5">
+                              <span className="flex items-center gap-1.5 sm:flex-shrink-0">
                                 <span className="text-muted">
                                   {s.score}/{s.totalQuestions}
                                 </span>

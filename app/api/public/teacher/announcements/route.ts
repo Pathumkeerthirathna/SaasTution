@@ -1,5 +1,6 @@
 import { apiSuccess } from "@/lib/api-response";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { isProfilePublic } from "@/services/teacher-profile-service";
 import { getTeacherAnnouncements } from "@/services/teacher-announcement-service";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,10 @@ export async function GET(request: Request) {
 
     if (!teacherId) {
       throw new AppError("Teacher id is required.", 400, "VALIDATION_ERROR");
+    }
+
+    if (!(await isProfilePublic(teacherId))) {
+      return apiSuccess([]);
     }
 
     const announcements = await getTeacherAnnouncements(teacherId);

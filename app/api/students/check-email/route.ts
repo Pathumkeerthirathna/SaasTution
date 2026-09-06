@@ -16,18 +16,12 @@ export async function GET(request: NextRequest) {
 
   const studentId = searchParams.get("studentId") ?? undefined;
 
-  // Optional teacherId
-  let teacherId = searchParams.get("teacherId");
-
-  if (!teacherId) {
-    const teacher = await requireTeacherSession();
-    teacherId = teacher.teacherId;
-  }
+  const teacher = await requireTeacherSession();
 
   const result = await checkIfEmailExists(
     registrationNumber,
     studentId,
-    teacherId
+    teacher.teacherId
   );
 
   return NextResponse.json(result);

@@ -24,6 +24,26 @@ export function toSriLankaWallClock(date: Date): Date {
 }
 
 /**
+ * The real (non-shifted) UTC instant marking 00:00 today in Sri Lanka. Unlike
+ * {@link nowInSriLanka}, this is for comparing against genuine UTC instant
+ * columns (e.g. event start/end times), not values persisted with the
+ * shifted-digits convention.
+ */
+export function startOfTodaySriLankaUtc(): Date {
+  const wallClockNow = nowInSriLanka();
+  const shiftedMidnight = Date.UTC(
+    wallClockNow.getUTCFullYear(),
+    wallClockNow.getUTCMonth(),
+    wallClockNow.getUTCDate(),
+    0,
+    0,
+    0,
+    0
+  );
+  return new Date(shiftedMidnight - SRI_LANKA_OFFSET_MS);
+}
+
+/**
  * Format a value that was persisted with {@link nowInSriLanka} (i.e. its
  * calendar fields already hold Sri Lankan wall-clock time). The value must be
  * read back with `timeZone: "UTC"` so the stored digits are shown verbatim

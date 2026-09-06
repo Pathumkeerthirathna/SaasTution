@@ -12,7 +12,19 @@ model Teacher {
   name      String
   email     String   @unique
   password  String
+  contact   String?
   createdAt DateTime @default(now())
+
+  // Admin confirmation of a newly registered teacher account.
+  isConfirmed Boolean   @default(false)
+  confirmedAt DateTime?
+  isRejected  Boolean   @default(false)
+  rejectedAt  DateTime?
+
+  // Admin-imposed block, with the reason shown to the teacher at login.
+  isBlocked   Boolean   @default(false)
+  blockedAt   DateTime?
+  blockReason String?
 
   profile TeacherProfile?
 
@@ -36,7 +48,82 @@ model Teacher {
   eventTypes     TeacherEventType[]
   calendarEvents TeacherCalendarEvent[]
 
+  subscriptions TeacherSubscription[]
+
   @@index([createdAt])
+}
+
+enum SubscriptionPlanStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SubscriptionInterval {
+  MONTHLY
+  YEARLY
+}
+
+model SubscriptionPlan {
+  id                  String                  @id @default(uuid())
+  name                String                  @unique
+  description         String?
+
+  price               Decimal                 @db.Decimal(10, 2)
+  currency             String                 @default("LKR")
+  interval             SubscriptionInterval  @default(MONTHLY)
+
+  maxLiveParticipants Int
+
+  unlimitedLiveSessions Boolean              @default(true)
+  unlimitedRecording    Boolean              @default(true)
+  unlimitedStudents     Boolean              @default(true)
+
+  maxTeachers           Int?
+  storageGB             Int?
+
+  status                SubscriptionPlanStatus @default(ACTIVE)
+  sortOrder             Int                    @default(0)
+
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  subscriptions         TeacherSubscription[]
+
+  @@index([status])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  SUSPENDED
+}
+
+model TeacherSubscription {
+  id              String              @id @default(uuid())
+
+  teacherId       String
+  planId          String
+
+  status          SubscriptionStatus  @default(ACTIVE)
+
+  startDate       DateTime
+  endDate         DateTime?
+
+  price           Decimal             @db.Decimal(10, 2)
+  currency        String              @default("LKR")
+
+  autoRenew       Boolean             @default(true)
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  teacher         Teacher             @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  plan            SubscriptionPlan    @relation(fields: [planId], references: [id])
+
+  @@index([teacherId])
+  @@index([planId])
+  @@index([status])
 }
 
 model TeacherEventType {
@@ -188,6 +275,14 @@ model City {
   @@unique([districtId, name])
 }
 
+enum TeacherTitle {
+  MR
+  MRS
+  MS
+  DR
+  PROF
+}
+
 model TeacherProfile {
   id String @id @default(uuid())
 
@@ -200,6 +295,14 @@ model TeacherProfile {
   // slclassroom.live/pathum-kumara
   // slclassroom.live/sarah-wickramasinghe
   slug String @unique
+
+  // Title shown before the teacher's display name
+  // Example: Mr. Pathum Kumara
+  title TeacherTitle @default(MR)
+
+  // Name shown on the public profile
+  // Defaults to the teacher's account name but can be customized
+  displayName String?
 
   // Profile images
   profileImageUrl String?
@@ -779,6 +882,12 @@ model MaterialBundleItemSubmission {
   sizeBytes   Int
   submittedAt DateTime           @default(now())
   createdAt   DateTime           @default(now())
+
+  // Teacher review — reviewedAt null means the submission hasn't been
+  // reviewed/marked yet.
+  marks      Int?
+  reviewedAt DateTime?
+
   item        MaterialBundleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   student     Student            @relation(fields: [studentId], references: [id])
 
@@ -1065,6 +1174,8 @@ model AssignmentSubmission {
   fileUrl      String
   mimeType     String
   sizeBytes    Int
+  marks        Int?
+  reviewedAt   DateTime?
   assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student      Student    @relation(fields: [studentId], references: [id])
 

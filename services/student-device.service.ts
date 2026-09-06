@@ -1,6 +1,72 @@
 import { DeviceApprovalException } from "@/app/exceptions/DeviceApprovalException";
 import { prisma } from "@/lib/prisma";
 import { StudentDeviceStatus } from "@prisma/client";
+import {
+  buildDeviceApprovalReviewLink,
+  sendDeviceApprovalRequestEmail,
+} from "@/lib/mailer";
+
+async function notifyTeacherOfPendingDevice(
+  studentId: string,
+  device: {
+    deviceName: string | null;
+    deviceModel: string | null;
+    browser: string | null;
+    browserVersion: string | null;
+    os: string | null;
+    osVersion: string | null;
+    lastIpAddress: string | null;
+    approvalRequestedAt: Date;
+  }
+) {
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      name: true,
+      teacher: {
+        select: { name: true, email: true },
+      },
+      classes: {
+        where: { isActive: true },
+        select: { class: { select: { name: true } } },
+      },
+    },
+  });
+
+  if (!student?.teacher?.email) {
+    return;
+  }
+
+  const className =
+    student.classes.map((c) => c.class.name).join(", ") ||
+    "No class assigned";
+
+  const deviceName =
+    device.deviceName ||
+    device.deviceModel ||
+    "Unknown device";
+
+  const browser = [device.browser, device.browserVersion]
+    .filter(Boolean)
+    .join(" ") || "Unknown browser";
+
+  const os = [device.os, device.osVersion]
+    .filter(Boolean)
+    .join(" ") || "Unknown OS";
+
+  await sendDeviceApprovalRequestEmail({
+    to: student.teacher.email,
+    teacherName: student.teacher.name,
+    studentName: student.name,
+    className,
+    deviceName,
+    browser,
+    os,
+    ipAddress: device.lastIpAddress || "Unknown",
+    requestedAt: device.approvalRequestedAt.toLocaleString(),
+    reviewLink: buildDeviceApprovalReviewLink(studentId),
+  });
+}
 
 type ValidateStudentDeviceParams = {
   studentId: string;
@@ -181,6 +247,14 @@ export async function validateStudentDevice({
         status: StudentDeviceStatus.PENDING,
       },
     });
+
+    try {
+      await notifyTeacherOfPendingDevice(studentId, createdDevice);
+    } catch (error) {
+      // The student must still see the "awaiting approval" screen even if
+      // the notification email fails to send.
+      console.error("Failed to email teacher about pending device:", error);
+    }
 
     throw new DeviceApprovalException(
       "DEVICE_PENDING",

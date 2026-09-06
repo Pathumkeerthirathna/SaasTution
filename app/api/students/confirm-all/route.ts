@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { requireTeacherSession } from "@/lib/auth-session";
 import { confirmAllPendingStudents } from "../../../../services/student-service";
 
 export async function PUT() {
   try {
-    const count = await confirmAllPendingStudents();
+    const session = await requireTeacherSession();
+    const count = await confirmAllPendingStudents(session.teacherId);
 
     return NextResponse.json({
       success: true,

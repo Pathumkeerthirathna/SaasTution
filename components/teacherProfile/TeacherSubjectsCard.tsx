@@ -172,7 +172,7 @@ export default function TeacherSubjectsCard({
         <div className="h-7 w-24 rounded-lg bg-slate-200" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-5">
+      <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
         <div className="h-24 rounded-lg bg-slate-100" />
         <div className="h-24 rounded-lg bg-slate-100" />
       </div>
@@ -204,7 +204,7 @@ export default function TeacherSubjectsCard({
           <button
             onClick={openAddDrawer}
             disabled={saving || deleting}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-1 rounded-md bg-[#4D6C90] px-2.5 py-1 text-[12.5px] font-medium text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"
             >
             {(saving || deleting) && (
               <svg
@@ -251,7 +251,7 @@ export default function TeacherSubjectsCard({
             No subjects added yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {subjects.map((subject) => (
               <div
                 key={subject.id}
@@ -283,7 +283,7 @@ export default function TeacherSubjectsCard({
                   )}
                 </div>
 
-                <h4 className="mt-2 truncate text-[15px] font-semibold text-slate-900">
+                <h4 className="mt-2 break-words text-[15px] font-semibold text-slate-900 sm:truncate">
                   {subject.subject.name}
                 </h4>
 

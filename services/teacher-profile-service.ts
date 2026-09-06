@@ -8,10 +8,66 @@ import { TeacherSearchFilter } from "@/types/TeacherSearchFilter";
 import { TeacherSubject } from "@/types/TeacherSubject";
 import { UpdateAchievement } from "@/types/UpdateAchievement";
 import { UpdateQualification } from "@/types/UpdateQualification";
-import { Prisma } from "@prisma/client";
+import { Prisma, TeacherTitle } from "@prisma/client";
 
 import { promises as fs } from "fs";
 import path from "path";
+
+export class TeacherProfileSetupRequiredError extends Error {
+  teacherName: string;
+  suggestedSlug: string;
+  slugAvailable: boolean;
+  alternatives: string[];
+
+  constructor(
+    teacherName: string,
+    suggestedSlug: string,
+    slugAvailable: boolean,
+    alternatives: string[]
+  ) {
+    super("This teacher does not have a public profile yet.");
+
+    this.name = "TeacherProfileSetupRequiredError";
+    this.teacherName = teacherName;
+    this.suggestedSlug = suggestedSlug;
+    this.slugAvailable = slugAvailable;
+    this.alternatives = alternatives;
+  }
+}
+
+function slugifyTeacherName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-");
+}
+
+async function generateAvailableSlugAlternatives(
+  baseSlug: string,
+  count = 3
+): Promise<string[]> {
+  const alternatives: string[] = [];
+
+  let suffix = 2;
+
+  while (alternatives.length < count && suffix < 100) {
+    const candidate = `${baseSlug}-${suffix}`;
+
+    const taken = await prisma.teacherProfile.findUnique({
+      where: { slug: candidate },
+      select: { id: true },
+    });
+
+    if (!taken) {
+      alternatives.push(candidate);
+    }
+
+    suffix++;
+  }
+
+  return alternatives;
+}
 
 export async function getTeacherProfile(
   teacherId: string
@@ -20,6 +76,9 @@ export async function getTeacherProfile(
     id: true,
     teacherId: true,
     slug: true,
+
+    title: true,
+    displayName: true,
 
     profileImageUrl: true,
     coverImageUrl: true,
@@ -137,7 +196,7 @@ export async function getTeacherProfile(
     },
   } satisfies Prisma.TeacherProfileSelect;
 
-  let profile = await prisma.teacherProfile.findUnique({
+  const profile = await prisma.teacherProfile.findUnique({
     where: { teacherId },
     select: teacherProfileSelect,
   });
@@ -154,29 +213,33 @@ export async function getTeacherProfile(
       throw new Error("Teacher not found");
     }
 
-    await prisma.teacherProfile.create({
-      data: {
-        teacherId,
-        slug: teacher.name
-          .toLowerCase()
-          .replace(/\s+/g, "-"),
-      },
+    const baseSlug = slugifyTeacherName(teacher.name);
+
+    const takenBy = await prisma.teacherProfile.findUnique({
+      where: { slug: baseSlug },
+      select: { id: true },
     });
 
-    profile = await prisma.teacherProfile.findUnique({
-      where: { teacherId },
-      select: teacherProfileSelect,
-    });
+    const alternatives = takenBy
+      ? await generateAvailableSlugAlternatives(baseSlug)
+      : [];
 
-    if (!profile) {
-      throw new Error("Failed to create teacher profile.");
-    }
+    throw new TeacherProfileSetupRequiredError(
+      teacher.name,
+      baseSlug,
+      !takenBy,
+      alternatives
+    );
   }
 
   const result: TeacherProfile = {
     profileId: profile.id,
     teacherId: profile.teacherId,
     slug: profile.slug,
+
+    title: profile.title,
+    displayName: profile.displayName,
+
     classes: profile.teacher.classes.map((cls) => ({
       id: cls.id,
       name: cls.name,
@@ -255,6 +318,82 @@ export async function getTeacherProfile(
 
 }
 
+export interface CreateTeacherProfileInput {
+  title: TeacherTitle;
+  displayName: string;
+  slug: string;
+}
+
+export async function createTeacherProfile(
+  teacherId: string,
+  input: CreateTeacherProfileInput
+) {
+  const teacher = await prisma.teacher.findUnique({
+    where: { id: teacherId },
+    select: { id: true },
+  });
+
+  if (!teacher) {
+    throw new Error("Teacher not found.");
+  }
+
+  const existingProfile = await prisma.teacherProfile.findUnique({
+    where: { teacherId },
+    select: { id: true },
+  });
+
+  if (existingProfile) {
+    return getTeacherProfile(teacherId);
+  }
+
+  const slug = slugifyTeacherName(input.slug);
+
+  if (!slug) {
+    throw new Error("Please enter a valid profile link.");
+  }
+
+  const displayName = input.displayName?.trim();
+
+  if (!displayName) {
+    throw new Error("Please enter a display name.");
+  }
+
+  const taken = await prisma.teacherProfile.findUnique({
+    where: { slug },
+    select: { id: true },
+  });
+
+  if (taken) {
+    throw new Error(
+      "This profile link is already taken. Please choose another one."
+    );
+  }
+
+  try {
+    await prisma.teacherProfile.create({
+      data: {
+        teacherId,
+        slug,
+        title: input.title,
+        displayName,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new Error(
+        "This profile link is already taken. Please choose another one."
+      );
+    }
+
+    throw error;
+  }
+
+  return getTeacherProfile(teacherId);
+}
+
 export async function GetTeacherPublicProfileBySlug(
   slug: string
 ): Promise<TeacherProfile> {
@@ -262,6 +401,9 @@ export async function GetTeacherPublicProfileBySlug(
     id: true,
     teacherId: true,
     slug: true,
+
+    title: true,
+    displayName: true,
 
     profileImageUrl: true,
     coverImageUrl: true,
@@ -401,6 +543,10 @@ export async function GetTeacherPublicProfileBySlug(
     profileId: profile.id,
     teacherId: profile.teacherId,
     slug: profile.slug,
+
+    title: profile.title,
+    displayName: profile.displayName,
+
     classes: profile.teacher.classes.map((cls) => ({
       id: cls.id,
       name: cls.name,
@@ -542,6 +688,12 @@ export async function updateTeacherProfile(
 
         slug,
 
+        title:
+          dto.title ?? "MR",
+
+        displayName:
+          dto.displayName?.trim() || null,
+
         designation:
           dto.designation?.trim() || null,
 
@@ -560,6 +712,12 @@ export async function updateTeacherProfile(
 
       update: {
         slug,
+
+        title:
+          dto.title,
+
+        displayName:
+          dto.displayName?.trim() || null,
 
         designation:
           dto.designation?.trim() || null,
@@ -1552,6 +1710,20 @@ export async function getSectionVisibility(
     isDisplayAchievements: profile?.isDisplayAchievements ?? true,
     isDisplaySubjects: profile?.isDisplaySubjects ?? true,
   };
+}
+
+/**
+ * Whether this teacher's whole public profile is visible. Sections with no
+ * dedicated toggle (mediums, social links, About Me) fall back to this —
+ * they're shown whenever the profile itself is public.
+ */
+export async function isProfilePublic(teacherId: string): Promise<boolean> {
+  const profile = await prisma.teacherProfile.findUnique({
+    where: { teacherId },
+    select: { isPublic: true },
+  });
+
+  return profile?.isPublic ?? true;
 }
 
 export async function updateSectionVisibility(

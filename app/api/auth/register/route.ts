@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       name?: string;
       email?: string;
       password?: string;
+      contact?: string;
     };
 
     const parsed = registerSchema.safeParse(body);

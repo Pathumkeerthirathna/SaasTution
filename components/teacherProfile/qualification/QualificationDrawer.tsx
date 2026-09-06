@@ -60,37 +60,24 @@ export default function QualificationDrawer({
 
       {/* Drawer */}
 
-      <div
-        className="
-          fixed
-          right-0
-          top-0
-          z-50
-          flex
-          h-screen
-          w-full
-          max-w-xl
-          flex-col
-          bg-white
-          shadow-2xl
-        "
-      >
+      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-lg flex-col bg-white shadow-2xl">
+
         {/* Header */}
 
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100">
-              <GraduationCap className="h-6 w-6 text-emerald-600" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
+              <GraduationCap className="h-4 w-4 text-emerald-600" />
             </div>
 
             <div>
-              <h2 className="text-[22px] font-bold text-slate-900">
+              <h2 className="text-[15px] font-bold text-slate-900">
                 {qualification ? "Edit Qualification" : "Add Qualification"}
               </h2>
 
-              <p className="text-[16px] text-slate-500">
+              <p className="text-[12.5px] text-slate-500">
                 Your academic and professional educational background.
               </p>
             </div>
@@ -99,24 +86,24 @@ export default function QualificationDrawer({
 
           <button
             onClick={onClose}
-            className="rounded-lg p-2 transition hover:bg-slate-100"
+            className="rounded-md p-1.5 transition hover:bg-slate-100"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
 
         </div>
 
         {/* Body */}
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-5">
 
-          <div className="space-y-6">
+          <div className="space-y-4">
 
             {/* Qualification */}
 
             <div>
 
-              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                 Qualification *
               </label>
 
@@ -128,7 +115,7 @@ export default function QualificationDrawer({
                     title: e.target.value,
                   }))
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
                 placeholder="BSc (Hons) Mathematics"
               />
 
@@ -138,7 +125,7 @@ export default function QualificationDrawer({
 
             <div>
 
-              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                 Institute *
               </label>
 
@@ -150,7 +137,7 @@ export default function QualificationDrawer({
                     institute: e.target.value,
                   }))
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
                 placeholder="University of Colombo"
               />
 
@@ -158,11 +145,11 @@ export default function QualificationDrawer({
 
             {/* Years */}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
 
               <div>
 
-                <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                   Start Year
                 </label>
 
@@ -177,7 +164,7 @@ export default function QualificationDrawer({
                         : null,
                     }))
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
                   placeholder="2018"
                 />
 
@@ -185,7 +172,7 @@ export default function QualificationDrawer({
 
               <div>
 
-                <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                   End Year
                 </label>
 
@@ -200,7 +187,7 @@ export default function QualificationDrawer({
                         : null,
                     }))
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
                   placeholder="2022"
                 />
 
@@ -212,7 +199,7 @@ export default function QualificationDrawer({
 
             <div>
 
-              <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                 Display Order
               </label>
 
@@ -225,10 +212,10 @@ export default function QualificationDrawer({
                     displayOrder: Number(e.target.value),
                   }))
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
 
-              <p className="mt-2 text-[14px] text-slate-500">
+              <p className="mt-1.5 text-[12px] text-slate-500">
                 Higher priority qualifications can be displayed first by using
                 display order.
               </p>
@@ -241,11 +228,11 @@ export default function QualificationDrawer({
 
         {/* Footer */}
 
-        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-5">
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
 
           <button
             onClick={onClose}
-            className="rounded-xl border border-slate-300 px-5 py-2.5 font-medium text-slate-700 transition hover:bg-white"
+            className="rounded-md border border-slate-300 px-3.5 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-white"
           >
             Cancel
           </button>
@@ -257,23 +244,9 @@ export default function QualificationDrawer({
               !form.institute.trim()
             }
             onClick={() => onSave(form)}
-            className="
-              flex
-              items-center
-              gap-2
-              rounded-xl
-              bg-emerald-600
-              px-6
-              py-2.5
-              font-semibold
-              text-white
-              transition
-              hover:bg-emerald-700
-              disabled:cursor-not-allowed
-              disabled:opacity-60
-            "
+            className="flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Save className="h-4 w-4" />
+            <Save className="h-3.5 w-3.5" />
 
             {saving
               ? "Saving..."

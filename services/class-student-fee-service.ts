@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import { getPaymentDueStatus } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 
@@ -62,6 +63,7 @@ export type MonthlyFeeSheet = {
   processed: boolean;
   dueDate: string;
   isPastDue: boolean;
+  isDueSoon: boolean;
   rows: MonthlyFeeRow[];
 };
 
@@ -635,6 +637,7 @@ async function buildMonthlyFeeSheet(params: {
     processed: current || past,
     dueDate: dueDate.toISOString(),
     isPastDue: now.getTime() > dueDate.getTime(),
+    isDueSoon: getPaymentDueStatus(dueDate, now) === "DUE_SOON",
     rows,
   };
 }

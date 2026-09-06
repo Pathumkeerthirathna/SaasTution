@@ -82,6 +82,60 @@ async function assertTeacherOwnsBundleItem(teacherId: string, bundleId: string, 
   return item;
 }
 
+/** Submitted bundle paper answers this teacher hasn't marked yet, oldest first. */
+export async function getPendingBundlePaperReviewsForTeacher(teacherId: string, limit = 8) {
+  const submissions = await prisma.materialBundleItemSubmission.findMany({
+    where: {
+      reviewedAt: null,
+      item: {
+        type: "PAPER",
+        status: 0,
+        bundle: {
+          status: 0,
+          class: { teacherId, status: 0 },
+        },
+      },
+    },
+    orderBy: { submittedAt: "asc" },
+    take: limit,
+    select: {
+      id: true,
+      submittedAt: true,
+      student: { select: { name: true, registrationNumber: true } },
+      item: {
+        select: {
+          id: true,
+          title: true,
+          paperStartAt: true,
+          paperEndAt: true,
+          bundle: {
+            select: {
+              id: true,
+              title: true,
+              class: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return submissions.map((s) => ({
+    submissionId: s.id,
+    submittedAt: s.submittedAt.toISOString(),
+    studentName: s.student.name,
+    registrationNumber: s.student.registrationNumber,
+    itemId: s.item.id,
+    paperName: s.item.title,
+    startTime: s.item.paperStartAt ? s.item.paperStartAt.toISOString() : null,
+    endTime: s.item.paperEndAt ? s.item.paperEndAt.toISOString() : null,
+    bundleId: s.item.bundle.id,
+    bundleName: s.item.bundle.title,
+    classId: s.item.bundle.class.id,
+    className: s.item.bundle.class.name,
+  }));
+}
+
 export async function listMaterialBundlesForTeacher(params: {
   teacherId: string;
   classId?: string;

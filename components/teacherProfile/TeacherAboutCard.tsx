@@ -158,9 +158,9 @@ if (loading) {
 
         {!isPublic && (<button
           onClick={() => setDrawerOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[14px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+          className="inline-flex items-center gap-1 rounded-md border border-[#4D6C90]/30 bg-[#4D6C90]/5 px-2 py-1 text-[12.5px] font-medium text-[#4D6C90] transition hover:bg-[#4D6C90]/10"
         >
-          <Edit className="h-3.5 w-3.5" />
+          <Edit className="h-3 w-3" />
           Edit
         </button>)}
 
@@ -177,7 +177,7 @@ if (loading) {
             <p className="text-[15px] leading-6 text-slate-600">
                 {aboutMe}
             </p>
-        ) : (
+        ) : isPublic ? null : (
             <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center">
 
                 <p className="text-[14px] text-slate-500">
@@ -186,7 +186,7 @@ if (loading) {
 
                 <button
                     onClick={() => setDrawerOpen(true)}
-                    className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-[14px] font-medium text-white hover:bg-emerald-700"
+                    className="mt-3 rounded-md bg-[#4D6C90] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[#3B5776]"
                 >
                     Add About Me
                 </button>

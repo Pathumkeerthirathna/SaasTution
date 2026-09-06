@@ -125,6 +125,49 @@ export async function listClassPapersForTeacher(teacherId: string, classId?: str
   });
 }
 
+/** Submitted paper answers this teacher hasn't marked yet, oldest first. */
+export async function getPendingPaperReviewsForTeacher(teacherId: string, limit = 8) {
+  const submissions = await prisma.classPaperStudent.findMany({
+    where: {
+      submitted: true,
+      marks: null,
+      classPaper: {
+        status: 0,
+        class: { teacherId, status: 0 },
+      },
+    },
+    orderBy: { submittedAt: "asc" },
+    take: limit,
+    select: {
+      id: true,
+      submittedAt: true,
+      student: { select: { name: true, registrationNumber: true } },
+      classPaper: {
+        select: {
+          id: true,
+          name: true,
+          startTime: true,
+          endTime: true,
+          class: { select: { id: true, name: true } },
+        },
+      },
+    },
+  });
+
+  return submissions.map((s) => ({
+    submissionId: s.id,
+    submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
+    studentName: s.student.name,
+    registrationNumber: s.student.registrationNumber,
+    paperId: s.classPaper.id,
+    paperName: s.classPaper.name,
+    startTime: s.classPaper.startTime.toISOString(),
+    endTime: s.classPaper.endTime.toISOString(),
+    classId: s.classPaper.class.id,
+    className: s.classPaper.class.name,
+  }));
+}
+
 export async function getClassPaperForTeacher(teacherId: string, paperId: string) {
   await assertTeacherOwnsPaper(teacherId, paperId);
 
@@ -235,6 +278,9 @@ export async function deleteClassPaperForTeacher(teacherId: string, paperId: str
 }
 
 /** Paper file for whoever is allowed to see it (teacher owner or enrolled student). */
+/** Students may open the paper starting this long before its scheduled start time. */
+const PAPER_EARLY_VIEW_WINDOW_MS = 15 * 60 * 1000;
+
 export async function getPaperFileForViewer(
   viewer: { role: "TEACHER"; teacherId: string } | { role: "STUDENT"; studentId: string },
   paperId: string
@@ -251,7 +297,23 @@ export async function getPaperFileForViewer(
               students: { some: { studentId: viewer.studentId, isActive: true } },
             },
     },
-    select: { pdfUrl: true, pdfName: true, pdfMimeType: true },
+    select: { pdfUrl: true, pdfName: true, pdfMimeType: true, startTime: true },
   });
+
+  if (!paper) return null;
+
+  // Teachers can always preview their own paper; students only from 15
+  // minutes before the paper's scheduled start time.
+  if (viewer.role === "STUDENT") {
+    const viewableFrom = paper.startTime.getTime() - PAPER_EARLY_VIEW_WINDOW_MS;
+    if (Date.now() < viewableFrom) {
+      throw new AppError(
+        "This paper isn't available yet. It opens 15 minutes before the start time.",
+        403,
+        "PAPER_NOT_YET_AVAILABLE"
+      );
+    }
+  }
+
   return paper;
 }

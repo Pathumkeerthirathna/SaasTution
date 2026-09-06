@@ -185,8 +185,8 @@ export function StudentAttendance({ studentId, data }: StudentAttendanceProps) {
             <div className="border-b border-slate-100 px-3.5 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
-                    <BookOpen size={14} className="shrink-0 text-teal-600" />
+                  <h3 className="flex items-start gap-1.5 break-words text-[13px] font-semibold text-slate-900 sm:truncate">
+                    <BookOpen size={14} className="mt-0.5 shrink-0 text-teal-600" />
                     {cls.className}
                   </h3>
                   <p className="mt-0.5 text-[11px] text-slate-500">
@@ -252,10 +252,10 @@ export function StudentAttendance({ studentId, data }: StudentAttendanceProps) {
                     <li key={lecture.lectureId}>
                       <Link
                         href={`/dashboard/lectures?focusLectureId=${lecture.lectureId}`}
-                        className="flex items-center gap-3 px-3.5 py-2 transition-colors hover:bg-slate-50"
+                        className="flex items-start gap-3 px-3.5 py-2 transition-colors hover:bg-slate-50"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[12px] font-medium text-slate-800">
+                          <p className="break-words text-[12px] font-medium text-slate-800 sm:truncate">
                             {lecture.title}
                           </p>
                           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">

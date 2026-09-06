@@ -577,7 +577,7 @@ export function LectureQuizPanel(props: {
 
                 <div className="min-w-0 flex-1">
                   <button type="button" onClick={() => openEditForm(quiz.id)} className="block w-full text-left">
-                    <p className="truncate text-xs font-semibold text-slate-900">{quiz.title}</p>
+                    <p className="break-words text-xs font-semibold text-slate-900">{quiz.title}</p>
                     <p className="mt-0.5 text-[11px] text-slate-500">{quiz.questions.length} question(s)</p>
                     {quiz.maxAttempts !== null ? (
                       <p className="mt-0.5 text-[11px] text-slate-500">Max {quiz.maxAttempts} attempt(s)</p>
@@ -973,7 +973,50 @@ export function LectureQuizPanel(props: {
                 {resultsData.submissions.length === 0 ? (
                   <p className="mt-3 text-xs text-muted">No submissions yet.</p>
                 ) : (
-                  <div className="mt-3 overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white">
+                  <>
+                    {/*
+                      This panel is a slide-over drawer capped at half the
+                      viewport (min 480px) even on desktop, so the 680px table
+                      only gets shown once the viewport is wide enough that the
+                      drawer itself has room for it; every submission renders
+                      as its own card below that, with nothing clipped.
+                    */}
+                    <div className="mt-3 space-y-2 xl:hidden">
+                      {resultsData.submissions.map((sub) => (
+                        <div
+                          key={sub.studentId}
+                          className="rounded-lg border border-slate-200 bg-white p-3 text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="break-words font-semibold text-slate-900">{sub.studentName}</p>
+                              {sub.registrationNumber ? (
+                                <p className="mt-0.5 text-[10px] text-muted">{sub.registrationNumber}</p>
+                              ) : null}
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                sub.percentage >= 80
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : sub.percentage >= 50
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-rose-100 text-rose-700"
+                              }`}
+                            >
+                              {sub.percentage}%
+                            </span>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-slate-600">
+                            <span>Score {sub.score}/{sub.totalQuestions}</span>
+                            <span>{sub.attemptCount} attempt{sub.attemptCount === 1 ? "" : "s"}</span>
+                            <span>Submitted {new Date(sub.submittedAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 hidden overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white xl:block">
                     <table className="min-w-[680px] w-full text-xs">
                       <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
                         <tr>
@@ -1013,7 +1056,8 @@ export function LectureQuizPanel(props: {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
+                  </>
                 )}
               </>
             ) : null}

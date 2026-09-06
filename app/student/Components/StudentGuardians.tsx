@@ -210,23 +210,23 @@ export function StudentGuardians({
             {guardians.map((guardian) => (
               <li
                 key={guardian.id}
-                className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2"
+                className="flex items-start gap-3 rounded-md border border-slate-200 px-3 py-2"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700">
                   <UserRound size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-semibold text-slate-900">
+                  <p className="break-words text-[12px] font-semibold text-slate-900 sm:truncate">
                     {guardian.name}
                     <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
                       {guardian.relation}
                     </span>
                   </p>
-                  <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-slate-500">
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
                     <Phone size={10} />
                     {guardian.phone}
                     {guardian.email ? (
-                      <span className="ml-1.5 text-slate-400">
+                      <span className="ml-1.5 break-words text-slate-400">
                         · {guardian.email}
                       </span>
                     ) : null}

@@ -1250,7 +1250,7 @@ export function LectureManagementPanel() {
                     type="button"
                     title={item.name}
                     onClick={() => selectFilterClass(item.id)}
-                    className={`${filterTileClass(filterClassId === item.id)} block w-full shrink-0 truncate text-left`}
+                    className={`${filterTileClass(filterClassId === item.id)} block w-full shrink-0 break-words text-left lg:truncate`}
                   >
                     {item.name}
                   </button>
@@ -1904,7 +1904,7 @@ export function LectureManagementPanel() {
                                           className="fixed inset-0 z-40"
                                           onClick={() => setAttendancePopoverSessionId(null)}
                                         />
-                                        <div className="absolute right-0 top-full z-50 mt-1 max-h-80 w-72 overflow-y-auto scrollbar-thin rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+                                        <div className="absolute right-0 top-full z-50 mt-1 max-h-80 w-[min(18rem,calc(100vw-2.5rem))] overflow-y-auto scrollbar-thin rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
                                           {loadingAttendanceFor.has(sessionItem.id) || !attendance ? (
                                             <p className="text-xs text-muted">Loading attendance...</p>
                                           ) : (

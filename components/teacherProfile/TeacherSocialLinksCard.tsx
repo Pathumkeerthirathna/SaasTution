@@ -186,9 +186,9 @@ export default function TeacherSocialLinksCard({
 
         {isPublic ? null : (<button
           onClick={() => setDrawerOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[14px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+          className="inline-flex items-center gap-1 rounded-md border border-[#4D6C90]/30 bg-[#4D6C90]/5 px-2 py-1 text-[12.5px] font-medium text-[#4D6C90] transition hover:bg-[#4D6C90]/10"
         >
-          <Edit className="h-3.5 w-3.5" />
+          <Edit className="h-3 w-3" />
           Edit
         </button>)}
       </div>
@@ -225,7 +225,7 @@ export default function TeacherSocialLinksCard({
                     {social.name}
                   </p>
 
-                  <p className="truncate text-[13px] text-slate-500">
+                  <p className="break-words text-[13px] text-slate-500 sm:truncate">
                     {social.value || "Not Added"}
                   </p>
                 </div>

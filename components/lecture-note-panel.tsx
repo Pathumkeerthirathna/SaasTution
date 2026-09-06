@@ -347,7 +347,7 @@ export function LectureNotePanel(props: {
 
                 <div className="min-w-0 flex-1">
                   <button type="button" onClick={() => openEditForm(note.id)} className="block w-full text-left">
-                    <p className="truncate text-xs font-semibold text-slate-900">{note.title}</p>
+                    <p className="break-words text-xs font-semibold text-slate-900">{note.title}</p>
                     <span className="mt-1 flex flex-wrap items-center gap-1">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${

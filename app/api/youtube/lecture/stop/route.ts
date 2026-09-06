@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTeacherSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 import { emitLiveChange } from "@/lib/session-events";
 import {
@@ -32,9 +33,7 @@ export async function POST(
             );
         }
 
-        // We'll add the teacher authentication/
-        // authorization here using your existing
-        // session pattern in the next step.
+        const session = await requireTeacherSession();
 
         const lecture =
             await prisma.lecture.findUnique({
@@ -50,7 +49,7 @@ export async function POST(
                 },
             });
 
-        if (!lecture) {
+        if (!lecture || lecture.class.teacherId !== session.teacherId) {
             return NextResponse.json(
                 {
                     success: false,

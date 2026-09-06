@@ -3,6 +3,8 @@ import nodemailer from "nodemailer";
 import { AppError } from "@/lib/error-handler";
 import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
+import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
+import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
 
 type PasswordResetEmailInput = {
   to: string;
@@ -109,11 +111,21 @@ export function buildPasswordResetLink(token: string, appBaseUrl?: string) {
   return url.toString();
 }
 
+export function buildDeviceApprovalReviewLink(studentId: string, appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
+  return new URL(`/dashboard/students/${studentId}`, baseUrl).toString();
+}
+
 export function buildLiveSessionInviteLoginLink(inviteToken: string, appBaseUrl?: string) {
   const baseUrl = appBaseUrl?.trim() || getBaseUrl();
   const url = new URL("/login", baseUrl);
   url.searchParams.set("invite", inviteToken);
   return url.toString();
+}
+
+export function buildTeacherLoginLink(appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
+  return new URL("/login", baseUrl).toString();
 }
 
 // export async function sendPasswordResetEmail(input: PasswordResetEmailInput) {
@@ -411,6 +423,48 @@ export async function sendStudentRegistrationEmail(
     input.to,
     "Welcome to SLClassroom",
     getStudentRegistrationEmail(input)
+  );
+}
+
+export async function sendDeviceApprovalRequestEmail(
+  input: DeviceApprovalRequestEmailProps & { to: string }
+) {
+  return sendEmail(
+    input.to,
+    `Device approval needed for ${input.studentName}`,
+    getDeviceApprovalRequestEmail(input),
+    `Hi ${input.teacherName},
+
+${input.studentName} tried to sign in to SLClassroom from a new device that needs your approval.
+
+Student: ${input.studentName}
+Class: ${input.className}
+Device: ${input.deviceName}
+Browser: ${input.browser}
+Operating System: ${input.os}
+IP Address: ${input.ipAddress}
+Requested At: ${input.requestedAt}
+
+Review and confirm this device here: ${input.reviewLink}`
+  );
+}
+
+export async function sendTeacherAccountConfirmedEmail(
+  input: TeacherAccountConfirmedEmailProps & { to: string }
+) {
+  return sendEmail(
+    input.to,
+    "Your SLClassroom account has been confirmed 🎉",
+    getTeacherAccountConfirmedEmail(input),
+    `Hi ${input.teacherName},
+
+Congratulations — your SLClassroom account has been confirmed! You can now start doing lectures, adding students, and using everything the platform offers.
+${
+  input.planName
+    ? `\nYour selected plan: ${input.planName} (${input.planPrice} / ${input.planInterval})\n`
+    : ""
+}
+Log in here: ${input.loginLink}`
   );
 }
 

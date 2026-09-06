@@ -252,7 +252,7 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
           >
             {/* Header */}
             <div
-              className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-36 text-white`}
+              className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-4 text-white sm:pr-36`}
             >
               <div
                 className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full ${theme.glow1} blur-2xl`}
@@ -261,12 +261,16 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                 className={`pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full ${theme.glow2} blur-2xl`}
               />
 
-              <ClassBookBadge
-                label={bookLabel}
-                number={bookNumber}
-                bookGradient={theme.bookGradient}
-                numberColor={theme.numberColor}
-              />
+              {/* Decorative book graphic — dropped below sm so the class name
+                  always has the full card width to itself. */}
+              <div className="hidden sm:block">
+                <ClassBookBadge
+                  label={bookLabel}
+                  number={bookNumber}
+                  bookGradient={theme.bookGradient}
+                  numberColor={theme.numberColor}
+                />
+              </div>
 
               <div className="relative flex items-start gap-2">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 shadow-inner backdrop-blur">
@@ -274,8 +278,8 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                 </div>
 
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="truncate text-sm font-bold leading-tight tracking-tight text-white">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="break-words text-sm font-bold leading-tight tracking-tight text-white sm:truncate">
                       {group.info.name}
                     </h3>
 
@@ -336,7 +340,7 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                       <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                         Monthly Fee
                       </p>
-                      <p className="truncate text-sm font-bold text-slate-900">
+                      <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                         Rs. {group.info.monthlyFee.toLocaleString()}
                       </p>
                     </div>
@@ -350,7 +354,7 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                       <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                         Payments
                       </p>
-                      <p className="truncate text-sm font-bold text-slate-900">
+                      <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                         {confirmedPayments}
                         <span className="text-[11px] font-medium text-slate-400">
                           {" "}
@@ -368,7 +372,7 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                       <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                         Enrolled Since
                       </p>
-                      <p className="truncate text-sm font-bold text-slate-900">
+                      <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                         {formatStoredSriLankaDate(group.assignedAt)}
                       </p>
                     </div>

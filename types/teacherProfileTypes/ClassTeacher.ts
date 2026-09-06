@@ -1,9 +1,15 @@
+import { TeacherTitle } from "@prisma/client";
+
 export interface TeacherProfile {
-  
+
   // Profile
   profileId: string;
   teacherId: string;
   slug: string;
+
+  title: TeacherTitle;
+  displayName?: string | null;
+
   classes: TeacherClass[];
 
   profileImageUrl?: string | null;

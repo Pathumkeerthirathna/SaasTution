@@ -44,6 +44,22 @@ export type AppSession =
       role: "STUDENT";
     };
 
+/** Like `requireAppSession`, but returns null instead of throwing when there's no valid session. */
+export async function getOptionalSession(): Promise<AppSession | null> {
+  const token = cookies().get(AUTH_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  const payload = await verifyAuthToken(token);
+  if (!payload) return null;
+
+  return {
+    userId: payload.sub,
+    email: payload.email,
+    name: payload.name,
+    role: payload.role,
+  };
+}
+
 export async function requireAppSession(): Promise<AppSession> {
   const token = cookies().get(AUTH_COOKIE_NAME)?.value;
 

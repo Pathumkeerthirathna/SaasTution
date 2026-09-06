@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   BookOpen,
@@ -24,6 +24,8 @@ import {
   BadgeInfo,
   Bell,
   ScrollText,
+  Package,
+  Lock,
 } from "lucide-react";
 
 import { SidebarGraduate } from "@/components/sidebar-graduate";
@@ -33,12 +35,14 @@ type DashboardShellProps = {
   name: string;
   email: string;
   children: ReactNode;
+  isPending?: boolean;
 };
 
 type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
+  locked?: boolean;
 };
 
 function getInitials(name: string) {
@@ -47,18 +51,45 @@ function getInitials(name: string) {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-export function DashboardShell({ role, name, email, children }: DashboardShellProps) {
+export function DashboardShell({
+  role,
+  name,
+  email,
+  children,
+  isPending = false,
+}: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isProfileOpen) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isProfileOpen]);
 
   const navItems = useMemo<NavItem[]>(() => {
     if (role === "ADMIN") {
-      return [{ href: "/dashboard/admin", label: "Admin Overview", icon: <Shield size={18} strokeWidth={1.75} /> }];
+      return [
+        { href: "/dashboard/admin", label: "Admin Overview", icon: <Shield size={18} strokeWidth={1.75} /> },
+        { href: "/dashboard/admin/teachers", label: "Teachers", icon: <Users size={18} strokeWidth={1.75} /> },
+        { href: "/dashboard/admin/packages", label: "Packages", icon: <Package size={18} strokeWidth={1.75} /> },
+      ];
     }
-    return [
+    const items: NavItem[] = [
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/calendar",                      label: "Calendar",           icon: <CalendarDays size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/teacher/profile",               label: "Teacher Profile",    icon: <BadgeInfo size={18} strokeWidth={1.75} /> },
@@ -72,7 +103,13 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
       { href: "/dashboard/material-bundles/configuration",label: "Paper Config",       icon: <Settings size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/sessions",                      label: "Live Sessions",      icon: <Radio size={18} strokeWidth={1.75} /> },
     ];
-  }, [role]);
+
+    if (!isPending) return items;
+
+    return items.map((item) =>
+      item.href === "/dashboard" ? item : { ...item, locked: true }
+    );
+  }, [role, isPending]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -128,6 +165,33 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
         <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+
+            if (item.locked) {
+              return (
+                <div
+                  key={item.href}
+                  role="link"
+                  aria-disabled="true"
+                  tabIndex={-1}
+                  title={
+                    !isSidebarOpen
+                      ? item.label
+                      : "Unlocks once your account is confirmed"
+                  }
+                  aria-label={`${item.label} (locked until confirmed)`}
+                  className={`flex w-full cursor-not-allowed select-none items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-normal text-white/35 ${
+                    isSidebarOpen ? "" : "lg:justify-center lg:px-0"
+                  }`}
+                >
+                  <span className="flex-shrink-0">{item.icon}</span>
+                  <span className={`flex-1 tracking-[0.005em] ${isSidebarOpen ? "" : "hidden lg:hidden"}`}>
+                    {item.label}
+                  </span>
+                  <Lock className={`flex-shrink-0 ${isSidebarOpen ? "" : "hidden lg:hidden"}`} size={13} strokeWidth={1.75} />
+                </div>
+              );
+            }
+
             return (
               <Link
                 key={item.href}
@@ -219,7 +283,7 @@ export function DashboardShell({ role, name, email, children }: DashboardShellPr
             </button>
 
             {/* Profile button */}
-            <div className="relative">
+            <div className="relative" ref={profileMenuRef}>
             <button
               type="button"
               onClick={() => setIsProfileOpen((prev) => !prev)}

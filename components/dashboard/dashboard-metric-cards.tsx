@@ -5,20 +5,24 @@ import Link from "next/link";
 import {
   CalendarClock,
   ClipboardList,
-  DollarSign,
+  FolderOpen,
   GraduationCap,
   Package,
+  ScrollText,
   UserCheck,
 } from "lucide-react";
 
-type RangeKey = "month" | "week" | "quarter" | "year";
+import { useTeacherLiveRefetch } from "@/components/dashboard/use-teacher-live-events";
+
+type RangeKey = "month" | "week" | "quarter" | "year" | "all";
 
 type Metrics = {
-  payments: { due: number; total: number; dueAmountLkr: number };
   lectures: { scheduled: number; total: number };
   events: { pending: number; total: number };
-  schedules: { pending: number; total: number };
   materials: { pendingToSend: number; total: number };
+  papers: { notReviewed: number; total: number };
+  bundlePapers: { notReviewed: number; total: number };
+  assignments: { notReviewed: number; total: number };
 };
 
 type Props = {
@@ -31,6 +35,7 @@ const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "week", label: "This week" },
   { key: "quarter", label: "This quarter" },
   { key: "year", label: "This year" },
+  { key: "all", label: "All" },
 ];
 
 function fmtDate(d: Date): string {
@@ -44,6 +49,11 @@ function rangeToDates(range: RangeKey): { from: string; to: string } {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
+
+  if (range === "all") {
+    // Wide enough to cover everything without special-casing the API.
+    return { from: "2000-01-01", to: "2100-12-31" };
+  }
 
   if (range === "week") {
     const start = new Date(now);
@@ -81,8 +91,12 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
 
   const { from, to } = useMemo(() => rangeToDates(range), [range]);
+
+  // Realtime: re-pull the current range whenever the teacher's coursework/payment data changes.
+  useTeacherLiveRefetch(() => setLiveTick((n) => n + 1));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,7 +127,7 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
       });
 
     return () => controller.abort();
-  }, [from, to]);
+  }, [from, to, liveTick]);
 
   const dateCards: {
     key: string;
@@ -124,25 +138,14 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
     total: number | null;
     sub?: string | null;
     tone: string;
+    suffix?: string;
   }[] = [
-    {
-      key: "payments",
-      label: "Payments due",
-      href: "/dashboard/classes",
-      icon: DollarSign,
-      pending: metrics?.payments.due ?? null,
-      total: metrics?.payments.total ?? null,
-      sub:
-        metrics != null
-          ? `LKR ${formatNumber(metrics.payments.dueAmountLkr)} due`
-          : null,
-      tone: "text-rose-700",
-    },
     {
       key: "lectures",
       label: "Lectures scheduled",
       href: "/dashboard/lectures",
       icon: GraduationCap,
+      suffix: "class schedules",
       pending: metrics?.lectures.scheduled ?? null,
       total: metrics?.lectures.total ?? null,
       tone: "text-violet-700",
@@ -157,15 +160,6 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
       tone: "text-sky-700",
     },
     {
-      key: "schedules",
-      label: "Schedules to do",
-      href: "/dashboard/classes",
-      icon: ClipboardList,
-      pending: metrics?.schedules.pending ?? null,
-      total: metrics?.schedules.total ?? null,
-      tone: "text-amber-700",
-    },
-    {
       key: "materials",
       label: "Tutes & papers to send",
       href: "/dashboard/material-bundles",
@@ -173,6 +167,36 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
       pending: metrics?.materials.pendingToSend ?? null,
       total: metrics?.materials.total ?? null,
       tone: "text-emerald-700",
+    },
+    {
+      key: "papers",
+      label: "Online papers yet to review",
+      href: "/dashboard/papers",
+      icon: ScrollText,
+      suffix: "All Papers",
+      pending: metrics?.papers.notReviewed ?? null,
+      total: metrics?.papers.total ?? null,
+      tone: "text-rose-700",
+    },
+    {
+      key: "bundlePapers",
+      label: "Physical papers yet to review",
+      href: "/dashboard/material-bundles",
+      icon: FolderOpen,
+      suffix: "All Papers",
+      pending: metrics?.bundlePapers.notReviewed ?? null,
+      total: metrics?.bundlePapers.total ?? null,
+      tone: "text-violet-700",
+    },
+    {
+      key: "assignments",
+      label: "Assignments yet to review",
+      href: "/dashboard/lectures",
+      icon: ClipboardList,
+      suffix: "All Assignments",
+      pending: metrics?.assignments.notReviewed ?? null,
+      total: metrics?.assignments.total ?? null,
+      tone: "text-amber-700",
     },
   ];
 
@@ -203,7 +227,7 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3 xl:grid-cols-7">
         {/* Students — never affected by the range */}
         <Link
           href="/dashboard/students"
@@ -248,6 +272,11 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
                   <span className="ml-1 text-sm font-semibold text-muted">
                     / {formatNumber(card.total ?? 0)}
                   </span>
+                  {card.suffix ? (
+                    <span className="ml-1 text-[10px] font-semibold text-muted">
+                      {card.suffix}
+                    </span>
+                  ) : null}
                 </p>
               )}
               <p className="mt-1 text-[11px] text-muted">

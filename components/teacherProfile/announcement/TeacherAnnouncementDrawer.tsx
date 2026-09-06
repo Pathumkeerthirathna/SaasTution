@@ -80,19 +80,19 @@ export default function TeacherAnnouncementDrawer({
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
       />
 
-      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-xl flex-col bg-white shadow-2xl">
+      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-lg flex-col bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-100">
-              <Megaphone className="h-6 w-6 text-orange-600" />
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100">
+              <Megaphone className="h-4 w-4 text-orange-600" />
             </div>
 
             <div>
-              <h2 className="text-[22px] font-bold text-slate-900">
+              <h2 className="text-[15px] font-bold text-slate-900">
                 {isEditing ? "Edit Announcement" : "Add Announcement"}
               </h2>
-              <p className="text-[15px] text-slate-500">
+              <p className="text-[12.5px] text-slate-500">
                 Share updates with students visiting your profile.
               </p>
             </div>
@@ -100,31 +100,31 @@ export default function TeacherAnnouncementDrawer({
 
           <button
             onClick={onClose}
-            className="rounded-lg p-2 transition hover:bg-slate-100"
+            className="rounded-md p-1.5 transition hover:bg-slate-100"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="space-y-4">
             {/* Image */}
             <div>
-              <label className="mb-2 block text-[15px] font-semibold text-slate-700">
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                 Announcement Image
               </label>
 
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 {previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={previewUrl}
                     alt="Announcement preview"
-                    className="max-h-64 w-full object-contain"
+                    className="max-h-48 w-full object-contain"
                   />
                 ) : (
-                  <div className="flex h-40 items-center justify-center text-[14px] text-slate-400">
+                  <div className="flex h-32 items-center justify-center text-[13px] text-slate-400">
                     No image selected
                   </div>
                 )}
@@ -141,30 +141,30 @@ export default function TeacherAnnouncementDrawer({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-[14px] font-medium text-slate-700 transition hover:bg-slate-50"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
               >
-                <ImagePlus className="h-4 w-4" />
+                <ImagePlus className="h-3.5 w-3.5" />
                 {previewUrl ? "Change image" : "Choose image"}
               </button>
 
-              <p className="mt-1.5 text-[13px] text-slate-400">
+              <p className="mt-1 text-[12px] text-slate-400">
                 JPG, PNG, WEBP or GIF. Up to 5 MB.
               </p>
             </div>
 
             {/* Description */}
             <div>
-              <label className="mb-2 block text-[15px] font-semibold text-slate-700">
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                 Description
               </label>
 
               <textarea
-                rows={6}
+                rows={5}
                 value={description}
                 maxLength={1000}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Write your announcement, e.g. new batch starting next week, exam schedule changes, holiday notices..."
-                className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-orange-500"
+                className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-orange-500"
               />
 
               <p className="mt-1 text-right text-[12px] text-slate-400">
@@ -175,10 +175,10 @@ export default function TeacherAnnouncementDrawer({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-5">
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
           <button
             onClick={onClose}
-            className="rounded-xl border border-slate-300 px-5 py-2.5 font-medium text-slate-700 transition hover:bg-white"
+            className="rounded-md border border-slate-300 px-3.5 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-white"
           >
             Cancel
           </button>
@@ -186,9 +186,9 @@ export default function TeacherAnnouncementDrawer({
           <button
             disabled={saving}
             onClick={submit}
-            className="flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-2.5 font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Save className="h-4 w-4" />
+            <Save className="h-3.5 w-3.5" />
             {saving
               ? "Saving..."
               : isEditing

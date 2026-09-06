@@ -39,6 +39,8 @@ type RightSidebarProps = {
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
   chatMessages?: ChatMessage[];
   onSendChat?: (message: string) => void;
+  onSetVideoQuality?: (heightPx: number) => void;
+  onSetNoiseSuppression?: (enabled: boolean) => void;
 };
 
 export default function RightSidebar(props: RightSidebarProps) {
@@ -408,6 +410,9 @@ export default function RightSidebar(props: RightSidebarProps) {
           showAttendance={isTeacher}
           chatUnread={chatUnread}
           variant={isStudent ? "student" : "teacher"}
+          showSettings={isTeacher}
+          onSetVideoQuality={props.onSetVideoQuality}
+          onSetNoiseSuppression={props.onSetNoiseSuppression}
         />
 
       </div>

@@ -148,12 +148,6 @@ export default function TeacherQualificationCard({
 
           }
 
-          alert(
-              editing
-                  ? "Qualification updated successfully."
-                  : "Qualification added successfully."
-          );
-
           setDrawerOpen(false);
 
           setEditingQualification(
@@ -161,6 +155,13 @@ export default function TeacherQualificationCard({
           );
 
           await RefreshQualifications();
+          window.dispatchEvent(new Event("teacher-qualifications-changed"));
+
+          alert(
+              editing
+                  ? "Qualification updated successfully."
+                  : "Qualification added successfully."
+          );
 
       }
       finally{
@@ -196,6 +197,7 @@ export default function TeacherQualificationCard({
     }
 
     await RefreshQualifications();
+    window.dispatchEvent(new Event("teacher-qualifications-changed"));
 
   }
 
@@ -256,9 +258,9 @@ export default function TeacherQualificationCard({
             />
             <button
               onClick={openAddDrawer}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-emerald-700"
+              className="inline-flex items-center gap-1 rounded-md bg-[#4D6C90] px-2.5 py-1 text-[12.5px] font-medium text-white transition hover:bg-[#3B5776]"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3 w-3" />
               Add Qualification
             </button>
           </div>

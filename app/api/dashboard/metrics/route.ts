@@ -1,5 +1,9 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
+import {
+  getDummyDashboardMetrics,
+  isTeacherPendingConfirmation,
+} from "@/lib/dummy-dashboard-data";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { getTeacherDashboardMetrics } from "@/services/dashboard-metrics-service";
 
@@ -32,6 +36,10 @@ export async function GET(request: Request) {
       toDate.getTime() < fromDate.getTime()
     ) {
       throw new AppError("`to` must not be before `from`.", 400, "VALIDATION_ERROR");
+    }
+
+    if (await isTeacherPendingConfirmation(session.teacherId)) {
+      return apiSuccess(getDummyDashboardMetrics());
     }
 
     const metrics = await getTeacherDashboardMetrics(

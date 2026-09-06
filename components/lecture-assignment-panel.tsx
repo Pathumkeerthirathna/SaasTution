@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
+  CheckCircle2,
   ChevronDown,
+  Clock,
   FolderOpen,
+  Loader2,
   MoreVertical,
   Plus,
   Save,
@@ -31,6 +34,8 @@ type AssignmentSubmissionRow = {
   sizeBytes: number;
   notes: string | null;
   submittedAt: string;
+  marks: number | null;
+  reviewedAt: string | null;
 };
 
 type SubmissionsData = {
@@ -299,6 +304,40 @@ export function LectureAssignmentPanel(props: {
     }
   }
 
+  async function saveSubmissionMarks(submissionId: string, marks: number | null) {
+    if (!submissionsAssignmentId) return;
+
+    const response = await fetch(
+      `/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${submissionId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marks }),
+      }
+    );
+    const payload = (await response.json()) as {
+      success: boolean;
+      data?: { id: string; marks: number | null; reviewedAt: string | null };
+    };
+
+    if (!response.ok || !payload.success || !payload.data) {
+      throw new Error(readApiError(payload, "Failed to save marks."));
+    }
+
+    setSubmissionsData((prev) =>
+      prev
+        ? {
+            ...prev,
+            submissions: prev.submissions.map((s) =>
+              s.submissionId === submissionId
+                ? { ...s, marks: payload.data!.marks, reviewedAt: payload.data!.reviewedAt }
+                : s
+            ),
+          }
+        : prev
+    );
+  }
+
   function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -406,7 +445,7 @@ export function LectureAssignmentPanel(props: {
                 onClick={() => openEditForm(assignment.id)}
                 className="block w-full text-left"
               >
-                <p className="truncate text-xs font-semibold text-slate-900">{assignment.title}</p>
+                <p className="break-words text-xs font-semibold text-slate-900">{assignment.title}</p>
                 <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{assignment.description}</p>
                 <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
                   <Calendar size={10} />
@@ -588,7 +627,67 @@ export function LectureAssignmentPanel(props: {
                 {submissionsData.submissions.length === 0 ? (
                   <p className="mt-3 text-xs text-muted">No submissions yet.</p>
                 ) : (
-                  <div className="mt-3 overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white">
+                  <>
+                    {/*
+                      This panel is a slide-over drawer capped at half the
+                      viewport (min 480px) even on desktop, so the 640px table
+                      only gets shown once the viewport is wide enough that the
+                      drawer itself has room for it; every submission renders
+                      as its own card below that, with nothing clipped.
+                    */}
+                    <div className="mt-3 space-y-2 xl:hidden">
+                      {submissionsData.submissions.map((sub) => (
+                        <div
+                          key={sub.submissionId}
+                          className="rounded-lg border border-slate-200 bg-white p-3 text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="break-words font-semibold text-slate-900">{sub.studentName}</p>
+                              {sub.registrationNumber ? (
+                                <p className="mt-0.5 text-[10px] text-muted">{sub.registrationNumber}</p>
+                              ) : null}
+                            </div>
+                            <a
+                              href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
+                              download
+                              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                            >
+                              <Download size={11} />
+                              Download
+                            </a>
+                          </div>
+
+                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                            <p className="text-slate-600">
+                              Submitted {new Date(sub.submittedAt).toLocaleString()}
+                            </p>
+                            <p className="break-words text-slate-800">
+                              {sub.fileName}
+                              <span className="ml-1 text-[10px] text-muted">({formatBytes(sub.sizeBytes)})</span>
+                            </p>
+                            {sub.notes ? (
+                              <p className="break-words text-slate-600">
+                                <span className="font-medium text-slate-700">Notes:</span> {sub.notes}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-2 border-t border-slate-100 pt-2">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                              Marks
+                            </p>
+                            <MarksCell
+                              marks={sub.marks}
+                              reviewedAt={sub.reviewedAt}
+                              onSave={(marks) => saveSubmissionMarks(sub.submissionId, marks)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 hidden overflow-x-auto scrollbar-thin rounded-lg border border-slate-200 bg-white xl:block">
                     <table className="min-w-[640px] w-full text-xs">
                       <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
                         <tr>
@@ -596,6 +695,7 @@ export function LectureAssignmentPanel(props: {
                           <th className="px-3 py-2 text-left">Submitted</th>
                           <th className="px-3 py-2 text-left">File</th>
                           <th className="px-3 py-2 text-left">Notes</th>
+                          <th className="px-3 py-2 text-left">Marks</th>
                           <th className="px-3 py-2 text-left"></th>
                         </tr>
                       </thead>
@@ -623,6 +723,13 @@ export function LectureAssignmentPanel(props: {
                               )}
                             </td>
                             <td className="px-3 py-2.5">
+                              <MarksCell
+                                marks={sub.marks}
+                                reviewedAt={sub.reviewedAt}
+                                onSave={(marks) => saveSubmissionMarks(sub.submissionId, marks)}
+                              />
+                            </td>
+                            <td className="px-3 py-2.5">
                               <a
                                 href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
                                 download
@@ -636,13 +743,75 @@ export function LectureAssignmentPanel(props: {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
+                  </>
                 )}
               </>
             ) : null}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function MarksCell({
+  marks,
+  reviewedAt,
+  onSave,
+}: {
+  marks: number | null;
+  reviewedAt: string | null;
+  onSave: (marks: number | null) => Promise<void>;
+}) {
+  const [value, setValue] = useState(marks != null ? String(marks) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(value.trim() === "" ? null : Number(value));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save marks.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          step="1"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-16 rounded border border-slate-200 px-1.5 py-1 text-xs outline-none focus:border-brand-400"
+          placeholder="—"
+        />
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-700 disabled:opacity-50"
+        >
+          {saving ? <Loader2 size={11} className="animate-spin" /> : null}
+          {saving ? "…" : "Save"}
+        </button>
+      </div>
+      {reviewedAt ? (
+        <span className="inline-flex w-fit items-center gap-1 text-[10px] text-emerald-700">
+          <CheckCircle2 size={10} /> Reviewed
+        </span>
+      ) : (
+        <span className="inline-flex w-fit items-center gap-1 text-[10px] text-amber-600">
+          <Clock size={10} /> Not reviewed
+        </span>
+      )}
+      {error ? <p className="text-[10px] text-rose-600">{error}</p> : null}
     </div>
   );
 }

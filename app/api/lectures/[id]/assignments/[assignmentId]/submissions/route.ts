@@ -67,6 +67,8 @@ export async function GET(
         sizeBytes: true,
         notes: true,
         submittedAt: true,
+        marks: true,
+        reviewedAt: true,
         student: {
           select: {
             id: true,
@@ -87,6 +89,8 @@ export async function GET(
       sizeBytes: sub.sizeBytes,
       notes: sub.notes ?? null,
       submittedAt: sub.submittedAt,
+      marks: sub.marks,
+      reviewedAt: sub.reviewedAt,
     }));
 
     return apiSuccess({

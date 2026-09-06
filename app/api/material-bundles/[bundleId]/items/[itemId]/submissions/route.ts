@@ -13,6 +13,8 @@ type SubmissionListItem = {
   mimeType: string;
   sizeBytes: number;
   submittedAt: Date;
+  marks: number | null;
+  reviewedAt: Date | null;
 };
 
 export async function GET(
@@ -113,6 +115,8 @@ export async function GET(
             mimeType: true,
             sizeBytes: true,
             submittedAt: true,
+            marks: true,
+            reviewedAt: true,
           },
         });
       } catch (error) {
@@ -187,6 +191,8 @@ export async function GET(
             sizeBytes: submission.sizeBytes,
             submittedAt: submission.submittedAt,
             isLate: bundleItem.paperEndAt ? submission.submittedAt > bundleItem.paperEndAt : false,
+            marks: submission.marks,
+            reviewedAt: submission.reviewedAt,
           })),
         };
       })

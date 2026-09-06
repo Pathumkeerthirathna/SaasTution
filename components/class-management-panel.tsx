@@ -203,7 +203,7 @@ export function formatTime12h(time: string): string {
 function ClassCardSkeleton() {
   return (
     <div className="animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="bg-slate-200 py-3 pl-4 pr-36">
+      <div className="bg-slate-200 py-3 pl-4 pr-4 sm:pr-36">
         <div className="flex items-start gap-2">
           <div className="h-9 w-9 shrink-0 rounded-lg bg-white/30" />
           <div className="min-w-0 space-y-1.5">
@@ -878,7 +878,7 @@ const hasStudentFilter = Boolean(
 
             {/* Left */}
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-600 text-white">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#32598A] text-white">
                 <GraduationCap size={18} />
               </div>
 
@@ -900,7 +900,7 @@ const hasStudentFilter = Boolean(
 
                 {/* Classes */}
                 <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                  <div className="flex items-center gap-1 text-emerald-600">
+                  <div className="flex items-center gap-1 text-[#32598A]">
                     <Layers3 size={11} />
                     <span className="text-[10px] font-semibold uppercase tracking-wide">
                       Classes
@@ -928,7 +928,7 @@ const hasStudentFilter = Boolean(
 
                 {/* Sessions */}
                 <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                  <div className="flex items-center gap-1 text-green-600">
+                  <div className="flex items-center gap-1 text-[#32598A]">
                     <CalendarDays size={11} />
                     <span className="text-[10px] font-semibold uppercase tracking-wide">
                       Sessions
@@ -970,7 +970,7 @@ const hasStudentFilter = Boolean(
                 <button
                   type="button"
                   onClick={() => setIsCreatePanelOpen(true)}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-600"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#32598A] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#264867]"
                 >
                   <BookOpen size={13} />
                   New Class
@@ -984,8 +984,8 @@ const hasStudentFilter = Boolean(
 
 
         {successMessage && (
-          <div className="fixed top-5 right-5 z-[100]">
-            <div className="flex min-w-[320px] items-center gap-3 rounded-xl border border-emerald-200 bg-white p-4 shadow-xl">
+          <div className="fixed inset-x-5 top-5 z-[100] sm:inset-x-auto sm:right-5">
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-white p-4 shadow-xl sm:min-w-[320px]">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
                 <CheckSquare2 size={18} className="text-emerald-600" />
               </div>
@@ -1059,21 +1059,25 @@ const hasStudentFilter = Boolean(
             return (
              <div
                 key={item.id}
-                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:ring-teal-100"
+                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-[#b9cfe3] hover:shadow-xl hover:ring-[#dce7f1]"
               >
                 {/* Header */}
-                <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-36 text-white`}>
+                <div className={`relative overflow-hidden bg-gradient-to-br ${theme.gradient} py-3 pl-4 pr-4 text-white sm:pr-36`}>
 
                   {/* Ambient glow */}
                   <div className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full ${theme.glow1} blur-2xl`} />
                   <div className={`pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full ${theme.glow2} blur-2xl`} />
 
-                  <ClassBookBadge
-                    label={bookLabel}
-                    number={bookNumber}
-                    bookGradient={theme.bookGradient}
-                    numberColor={theme.numberColor}
-                  />
+                  {/* Decorative book graphic — dropped below sm so the class name
+                      always has the full card width to itself. */}
+                  <div className="hidden sm:block">
+                    <ClassBookBadge
+                      label={bookLabel}
+                      number={bookNumber}
+                      bookGradient={theme.bookGradient}
+                      numberColor={theme.numberColor}
+                    />
+                  </div>
 
                   <div className="relative flex items-start gap-2">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 shadow-inner backdrop-blur">
@@ -1081,8 +1085,8 @@ const hasStudentFilter = Boolean(
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="truncate text-sm font-bold leading-tight tracking-tight text-white">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="break-words text-sm font-bold leading-tight tracking-tight text-white sm:truncate">
                           {item.name}
                         </h3>
 
@@ -1099,7 +1103,7 @@ const hasStudentFilter = Boolean(
                     </div>
                   </div>
 
-                  <div className="relative mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                  <div className="relative mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/10 pt-2">
                     <span className={`text-[10px] ${theme.metaText}`}>
                       Created {new Date(item.createdAt).toLocaleDateString()}
                     </span>
@@ -1126,15 +1130,15 @@ const hasStudentFilter = Boolean(
                   {/* Left: Details */}
                   <div className="space-y-1.5">
 
-                    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-sky-200">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600">
+                    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-[#8fb0cd]">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#eef3f8] text-[#32598A]">
                         <Users size={13} />
                       </div>
                       <div className="min-w-0">
                         <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                           Students
                         </p>
-                        <p className="truncate text-sm font-bold text-slate-900">
+                        <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                           {item.students.filter((entry) => entry.isActive).length}
                         </p>
                       </div>
@@ -1144,31 +1148,31 @@ const hasStudentFilter = Boolean(
                       type="button"
                       onClick={() => void openFeeHistory(item)}
                       title="View fee change history"
-                      className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/50 group-hover:border-teal-200"
+                      className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 text-left transition-colors hover:border-[#8fb0cd] hover:bg-[#eef3f8]/50 group-hover:border-[#8fb0cd]"
                     >
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#dce7f1] text-[#264867]">
                         <Wallet size={13} />
                       </div>
                       <div className="min-w-0">
                         <p className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                           Fee
-                          <History size={9} className="text-teal-500" />
+                          <History size={9} className="text-[#5b85ac]" />
                         </p>
-                        <p className="truncate text-sm font-bold text-slate-900">
+                        <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                           Rs. {item.monthlyFee.toLocaleString()}
                         </p>
                       </div>
                     </button>
 
-                    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-blue-200">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-700">
+                    <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 transition-colors group-hover:border-[#8fb0cd]">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#dce7f1] text-[#264867]">
                         <Calendar size={13} />
                       </div>
                       <div className="min-w-0">
                         <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                           Due Week
                         </p>
-                        <p className="truncate text-sm font-bold text-slate-900">
+                        <p className="break-words text-sm font-bold text-slate-900 sm:truncate">
                           Week {item.paymentDueWeek}
                         </p>
                       </div>
@@ -1180,8 +1184,8 @@ const hasStudentFilter = Boolean(
                   <div className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
 
                     <div className="mb-2 flex items-center gap-1.5">
-                      <div className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-900/10">
-                        <CalendarDays className="h-3 w-3 text-blue-900" />
+                      <div className="flex h-5 w-5 items-center justify-center rounded-md bg-[#1a3049]/10">
+                        <CalendarDays className="h-3 w-3 text-[#1a3049]" />
                       </div>
 
                       <span className="text-xs font-semibold text-slate-800">
@@ -1196,12 +1200,12 @@ const hasStudentFilter = Boolean(
                             key={`${schedule.dayOfWeek}-${schedule.startTime}`}
                             className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-2 py-1.5 shadow-sm"
                           >
-                            <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                            <span className="rounded-md bg-[#eef3f8] px-1.5 py-0.5 text-[10px] font-semibold text-[#264867]">
                               {schedule.dayOfWeek}
                             </span>
 
                             <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
-                              <Clock size={10} className="text-teal-600" />
+                              <Clock size={10} className="text-[#5b85ac]" />
                               {formatTime12h(schedule.startTime)}
                               {" - "}
                               {formatTime12h(schedule.endTime)}
@@ -1233,7 +1237,7 @@ const hasStudentFilter = Boolean(
 
                     <button
                       onClick={() => setStudentsPanelClassId(item.id)}
-                      className="flex items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-blue-900 to-teal-600 py-1.5 text-[10px] font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110"
+                      className="flex items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-[#32598A] to-[#1a3049] py-1.5 text-[10px] font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110"
                     >
                       <Users size={11} />
                       Students
@@ -1286,7 +1290,7 @@ const hasStudentFilter = Boolean(
                 onClick={() => void loadClasses(p)}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold transition-colors ${
                   p === page
-                    ? "bg-brand-700 text-white"
+                    ? "bg-[#264867] text-white"
                     : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                 }`}
               >
@@ -1313,7 +1317,7 @@ const hasStudentFilter = Boolean(
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-brand-100 bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-[#dce7f1] bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
           isCreatePanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -1321,7 +1325,7 @@ const hasStudentFilter = Boolean(
         <div className="shrink-0 border-b border-border bg-background/95 px-5 py-3 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-900 to-teal-600 text-white shadow-md">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#32598A] to-[#1a3049] text-white shadow-md">
                 <GraduationCap size={18} />
               </div>
 
@@ -1331,7 +1335,7 @@ const hasStudentFilter = Boolean(
                     Create New Class
                   </h3>
 
-                  <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700">
+                  <span className="rounded-full border border-[#b9cfe3] bg-[#eef3f8] px-2 py-0.5 text-[10px] font-medium text-[#264867]">
                     Setup
                   </span>
                 </div>
@@ -1360,8 +1364,8 @@ const hasStudentFilter = Boolean(
               ) : null} */}
 
               {errorMessage && (
-                <div className="fixed bottom-5 right-5 z-[100]">
-                  <div className="flex min-w-[320px] items-start gap-3 rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+                <div className="fixed inset-x-5 bottom-5 z-[100] sm:inset-x-auto sm:right-5">
+                  <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-white p-4 shadow-xl sm:min-w-[320px]">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
                       <AlertTriangle size={18} className="text-red-600" />
                     </div>
@@ -1390,7 +1394,7 @@ const hasStudentFilter = Boolean(
           {/* Basic Information */}
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#eef3f8] text-[#264867]">
                 <BookOpen size={13} />
               </div>
               <div>
@@ -1485,7 +1489,7 @@ const hasStudentFilter = Boolean(
 
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#eef3f8] text-[#264867]">
                   <CalendarDays size={13} />
                 </div>
                 <div>
@@ -1506,7 +1510,7 @@ const hasStudentFilter = Boolean(
                     schedules: [...prev.schedules, getDefaultScheduleRow()],
                   }));
                 }}
-                className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100"
+                className="inline-flex items-center gap-1 rounded-lg border border-[#b9cfe3] bg-[#eef3f8] px-2.5 py-1 text-[11px] font-semibold text-[#264867] transition hover:bg-[#dce7f1]"
               >
                 <Plus size={12} />
                 Add Schedule
@@ -1552,7 +1556,7 @@ const hasStudentFilter = Boolean(
                       createForm.startDate &&
                       new Date(createForm.startDate) > new Date()
                         ? "bg-amber-100 text-amber-700"
-                        : "bg-teal-100 text-teal-700"
+                        : "bg-[#dce7f1] text-[#264867]"
                     }`}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -1569,7 +1573,7 @@ const hasStudentFilter = Boolean(
               {createForm.schedules.map((schedule, index) => (
                 <div
                   key={`${schedule.dayOfWeek}-${index}`}
-                  className="rounded-lg border border-border/70 bg-muted/20 p-3 transition-all hover:border-teal-200"
+                  className="rounded-lg border border-border/70 bg-muted/20 p-3 transition-all hover:border-[#b9cfe3]"
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <div>
@@ -1696,7 +1700,7 @@ const hasStudentFilter = Boolean(
           {/* Additional Information */}
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#eef3f8] text-[#264867]">
                 <FileText size={13} />
               </div>
               <div>
@@ -1760,7 +1764,7 @@ const hasStudentFilter = Boolean(
           <button
             type="submit"
             disabled={isSaving}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-900 to-teal-600 py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#32598A] to-[#1a3049] py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
           >
             <GraduationCap size={15} />
             {isSaving ? "Saving..." : "Create Class"}
@@ -1778,14 +1782,14 @@ const hasStudentFilter = Boolean(
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-brand-100 bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-[#dce7f1] bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
           isEditPanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="shrink-0 border-b border-brand-200 bg-white/90 px-5 py-3 backdrop-blur">
+        <div className="shrink-0 border-b border-[#b9cfe3] bg-white/90 px-5 py-3 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dce7f1] text-[#264867]">
                 <Pencil size={16} />
               </span>
               <div>
@@ -1982,7 +1986,7 @@ const hasStudentFilter = Boolean(
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-brand-100 bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-[#dce7f1] bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
           studentsPanelClassId ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -2002,7 +2006,7 @@ const hasStudentFilter = Boolean(
               <button
                 type="button"
                 onClick={openAddStudents}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-xs font-semibold text-white hover:bg-brand-700"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#32598A] px-3 text-xs font-semibold text-white hover:bg-[#264867]"
               >
                 <UserPlus size={13} />
                 Add Students
@@ -2032,7 +2036,7 @@ const hasStudentFilter = Boolean(
                 <Clock size={11} />
                 Past {studentsPanelPastStudents.length}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#b9cfe3] bg-[#eef3f8] px-2.5 py-1 text-[11px] font-semibold text-[#264867]">
                 <Users size={11} />
                 Total {studentsPanelClass?.students.length ?? 0}
               </span>
@@ -2063,11 +2067,11 @@ const hasStudentFilter = Boolean(
                     className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-[11px] font-semibold text-blue-700">
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#eef3f8] text-[11px] font-semibold text-[#264867]">
                         {entry.student.name.slice(0, 2).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-foreground">{entry.student.name}</p>
+                        <p className="break-words text-xs font-semibold text-foreground sm:truncate">{entry.student.name}</p>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           {entry.student.registrationNumber ? (
                             <span className="text-[11px] text-muted">{entry.student.registrationNumber}</span>
@@ -2087,7 +2091,7 @@ const hasStudentFilter = Boolean(
                     <div className="flex shrink-0 items-center gap-1.5">
                       <Link
                         href={`/dashboard/students/${entry.student.id}`}
-                        className="inline-flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-brand-700"
+                        className="inline-flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-[#264867]"
                         title="View Student Profile"
                       >
                         <Eye size={13} />
@@ -2133,7 +2137,7 @@ const hasStudentFilter = Boolean(
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="truncate text-xs font-semibold text-foreground">{entry.student.name}</p>
+                          <p className="break-words text-xs font-semibold text-foreground sm:truncate">{entry.student.name}</p>
                           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600">
                             <UserMinus size={9} />
                             Removed
@@ -2172,7 +2176,7 @@ const hasStudentFilter = Boolean(
 
                       <Link
                         href={`/dashboard/students/${entry.student.id}`}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
                         title="View Student Profile"
                       >
                         <ExternalLink size={13} />
@@ -2195,15 +2199,15 @@ const hasStudentFilter = Boolean(
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-brand-100 bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden border-l border-[#dce7f1] bg-white/95 shadow-panel backdrop-blur-lg transition-transform duration-300 ${
           isAddStudentsOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Panel header */}
-        <div className="shrink-0 border-b border-brand-200 bg-white/90 px-5 py-3 backdrop-blur">
+        <div className="shrink-0 border-b border-[#b9cfe3] bg-white/90 px-5 py-3 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dce7f1] text-[#264867]">
                 <UserPlus size={16} />
               </span>
               <div>
@@ -2219,8 +2223,8 @@ const hasStudentFilter = Boolean(
 
         {/* Sort toolbar */}
         <div className="shrink-0 border-b border-slate-100 bg-white px-5 py-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <span className="shrink-0 rounded-md bg-brand-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-700">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="shrink-0 rounded-md bg-[#eef3f8] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#264867]">
               Sort By
             </span>
 
@@ -2229,7 +2233,7 @@ const hasStudentFilter = Boolean(
               onClick={() => handleSort("Name")}
               className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "Name"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -2243,7 +2247,7 @@ const hasStudentFilter = Boolean(
               onClick={() => handleSort("RegistrationNumber")}
               className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "RegistrationNumber"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -2257,7 +2261,7 @@ const hasStudentFilter = Boolean(
               onClick={() => handleSort("CreatedAt")}
               className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "CreatedAt"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -2299,7 +2303,7 @@ const hasStudentFilter = Boolean(
 
                 <div className="flex shrink-0 items-center gap-2">
                   {selectedStudentIds.size > 0 && (
-                    <span className="text-[11px] font-semibold text-brand-700">
+                    <span className="text-[11px] font-semibold text-[#264867]">
                       {selectedStudentIds.size} selected
                     </span>
                   )}
@@ -2318,7 +2322,7 @@ const hasStudentFilter = Boolean(
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsFilterOpen(false)} />
 
-                        <div className="absolute right-0 top-8 z-50 w-[320px] rounded-xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="absolute right-0 top-8 z-50 w-[min(320px,calc(100vw-2.5rem))] rounded-xl border border-slate-200 bg-white shadow-2xl">
                           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
                             <div>
                               <h3 className="text-xs font-semibold">Filter Students</h3>
@@ -2430,7 +2434,7 @@ const hasStudentFilter = Boolean(
 
               {availableStudents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#dce7f1] text-[#264867]">
                     <Users size={20} />
                   </div>
                   <h3 className="mt-3 text-sm font-semibold text-foreground">
@@ -2488,21 +2492,21 @@ const hasStudentFilter = Boolean(
                         isEnrolled
                           ? "cursor-default opacity-50"
                           : isSelected
-                          ? "bg-brand-50"
+                          ? "bg-[#eef3f8]"
                           : "hover:bg-gray-50"
                       }`}
                     >
-                      <span className={`shrink-0 ${isEnrolled ? "text-gray-300" : isSelected ? "text-brand-600" : "text-gray-300"}`}>
+                      <span className={`shrink-0 ${isEnrolled ? "text-gray-300" : isSelected ? "text-[#32598A]" : "text-gray-300"}`}>
                         {isSelected ? <CheckSquare2 size={16} /> : <Square size={16} />}
                       </span>
                       <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                        isEnrolled ? "bg-gray-100 text-gray-400" : "bg-brand-100 text-brand-700"
+                        isEnrolled ? "bg-gray-100 text-gray-400" : "bg-[#dce7f1] text-[#264867]"
                       }`}>
                         {student.name.slice(0, 2).toUpperCase()}
                       </span>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-foreground">{student.name}</p>
+                        <p className="break-words text-xs font-semibold text-foreground sm:truncate">{student.name}</p>
                         <div className="flex flex-wrap items-center gap-x-2">
                           {student.registrationNumber ? (
                             <span className="text-[11px] text-muted">{student.registrationNumber}</span>
@@ -2555,7 +2559,7 @@ const hasStudentFilter = Boolean(
                   setPageSize(size);
                   void loadStudentList(1, filters, sortBy, sortOrder, size);
                 }}
-                className="appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:outline-none"
+                className="appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-[#8fb0cd] focus:border-[#3d6690] focus:outline-none"
               >
                 <option value={5}>5 / Page</option>
                 <option value={10}>10 / Page</option>
@@ -2596,8 +2600,8 @@ const hasStudentFilter = Boolean(
                     disabled={isLoadingList}
                     className={`flex h-8 min-w-[32px] items-center justify-center rounded-lg border text-xs font-semibold transition-all duration-200 ${
                       p === studentPage
-                        ? "border-brand-700 bg-brand-700 text-white shadow"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50"
+                        ? "border-[#264867] bg-[#264867] text-white shadow"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-[#8fb0cd] hover:bg-[#eef3f8]"
                     }`}
                   >
                     {p}
@@ -2624,7 +2628,7 @@ const hasStudentFilter = Boolean(
         </div>
 
         {/* Footer actions */}
-        <div className="shrink-0 border-t border-brand-200 bg-white px-5 py-3">
+        <div className="shrink-0 border-t border-[#b9cfe3] bg-white px-5 py-3">
           <div className="flex gap-2.5">
             <button type="button" onClick={() => setIsAddStudentsOpen(false)} className="btn-ghost flex-1">
               Cancel
@@ -2706,12 +2710,12 @@ const hasStudentFilter = Boolean(
           onClick={() => setFeeHistoryClass(null)}
         >
           <div
-            className="w-full max-w-md rounded-3xl border border-brand-200 bg-white p-6 shadow-panel"
+            className="w-full max-w-md rounded-3xl border border-[#b9cfe3] bg-white p-6 shadow-panel"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-100 text-teal-700">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#dce7f1] text-[#264867]">
                   <History size={18} />
                 </span>
                 <div>
@@ -2739,7 +2743,7 @@ const hasStudentFilter = Boolean(
                     key={entry.id}
                     className={`rounded-xl border p-3 ${
                       entry.isCurrent
-                        ? "border-teal-200 bg-teal-50/60"
+                        ? "border-[#b9cfe3] bg-[#eef3f8]/60"
                         : "border-slate-200 bg-slate-50"
                     }`}
                   >
@@ -2748,7 +2752,7 @@ const hasStudentFilter = Boolean(
                         Rs. {entry.amount.toLocaleString()}
                       </span>
                       {entry.isCurrent ? (
-                        <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        <span className="rounded-full bg-[#32598A] px-2 py-0.5 text-[10px] font-semibold text-white">
                           Current
                         </span>
                       ) : (
@@ -2775,10 +2779,10 @@ const hasStudentFilter = Boolean(
 
       {isHelpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
-          <div className="w-full max-w-3xl rounded-3xl border border-brand-200 bg-white/95 p-6 shadow-panel backdrop-blur">
+          <div className="w-full max-w-3xl rounded-3xl border border-[#b9cfe3] bg-white/95 p-6 shadow-panel backdrop-blur">
             <div className="mb-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-100 text-brand-700">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#dce7f1] text-[#264867]">
                   <CircleHelp size={18} />
                 </span>
                 <h2 className="text-2xl font-semibold">Class Management</h2>

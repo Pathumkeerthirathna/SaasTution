@@ -2,6 +2,12 @@
 
 import { TeacherProfile } from "@/types/teacherProfileTypes/ClassTeacher";
 import { UpdateTeacherProfile } from "@/types/teacherProfileTypes/UpdateTeacherProfile";
+import { TeacherTitle } from "@prisma/client";
+import {
+  TEACHER_TITLE_LABELS,
+  TEACHER_TITLE_OPTIONS,
+  formatTeacherTitle,
+} from "@/lib/teacher-title";
 import {
   Award,
   Camera,
@@ -12,6 +18,7 @@ import {
   Pencil,
   Phone,
   Share2,
+  User,
   UserCheck,
   X,
 } from "lucide-react";
@@ -22,6 +29,8 @@ import Image from "next/image";
 import { Mail } from "lucide-react";
 import { Medium, TeacherMedium } from "./Medium/medium-types";
 import TeacherMediumDrawer from "./Medium/TeacherMediumDrawer";
+import { QualificationForm, TeacherQualification } from "./qualification/qualification-types";
+import QualificationDrawer from "./qualification/QualificationDrawer";
 import { BsLink45Deg } from "react-icons/bs";
 import { FaWhatsapp, FaFacebookMessenger, FaTelegramPlane, FaFacebookF, FaLinkedinIn } from "react-icons/fa";
 
@@ -29,6 +38,14 @@ interface Props {
   teacher?: TeacherProfile;
   isPublic?: boolean;
   onEdit?: () => void;
+}
+
+function getDisplayName(teacher?: TeacherProfile) {
+  if (!teacher) return "";
+
+  const name = teacher.displayName || teacher.teacher.name;
+
+  return `${formatTeacherTitle(teacher.title)} ${name}`;
 }
 
 export default function TeacherProfileHeader({
@@ -39,12 +56,108 @@ export default function TeacherProfileHeader({
 
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
 
+  // Mirrors the `teacher` prop but is refreshed locally right after a
+  // successful "Edit Profile" save, so the header reflects the change
+  // immediately without waiting for the parent server component to refetch.
+  const [teacherData, setTeacherData] = useState(teacher);
+
+  useEffect(() => {
+    setTeacherData(teacher);
+  }, [teacher]);
+
+  const [savingProfile, setSavingProfile] = useState(false);
+
   // ── Teaching mediums edit ──
   const [mediums, setMediums] = useState<Medium[]>(teacher?.mediums ?? []);
   const [mediumsDrawerOpen, setMediumsDrawerOpen] = useState(false);
   const [allMediums, setAllMediums] = useState<Medium[]>([]);
   const [selectedMediumIds, setSelectedMediumIds] = useState<number[]>([]);
   const [savingMediums, setSavingMediums] = useState(false);
+
+  // ── Qualification add ──
+  const [qualificationDrawerOpen, setQualificationDrawerOpen] = useState(false);
+  const [savingQualification, setSavingQualification] = useState(false);
+  const [highestQualification, setHighestQualification] =
+    useState<TeacherQualification | null>(null);
+
+  async function loadHighestQualification() {
+    if (!teacher?.teacherId) return;
+
+    try {
+      const response = await fetch(
+        `/api/teacher/profile/qualifications?teacherId=${teacher.teacherId}`
+      );
+      if (!response.ok) return;
+
+      const data: TeacherQualification[] = await response.json();
+
+      if (data.length === 0) {
+        setHighestQualification(null);
+        return;
+      }
+
+      // "Best" = whichever remaining qualification has the lowest display
+      // order, not necessarily exactly 1 (e.g. if 1 and 2 were removed, the
+      // one at 3 becomes the best available).
+      const best = data.reduce((lowest, current) =>
+        current.displayOrder < lowest.displayOrder ? current : lowest
+      );
+      setHighestQualification(best);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  useEffect(() => {
+    void loadHighestQualification();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacher?.teacherId]);
+
+  // Another card on the same page (TeacherQualificationCard) can add, edit,
+  // or delete qualifications — refresh the header's "best qualification"
+  // whenever that happens.
+  useEffect(() => {
+    function handleQualificationsChanged() {
+      void loadHighestQualification();
+    }
+
+    window.addEventListener(
+      "teacher-qualifications-changed",
+      handleQualificationsChanged
+    );
+    return () =>
+      window.removeEventListener(
+        "teacher-qualifications-changed",
+        handleQualificationsChanged
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacher?.teacherId]);
+
+  async function saveQualification(form: QualificationForm) {
+    try {
+      setSavingQualification(true);
+
+      const response = await fetch("/api/teacher/profile/qualifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message ?? "Failed to save qualification.");
+      }
+
+      setQualificationDrawerOpen(false);
+      await loadHighestQualification();
+      window.dispatchEvent(new Event("teacher-qualifications-changed"));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save qualification.");
+    } finally {
+      setSavingQualification(false);
+    }
+  }
 
   useEffect(() => {
     setMediums(teacher?.mediums ?? []);
@@ -120,12 +233,15 @@ export default function TeacherProfileHeader({
     useState(false);
 
   const [profilePhoto, setProfilePhoto] =
-    useState("/images/avatar.png");
+    useState<string | null>(null);
 
   const [form, setForm] =
     useState<UpdateTeacherProfile>({
         name: teacher?.teacher?.name??"",
         slug: teacher?.slug ?? "",
+        title: teacher?.title ?? "MR",
+        displayName:
+            teacher?.displayName ?? teacher?.teacher?.name ?? "",
         designation:
             teacher?.designation ?? "",
         yearsOfExperience:
@@ -196,6 +312,9 @@ export default function TeacherProfileHeader({
       setForm({
            name: teacher.teacher.name,
           slug: teacher.slug,
+          title: teacher.title,
+          displayName:
+              teacher.displayName ?? teacher.teacher.name,
           designation:
               teacher.designation ?? "",
           yearsOfExperience:
@@ -216,8 +335,8 @@ export default function TeacherProfileHeader({
             );
             setImageLoading(true);
         } else {
-            setProfilePhoto("/images/avatar.png");
-            setImageLoading(true);
+            setProfilePhoto(null);
+            setImageLoading(false);
         }
         return;
     }
@@ -239,17 +358,24 @@ export default function TeacherProfileHeader({
       const data = await res.json();
 
       setProfilePhoto(
-          `${data.profileImageUrl}?v=${Date.now()}`
+          data.profileImageUrl
+              ? `${data.profileImageUrl}?v=${Date.now()}`
+              : null
       );
+
+      setImageLoading(false);
 
       setPreviewOpen(false);
     } catch (err) {
       console.error(err);
+      setImageLoading(false);
     }
   }
 
   async function saveProfile() {
     try {
+      setSavingProfile(true);
+
       const response = await fetch("/api/teacher/profile/header", {
         method: "PUT",
         headers: {
@@ -264,11 +390,15 @@ export default function TeacherProfileHeader({
         return;
       }
 
-      //setTeacher(updated);
+      const updated = await response.json();
+
       setIsEditDrawerOpen(false);
+      setTeacherData(updated);
     } catch (err) {
       console.error(err);
       alert("Failed to save profile.");
+    } finally {
+      setSavingProfile(false);
     }
   }
 
@@ -374,7 +504,7 @@ export default function TeacherProfileHeader({
       }
   }
 
-  if (!teacher) {
+  if (!teacherData) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm animate-pulse">
       <div className="flex flex-col gap-4 lg:flex-row lg:justify-between">
@@ -428,21 +558,18 @@ export default function TeacherProfileHeader({
                 transition-all
                 duration-300
                 hover:shadow-md">
-        {/* Bottom Accent */}
-        <div className="absolute bottom-0 left-8 right-8 h-[2px] rounded-t-full bg-gradient-to-r from-orange-500/70 via-orange-300/40 to-transparent" />
-
         {/* Top Right Glow */}
-        <div className="absolute right-0 top-0 h-20 w-20 rounded-full bg-orange-100/20 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-0 h-20 w-20 rounded-full bg-orange-100/20 blur-3xl" />
 
         {/* Bottom Left Glow */}
-        <div className="absolute bottom-0 left-0 h-16 w-16 rounded-full bg-emerald-100/20 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-0 h-16 w-16 rounded-full bg-emerald-100/20 blur-3xl" />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
         {/* Left */}
-        <div className="flex gap-3.5">
+        <div className="flex min-w-0 gap-3.5">
 
           {/* Profile Image */}
-          <div className="relative h-20 w-20 shrink-0">
+          <div className="relative h-36 w-44 shrink-0">
 
             <input
               ref={fileInputRef}
@@ -452,35 +579,35 @@ export default function TeacherProfileHeader({
               onChange={handleImageSelected}
             />
 
-            {/* Orange Accent Ring */}
-            <div className="rounded-full bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 p-[2px] shadow-md">
+            {/* Square Photo Frame */}
+            <div className="relative h-full w-full overflow-hidden rounded-md border border-slate-200 bg-gradient-to-br from-emerald-50 to-orange-50 shadow-sm">
 
-              {/* White Ring */}
-              <div className="rounded-full bg-white p-[3px]">
+              {imageLoading && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+                      <div className="h-5 w-5 animate-spin rounded-full border-[3px] border-orange-200 border-t-orange-500" />
+                  </div>
+              )}
 
-                <div className="relative h-[68px] w-[68px]">
-
-                  {imageLoading && (
-                      <div className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-white">
-                          <div className="h-5 w-5 animate-spin rounded-full border-[3px] border-orange-200 border-t-orange-500" />
-                      </div>
-                  )}
-
-                  <Image
-                      unoptimized
-                      src={profilePhoto}
-                      alt={teacher?.teacher.name ?? "Teacher"}
-                      width={68}
-                      height={68}
-                      onLoad={() => setImageLoading(false)}
-                      onLoadingComplete={() => setImageLoading(false)}
-                      onError={() => setImageLoading(false)}
-                      className="h-[68px] w-[68px] rounded-full object-cover"
-                  />
-
-              </div>
-
-              </div>
+              {profilePhoto ? (
+                <Image
+                    unoptimized
+                    fill
+                    sizes="240px"
+                    src={profilePhoto}
+                    alt={teacherData?.teacher.name ?? "Teacher"}
+                    onLoad={() => setImageLoading(false)}
+                    onLoadingComplete={() => setImageLoading(false)}
+                    onError={() => {
+                      setImageLoading(false);
+                      setProfilePhoto(null);
+                    }}
+                    className="object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center p-6">
+                  <GraduationCap className="h-20 w-20 text-emerald-500" />
+                </div>
+              )}
 
             </div>
 
@@ -500,15 +627,14 @@ export default function TeacherProfileHeader({
                 rounded-full
                 border-2
                 border-white
-                bg-gradient-to-r
-                from-emerald-600
-                to-orange-500
+                bg-[#4D6C90]
                 text-white
                 shadow-md
                 transition-all
                 duration-200
                 hover:scale-110
                 hover:shadow-lg
+                hover:bg-[#3B5776]
               "
               title="Change profile photo"
             >
@@ -517,15 +643,15 @@ export default function TeacherProfileHeader({
 
           </div>
           {/* Content */}
-          <div>
+          <div className="min-w-0 flex-1">
 
             {/* Name */}
             <div className="flex flex-wrap items-center gap-1.5">
-              <h1 className="text-[20px] font-bold text-slate-900">
-                {teacher?.teacher.name}
+              <h1 className="break-words text-[20px] font-bold text-slate-900">
+                {getDisplayName(teacherData)}
               </h1>
 
-              {teacher?.isVerified && (
+              {teacherData?.isVerified && (
                 <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">
                   <UserCheck className="h-3 w-3" />
                   Verified Teacher
@@ -534,20 +660,22 @@ export default function TeacherProfileHeader({
             </div>
 
             {/* Designation */}
-            <p className="mt-0.5 text-[14px] font-semibold text-orange-600">
-              {teacher?.designation ?? (
-                <span className="italic text-slate-400">
-                  Add your professional designation to display it on your public profile. (Hit Edit Profile to add)
-                </span>
-              )}
-            </p>
+            {(teacherData?.designation || !isPublic) && (
+              <p className="mt-0.5 text-[14px] font-semibold text-orange-600">
+                {teacherData?.designation ?? (
+                  <span className="italic text-slate-400">
+                    Add your professional designation to display it on your public profile. (Hit Edit Profile to add)
+                  </span>
+                )}
+              </p>
+            )}
 
             {/* Qualification */}
             {/* <div className="mt-2 flex flex-wrap items-center gap-2 text-[16px] text-slate-600">
               <GraduationCap className="h-4 w-4 text-emerald-600" />
 
               <span className="font-medium">
-                {teacher?.qualificationSummary??"NOT SET (SET QUALIFICATIONS UNDER QUALIFICATIONS TAB THEN WILL DISPLAY HIGHEST)"}
+                {teacherData?.qualificationSummary??"NOT SET (SET QUALIFICATIONS UNDER QUALIFICATIONS TAB THEN WILL DISPLAY HIGHEST)"}
               </span>
 
               <span className="text-slate-400">
@@ -555,49 +683,55 @@ export default function TeacherProfileHeader({
               </span>
 
               <span>
-                {teacher?.aboutMe}
+                {teacherData?.aboutMe}
               </span>
             </div> */}
 
-            <div className="mt-1.5 flex items-center gap-1.5 text-[14px] text-slate-600">
-                <GraduationCap className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            {(highestQualification || teacherData?.qualificationSummary || !isPublic) && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[14px] text-slate-600">
+                  <GraduationCap className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
 
-                {teacher?.qualificationSummary ? (
-                  <span className="font-medium">
-                    {teacher.qualificationSummary}
-                  </span>
-                ) : (
-                  <>
-                    <span className="italic text-slate-400">
-                      No qualifications available.
+                  {highestQualification ? (
+                    <span className="font-medium">
+                      {highestQualification.title}
                     </span>
+                  ) : teacherData?.qualificationSummary ? (
+                    <span className="font-medium">
+                      {teacherData.qualificationSummary}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="italic text-slate-400">
+                        No qualifications available.
+                      </span>
 
-                    <button
-                      type="button"
-                      // onClick={() => openDrawer("qualification")}
-                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] font-medium text-emerald-600 transition hover:bg-emerald-50"
-                    >
-                      <Pencil className="h-2.5 w-2.5" />
-                      Add
-                    </button>
-                  </>
-                )}
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => setQualificationDrawerOpen(true)}
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] font-medium text-[#4D6C90] transition hover:bg-[#4D6C90]/5"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                        Add
+                      </button>
+                    </>
+                  )}
+                </div>
+            )}
 
             {/* Headline */}
             {/* <p className="mt-3 max-w-3xl text-[16px] leading-6 text-slate-600">
-              {teacher.headline}
+              {teacherData.headline}
             </p> */}
 
             {/* Meta */}
             {/* <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-emerald-600" />
 
-              {teacher?.city || teacher?.district ? (
+              {teacherData?.city || teacherData?.district ? (
                 <>
-                  {teacher.city ?? ""}
-                  {teacher.city && teacher.district ? ", " : ""}
-                  {teacher.district ?? ""}
+                  {teacherData.city ?? ""}
+                  {teacherData.city && teacherData.district ? ", " : ""}
+                  {teacherData.district ?? ""}
                 </>
               ) : (
                 <span className="italic text-slate-400">
@@ -606,80 +740,75 @@ export default function TeacherProfileHeader({
               )}
             </div> */}
 
-            <div className="mt-1 flex items-center gap-1.5 text-[14px] text-slate-600">
-              <Award className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+            {(teacherData?.yearsOfExperience != null || !isPublic) && (
+              <div className="mt-1 flex items-center gap-1.5 text-[14px] text-slate-600">
+                <Award className="h-3.5 w-3.5 shrink-0 text-orange-500" />
 
-              {teacher?.yearsOfExperience != null ? (
-                `${teacher.yearsOfExperience} Years Experience`
-              ) : (
-                <span className="italic text-slate-400">
-                  Add your teaching experience. (Hit Edit Profile to add)
-                </span>
-              )}
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[14px]">
-
-              {/* Phone */}
-              <div className="flex items-center gap-1.5">
-
-                <Phone className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-
-                {teacher?.phone ? (
-                  <span className="text-slate-700">
-                    {teacher.phone}
-                  </span>
+                {teacherData?.yearsOfExperience != null ? (
+                  `${teacherData.yearsOfExperience} Years Experience`
                 ) : (
-                  <>
-                    <span className="italic text-slate-400">
-                      Phone not added
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={onEdit}
-                      className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-medium text-emerald-600 transition hover:bg-emerald-50"
-                    >
-                      <Pencil className="h-2.5 w-2.5" />
-                      Add
-                    </button>
-                  </>
-                )}
-
-              </div>
-
-              {/* Divider */}
-              <div className="hidden h-3 w-px bg-slate-300 md:block" />
-
-              {/* WhatsApp */}
-              <div className="flex items-center gap-1.5">
-
-                <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-600" />
-
-                {teacher?.whatsapp ? (
-                  <span className="text-slate-700">
-                    {teacher.whatsapp}
+                  <span className="italic text-slate-400">
+                    Add your teaching experience. (Hit Edit Profile to add)
                   </span>
-                ) : (
-                  <>
-                    <span className="italic text-slate-400">
-                      WhatsApp not added
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={onEdit}
-                      className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-medium text-emerald-600 transition hover:bg-emerald-50"
-                    >
-                      <Pencil className="h-2.5 w-2.5" />
-                      Add
-                    </button>
-                  </>
                 )}
-
               </div>
+            )}
 
-            </div>
+            {(() => {
+              const showPhone = Boolean(teacherData?.phone) || !isPublic;
+              const showWhatsapp = Boolean(teacherData?.whatsapp) || !isPublic;
+
+              if (!showPhone && !showWhatsapp) return null;
+
+              return (
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[14px]">
+
+                  {/* Phone */}
+                  {showPhone && (
+                    <div className="flex items-center gap-1.5">
+
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+
+                      {teacherData?.phone ? (
+                        <span className="text-slate-700">
+                          {teacherData.phone}
+                        </span>
+                      ) : (
+                        <span className="italic text-slate-400">
+                          Phone not added
+                        </span>
+                      )}
+
+                    </div>
+                  )}
+
+                  {/* Divider */}
+                  {showPhone && showWhatsapp && (
+                    <div className="hidden h-3 w-px bg-slate-300 md:block" />
+                  )}
+
+                  {/* WhatsApp */}
+                  {showWhatsapp && (
+                    <div className="flex items-center gap-1.5">
+
+                      <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-600" />
+
+                      {teacherData?.whatsapp ? (
+                        <span className="text-slate-700">
+                          {teacherData.whatsapp}
+                        </span>
+                      ) : (
+                        <span className="italic text-slate-400">
+                          WhatsApp not added
+                        </span>
+                      )}
+
+                    </div>
+                  )}
+
+                </div>
+              );
+            })()}
 
             
 
@@ -692,32 +821,30 @@ export default function TeacherProfileHeader({
 
   {/* Action Buttons */}
 
-  <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+  <div className="flex flex-wrap items-center justify-end gap-2">
 
         <button
           type="button"
           onClick={handleShare}
           className="
             inline-flex
-            h-9
+            h-7
             items-center
             justify-center
-            gap-1.5
-            rounded-lg
-            bg-gradient-to-r
-            from-emerald-600
-            to-orange-500
-            px-3.5
-            text-[14px]
+            gap-1
+            rounded-md
+            bg-[#4D6C90]
+            px-2.5
+            text-[12.5px]
             font-semibold
             text-white
             shadow-sm
             transition
-            hover:shadow-md
+            hover:bg-[#3B5776]
           "
         >
             <Share2
-                className="h-3.5 w-3.5 pointer-events-none"
+                className="h-3 w-3 pointer-events-none"
             />
 
             <span className="pointer-events-none">
@@ -730,37 +857,48 @@ export default function TeacherProfileHeader({
         <button
           onClick={() => setIsEditDrawerOpen(true)}
           className="
-            h-9
-            rounded-lg
-            bg-emerald-600
-            px-3.5
-            text-[14px]
+            h-7
+            rounded-md
+            bg-[#4D6C90]
+            px-2.5
+            text-[12.5px]
             font-semibold
             text-white
             shadow-sm
             transition
-            hover:bg-emerald-700
+            hover:bg-[#3B5776]
         "
         >
           Edit Profile
         </button>
 
         <button
+          type="button"
+          onClick={() =>
+            window.open(
+              `/${teacherData?.slug}`,
+              "_blank",
+              "noopener,noreferrer"
+            )
+          }
+          disabled={!teacherData?.slug}
           className="
-            h-9
-            rounded-lg
+            h-7
+            rounded-md
             border
-            border-orange-300
+            border-[#4D6C90]/30
             bg-white
-            px-3.5
-            text-[14px]
+            px-2.5
+            text-[12.5px]
             font-semibold
-            text-orange-600
+            text-[#4D6C90]
             transition
-            hover:bg-orange-50
+            hover:bg-[#4D6C90]/5
+            disabled:cursor-not-allowed
+            disabled:opacity-50
         "
         >
-          <Eye className="mr-1.5 inline h-3.5 w-3.5" />
+          <Eye className="mr-1 inline h-3 w-3" />
           Public Profile
         </button>
       </>
@@ -790,7 +928,7 @@ export default function TeacherProfileHeader({
                   onClick={openMediumsDrawer}
                   title="Edit teaching mediums"
                   aria-label="Edit teaching mediums"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-600 transition hover:bg-emerald-50"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#4D6C90]/30 bg-white text-[#4D6C90] transition hover:bg-[#4D6C90]/5"
               >
                   <Pencil className="h-3 w-3" />
               </button>
@@ -833,28 +971,6 @@ export default function TeacherProfileHeader({
                   No teaching mediums added.
               </p>
 
-              {!isPublic && (
-
-                  <button
-                      type="button"
-                      onClick={openMediumsDrawer}
-                      className="
-                          mt-2
-                          rounded-md
-                          bg-emerald-50
-                          px-2.5
-                          py-1.5
-                          text-[13px]
-                          font-medium
-                          text-emerald-700
-                          hover:bg-emerald-100
-                      "
-                  >
-                      Configure Mediums
-                  </button>
-
-              )}
-
           </div>
 
       )}
@@ -878,31 +994,31 @@ export default function TeacherProfileHeader({
           />
 
           {/* Drawer */}
-          <div className="absolute right-0 top-0 h-screen w-full max-w-[560px] overflow-y-auto bg-white shadow-2xl">
+          <div className="absolute right-0 top-0 h-screen w-full max-w-lg overflow-y-auto bg-white shadow-2xl">
 
               {/* Header */}
 
-              <div className="sticky top-0 z-20 border-b bg-white px-6 py-5">
+              <div className="sticky top-0 z-20 border-b bg-white px-5 py-3.5">
 
                   <div className="flex items-start justify-between">
 
                       <div>
 
-                          <h2 className="text-[22px] font-bold text-slate-900">
+                          <h2 className="text-[15px] font-bold text-slate-900">
                               Edit Profile
                           </h2>
 
-                          <p className="mt-1 text-[16px] text-slate-500">
-                              Update your public teacher profile.
+                          <p className="mt-0.5 text-[12.5px] text-slate-500">
+                              Update your public teacherData profile.
                           </p>
 
                       </div>
 
                       <button
                         onClick={() => setIsEditDrawerOpen(false)}
-                        className="rounded-xl p-2 hover:bg-slate-100"
+                        className="rounded-md p-1.5 hover:bg-slate-100"
                       >
-                          <X className="h-5 w-5" />
+                          <X className="h-4 w-4" />
                       </button>
 
                   </div>
@@ -911,17 +1027,17 @@ export default function TeacherProfileHeader({
 
               {/* Body */}
 
-              <div className="space-y-6 p-6">
+              <div className="space-y-4 p-5">
 
                 {/* Public URL */}
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                     Public Profile URL
                   </label>
 
-                  <div className="flex overflow-hidden rounded-xl border">
+                  <div className="flex overflow-hidden rounded-lg border">
 
-                    <div className="bg-slate-100 px-3 py-2.5 text-[16px] text-slate-500">
+                    <div className="bg-slate-100 px-3 py-2 text-[13px] text-slate-500">
                       slclassroom.live/
                     </div>
 
@@ -934,21 +1050,21 @@ export default function TeacherProfileHeader({
                         }))
                       }
                       onBlur={validateSlug}
-                      className="flex-1 px-3 py-2.5 text-[16px] outline-none"
+                      className="flex-1 px-3 py-2 text-[13px] outline-none"
                     />
 
                   </div>
 
                   {checkingSlug ? (
 
-                      <p className="mt-2 text-[14px] text-slate-500">
+                      <p className="mt-1.5 text-[12px] text-slate-500">
                           Checking availability...
                       </p>
 
                   ) : (
 
                       <p
-                          className={`mt-2 text-[14px] ${
+                          className={`mt-1.5 text-[12px] ${
                               slugAvailable
                                   ? "text-emerald-600"
                                   : "text-red-600"
@@ -959,7 +1075,7 @@ export default function TeacherProfileHeader({
 
                   )}
 
-                  <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[14px] text-slate-500">
+                  <p className="mt-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-500">
                       Public URL
                       <br />
                       <span className="font-medium text-emerald-600">
@@ -969,7 +1085,7 @@ export default function TeacherProfileHeader({
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                       Full Name
                   </label>
 
@@ -984,14 +1100,58 @@ export default function TeacherProfileHeader({
                               slug: slugify(name),
                           }));
                       }}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
                       placeholder="Your full name"
                   />
               </div>
 
+                {/* Title & Display Name */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                      Title
+                    </label>
+
+                    <select
+                        value={form.title}
+                        onChange={(e) =>
+                            setForm((prev) => ({
+                                ...prev,
+                                title: e.target.value as TeacherTitle,
+                            }))
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
+                    >
+                        {TEACHER_TITLE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                                {TEACHER_TITLE_LABELS[option]}
+                            </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                      Display Name
+                    </label>
+
+                    <input
+                        value={form.displayName}
+                        onChange={(e) =>
+                            setForm((prev) => ({
+                                ...prev,
+                                displayName: e.target.value,
+                            }))
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
+                        placeholder="Name shown on your public profile"
+                    />
+                  </div>
+                </div>
+
                 {/* Designation */}
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                     Designation
                   </label>
 
@@ -1003,14 +1163,14 @@ export default function TeacherProfileHeader({
                         designation: e.target.value,
                       }))
                     }
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
                     placeholder="Mathematics Teacher"
                   />
                 </div>
 
                 {/* Experience */}
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                     Teaching Experience
                   </label>
 
@@ -1026,7 +1186,7 @@ export default function TeacherProfileHeader({
                             : Number(e.target.value),
                       }))
                     }
-                     className="w-full rounded-xl border border-slate-300 px-4 py-2.5"
+                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
                      placeholder="8 Years of ex.."
                   />
                 </div>
@@ -1095,7 +1255,7 @@ export default function TeacherProfileHeader({
 
                 {/* Phone */}
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                     Contact Number
                   </label>
 
@@ -1107,14 +1267,14 @@ export default function TeacherProfileHeader({
                         phone: e.target.value,
                       }))
                     }
-                     className="w-full rounded-xl border border-slate-300 px-4 py-2.5"
+                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
                      placeholder="07x-xxxxxxx"
                   />
                 </div>
 
                 {/* WhatsApp */}
                 <div>
-                  <label className="mb-2 block text-[16px] font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
                     WhatsApp Number
                   </label>
 
@@ -1126,24 +1286,24 @@ export default function TeacherProfileHeader({
                         whatsapp: e.target.value,
                       }))
                     }
-                     className="w-full rounded-xl border border-slate-300 px-4 py-2.5"
+                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px]"
                      placeholder="07x-xxxxxxx"
                   />
                 </div>
 
                 {/* Public Profile */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
 
                   <div className="flex items-center justify-between">
 
                     <div>
 
-                      <h4 className="text-[16px] font-semibold text-slate-900">
+                      <h4 className="text-[13px] font-semibold text-slate-900">
                         Public Profile
                       </h4>
 
-                      <p className="mt-1 text-[14px] text-slate-500">
-                        Allow students to view your teacher profile.
+                      <p className="mt-0.5 text-[12px] text-slate-500">
+                        Allow students to view your teacherData profile.
                       </p>
 
                     </div>
@@ -1162,7 +1322,7 @@ export default function TeacherProfileHeader({
                         className="peer sr-only"
                       />
 
-                      <div className="peer h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-emerald-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-5" />
+                      <div className="peer h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-emerald-600 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-4" />
 
                     </label>
 
@@ -1174,23 +1334,27 @@ export default function TeacherProfileHeader({
 
               {/* Footer */}
 
-              <div className="sticky bottom-0 border-t bg-white px-6 py-4">
+              <div className="sticky bottom-0 border-t bg-white px-5 py-3.5">
 
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-2">
 
                       <button
                           onClick={() => setIsEditDrawerOpen(false)}
-                          className="rounded-xl border border-slate-300 px-5 py-2.5 text-[16px] font-medium hover:bg-slate-50"
+                          disabled={savingProfile}
+                          className="rounded-md border border-slate-300 px-3.5 py-1.5 text-[13px] font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                           Cancel
                       </button>
 
                       <button
-                          className="rounded-xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-2.5 text-[16px] font-semibold text-white shadow-md hover:opacity-95"
+                          className="flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"
                           onClick={saveProfile}
-                          disabled={!slugAvailable || checkingSlug}
+                          disabled={!slugAvailable || checkingSlug || savingProfile}
                       >
-                          Save Changes
+                          {savingProfile && (
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                          )}
+                          {savingProfile ? "Saving Changes..." : "Save Changes"}
                       </button>
 
                   </div>
@@ -1220,23 +1384,29 @@ export default function TeacherProfileHeader({
 
             <div className="flex items-center gap-4">
 
-              <Image
-                unoptimized
-                src={profilePhoto}
-                alt={teacher?.teacher.name ?? "Teacher profile"}
-                width={64}
-                height={64}
-                className="h-16 w-16 rounded-full border object-cover"
-              />
+              {profilePhoto ? (
+                <Image
+                  unoptimized
+                  src={profilePhoto}
+                  alt={teacherData?.teacher.name ?? "Teacher profile"}
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 shrink-0 rounded-full border object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border bg-slate-100">
+                  <User className="h-7 w-7 text-slate-400" />
+                </div>
+              )}
 
-              <div>
+              <div className="min-w-0">
 
-                <h3 className="text-[20px] font-bold text-slate-900">
-                  {teacher?.teacher.name}
+                <h3 className="break-words text-[20px] font-bold text-slate-900">
+                  {getDisplayName(teacherData)}
                 </h3>
 
                 <p className="text-orange-600 font-medium">
-                  {teacher?.designation}
+                  {teacherData?.designation}
                 </p>
 
                 <p className="mt-1 text-[16px] text-slate-500">
@@ -1257,7 +1427,7 @@ export default function TeacherProfileHeader({
               Share Via
             </h4>
 
-            <div className="grid grid-cols-4 gap-5">
+            <div className="grid grid-cols-4 gap-3 sm:gap-5">
 
               {/* WhatsApp */}
 
@@ -1265,14 +1435,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://wa.me/?text=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#25D366]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25D366]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <FaWhatsapp
                     size={30}
@@ -1293,14 +1463,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://www.facebook.com/dialog/send?link=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0084FF]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0084FF]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <FaFacebookMessenger
                     size={28}
@@ -1321,14 +1491,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://t.me/share/url?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#229ED9]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#229ED9]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <FaTelegramPlane
                     size={28}
@@ -1349,14 +1519,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1877F2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1877F2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <FaFacebookF
                     size={25}
@@ -1377,14 +1547,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0A66C2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A66C2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <FaLinkedinIn
                     size={26}
@@ -1405,15 +1575,15 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `mailto:?subject=${encodeURIComponent(
-                      `${teacher?.teacher.name} - Teacher Profile`
+                      `${teacherData?.teacher.name} - Teacher Profile`
                     )}&body=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <Mail
                     size={26}
@@ -1434,14 +1604,14 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   window.open(
                     `https://twitter.com/intent/tweet?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacher?.slug}`
+                      `https://slclassroom.live/${teacherData?.slug}`
                     )}`,
                     "_blank"
                   )
                 }
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <span className="text-[22px] font-bold">
                     X
@@ -1460,7 +1630,7 @@ export default function TeacherProfileHeader({
               <button
                 onClick={async () => {
                   await navigator.clipboard.writeText(
-                    `https://slclassroom.live/${teacher?.slug}`
+                    `https://slclassroom.live/${teacherData?.slug}`
                   );
 
                   alert("Profile link copied.");
@@ -1469,7 +1639,7 @@ export default function TeacherProfileHeader({
                 }}
                 className="group flex flex-col items-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
 
                   <BsLink45Deg
                     size={30}
@@ -1500,19 +1670,19 @@ export default function TeacherProfileHeader({
 
               <input
                 readOnly
-                value={`https://slclassroom.live/${teacher?.slug}`}
+                value={`https://slclassroom.live/${teacherData?.slug}`}
                 className="flex-1 px-4 py-3 text-[16px] outline-none"
               />
 
               <button
                 onClick={async () => {
                   await navigator.clipboard.writeText(
-                    `https://slclassroom.live/${teacher?.slug}`
+                    `https://slclassroom.live/${teacherData?.slug}`
                   );
 
                   alert("Copied");
                 }}
-                className="bg-gradient-to-r from-emerald-600 to-orange-500 px-6 font-semibold text-white transition hover:opacity-90"
+                className="bg-[#4D6C90] px-4 text-[14px] font-semibold text-white transition hover:bg-[#3B5776]"
               >
                 Copy
               </button>
@@ -1534,7 +1704,7 @@ export default function TeacherProfileHeader({
             onClick={() => setPreviewOpen(false)}
           />
 
-          <div className="absolute left-1/2 top-1/2 w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-6 shadow-2xl">
 
             <h2 className="text-[22px] font-bold">
               Preview Profile Photo
@@ -1557,7 +1727,7 @@ export default function TeacherProfileHeader({
                 onClick={() =>
                   setPreviewOpen(false)
                 }
-                className="rounded-xl border px-5 py-2"
+                className="rounded-lg border px-4 py-2 text-[14px]"
               >
                 Cancel
               </button>
@@ -1565,7 +1735,7 @@ export default function TeacherProfileHeader({
               <button
                 onClick={uploadProfilePhoto}
                 disabled={uploading}
-                className="rounded-xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-2.5 text-white"
+                className="rounded-lg bg-[#4D6C90] px-4 py-2 text-[14px] text-white hover:bg-[#3B5776]"
               >
                 {uploading
                   ? "Uploading..."
@@ -1587,6 +1757,14 @@ export default function TeacherProfileHeader({
         onToggle={toggleMedium}
         onSave={saveMediums}
         onClose={() => setMediumsDrawerOpen(false)}
+      />
+
+      <QualificationDrawer
+        open={qualificationDrawerOpen}
+        qualification={null}
+        saving={savingQualification}
+        onSave={saveQualification}
+        onClose={() => setQualificationDrawerOpen(false)}
       />
 
     </div>

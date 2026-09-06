@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarClock, CalendarDays, MapPin, Plus } from "lucide-react";
 
+import { useTeacherLiveRefetch } from "@/components/dashboard/use-teacher-live-events";
+
 type CalendarEntry = {
   key: string;
   date: string; // YYYY-MM-DD
@@ -27,6 +29,7 @@ type RangeKey =
   | "today"
   | "tomorrow"
   | "yesterday"
+  | "thisWeek"
   | "nextWeek"
   | "lastWeek"
   | "next30"
@@ -38,6 +41,7 @@ const RANGES: { key: RangeKey; label: string; title: string }[] = [
   { key: "today", label: "Today", title: "Today's" },
   { key: "tomorrow", label: "Tomorrow", title: "Tomorrow's" },
   { key: "yesterday", label: "Yesterday", title: "Yesterday's" },
+  { key: "thisWeek", label: "This week", title: "This week's" },
   { key: "nextWeek", label: "Next week", title: "Next week's" },
   { key: "lastWeek", label: "Last week", title: "Last week's" },
   { key: "next30", label: "Next 30 days", title: "Next 30 days'" },
@@ -72,6 +76,10 @@ function rangeToDates(range: RangeKey): { from: string; to: string } {
       return { from: fmt(addDays(d0, 1)), to: fmt(addDays(d0, 1)) };
     case "yesterday":
       return { from: fmt(addDays(d0, -1)), to: fmt(addDays(d0, -1)) };
+    case "thisWeek": {
+      const sun = addDays(d0, -d0.getDay());
+      return { from: fmt(sun), to: fmt(addDays(sun, 6)) };
+    }
     case "nextWeek": {
       const sun = addDays(d0, -d0.getDay() + 7);
       return { from: fmt(sun), to: fmt(addDays(sun, 6)) };
@@ -108,10 +116,14 @@ export function DashboardScheduleEvents() {
   const [entries, setEntries] = useState<CalendarEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
 
   const { from, to } = useMemo(() => rangeToDates(range), [range]);
   const titleWord = RANGES.find((r) => r.key === range)?.title ?? "";
   const multiDay = from !== to;
+
+  // Realtime: re-pull the current range when a lecture/schedule/event changes.
+  useTeacherLiveRefetch(() => setLiveTick((n) => n + 1));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,7 +152,7 @@ export function DashboardScheduleEvents() {
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [from, to]);
+  }, [from, to, liveTick]);
 
   const schedules = useMemo(
     () =>
@@ -219,14 +231,14 @@ export function DashboardScheduleEvents() {
                   return (
                     <div
                       key={s.key}
-                      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      className={`flex flex-col gap-2 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 ${
                         needsLecture
                           ? "border-amber-200 bg-amber-50/60"
                           : "border-brand-100 bg-brand-50/50"
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">
+                        <p className="break-words text-sm font-semibold text-foreground sm:truncate">
                           {s.className}
                         </p>
                         <p className="mt-0.5 text-xs text-muted">
@@ -234,7 +246,7 @@ export function DashboardScheduleEvents() {
                           {timeRange(s.startTime, s.endTime, false) || "—"}
                         </p>
                         {s.lecture ? (
-                          <p className="mt-0.5 truncate text-xs font-medium text-brand-700">
+                          <p className="mt-0.5 break-words text-xs font-medium text-brand-700 sm:truncate">
                             {s.lecture.title}
                           </p>
                         ) : (
@@ -248,12 +260,12 @@ export function DashboardScheduleEvents() {
                           href={`/dashboard/lectures${
                             s.classId ? `?classId=${s.classId}` : ""
                           }`}
-                          className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-amber-700"
+                          className="inline-flex items-center gap-1 self-start rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-amber-700 sm:flex-shrink-0"
                         >
                           <Plus size={12} /> Add
                         </Link>
                       ) : (
-                        <span className="flex-shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                        <span className="self-start rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold text-sky-700 sm:flex-shrink-0 sm:self-auto">
                           {s.scheduled ? "Scheduled" : "Lecture"}
                         </span>
                       )}
@@ -295,12 +307,12 @@ export function DashboardScheduleEvents() {
                     className="flex items-start justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-start gap-1.5">
                         <span
-                          className="h-2 w-2 flex-shrink-0 rounded-full"
+                          className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full"
                           style={{ backgroundColor: e.color ?? "#94a3b8" }}
                         />
-                        <p className="truncate text-sm font-semibold text-foreground">
+                        <p className="break-words text-sm font-semibold text-foreground sm:truncate">
                           {e.className}
                         </p>
                       </div>

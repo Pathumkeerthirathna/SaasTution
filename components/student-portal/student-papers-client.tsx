@@ -49,8 +49,11 @@ type Paper = {
 type ClassOption = { id: string; name: string };
 type Data = { papers: Paper[]; classes: ClassOption[] };
 
+const PAPER_EARLY_VIEW_WINDOW_MS = 15 * 60 * 1000;
+
 function fmtDateTime(value: string) {
-  return new Date(value).toLocaleString(undefined, {
+  return new Date(value).toLocaleString("en-GB", {
+    timeZone: "Asia/Colombo",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -76,7 +79,8 @@ export function StudentPapersClient() {
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
+  const [openingPaperId, setOpeningPaperId] = useState<string | null>(null);
 
   const load = useCallback(async (cls: string) => {
     setIsLoading(true);
@@ -107,6 +111,40 @@ export function StudentPapersClient() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  async function openPaper(paper: Paper) {
+    const url = `/api/class-papers/${paper.paperId}/file`;
+    // Opened synchronously so the browser still treats it as a user gesture
+    // (avoids the popup blocker) even though we fetch before navigating it.
+    const win = window.open("", "_blank");
+
+    setOpeningPaperId(paper.paperId);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        win?.close();
+        const body = await res.json().catch(() => ({}));
+        setToast({
+          message: body?.error?.message ?? "This paper isn't available right now.",
+          kind: "error",
+        });
+        return;
+      }
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      if (win) {
+        win.location.href = objectUrl;
+      } else {
+        window.open(objectUrl, "_blank");
+      }
+    } catch {
+      win?.close();
+      setToast({ message: "Unable to open the paper right now. Please try again.", kind: "error" });
+    } finally {
+      setOpeningPaperId(null);
+    }
+  }
+
   function openSubmit(paper: Paper) {
     setSubmitPaper(paper);
     setFile(null);
@@ -135,7 +173,7 @@ export function StudentPapersClient() {
         return;
       }
       setSubmitPaper(null);
-      setToast("Answer submitted.");
+      setToast({ message: "Answer submitted.", kind: "success" });
       await load(classId);
     } catch {
       setSubmitError("Unable to submit right now. Please try again.");
@@ -245,6 +283,7 @@ export function StudentPapersClient() {
             const end = new Date(paper.endTime).getTime();
             const phase = now < start ? "upcoming" : now > end ? "closed" : "open";
             const canSubmit = phase === "open";
+            const canViewPaper = now >= start - PAPER_EARLY_VIEW_WINDOW_MS;
 
             return (
               <article
@@ -291,15 +330,32 @@ export function StudentPapersClient() {
                     </p>
                   </div>
 
-                  <a
-                    href={`/api/class-papers/${paper.paperId}/file`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <FileText size={11} />
-                    Paper <ExternalLink size={10} />
-                  </a>
+                  {canViewPaper ? (
+                    <button
+                      type="button"
+                      onClick={() => void openPaper(paper)}
+                      disabled={openingPaperId === paper.paperId}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <FileText size={11} />
+                      {openingPaperId === paper.paperId ? "Opening…" : "Paper"}
+                      {openingPaperId !== paper.paperId && <ExternalLink size={10} />}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setToast({
+                          message: "You can view the paper from 15 minutes before it starts.",
+                          kind: "error",
+                        })
+                      }
+                      className="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-400"
+                    >
+                      <FileText size={11} />
+                      Paper
+                    </button>
+                  )}
                 </div>
 
                 {paper.description ? (
@@ -312,6 +368,11 @@ export function StudentPapersClient() {
                     ? `Opens ${fmtDateTime(paper.startTime)}`
                     : `${fmtDateTime(paper.startTime)} → ${fmtDateTime(paper.endTime)}`}
                 </p>
+                {!canViewPaper ? (
+                  <p className="mt-0.5 text-[10.5px] text-amber-600">
+                    You can view the paper from 15 minutes before it starts.
+                  </p>
+                ) : null}
 
                 {/* status row */}
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -452,8 +513,14 @@ export function StudentPapersClient() {
       ) : null}
 
       {toast ? (
-        <div className="fixed bottom-4 right-4 z-[60] rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 shadow-lg">
-          {toast}
+        <div
+          className={`fixed bottom-4 right-4 z-[60] rounded-lg border bg-white px-3 py-2 text-xs font-semibold shadow-lg ${
+            toast.kind === "error"
+              ? "border-rose-200 text-rose-700"
+              : "border-emerald-200 text-emerald-700"
+          }`}
+        >
+          {toast.message}
         </div>
       ) : null}
     </>

@@ -255,7 +255,7 @@ export async function POST(request: Request) {
       await unlink(oldPath).catch(() => undefined);
     }
 
-    emitStudentDataChange({ studentId: session.studentId });
+    emitStudentDataChange({ studentId: session.studentId, classId });
 
     return apiSuccess({ payment }, { status: 201, message: "Payment slip submitted." });
   } catch (error) {

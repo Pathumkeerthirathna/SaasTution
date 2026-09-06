@@ -54,34 +54,34 @@ export default function SocialLinksDrawer({
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-xl flex-col bg-white shadow-2xl">
+      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-lg flex-col bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
           <div>
-            <h2 className="text-[22px] font-bold text-slate-900">
+            <h2 className="text-[15px] font-bold text-slate-900">
               Social & Online Presence
             </h2>
 
-            <p className="mt-1 text-[16px] text-slate-500">
+            <p className="mt-0.5 text-[12.5px] text-slate-500">
               Connect students with your online platforms.
             </p>
           </div>
 
           <button
             onClick={onClose}
-            className="rounded-lg p-2 transition hover:bg-slate-100"
+            className="rounded-md p-1.5 transition hover:bg-slate-100"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="space-y-4">
             {/* Facebook */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
-                <FaFacebook className="h-4 w-4 text-blue-600" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                <FaFacebook className="h-3.5 w-3.5 text-blue-600" />
                 Facebook
               </label>
 
@@ -94,14 +94,14 @@ export default function SocialLinksDrawer({
                   }))
                 }
                 placeholder="https://facebook.com/yourpage"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
             </div>
 
             {/* YouTube */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
-                <FaYoutube className="h-4 w-4 text-red-600" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                <FaYoutube className="h-3.5 w-3.5 text-red-600" />
                 YouTube
               </label>
 
@@ -114,14 +114,14 @@ export default function SocialLinksDrawer({
                   }))
                 }
                 placeholder="https://youtube.com/@yourchannel"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
             </div>
 
             {/* Instagram */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
-                <FaInstagram className="h-4 w-4 text-pink-600" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                <FaInstagram className="h-3.5 w-3.5 text-pink-600" />
                 Instagram
               </label>
 
@@ -134,14 +134,14 @@ export default function SocialLinksDrawer({
                   }))
                 }
                 placeholder="https://instagram.com/yourprofile"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
             </div>
 
             {/* TikTok */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
-                <FaTiktok className="h-4 w-4" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                <FaTiktok className="h-3.5 w-3.5" />
                 TikTok
               </label>
 
@@ -154,14 +154,14 @@ export default function SocialLinksDrawer({
                   }))
                 }
                 placeholder="https://tiktok.com/@yourprofile"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
             </div>
 
             {/* Website */}
             <div>
-              <label className="mb-2 flex items-center gap-2 text-[16px] font-semibold text-slate-700">
-                <Globe className="h-4 w-4 text-emerald-600" />
+              <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                <Globe className="h-3.5 w-3.5 text-emerald-600" />
                 Website
               </label>
 
@@ -174,17 +174,17 @@ export default function SocialLinksDrawer({
                   }))
                 }
                 placeholder="https://www.yourwebsite.com"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
               />
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-5">
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
           <button
             onClick={onClose}
-            className="rounded-xl border border-slate-300 px-5 py-2.5 font-medium text-slate-700 transition hover:bg-white"
+            className="rounded-md border border-slate-300 px-3.5 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-white"
           >
             Cancel
           </button>
@@ -192,9 +192,9 @@ export default function SocialLinksDrawer({
           <button
             disabled={saving}
             onClick={() => onSave(form)}
-            className="flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Save className="h-4 w-4" />
+            <Save className="h-3.5 w-3.5" />
             {saving ? "Saving..." : "Save Changes"}
           </button>
         </div>

@@ -2,18 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   getQualifications,
+  getSectionVisibility,
   addQualification,
 } from "@/services/teacher-profile-service";
-import { requireAppSession } from "@/lib/auth-session";
+import { getOptionalSession, requireAppSession } from "@/lib/auth-session";
 
 export async function GET(request:Request) {
   try {
     const { searchParams } = new URL(request.url);
-        
+
     const teacherId = searchParams.get("teacherId");
 
     if (!teacherId) {
       throw new Error("Teacher id is required.");
+    }
+
+    const session = await getOptionalSession();
+    const isOwner = session?.role === "TEACHER" && session.userId === teacherId;
+
+    if (!isOwner) {
+      const visibility = await getSectionVisibility(teacherId);
+      if (!visibility.isDisplayQualification) {
+        return NextResponse.json([]);
+      }
     }
 
     const qualifications =

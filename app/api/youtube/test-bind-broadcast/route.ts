@@ -27,9 +27,14 @@ export async function POST(request: NextRequest) {
                 where: {
                     id: lectureId,
                 },
+                include: {
+                    class: {
+                        select: { teacherId: true },
+                    },
+                },
             });
 
-        if (!lecture) {
+        if (!lecture || lecture.class.teacherId !== teacherSession.teacherId) {
             return NextResponse.json(
                 {
                     error: "Lecture not found.",

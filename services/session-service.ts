@@ -651,7 +651,10 @@ export async function markStudentJoinedSession(sessionId: string, student: Stude
     },
   });
 
-  emitStudentDataChange({ studentId: student.studentId });
+  emitStudentDataChange({
+    studentId: student.studentId,
+    classId: joinInfo.session.classId,
+  });
 
   return {
     attendance,
@@ -686,7 +689,10 @@ export async function markAttendanceOnJoin(params: {
     },
   });
 
-  emitStudentDataChange({ studentId: params.student.studentId });
+  emitStudentDataChange({
+    studentId: params.student.studentId,
+    classId: joinInfo.session.classId,
+  });
 
   return {
     attendance,

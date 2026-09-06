@@ -11,10 +11,18 @@ const passwordField = z
   .min(8, "Password must be at least 8 characters long.")
   .max(64, "Password must be at most 64 characters long.");
 
+const contactField = z
+  .string()
+  .trim()
+  .min(9, "Please enter a valid phone number.")
+  .max(20, "Phone number is too long.")
+  .regex(/^[0-9+\-\s]+$/, "Phone number can only contain digits, spaces, + and -.");
+
 export const registerSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters long.").max(80),
   email: emailField,
   password: passwordField,
+  contact: contactField,
 });
 
 export const loginSchema = z.object({

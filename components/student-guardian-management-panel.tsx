@@ -151,16 +151,10 @@ function formatRegisteredDate(value: string) {
   });
 }
 
-const AVATAR_COLORS = [
-  "bg-slate-700",
-  "bg-blue-600",
-  "bg-emerald-600",
-  "bg-violet-600",
-  "bg-amber-600",
-  "bg-rose-600",
-  "bg-cyan-600",
-  "bg-indigo-600",
-];
+// A single navy-blue tone (matching the app's confirmed brand palette) is
+// used for every avatar instead of a per-student rainbow rotation, so the
+// student list reads consistently with the rest of the blue-branded UI.
+const AVATAR_COLORS = ["bg-[#32598A]"];
 
 function getStudentAvatarColor(seed: string) {
   let hash = 0;
@@ -1343,7 +1337,7 @@ const handleConfirmAllStudents = async () => {
 
           <div className="flex items-center gap-3">
 
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-600 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#32598A] text-white">
               <GraduationCap size={18} />
             </span>
 
@@ -1364,7 +1358,7 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={downloadStudents}
-              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
             >
               <FileSpreadsheet size={12} />
               Export Excel
@@ -1373,7 +1367,7 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={() => setIsHelpOpen(true)}
-              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
             >
               <CircleHelp size={12} />
               Help
@@ -1382,14 +1376,14 @@ const handleConfirmAllStudents = async () => {
             <button
               type="button"
               onClick={downloadTemplate}
-              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
             >
               <Download size={12} />
               Download Template
             </button>
 
             <label
-              className="btn-secondary h-7 cursor-pointer gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 cursor-pointer gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
             >
               <Upload size={12} />
               Upload Student List
@@ -1404,7 +1398,10 @@ const handleConfirmAllStudents = async () => {
 
             <button
               type="button"
-              onClick={() => setIsAddPanelOpen(true)}
+              onClick={() => {
+                setIsAddPanelOpen(true);
+                void loadRegistrationNumber();
+              }}
               className="btn-primary h-7 gap-1 rounded-lg border-orange-500 bg-orange-500 px-2.5 text-[11px] text-white shadow-sm hover:bg-orange-600 hover:shadow-md"
             >
               <Plus size={12} />
@@ -1419,7 +1416,7 @@ const handleConfirmAllStudents = async () => {
                 );
                 setIsFilterPanelOpen(true);
               }}
-              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700"
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
             >
               <Search size={12} />
               Search By
@@ -1435,14 +1432,20 @@ const handleConfirmAllStudents = async () => {
           <p className="text-sm text-muted">No students found. Add students or adjust your filters.</p>
         ) : null}
 
-        {/* ── Table ── */}
-        <div className="flex min-h-0 flex-1 flex-col max-lg:hidden bg-white">
+        {/*
+          ── Table ──
+          Only shown at xl+ (1280px): the sidebar (256px) leaves less than the
+          table's 900px min-width available between lg (1024px) and xl, which
+          would force horizontal scrolling. The card list below covers every
+          screen narrower than that instead, with nothing clipped or hidden.
+        */}
+        <div className="flex min-h-0 flex-1 flex-col max-xl:hidden bg-white">
 
           {/* ===================== TOP ===================== */}
          <div className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 pb-2">
 
           <div className="flex items-center gap-1.5">
-            <span className="rounded-md bg-brand-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-700">
+            <span className="rounded-md bg-[#eef3f8] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#264867]">
               Sort By
             </span>
 
@@ -1451,7 +1454,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("Name")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "Name"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1470,7 +1473,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("RegistrationNumber")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "RegistrationNumber"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1489,7 +1492,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("CreatedAt")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "CreatedAt"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1566,7 +1569,7 @@ const handleConfirmAllStudents = async () => {
 
         </div>
 
-          <div className="scrollbar-thin min-h-0 flex-1 overflow-auto max-lg:hidden">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-auto max-xl:hidden">
 
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
 
@@ -1619,7 +1622,7 @@ const handleConfirmAllStudents = async () => {
 
                             <div className="mt-1 flex flex-col items-start gap-1">
 
-                              <span className="inline-flex rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                              <span className="inline-flex rounded-md bg-[#eef3f8] px-1.5 py-0.5 text-[10px] font-medium text-[#264867]">
                                 {formatGradeLabel(student.grade?.GradeDesc ?? "")}
                               </span>
 
@@ -1635,7 +1638,7 @@ const handleConfirmAllStudents = async () => {
                         <div className="space-y-1">
 
                           <div className="flex items-center gap-1.5 text-xs text-slate-700">
-                            <Phone size={12} className="shrink-0 text-blue-500" />
+                            <Phone size={12} className="shrink-0 text-[#32598A]" />
                             {student.contact01 || "—"} / {student.contact02 || "—"}
                           </div>
 
@@ -1736,7 +1739,7 @@ const handleConfirmAllStudents = async () => {
                               }}
                               title="Edit reason"
                               aria-label="Edit deactivation reason"
-                              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+                              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-[#264867]"
                             >
                               <Pencil size={11} />
                             </button>
@@ -1761,7 +1764,7 @@ const handleConfirmAllStudents = async () => {
 
                           <button
                             onClick={() => handleEditStudent(student)}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#b9cfe3] bg-white px-2.5 text-xs font-medium text-[#264867] hover:bg-[#eef3f8]"
                           >
                             <Pencil size={13} />
                             Edit
@@ -1805,11 +1808,11 @@ const handleConfirmAllStudents = async () => {
           </div>
         </div>
 
-        <div className="hidden min-h-0 flex-1 flex-col max-lg:flex">
+        <div className="hidden min-h-0 flex-1 flex-col max-xl:flex">
           <div className="mb-3 flex shrink-0 flex-col gap-2 border-b border-slate-200 pb-2">
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-md bg-brand-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-700">
+            <span className="rounded-md bg-[#eef3f8] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#264867]">
               Sort By
             </span>
 
@@ -1818,7 +1821,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("Name")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "Name"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1837,7 +1840,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("RegistrationNumber")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "RegistrationNumber"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1856,7 +1859,7 @@ const handleConfirmAllStudents = async () => {
               onClick={() => handleSort("CreatedAt")}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                 sortBy === "CreatedAt"
-                  ? "bg-brand-700 text-white shadow-sm"
+                  ? "bg-[#264867] text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -1963,7 +1966,7 @@ const handleConfirmAllStudents = async () => {
 
                     <div>
 
-                      <span className="inline-flex rounded-md bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                      <span className="inline-flex rounded-md bg-[#eef3f8] px-2 py-0.5 text-[10px] font-semibold text-[#264867]">
                         {student.registrationNumber ?? "—"}
                       </span>
 
@@ -2003,7 +2006,7 @@ const handleConfirmAllStudents = async () => {
                             }}
                             title="Edit reason"
                             aria-label="Edit deactivation reason"
-                            className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+                            className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-[#264867]"
                           >
                             <Pencil size={11} />
                           </button>
@@ -2020,7 +2023,7 @@ const handleConfirmAllStudents = async () => {
               <div className="space-y-2.5 p-3">
 
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef3f8] text-[#264867]">
                     <GraduationCap size={14} />
                   </div>
 
@@ -2036,7 +2039,7 @@ const handleConfirmAllStudents = async () => {
                 </div>
 
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-500">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef3f8] text-[#32598A]">
                     <Phone size={14} />
                   </div>
 
@@ -2052,7 +2055,7 @@ const handleConfirmAllStudents = async () => {
                 </div>
 
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#dce7f1] text-[#264867]">
                     <PhoneCall size={14} />
                   </div>
 
@@ -2098,7 +2101,7 @@ const handleConfirmAllStudents = async () => {
                         student.classes.map((cls) => (
                           <span
                             key={cls.id}
-                            className="rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700"
+                            className="rounded-full border border-[#dce7f1] bg-[#eef3f8] px-2 py-0.5 text-[11px] font-medium text-[#264867]"
                           >
                             {cls.name}
                           </span>
@@ -2113,10 +2116,10 @@ const handleConfirmAllStudents = async () => {
                 </div>
 
               </div>
-              <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 xl:flex-row xl:items-center xl:justify-between">
 
                 {/* Student Information */}
-                <div className="w-full lg:w-auto">
+                <div className="w-full xl:w-auto">
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 px-3 pb-3">
 
@@ -2178,12 +2181,12 @@ const handleConfirmAllStudents = async () => {
                 {/* Action Buttons */}
                 <div
                   onClick={(event) => event.stopPropagation()}
-                  className="grid w-full grid-cols-3 gap-1.5 lg:flex lg:w-auto lg:flex-wrap"
+                  className="grid w-full grid-cols-3 gap-1.5 xl:flex xl:w-auto xl:flex-wrap"
                 >
 
                   <button
                     onClick={() => handleEditStudent(student)}
-                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 transition hover:bg-blue-50"
+                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[#b9cfe3] bg-white px-2.5 text-xs font-medium text-[#264867] transition hover:bg-[#eef3f8]"
                   >
                     <Pencil size={13} />
                     Edit
@@ -2260,8 +2263,8 @@ const handleConfirmAllStudents = async () => {
                     font-medium
                     text-slate-700
                     transition
-                    hover:border-brand-300
-                    focus:border-brand-500
+                    hover:border-[#8fb0cd]
+                    focus:border-[#3d6690]
                     focus:outline-none
                   "
                 >
@@ -2325,8 +2328,8 @@ const handleConfirmAllStudents = async () => {
                     disabled={isLoadingList}
                     className={`flex h-7 min-w-[28px] items-center justify-center rounded-lg border text-xs font-semibold transition-all duration-200 ${
                       p === page
-                        ? "border-brand-700 bg-brand-700 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50"
+                        ? "border-[#264867] bg-[#264867] text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-[#8fb0cd] hover:bg-[#eef3f8]"
                     }`}
                   >
                     {p}
@@ -2375,7 +2378,7 @@ const handleConfirmAllStudents = async () => {
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dce7f1] text-[#264867]">
                 <GraduationCap size={18} />
               </div>
 
@@ -2385,7 +2388,7 @@ const handleConfirmAllStudents = async () => {
                     Add Student
                   </h2>
 
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                  <span className="rounded-full bg-[#eef3f8] px-2 py-0.5 text-[11px] font-medium text-[#264867]">
                     New
                   </span>
                 </div>
@@ -2669,7 +2672,7 @@ const handleConfirmAllStudents = async () => {
                 className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white transition ${
                   isSubmitting || hasValidationErrors
                     ? "cursor-not-allowed bg-slate-400"
-                    : "bg-brand-700 hover:bg-brand-800"
+                    : "bg-[#264867] hover:bg-[#1a3049]"
                 }`}
               >
                 {isSubmitting && <Loader2 size={14} className="animate-spin" />}
@@ -2727,7 +2730,7 @@ const handleConfirmAllStudents = async () => {
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dce7f1] text-[#264867]">
                 <GraduationCap size={18} />
               </div>
 
@@ -2737,7 +2740,7 @@ const handleConfirmAllStudents = async () => {
                     Edit Student
                   </h2>
 
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                  <span className="rounded-full bg-[#eef3f8] px-2 py-0.5 text-[11px] font-medium text-[#264867]">
                     Existing
                   </span>
                 </div>
@@ -3048,7 +3051,7 @@ const handleConfirmAllStudents = async () => {
                 className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white ${
                   isSubmitting || hasValidationErrors
                     ? "cursor-not-allowed bg-slate-400"
-                    : "bg-brand-700 hover:bg-brand-800"
+                    : "bg-[#264867] hover:bg-[#1a3049]"
                 }`}
               >
                 {isSubmitting && <Loader2 size={14} className="animate-spin" />}
@@ -3080,7 +3083,7 @@ const handleConfirmAllStudents = async () => {
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex items-start gap-2.5">
-            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#eef3f8] text-[#264867]">
               <FileSpreadsheet size={16} />
             </span>
             <div>
@@ -3154,7 +3157,7 @@ const handleConfirmAllStudents = async () => {
                   const globalIndex =
                     (previewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE + index;
                   const inputClass =
-                    "w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-brand-500";
+                    "w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-[#3d6690]";
                   return (
                     <tr
                       key={globalIndex}
@@ -3298,7 +3301,7 @@ const handleConfirmAllStudents = async () => {
                     onClick={() => setPreviewPage(pageNo)}
                     className={`h-6 w-6 rounded-md text-[11px] font-medium transition ${
                       previewPage === pageNo
-                        ? "bg-brand-700 text-white"
+                        ? "bg-[#264867] text-white"
                         : "border border-slate-300 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
@@ -3336,7 +3339,7 @@ const handleConfirmAllStudents = async () => {
               type="button"
               disabled={isImporting || importStudents.length === 0}
               onClick={handleConfirmImport}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-700 py-1.5 text-[11px] font-semibold text-white transition hover:bg-brand-800 disabled:opacity-50"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#264867] py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#1a3049] disabled:opacity-50"
             >
               {isImporting ? (
                 <>
@@ -3463,7 +3466,7 @@ const handleConfirmAllStudents = async () => {
                   rows={3}
                   maxLength={500}
                   placeholder="e.g. August payment is overdue"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#3d6690]"
                 />
 
                 <div className="mt-4 flex justify-end gap-2">
