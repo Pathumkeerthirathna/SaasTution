@@ -220,7 +220,7 @@ export default function TeacherAnnouncementsCard({ teacherId, isPublic }: Props)
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+      <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100">
             <Megaphone className="h-4 w-4 text-orange-600" />

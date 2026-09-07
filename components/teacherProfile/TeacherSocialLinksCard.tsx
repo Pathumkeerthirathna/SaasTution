@@ -173,7 +173,7 @@ export default function TeacherSocialLinksCard({
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+      <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-[16px] font-bold text-slate-900">
             Social &amp; Online Presence

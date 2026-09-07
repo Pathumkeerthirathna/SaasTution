@@ -569,7 +569,7 @@ export default function TeacherProfileHeader({
         <div className="flex min-w-0 gap-3.5">
 
           {/* Profile Image */}
-          <div className="relative h-36 w-44 shrink-0">
+          <div className="relative h-28 w-24 shrink-0 sm:h-36 sm:w-44">
 
             <input
               ref={fileInputRef}
@@ -1367,9 +1367,9 @@ export default function TeacherProfileHeader({
       )}
 
      {showShareModal && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm">
 
-        <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+        <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
 
           {/* Teacher */}
 
@@ -1704,7 +1704,7 @@ export default function TeacherProfileHeader({
             onClick={() => setPreviewOpen(false)}
           />
 
-          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="absolute left-1/2 top-1/2 max-h-[90vh] w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
 
             <h2 className="text-[22px] font-bold">
               Preview Profile Photo
@@ -1718,7 +1718,7 @@ export default function TeacherProfileHeader({
               src={previewUrl!}
               alt="Profile photo preview"
               onDoubleClick={uploadProfilePhoto}
-              className="mt-6 h-80 w-full cursor-pointer rounded-2xl object-cover"
+              className="mt-6 h-56 w-full cursor-pointer rounded-2xl object-cover sm:h-80"
             />
 
             <div className="mt-6 flex justify-end gap-3">

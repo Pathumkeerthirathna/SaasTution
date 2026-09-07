@@ -32,6 +32,8 @@ export async function GET(
       return apiError("Month must be in YYYY-MM format.", 400, "VALIDATION_ERROR");
     }
 
+    const [monthYear, monthIndex] = month.split("-").map((value) => Number(value));
+
     const classItem = await prisma.class.findFirst({
       where: {
         id: classId,
@@ -53,14 +55,19 @@ export async function GET(
     const payments = await prisma.classPayment.findMany({
       where: {
         classId,
-        month,
+        classStudentFee: {
+          year: monthYear,
+          month: monthIndex,
+        },
       },
       orderBy: {
         submittedAt: "desc",
       },
       select: {
         id: true,
-        month: true,
+        classStudentFee: {
+          select: { year: true, month: true },
+        },
         amount: true,
         note: true,
         status: true,
@@ -168,6 +175,9 @@ export async function GET(
       defaulters,
       payments: payments.map((payment) => ({
         ...payment,
+        month: `${payment.classStudentFee.year}-${String(
+          payment.classStudentFee.month
+        ).padStart(2, "0")}`,
         hasSlip: Boolean(payment.slipFileName),
         messages: payment.messages.map((msg) => ({
           ...msg,

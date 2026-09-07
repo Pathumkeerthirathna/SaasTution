@@ -287,7 +287,7 @@ export default function TeacherAchievementCard({
 
       {/* Header */}
 
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+      <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
 
         <div>
 
