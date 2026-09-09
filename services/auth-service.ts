@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { StudentConfirmationStatus, type Role } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
+import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { buildPasswordResetLink, sendPasswordResetEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { defaultProfileSectionsCreateInput } from "@/services/teacher-profile-section-service";
@@ -93,6 +94,9 @@ export async function registerTeacher(input: {
       "EMAIL_ALREADY_EXISTS"
     );
   }
+
+  // An email may not be shared with a student or guardian account either.
+  await assertEmailAvailable(input.email);
 
   const hashedPassword = await bcrypt.hash(input.password, HASH_ROUNDS);
 

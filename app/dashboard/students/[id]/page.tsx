@@ -67,12 +67,12 @@ export interface StudentClassRow {
 }
 
 export interface GuardianRow {
-  id: string;
-  studentId: string;
-  name: string;
-  relation: string;
+  linkId: string;
+  guardianId: string;
+  fullName: string;
+  email: string;
   phone: string;
-  email: string | null;
+  relation: string;
   createdAt: string;
 }
 

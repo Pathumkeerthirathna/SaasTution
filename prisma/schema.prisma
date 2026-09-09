@@ -560,7 +560,7 @@ model Student {
   classPayments                 ClassPayment[]
   classes                       ClassStudent[]
   classHistory                  ClassStudentHistory[]
-  guardians                     Guardian[]
+  guardianLinks                 GuardianStudent[]
   materialBundleItemSubmissions MaterialBundleItemSubmission[]
   materialBundleRecipients      MaterialBundleRecipient[]
   deliveries                    MessageDelivery[]
@@ -677,16 +677,29 @@ model PasswordResetToken {
 
 model Guardian {
   id        String   @id @default(uuid())
-  name      String
-  relation  String
+  fullName  String   @unique
+  email     String   @unique
   phone     String
-  studentId String
-  email     String?  @unique
-  password  String?
+  password  String
   createdAt DateTime @default(now())
-  student   Student  @relation(fields: [studentId], references: [id])
+  updatedAt DateTime @updatedAt
 
+  students GuardianStudent[]
+}
+
+model GuardianStudent {
+  id         String   @id @default(uuid())
+  guardianId String
+  studentId  String
+  relation   String
+  createdAt  DateTime @default(now())
+
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([guardianId, studentId])
   @@index([studentId])
+  @@index([guardianId])
 }
 
 model Class {

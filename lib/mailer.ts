@@ -5,6 +5,7 @@ import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
 import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
+import { getGuardianRegistrationEmail, GuardianRegistrationEmailProps } from "@/emails/GuardianRegistrationEmail";
 
 type PasswordResetEmailInput = {
   to: string;
@@ -126,6 +127,30 @@ export function buildLiveSessionInviteLoginLink(inviteToken: string, appBaseUrl?
 export function buildTeacherLoginLink(appBaseUrl?: string) {
   const baseUrl = appBaseUrl?.trim() || getBaseUrl();
   return new URL("/login", baseUrl).toString();
+}
+
+export function buildGuardianLoginLink(appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
+  return new URL("/guardian/login", baseUrl).toString();
+}
+
+export async function sendGuardianRegistrationEmail(
+  input: GuardianRegistrationEmailProps & { to: string }
+) {
+  return sendEmail(
+    input.to,
+    "Your SLClassroom guardian account",
+    getGuardianRegistrationEmail(input),
+    `Hello ${input.guardianName},
+
+A guardian account has been created for you as ${input.studentName}'s ${input.relation}.
+
+Log in at ${input.loginLink}
+Email: ${input.email}
+Password: ${input.password}
+
+For your security, please sign in and change your password.`
+  );
 }
 
 // export async function sendPasswordResetEmail(input: PasswordResetEmailInput) {

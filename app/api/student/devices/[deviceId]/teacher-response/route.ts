@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+
 import { apiError, apiSuccess } from "@/lib/api-response";
+import { handleRouteError } from "@/lib/error-handler";
+import { requireTeacherSession } from "@/lib/auth-session";
+import { replyToStudentDevice } from "@/services/student-device.service";
 
 export async function PUT(
   request: NextRequest,
@@ -8,50 +11,22 @@ export async function PUT(
 ) {
   try {
     const { deviceId } = await params;
+    const teacher = await requireTeacherSession();
 
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
     if (!body.rejectedReason?.trim()) {
-      return apiError(
-        "Teacher response is required.",
-        400,
-        "VALIDATION_ERROR"
-      );
+      return apiError("Teacher response is required.", 400, "VALIDATION_ERROR");
     }
 
-    const device = await prisma.studentDevice.findUnique({
-      where: {
-        id: deviceId,
-      },
-    });
-
-    if (!device) {
-      return apiError(
-        "Device not found.",
-        404,
-        "DEVICE_NOT_FOUND"
-      );
-    }
-
-    const updatedDevice = await prisma.studentDevice.update({
-      where: {
-        id: deviceId,
-      },
-      data: {
-        rejectedReason: body.rejectedReason.trim(),
-      },
-    });
-
-    return apiSuccess(
-      updatedDevice
+    const device = await replyToStudentDevice(
+      deviceId,
+      teacher.teacherId,
+      body.rejectedReason
     );
+
+    return apiSuccess(device);
   } catch (error) {
-    console.error(error);
-
-    return apiError(
-      "Unable to update teacher response.",
-      500,
-      "INTERNAL_SERVER_ERROR"
-    );
+    return handleRouteError(error);
   }
 }

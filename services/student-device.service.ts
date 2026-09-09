@@ -1,4 +1,5 @@
 import { DeviceApprovalException } from "@/app/exceptions/DeviceApprovalException";
+import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { StudentDeviceStatus } from "@prisma/client";
 import {
@@ -395,11 +396,95 @@ export async function deleteStudentDeviceForTeacher(
   return { deleted: true };
 }
 
+/**
+ * Confirms the device belongs to one of this teacher's students. Throws a
+ * 404 AppError otherwise so a teacher can never act on another teacher's
+ * device by guessing an id.
+ */
+async function assertDeviceBelongsToTeacher(
+  deviceId: string,
+  teacherId: string
+) {
+  const owned = await prisma.studentDevice.findFirst({
+    where: { id: deviceId, student: { teacherId } },
+    select: { id: true },
+  });
+
+  if (!owned) {
+    throw new AppError("Device not found.", 404, "DEVICE_NOT_FOUND");
+  }
+}
+
+/**
+ * All PENDING or BLOCKED devices across a teacher's active students, newest
+ * request first — the data behind the Student Device Approvals page.
+ */
+export async function getDeviceApprovalsForTeacher(
+  teacherId: string,
+  status: StudentDeviceStatus
+) {
+  const devices = await prisma.studentDevice.findMany({
+    where: {
+      status,
+      student: { teacherId, status: 0 },
+    },
+    include: {
+      approvedByTeacher: { select: { id: true, name: true } },
+      student: {
+        select: {
+          id: true,
+          name: true,
+          registrationNumber: true,
+          contact: true,
+        },
+      },
+    },
+    orderBy: [{ approvalRequestedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return devices.map((device) => ({
+    ...device,
+    approvedByTeacher: device.approvedByTeacher
+      ? { id: device.approvedByTeacher.id, fullName: device.approvedByTeacher.name }
+      : null,
+  }));
+}
+
+/** Count of devices still awaiting the teacher's decision. */
+export function countPendingDeviceApprovalsForTeacher(teacherId: string) {
+  return prisma.studentDevice.count({
+    where: {
+      status: StudentDeviceStatus.PENDING,
+      student: { teacherId, status: 0 },
+    },
+  });
+}
+
+/**
+ * Records the teacher's written reply to a device request. Stored in
+ * `rejectedReason`, which is the field the student portal already surfaces
+ * as "your teacher's response".
+ */
+export async function replyToStudentDevice(
+  deviceId: string,
+  teacherId: string,
+  message: string
+) {
+  await assertDeviceBelongsToTeacher(deviceId, teacherId);
+
+  return prisma.studentDevice.update({
+    where: { id: deviceId },
+    data: { rejectedReason: message.trim() },
+  });
+}
+
 export async function approveStudentDevice(
   deviceId: string,
   teacherId: string,
   reason?: string
 ) {
+  await assertDeviceBelongsToTeacher(deviceId, teacherId);
+
   return prisma.studentDevice.update({
     where: {
       id: deviceId,
@@ -420,6 +505,8 @@ export async function rejectStudentDevice(
   teacherId: string,
   reason?: string
 ) {
+  await assertDeviceBelongsToTeacher(deviceId, teacherId);
+
   return prisma.studentDevice.update({
     where: {
       id: deviceId,

@@ -3,9 +3,9 @@ import bcrypt from "bcryptjs";
 
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
-import type { CreateGuardianInput, UpdateGuardianInput } from "@/lib/guardian-validation";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 import { requireTeacherSession } from "@/lib/auth-session";
@@ -133,6 +133,10 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
       409,
       "DUPLICATE_STUDENT_NAME"
     );
+  }
+
+  if (input.email) {
+    await assertEmailAvailable(input.email);
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -683,13 +687,19 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
       email: true,
       registrationNumber: true,
       createdAt: true,
-      guardians: {
+      guardianLinks: {
         select: {
           id: true,
-          name: true,
           relation: true,
-          phone: true,
-          email: true,
+          createdAt: true,
+          guardian: {
+            select: {
+              id: true,
+              fullName: true,
+              phone: true,
+              email: true,
+            },
+          },
         },
         orderBy: {
           createdAt: "desc",
@@ -756,7 +766,15 @@ export async function getStudentProfileForTeacher(teacherId: string, studentId: 
     email: student.email,
     registrationNumber: student.registrationNumber,
     createdAt: student.createdAt,
-    guardians: student.guardians,
+    guardians: student.guardianLinks.map((link) => ({
+      linkId: link.id,
+      guardianId: link.guardian.id,
+      fullName: link.guardian.fullName,
+      email: link.guardian.email,
+      phone: link.guardian.phone,
+      relation: link.relation,
+      createdAt: link.createdAt,
+    })),
     classes: student.classes.map((entry) => ({
       id: entry.id,
       assignedAt: entry.assignedAt,
@@ -831,6 +849,10 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       409,
       "DUPLICATE_STUDENT_NAME"
     );
+  }
+
+  if (input.email) {
+    await assertEmailAvailable(input.email, { studentId });
   }
 
   return prisma.student.update({
@@ -942,156 +964,9 @@ export async function removeStudentFromClassForTeacher(params: {
   return result;
 }
 
-export async function addGuardianForTeacher(teacherId: string, input: CreateGuardianInput) {
-  const linkedToTeacherClass = await prisma.classStudent.findFirst({
-    where: {
-      studentId: input.studentId,
-      isActive: true,
-      class: {
-        teacherId,
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
+// Guardian CRUD now lives in services/guardian-service.ts (guardians are
+// standalone accounts linked to students via GuardianStudent).
 
-  if (!linkedToTeacherClass) {
-    throw new AppError(
-      "Student must be assigned to one of your classes before adding guardians.",
-      400,
-      "STUDENT_NOT_ASSIGNED_TO_TEACHER_CLASS"
-    );
-  }
-
-  return prisma.guardian.create({
-    data: {
-      studentId: input.studentId,
-      name: input.name,
-      relation: input.relation,
-      phone: input.phone,
-    },
-    select: {
-      id: true,
-      studentId: true,
-      name: true,
-      relation: true,
-      phone: true,
-      email: true,
-      createdAt: true,
-    },
-  });
-}
-
-export async function updateGuardianForTeacher(
-  teacherId: string,
-  guardianId: string,
-  input: UpdateGuardianInput
-) {
-  const guardian = await prisma.guardian.findUnique({
-    where: {
-      id: guardianId,
-    },
-    select: {
-      id: true,
-      studentId: true,
-    },
-  });
-
-  if (!guardian) {
-    throw new AppError("Guardian not found.", 404, "GUARDIAN_NOT_FOUND");
-  }
-
-  const linkedToTeacherClass = await prisma.classStudent.findFirst({
-    where: {
-      studentId: guardian.studentId,
-      isActive: true,
-      class: {
-        teacherId,
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (!linkedToTeacherClass) {
-    throw new AppError("Guardian is not linked to your active class student.", 403, "FORBIDDEN");
-  }
-
-  return prisma.guardian.update({
-    where: {
-      id: guardianId,
-    },
-    data: {
-      name: input.name,
-      relation: input.relation,
-      phone: input.phone,
-    },
-    select: {
-      id: true,
-      studentId: true,
-      name: true,
-      relation: true,
-      phone: true,
-      email: true,
-      createdAt: true,
-    },
-  });
-}
-
-async function assertTeacherOwnsStudent(teacherId: string, studentId: string) {
-  const student = await prisma.student.findFirst({
-    where: { id: studentId, teacherId },
-    select: { id: true },
-  });
-
-  if (!student) {
-    throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
-  }
-}
-
-const guardianSelect = {
-  id: true,
-  studentId: true,
-  name: true,
-  relation: true,
-  phone: true,
-  email: true,
-  createdAt: true,
-} as const;
-
-export async function listGuardiansForTeacher(
-  teacherId: string,
-  studentId: string
-) {
-  await assertTeacherOwnsStudent(teacherId, studentId);
-
-  return prisma.guardian.findMany({
-    where: { studentId },
-    orderBy: { createdAt: "asc" },
-    select: guardianSelect,
-  });
-}
-
-export async function deleteGuardianForTeacher(
-  teacherId: string,
-  guardianId: string
-) {
-  const guardian = await prisma.guardian.findUnique({
-    where: { id: guardianId },
-    select: { id: true, studentId: true },
-  });
-
-  if (!guardian) {
-    throw new AppError("Guardian not found.", 404, "GUARDIAN_NOT_FOUND");
-  }
-
-  await assertTeacherOwnsStudent(teacherId, guardian.studentId);
-
-  await prisma.guardian.delete({ where: { id: guardianId } });
-  return { success: true };
-}
 
 export async function listStudentsByClassForTeacher(params: {
   teacherId: string;
@@ -1122,18 +997,6 @@ export async function listStudentsByClassForTeacher(params: {
             contact: true,
             registrationNumber: true,
             createdAt: true,
-            guardians: {
-              select: {
-                id: true,
-                name: true,
-                relation: true,
-                phone: true,
-                email: true,
-              },
-              orderBy: {
-                createdAt: "desc",
-              },
-            },
           },
         },
       },
@@ -1986,6 +1849,8 @@ export async function RegisterStudentViaPublicClasses(
         "EMAIL_EXISTS"
       );
     }
+
+    await assertEmailAvailable(emailValue);
   }
 
   const teacher = await prisma.teacher.findUnique({
@@ -2101,23 +1966,40 @@ export async function checkIfEmailExists(
 ) {
   const normalizedEmail = email.trim().toLowerCase();
 
-  const student = await prisma.student.findFirst({
-    where: {
-      teacherId,
-      email: normalizedEmail,
-      ...(studentId && {
-        NOT: {
-          id: studentId,
-        },
-      }),
-    },
-    select: {
-      id: true,
-    },
-  });
+  const [student, otherAccount] = await Promise.all([
+    prisma.student.findFirst({
+      where: {
+        teacherId,
+        email: normalizedEmail,
+        ...(studentId && {
+          NOT: {
+            id: studentId,
+          },
+        }),
+      },
+      select: {
+        id: true,
+      },
+    }),
+    // An email may not be shared with a teacher or guardian account either.
+    (async () => {
+      const [teacher, guardian, anyStudent] = await Promise.all([
+        prisma.teacher.findFirst({ where: { email: normalizedEmail }, select: { id: true } }),
+        prisma.guardian.findFirst({ where: { email: normalizedEmail }, select: { id: true } }),
+        prisma.student.findFirst({
+          where: {
+            email: normalizedEmail,
+            ...(studentId ? { NOT: { id: studentId } } : {}),
+          },
+          select: { id: true },
+        }),
+      ]);
+      return Boolean(teacher || guardian || anyStudent);
+    })(),
+  ]);
 
   return {
-    exists: !!student,
+    exists: !!student || otherAccount,
   };
 }
 

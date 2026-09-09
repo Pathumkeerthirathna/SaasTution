@@ -229,6 +229,18 @@ export function LoginForm() {
             </div>
           </div>
 
+          {/* Message from teacher (if they replied while reviewing) */}
+          {deviceApproval?.currentDevice?.rejectedReason?.trim() ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                Message from your teacher
+              </h3>
+              <p className="mt-1 whitespace-pre-wrap text-[11px] leading-4 text-slate-700">
+                {deviceApproval.currentDevice.rejectedReason}
+              </p>
+            </div>
+          ) : null}
+
           {/* Approved Devices */}
           {deviceApproval?.approvedDevices?.length ? (
             <div>
@@ -306,6 +318,17 @@ export function LoginForm() {
       icon={<ShieldCheck className="h-5 w-5" />}
       illustration={<AuthIllustration />}
       aside={deviceAside}
+      extraFooter={
+        <>
+          Parent or guardian?{" "}
+          <Link
+            href="/guardian/login"
+            className="font-semibold text-emerald-700 hover:text-emerald-800"
+          >
+            Sign in to the guardian portal
+          </Link>
+        </>
+      }
       showBackToHome
     >
       <form className="space-y-3.5" onSubmit={handleSubmit}>

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       sub: guardian.id,
       email: guardian.email ?? parsed.data.email,
       role: "GUARDIAN",
-      name: guardian.name,
+      name: guardian.fullName,
     });
 
     const response = apiSuccess(

@@ -9,6 +9,7 @@ import {
   GraduationCap,
   Package,
   ScrollText,
+  ShieldCheck,
   UserCheck,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ type Metrics = {
 type Props = {
   studentsPending: number;
   studentsTotal: number;
+  pendingDeviceApprovals: number;
 };
 
 const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
@@ -86,7 +88,11 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
 }
 
-export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) {
+export function DashboardMetricCards({
+  studentsPending,
+  studentsTotal,
+  pendingDeviceApprovals,
+}: Props) {
   const [range, setRange] = useState<RangeKey>("month");
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -227,7 +233,7 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3 xl:grid-cols-8">
         {/* Students — never affected by the range */}
         <Link
           href="/dashboard/students"
@@ -246,6 +252,27 @@ export function DashboardMetricCards({ studentsPending, studentsTotal }: Props) 
             </span>
           </p>
           <p className="mt-1 text-[11px] text-muted">Awaiting confirmation</p>
+        </Link>
+
+        {/* Device approvals — never affected by the range */}
+        <Link
+          href="/dashboard/students/device-approvals"
+          className="rounded-xl border border-brand-100 bg-brand-50/40 p-4 transition hover:border-brand-300 hover:bg-brand-50"
+        >
+          <div className="flex items-center gap-1.5 text-muted">
+            <ShieldCheck size={13} />
+            <p className="text-[11px] font-bold uppercase tracking-wide">
+              Device approvals
+            </p>
+          </div>
+          <p
+            className={`mt-2 text-2xl font-bold ${
+              pendingDeviceApprovals > 0 ? "text-rose-700" : "text-brand-700"
+            }`}
+          >
+            {formatNumber(pendingDeviceApprovals)}
+          </p>
+          <p className="mt-1 text-[11px] text-muted">Pending confirmations</p>
         </Link>
 
         {dateCards.map((card) => {

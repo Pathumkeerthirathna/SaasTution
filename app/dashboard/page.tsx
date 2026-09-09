@@ -105,6 +105,7 @@ export default async function DashboardPage() {
     todaySchedules,
     studentsTotalCount,
     studentsPendingCount,
+    pendingDeviceApprovalsCount,
   } = isPending
     ? {
         classCount: 3,
@@ -168,6 +169,7 @@ export default async function DashboardPage() {
         ],
         studentsTotalCount: 42,
         studentsPendingCount: 6,
+        pendingDeviceApprovalsCount: 2,
       }
     : await (async () => {
         const [
@@ -181,6 +183,7 @@ export default async function DashboardPage() {
           todaySchedules,
           studentsTotalCount,
           studentsPendingCount,
+          pendingDeviceApprovalsCount,
         ] = await Promise.all([
           // classCount
           prisma.class.count({ where: { teacherId: teacher.id, status: 0 } }),
@@ -293,6 +296,14 @@ export default async function DashboardPage() {
               confirmationStatus: "PENDING",
             },
           }),
+
+          // pendingDeviceApprovalsCount — student devices awaiting a decision
+          prisma.studentDevice.count({
+            where: {
+              status: "PENDING",
+              student: { teacherId: teacher.id, status: 0 },
+            },
+          }),
         ]);
 
         const joinedCountBySession = new Map<string, number>();
@@ -318,6 +329,7 @@ export default async function DashboardPage() {
           todaySchedules,
           studentsTotalCount,
           studentsPendingCount,
+          pendingDeviceApprovalsCount,
         };
       })();
 
@@ -690,6 +702,7 @@ export default async function DashboardPage() {
       <DashboardMetricCards
         studentsPending={studentsPendingCount}
         studentsTotal={studentsTotalCount}
+        pendingDeviceApprovals={pendingDeviceApprovalsCount}
       />
 
       {/* ── 3. Schedule | Events (range-selectable) ──────────────────────── */}

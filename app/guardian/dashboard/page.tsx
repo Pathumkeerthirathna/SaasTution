@@ -1,9 +1,11 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { GUARDIAN_AUTH_COOKIE_NAME, verifyGuardianToken } from "@/lib/guardian-auth";
-import { GuardianStudentPanel } from "@/components/guardian-student-panel";
+import { GuardianPortal } from "@/components/guardian/GuardianPortal";
+import { GuardianSignOutButton } from "@/components/guardian/GuardianSignOutButton";
+
+export const dynamic = "force-dynamic";
 
 export default async function GuardianDashboardPage() {
   const token = cookies().get(GUARDIAN_AUTH_COOKIE_NAME)?.value;
@@ -19,31 +21,25 @@ export default async function GuardianDashboardPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 sm:px-6 lg:px-8">
-      <section className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Guardian Dashboard</p>
-        <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">Welcome, {session.name}</h1>
-        <p className="mt-2 text-sm text-muted sm:text-base">
-          Access your student profile, contact details, and class schedule.
-        </p>
-
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/guardian/login"
-            className="inline-flex rounded-xl border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
-          >
-            Switch account
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex rounded-xl border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
-          >
-            Back to home
-          </Link>
+    <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Guardian Portal
+          </p>
+          <h1 className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">
+            Welcome, {session.name}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Follow each of your students&apos; classes, payments, attendance, papers,
+            assignments and quiz results.
+          </p>
         </div>
-      </section>
 
-      <GuardianStudentPanel />
+        <GuardianSignOutButton />
+      </div>
+
+      <GuardianPortal guardianName={session.name} />
     </main>
   );
 }

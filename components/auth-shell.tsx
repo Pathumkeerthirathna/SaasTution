@@ -17,6 +17,8 @@ type AuthShellProps = {
   aside?: ReactNode;
   /** Show a subtle "Back to home" link under the footer. */
   showBackToHome?: boolean;
+  /** Optional extra line rendered under the footer text (e.g. an alternate portal link). */
+  extraFooter?: ReactNode;
 };
 
 export function AuthShell({
@@ -30,6 +32,7 @@ export function AuthShell({
   illustration,
   aside,
   showBackToHome = false,
+  extraFooter,
 }: AuthShellProps) {
   const hasSides = Boolean(illustration) || Boolean(aside);
   const maxWidth =
@@ -59,6 +62,10 @@ export function AuthShell({
             {footerLinkLabel}
           </Link>
         </p>
+
+        {extraFooter ? (
+          <div className="mt-2 text-[13px] text-slate-500">{extraFooter}</div>
+        ) : null}
 
         {showBackToHome ? (
           <Link

@@ -10,11 +10,11 @@ import {
 } from "@/lib/teacher-title";
 import {
   Award,
+  BriefcaseBusiness,
   Camera,
   Eye,
   GraduationCap,
   Languages,
-  MessageCircle,
   Pencil,
   Phone,
   Share2,
@@ -235,6 +235,253 @@ export default function TeacherProfileHeader({
   const [profilePhoto, setProfilePhoto] =
     useState<string | null>(null);
 
+  // ── Profile photo crop / reposition ──
+  // The preview modal lets the teacher drag (and zoom) the picture inside a
+  // square frame. Whatever sits inside that frame is what actually gets
+  // uploaded — we crop it client-side with a canvas so the stored image is
+  // already framed correctly everywhere it's shown (header, public profile,
+  // the circular avatar in the share dialog, etc.).
+  const cropBoxRef = useRef<HTMLDivElement>(null);
+  const [cropSize, setCropSize] = useState(320);
+  const [imgNatural, setImgNatural] =
+    useState<{ w: number; h: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragState = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  const CROP_OUTPUT = 512; // px, square
+
+  // Scale (natural px -> display px) at which the image just covers the
+  // square crop box; `zoom` (>= 1) multiplies on top of it.
+  const coverScale = imgNatural
+    ? Math.max(cropSize / imgNatural.w, cropSize / imgNatural.h)
+    : 1;
+  const displayScale = coverScale * zoom;
+  const dispW = imgNatural ? imgNatural.w * displayScale : 0;
+  const dispH = imgNatural ? imgNatural.h * displayScale : 0;
+
+  function clampOffset(
+    next: { x: number; y: number },
+    width: number,
+    height: number
+  ) {
+    return {
+      x: Math.min(0, Math.max(cropSize - width, next.x)),
+      y: Math.min(0, Math.max(cropSize - height, next.y)),
+    };
+  }
+
+  // Keep the crop box measured so the drag / crop maths use real pixels.
+  useEffect(() => {
+    if (!previewOpen) return;
+
+    const measure = () => {
+      if (cropBoxRef.current) {
+        setCropSize(cropBoxRef.current.clientWidth);
+      }
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [previewOpen]);
+
+  // If the crop box gets measured (or resized) after the image loaded,
+  // keep the current framing valid for the new dimensions.
+  useEffect(() => {
+    if (!imgNatural) return;
+
+    setOffset((prev) => {
+      const scale =
+        Math.max(cropSize / imgNatural.w, cropSize / imgNatural.h) * zoom;
+      const w = imgNatural.w * scale;
+      const h = imgNatural.h * scale;
+
+      return {
+        x: Math.min(0, Math.max(cropSize - w, prev.x)),
+        y: Math.min(0, Math.max(cropSize - h, prev.y)),
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cropSize, imgNatural, zoom]);
+
+  function handlePreviewImgLoad(
+    e: React.SyntheticEvent<HTMLImageElement>
+  ) {
+    const img = e.currentTarget;
+    const nat = { w: img.naturalWidth, h: img.naturalHeight };
+
+    setImgNatural(nat);
+    setZoom(1);
+
+    const cScale = Math.max(cropSize / nat.w, cropSize / nat.h);
+    const w = nat.w * cScale;
+    const h = nat.h * cScale;
+
+    // Start centred.
+    setOffset({ x: (cropSize - w) / 2, y: (cropSize - h) / 2 });
+  }
+
+  function applyZoom(rawZoom: number) {
+    const newZoom = Math.min(4, Math.max(1, rawZoom));
+
+    if (!imgNatural) {
+      setZoom(newZoom);
+      return;
+    }
+
+    const oldScale = coverScale * zoom;
+    const newScale = coverScale * newZoom;
+
+    // Natural-coord point currently under the centre of the crop box —
+    // keep it pinned so zooming feels anchored, not jumpy.
+    const cx = (cropSize / 2 - offset.x) / oldScale;
+    const cy = (cropSize / 2 - offset.y) / oldScale;
+
+    const w = imgNatural.w * newScale;
+    const h = imgNatural.h * newScale;
+
+    setZoom(newZoom);
+    setOffset(
+      clampOffset(
+        { x: cropSize / 2 - cx * newScale, y: cropSize / 2 - cy * newScale },
+        w,
+        h
+      )
+    );
+  }
+
+  function handleCropPointerDown(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: offset.x,
+      originY: offset.y,
+    };
+  }
+
+  function handleCropPointerMove(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    if (!dragState.current) return;
+
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+
+    setOffset(
+      clampOffset(
+        {
+          x: dragState.current.originX + dx,
+          y: dragState.current.originY + dy,
+        },
+        dispW,
+        dispH
+      )
+    );
+  }
+
+  function handleCropPointerUp(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    dragState.current = null;
+  }
+
+  // Non-passive wheel listener so we can preventDefault the page scroll.
+  const applyZoomRef = useRef(applyZoom);
+  useEffect(() => {
+    applyZoomRef.current = applyZoom;
+  });
+
+  useEffect(() => {
+    const el = cropBoxRef.current;
+    if (!el || !previewOpen) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      applyZoomRef.current(zoom + (e.deltaY < 0 ? 0.12 : -0.12));
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewOpen, zoom]);
+
+  function resetCropState() {
+    setImgNatural(null);
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+    dragState.current = null;
+  }
+
+  // Draw the visible slice of the picture onto a square canvas and hand
+  // back a Blob to upload in place of the raw file.
+  function cropToBlob(): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      if (!imgNatural || !previewUrl) {
+        reject(new Error("No image to crop."));
+        return;
+      }
+
+      const scale = coverScale * zoom;
+      const sx = -offset.x / scale;
+      const sy = -offset.y / scale;
+      const sSize = cropSize / scale;
+
+      const image = new window.Image();
+
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = CROP_OUTPUT;
+        canvas.height = CROP_OUTPUT;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas not supported."));
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(
+          image,
+          sx,
+          sy,
+          sSize,
+          sSize,
+          0,
+          0,
+          CROP_OUTPUT,
+          CROP_OUTPUT
+        );
+
+        const type =
+          selectedImage?.type === "image/png"
+            ? "image/png"
+            : "image/jpeg";
+
+        canvas.toBlob(
+          (blob) =>
+            blob ? resolve(blob) : reject(new Error("Failed to crop image.")),
+          type,
+          0.92
+        );
+      };
+
+      image.onerror = () => reject(new Error("Failed to load image."));
+      image.src = previewUrl;
+    });
+  }
+
   const [form, setForm] =
     useState<UpdateTeacherProfile>({
         name: teacher?.teacher?.name??"",
@@ -409,12 +656,13 @@ export default function TeacherProfileHeader({
 
     if (!file) return;
 
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+
     setSelectedImage(file);
-
-    setPreviewUrl(
-      URL.createObjectURL(file)
-    );
-
+    resetCropState();
     setPreviewOpen(true);
   }
 
@@ -424,11 +672,22 @@ export default function TeacherProfileHeader({
     try {
       setUploading(true);
 
+      // Upload the framed crop, not the raw file, so the stored photo is
+      // already positioned the way the teacher set it in the preview.
+      const croppedBlob = await cropToBlob();
+      const extension =
+        croppedBlob.type === "image/png" ? "png" : "jpg";
+      const croppedFile = new File(
+        [croppedBlob],
+        `profile-${Date.now()}.${extension}`,
+        { type: croppedBlob.type }
+      );
+
       const form = new FormData();
 
       form.append(
         "photo",
-        selectedImage
+        croppedFile
       );
 
       const response = await fetch(
@@ -455,7 +714,12 @@ export default function TeacherProfileHeader({
 
       setSelectedImage(null);
 
-      setPreviewUrl(null);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+
+      resetCropState();
 
       // ✅ Reset file input so the same image can be selected again
       if (fileInputRef.current) {
@@ -558,11 +822,9 @@ export default function TeacherProfileHeader({
                 transition-all
                 duration-300
                 hover:shadow-md">
-        {/* Top Right Glow */}
-        <div className="pointer-events-none absolute right-0 top-0 h-20 w-20 rounded-full bg-orange-100/20 blur-3xl" />
-
-        {/* Bottom Left Glow */}
-        <div className="pointer-events-none absolute bottom-0 left-0 h-16 w-16 rounded-full bg-emerald-100/20 blur-3xl" />
+        {/* Soft brand glow */}
+        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-[#4D6C90]/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-24 w-24 rounded-full bg-[#112D5C]/5 blur-3xl" />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
         {/* Left */}
@@ -580,11 +842,11 @@ export default function TeacherProfileHeader({
             />
 
             {/* Square Photo Frame */}
-            <div className="relative h-full w-full overflow-hidden rounded-md border border-slate-200 bg-gradient-to-br from-emerald-50 to-orange-50 shadow-sm">
+            <div className="relative h-full w-full overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-slate-100 to-[#4D6C90]/10 shadow-sm ring-1 ring-inset ring-white/60">
 
               {imageLoading && (
                   <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
-                      <div className="h-5 w-5 animate-spin rounded-full border-[3px] border-orange-200 border-t-orange-500" />
+                      <div className="h-5 w-5 animate-spin rounded-full border-[3px] border-[#4D6C90]/25 border-t-[#4D6C90]" />
                   </div>
               )}
 
@@ -605,7 +867,7 @@ export default function TeacherProfileHeader({
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center p-6">
-                  <GraduationCap className="h-20 w-20 text-emerald-500" />
+                  <GraduationCap className="h-20 w-20 text-[#4D6C90]/70" />
                 </div>
               )}
 
@@ -646,25 +908,26 @@ export default function TeacherProfileHeader({
           <div className="min-w-0 flex-1">
 
             {/* Name */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h1 className="break-words text-[20px] font-bold text-slate-900">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="break-words text-[21px] font-bold leading-tight tracking-tight text-slate-900">
                 {getDisplayName(teacherData)}
               </h1>
 
               {teacherData?.isVerified && (
-                <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
                   <UserCheck className="h-3 w-3" />
-                  Verified Teacher
+                  Verified
                 </span>
               )}
             </div>
 
             {/* Designation */}
             {(teacherData?.designation || !isPublic) && (
-              <p className="mt-0.5 text-[14px] font-semibold text-orange-600">
+              <p className="mt-1 flex items-center gap-1.5 text-[13.5px] font-semibold text-amber-600">
+                <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />
                 {teacherData?.designation ?? (
-                  <span className="italic text-slate-400">
-                    Add your professional designation to display it on your public profile. (Hit Edit Profile to add)
+                  <span className="font-medium italic text-slate-400">
+                    Add your professional designation
                   </span>
                 )}
               </p>
@@ -688,27 +951,27 @@ export default function TeacherProfileHeader({
             </div> */}
 
             {(highestQualification || teacherData?.qualificationSummary || !isPublic) && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-[14px] text-slate-600">
-                  <GraduationCap className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              <div className="mt-2 flex items-center gap-1.5 text-[13.5px] text-slate-600">
+                  <GraduationCap className="h-3.5 w-3.5 shrink-0 text-[#4D6C90]" />
 
                   {highestQualification ? (
-                    <span className="font-medium">
+                    <span className="font-medium text-slate-800">
                       {highestQualification.title}
                     </span>
                   ) : teacherData?.qualificationSummary ? (
-                    <span className="font-medium">
+                    <span className="font-medium text-slate-800">
                       {teacherData.qualificationSummary}
                     </span>
                   ) : (
                     <>
                       <span className="italic text-slate-400">
-                        No qualifications available.
+                        No qualifications added
                       </span>
 
                       <button
                         type="button"
                         onClick={() => setQualificationDrawerOpen(true)}
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] font-medium text-[#4D6C90] transition hover:bg-[#4D6C90]/5"
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] font-semibold text-[#4D6C90] transition hover:bg-[#4D6C90]/5"
                       >
                         <Pencil className="h-2.5 w-2.5" />
                         Add
@@ -741,14 +1004,17 @@ export default function TeacherProfileHeader({
             </div> */}
 
             {(teacherData?.yearsOfExperience != null || !isPublic) && (
-              <div className="mt-1 flex items-center gap-1.5 text-[14px] text-slate-600">
-                <Award className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+              <div className="mt-1.5 flex items-center gap-1.5 text-[13.5px] text-slate-600">
+                <Award className="h-3.5 w-3.5 shrink-0 text-[#4D6C90]" />
 
                 {teacherData?.yearsOfExperience != null ? (
-                  `${teacherData.yearsOfExperience} Years Experience`
+                  <span className="font-medium text-slate-800">
+                    {teacherData.yearsOfExperience}{" "}
+                    {teacherData.yearsOfExperience === 1 ? "year" : "years"} of teaching experience
+                  </span>
                 ) : (
                   <span className="italic text-slate-400">
-                    Add your teaching experience. (Hit Edit Profile to add)
+                    Add your years of experience
                   </span>
                 )}
               </div>
@@ -761,49 +1027,34 @@ export default function TeacherProfileHeader({
               if (!showPhone && !showWhatsapp) return null;
 
               return (
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[14px]">
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[13px]">
 
                   {/* Phone */}
                   {showPhone && (
-                    <div className="flex items-center gap-1.5">
-
-                      <Phone className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-[#4D6C90]" />
                       {teacherData?.phone ? (
-                        <span className="text-slate-700">
+                        <span className="font-medium text-slate-700">
                           {teacherData.phone}
                         </span>
                       ) : (
-                        <span className="italic text-slate-400">
-                          Phone not added
-                        </span>
+                        <span className="italic text-slate-400">Add phone number</span>
                       )}
-
-                    </div>
-                  )}
-
-                  {/* Divider */}
-                  {showPhone && showWhatsapp && (
-                    <div className="hidden h-3 w-px bg-slate-300 md:block" />
+                    </span>
                   )}
 
                   {/* WhatsApp */}
                   {showWhatsapp && (
-                    <div className="flex items-center gap-1.5">
-
-                      <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-600" />
-
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                      <FaWhatsapp className="h-3.5 w-3.5 shrink-0 text-[#25D366]" />
                       {teacherData?.whatsapp ? (
-                        <span className="text-slate-700">
+                        <span className="font-medium text-slate-700">
                           {teacherData.whatsapp}
                         </span>
                       ) : (
-                        <span className="italic text-slate-400">
-                          WhatsApp not added
-                        </span>
+                        <span className="italic text-slate-400">Add WhatsApp number</span>
                       )}
-
-                    </div>
+                    </span>
                   )}
 
                 </div>
@@ -828,13 +1079,13 @@ export default function TeacherProfileHeader({
           onClick={handleShare}
           className="
             inline-flex
-            h-7
+            h-8
             items-center
             justify-center
-            gap-1
-            rounded-md
+            gap-1.5
+            rounded-lg
             bg-[#4D6C90]
-            px-2.5
+            px-3
             text-[12.5px]
             font-semibold
             text-white
@@ -844,7 +1095,7 @@ export default function TeacherProfileHeader({
           "
         >
             <Share2
-                className="h-3 w-3 pointer-events-none"
+                className="h-3.5 w-3.5 pointer-events-none"
             />
 
             <span className="pointer-events-none">
@@ -857,10 +1108,14 @@ export default function TeacherProfileHeader({
         <button
           onClick={() => setIsEditDrawerOpen(true)}
           className="
-            h-7
-            rounded-md
+            inline-flex
+            h-8
+            items-center
+            justify-center
+            gap-1.5
+            rounded-lg
             bg-[#4D6C90]
-            px-2.5
+            px-3
             text-[12.5px]
             font-semibold
             text-white
@@ -869,6 +1124,7 @@ export default function TeacherProfileHeader({
             hover:bg-[#3B5776]
         "
         >
+          <Pencil className="h-3.5 w-3.5" />
           Edit Profile
         </button>
 
@@ -883,12 +1139,16 @@ export default function TeacherProfileHeader({
           }
           disabled={!teacherData?.slug}
           className="
-            h-7
-            rounded-md
+            inline-flex
+            h-8
+            items-center
+            justify-center
+            gap-1.5
+            rounded-lg
             border
             border-[#4D6C90]/30
             bg-white
-            px-2.5
+            px-3
             text-[12.5px]
             font-semibold
             text-[#4D6C90]
@@ -898,7 +1158,7 @@ export default function TeacherProfileHeader({
             disabled:opacity-50
         "
         >
-          <Eye className="mr-1 inline h-3 w-3" />
+          <Eye className="h-3.5 w-3.5" />
           Public Profile
         </button>
       </>
@@ -908,15 +1168,15 @@ export default function TeacherProfileHeader({
 
   {/* Medium Card */}
 
-  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 lg:min-w-[240px]">
 
       <div className="mb-2 flex items-center justify-between gap-1.5">
 
           <div className="flex items-center gap-1.5">
 
-              <Languages className="h-3.5 w-3.5 text-emerald-600" />
+              <Languages className="h-3.5 w-3.5 text-[#4D6C90]" />
 
-              <span className="text-[14px] font-semibold text-slate-700">
+              <span className="text-[11.5px] font-bold uppercase tracking-wide text-slate-500">
                   Teaching Mediums
               </span>
 
@@ -947,13 +1207,13 @@ export default function TeacherProfileHeader({
                       className="
                           rounded-full
                           border
-                          border-emerald-200
+                          border-[#4D6C90]/20
                           bg-white
                           px-2.5
                           py-0.5
-                          text-[13px]
-                          font-medium
-                          text-emerald-700
+                          text-[12.5px]
+                          font-semibold
+                          text-[#4D6C90]
                       "
                   >
                       {medium.name}
@@ -967,8 +1227,8 @@ export default function TeacherProfileHeader({
 
           <div>
 
-              <p className="text-[14px] text-slate-400">
-                  No teaching mediums added.
+              <p className="text-[13px] italic text-slate-400">
+                  No teaching mediums added yet.
               </p>
 
           </div>
@@ -1711,15 +1971,53 @@ export default function TeacherProfileHeader({
             </h2>
 
             <p className="mt-1 text-[16px] text-slate-500">
-              Double click the image or press Upload.
+              Drag the photo to position the face inside the frame, then press
+              Upload. Scroll or use the slider to zoom.
             </p>
 
-            <img
-              src={previewUrl!}
-              alt="Profile photo preview"
+            <div
+              ref={cropBoxRef}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onPointerCancel={handleCropPointerUp}
               onDoubleClick={uploadProfilePhoto}
-              className="mt-6 h-56 w-full cursor-pointer rounded-2xl object-cover sm:h-80"
-            />
+              className="relative mx-auto mt-6 aspect-square w-full max-w-[320px] cursor-grab touch-none select-none overflow-hidden rounded-2xl bg-slate-900 active:cursor-grabbing"
+            >
+              {previewUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt="Profile photo preview"
+                  onLoad={handlePreviewImgLoad}
+                  draggable={false}
+                  className="pointer-events-none absolute left-0 top-0 max-w-none origin-top-left select-none"
+                  style={{
+                    width: dispW ? `${dispW}px` : "100%",
+                    height: dispH ? `${dispH}px` : "auto",
+                    transform: `translate(${offset.x}px, ${offset.y}px)`,
+                  }}
+                />
+              )}
+
+              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/15" />
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-[13px] font-medium text-slate-500">
+                Zoom
+              </span>
+
+              <input
+                type="range"
+                min={1}
+                max={4}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => applyZoom(Number(e.target.value))}
+                className="h-1.5 flex-1 cursor-pointer accent-[#4D6C90]"
+              />
+            </div>
 
             <div className="mt-6 flex justify-end gap-3">
 

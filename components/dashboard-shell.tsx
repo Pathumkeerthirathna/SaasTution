@@ -38,11 +38,18 @@ type DashboardShellProps = {
   isPending?: boolean;
 };
 
+type NavChild = {
+  href: string;
+  label: string;
+};
+
 type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
   locked?: boolean;
+  /** When present, this item is an expandable group rather than a plain link. */
+  children?: NavChild[];
 };
 
 function getInitials(name: string) {
@@ -63,7 +70,17 @@ export function DashboardShell({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  function navChildActive(href: string) {
+    if (href === "/dashboard/students") return pathname === "/dashboard/students";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  function isGroupActive(groupChildren: NavChild[]) {
+    return groupChildren.some((child) => navChildActive(child.href));
+  }
 
   useEffect(() => {
     if (!isProfileOpen) return;
@@ -93,7 +110,15 @@ export function DashboardShell({
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/calendar",                      label: "Calendar",           icon: <CalendarDays size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/teacher/profile",               label: "Teacher Profile",    icon: <BadgeInfo size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/students",                      label: "Students",           icon: <Users size={18} strokeWidth={1.75} /> },
+      {
+        href: "/dashboard/students",
+        label: "Students",
+        icon: <Users size={18} strokeWidth={1.75} />,
+        children: [
+          { href: "/dashboard/students", label: "Students" },
+          { href: "/dashboard/students/device-approvals", label: "Device Approvals" },
+        ],
+      },
       { href: "/dashboard/classes",                       label: "Classes",            icon: <BookOpen size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/payments",                      label: "Payments",           icon: <CircleDollarSign size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
@@ -188,6 +213,71 @@ export function DashboardShell({
                     {item.label}
                   </span>
                   <Lock className={`flex-shrink-0 ${isSidebarOpen ? "" : "hidden lg:hidden"}`} size={13} strokeWidth={1.75} />
+                </div>
+              );
+            }
+
+            if (item.children) {
+              const groupActive = isGroupActive(item.children);
+              const open = openGroups[item.href] ?? groupActive;
+
+              return (
+                <div key={item.href}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // On the collapsed desktop rail there's no room for a
+                      // submenu — treat the group icon as a link to its root.
+                      if (!isSidebarOpen) {
+                        router.push(item.href);
+                        return;
+                      }
+                      setOpenGroups((prev) => ({ ...prev, [item.href]: !open }));
+                    }}
+                    title={!isSidebarOpen ? item.label : undefined}
+                    aria-expanded={isSidebarOpen ? open : undefined}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-all duration-150 ${
+                      groupActive
+                        ? "bg-white/15 font-medium text-white shadow-sm ring-1 ring-white/10"
+                        : "font-normal text-white/75 hover:bg-white/[0.08] hover:text-white"
+                    } ${isSidebarOpen ? "" : "lg:justify-center lg:px-0"}`}
+                  >
+                    <span className="flex-shrink-0">{item.icon}</span>
+                    <span
+                      className={`flex-1 text-left tracking-[0.005em] ${
+                        isSidebarOpen ? "" : "hidden lg:hidden"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                    <ChevronDown
+                      size={14}
+                      className={`flex-shrink-0 transition-transform ${open ? "rotate-180" : ""} ${
+                        isSidebarOpen ? "" : "hidden lg:hidden"
+                      }`}
+                    />
+                  </button>
+
+                  {isSidebarOpen && open && (
+                    <div className="mt-0.5 space-y-0.5 pl-4">
+                      {item.children.map((child) => {
+                        const childActive = navChildActive(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={`flex items-center gap-2 rounded-lg border-l border-white/10 py-2 pl-4 pr-3 text-[12.5px] transition-all duration-150 ${
+                              childActive
+                                ? "bg-white/15 font-medium text-white"
+                                : "font-normal text-white/65 hover:bg-white/[0.08] hover:text-white"
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             }

@@ -1,28 +1,53 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { UsersRound } from "lucide-react";
 
+import { AuthShell } from "@/components/auth-shell";
+import { GuardianAuthIllustration } from "@/components/guardian-auth-illustration";
 import { GuardianLoginForm } from "@/components/guardian-login-form";
+import { GUARDIAN_AUTH_COOKIE_NAME, verifyGuardianToken } from "@/lib/guardian-auth";
 
-export default function GuardianLoginPage() {
+export const dynamic = "force-dynamic";
+
+export default async function GuardianLoginPage() {
+  const token = cookies().get(GUARDIAN_AUTH_COOKIE_NAME)?.value;
+
+  if (token) {
+    const session = await verifyGuardianToken(token);
+    if (session?.role === "GUARDIAN") {
+      redirect("/guardian/dashboard");
+    }
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-10 sm:px-6 lg:px-8">
-      <section className="rounded-3xl border border-black/10 bg-card p-6 shadow-sm dark:border-white/10 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Guardian Portal</p>
-        <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">Guardian login</h1>
-        <p className="mt-2 text-sm text-muted sm:text-base">
-          Sign in to view your student profile and class information.
-        </p>
-
+    <Suspense
+      fallback={<div className="p-6 text-sm text-slate-500">Loading sign in...</div>}
+    >
+      <AuthShell
+        title="Guardian sign in"
+        subtitle="Follow your student's classes, attendance, payments, papers and results."
+        footerText="Are you a teacher?"
+        footerLinkHref="/login"
+        footerLinkLabel="Teacher sign in"
+        icon={<UsersRound className="h-5 w-5" />}
+        illustration={<GuardianAuthIllustration />}
+        extraFooter={
+          <>
+            Are you a student?{" "}
+            <Link
+              href="/login"
+              className="font-semibold text-emerald-700 hover:text-emerald-800"
+            >
+              Student sign in
+            </Link>
+          </>
+        }
+        showBackToHome
+      >
         <GuardianLoginForm />
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/guardian/register" className="text-sm font-medium underline-offset-4 hover:underline">
-            New guardian? Register account
-          </Link>
-          <Link href="/" className="text-sm font-medium underline-offset-4 hover:underline">
-            Back to home
-          </Link>
-        </div>
-      </section>
-    </main>
+      </AuthShell>
+    </Suspense>
   );
 }

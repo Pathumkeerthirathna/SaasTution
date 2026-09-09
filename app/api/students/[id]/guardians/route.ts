@@ -1,7 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { listGuardiansForTeacher } from "@/services/student-service";
+import { listStudentGuardians } from "@/services/guardian-service";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function GET(
       throw new AppError("Student id is required.", 400, "VALIDATION_ERROR");
     }
 
-    const guardians = await listGuardiansForTeacher(session.teacherId, studentId);
+    const guardians = await listStudentGuardians(session.teacherId, studentId);
     return apiSuccess(guardians);
   } catch (error) {
     return handleRouteError(error);

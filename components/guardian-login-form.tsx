@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Lock, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 type ApiError = {
   message?: string;
@@ -35,68 +36,102 @@ export function GuardianLoginForm() {
       };
 
       if (!response.ok || !payload.success) {
-        setErrorMessage(payload.error?.message ?? "Failed to login.");
+        setErrorMessage(payload.error?.message ?? "Failed to sign in.");
         return;
       }
 
       router.push("/guardian/dashboard");
       router.refresh();
     } catch {
-      setErrorMessage("Unable to login right now.");
+      setErrorMessage("Unable to sign in right now. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+    <form className="space-y-3.5" onSubmit={handleSubmit}>
+      {/* Email */}
       <div>
-        <label htmlFor="guardianLoginEmail" className="mb-1 block text-sm font-medium">
-          Email
+        <label
+          htmlFor="guardianLoginEmail"
+          className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+        >
+          Email address
         </label>
-        <input
-          id="guardianLoginEmail"
-          type="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-          placeholder="guardian@example.com"
-        />
+
+        <div className="relative">
+          <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            id="guardianLoginEmail"
+            type="email"
+            required
+            autoComplete="username"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            placeholder="guardian@example.com"
+          />
+        </div>
       </div>
 
+      {/* Password */}
       <div>
-        <label htmlFor="guardianLoginPassword" className="mb-1 block text-sm font-medium">
-          Password
-        </label>
-        <input
-          id="guardianLoginPassword"
-          type="password"
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-black/40 dark:border-white/20 dark:bg-transparent"
-          placeholder="Enter your password"
-        />
+        <div className="mb-1 flex items-center justify-between">
+          <label
+            htmlFor="guardianLoginPassword"
+            className="text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+          >
+            Password
+          </label>
+
+          <Link
+            href="/reset-password"
+            className="text-[11px] font-semibold text-emerald-700 transition hover:text-emerald-800"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
+        <div className="relative">
+          <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            id="guardianLoginPassword"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            placeholder="Enter your password"
+          />
+        </div>
       </div>
 
       {errorMessage ? (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        <p className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+          {errorMessage}
+        </p>
       ) : null}
 
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isSubmitting ? "Signing in..." : "Sign in"}
+        <LogIn className="h-4 w-4" />
+        {isSubmitting ? "Signing in..." : "Sign In"}
       </button>
 
-      <div className="text-center text-sm">
-        <Link href="/reset-password" className="font-medium text-brand-700 hover:underline">
-          Forgot password?
-        </Link>
-      </div>
+      <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400">
+        <ShieldCheck className="h-3 w-3 text-emerald-500" />
+        Secure, encrypted sign-in
+      </p>
+
+      <p className="rounded-lg bg-slate-50 px-3 py-2 text-center text-[11.5px] leading-4 text-slate-500">
+        Your teacher creates your guardian account and emails your sign-in
+        details.
+      </p>
     </form>
   );
 }
