@@ -9,6 +9,11 @@ export async function GET() {
       
     });
 
+    console.log("GRADE API - Total grades:", grades.length);
+    console.log("GRADE API - Grades:", grades);
+
+    return NextResponse.json(grades);
+
     return NextResponse.json(grades);
   } catch (error) {
     return NextResponse.json(
