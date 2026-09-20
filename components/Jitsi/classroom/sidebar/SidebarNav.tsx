@@ -131,9 +131,10 @@ export default function SidebarNav({
   const placeSettingsPopover = () => {
     const rect = settingsButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const popoverWidth = Math.min(256, window.innerWidth - 16);
     setSettingsPos({
       bottom: window.innerHeight - rect.top + 8,
-      right: Math.max(8, window.innerWidth - rect.right),
+      right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - popoverWidth - 8)),
     });
   };
 
@@ -181,6 +182,7 @@ export default function SidebarNav({
       onClick={onClick ?? (() => panel && onPanelChange(panel))}
       title={label}
       className={`
+        sl-nav-btn
         relative
         mb-3
         flex h-12 w-12
@@ -201,7 +203,9 @@ export default function SidebarNav({
 
   return (
     <div
-      className={`flex h-full w-[72px] flex-col items-center overflow-y-auto scrollbar-none border-r py-5 ${theme.border}`}
+      // Rail on desktop / tablet / landscape phone, bottom bar on portrait phones
+      // (see .sl-nav in globals.css).
+      className={`sl-nav border-r ${theme.border}`}
     >
       <RailButton panel="participants" label="Participants" icon={Users} />
       {showAttendance ? (
@@ -217,7 +221,7 @@ export default function SidebarNav({
 
       {showLectureTools ? (
         <>
-          <div className={`my-1 h-px w-8 ${theme.divider}`} />
+          <div className={`sl-nav-divider my-1 h-px w-8 ${theme.divider}`} />
           <RailButton panel="notes" label="Notes" icon={FileText} />
           <RailButton panel="assignments" label="Assignments" icon={ClipboardList} />
           <RailButton panel="quiz" label="Quizzes" icon={ListChecks} />
@@ -226,7 +230,7 @@ export default function SidebarNav({
       ) : null}
 
       {showSettings ? (
-        <div className="mt-auto">
+        <div className="sl-nav-settings mt-auto">
           <RailButton
             label="Settings"
             icon={Settings}
@@ -250,8 +254,13 @@ export default function SidebarNav({
           />
           <div
             ref={settingsPopoverRef}
-            className="fixed z-50 w-64 rounded-2xl border border-[#1E293B] bg-[#112D5C] p-3 shadow-2xl"
-            style={{ bottom: settingsPos.bottom, right: settingsPos.right }}
+            className="fixed z-50 w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-[#1E293B] bg-[#112D5C] p-3 shadow-2xl"
+            style={{
+              bottom: settingsPos.bottom,
+              right: settingsPos.right,
+              // Never taller than the space above the button (short landscape screens scroll inside it).
+              maxHeight: `calc(100dvh - ${settingsPos.bottom}px - 0.5rem)`,
+            }}
           >
             <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
               Video Quality

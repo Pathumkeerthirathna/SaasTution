@@ -224,26 +224,26 @@ export default function RightSidebar(props: RightSidebarProps) {
 
 
   return (
-    <div className="relative h-full">
+    <div className="sl-sidebar">
 
       {/* ========================= */}
       {/* SLIDE-OUT PANEL */}
+      {/* Geometry (width, offsets, bottom sheet on phones) lives in globals.css */}
+      {/* under .sl-panel; the modifiers below only pick the width / sheet height. */}
       {/* ========================= */}
 
       <div
         ref={panelRef}
         className={`
-          absolute
-          right-[72px]
-          top-[80px]
-          bottom-0
-          z-40
+          sl-panel
           ${
             isWhiteboardPanel
-              ? "w-[900px] max-w-[92vw]"
-              : isLectureToolPanel || isClassRegister || isAttendancePanel || isBreakoutPanel
-                ? "w-[460px] max-w-[92vw]"
-                : "w-[360px]"
+              ? "sl-panel--xwide sl-panel--tall"
+              : isLectureToolPanel
+                ? "sl-panel--wide sl-panel--tall"
+                : isClassRegister || isAttendancePanel || isBreakoutPanel
+                  ? "sl-panel--wide"
+                  : ""
           }
           overflow-hidden
           border-l
@@ -263,9 +263,10 @@ export default function RightSidebar(props: RightSidebarProps) {
 
         {/* Panel Header */}
 
-        <div className={`flex items-center justify-between border-b ${chrome.panelBorder} px-5 py-4`}>
+        <div className={`flex items-center justify-between gap-2 border-b ${chrome.panelBorder} px-5 py-4`}>
 
-          <div className="flex items-center gap-2">
+          {/* min-w-0 lets the title / subtitle shrink instead of pushing the close button off-screen */}
+          <div className="flex min-w-0 items-center gap-2">
 
             {activePanel === "participants" &&
               (props.role === "teacher" ? (
@@ -296,7 +297,7 @@ export default function RightSidebar(props: RightSidebarProps) {
               <UsersRound size={18} className={chrome.iconAccent} />
             )}
 
-            <div>
+            <div className="min-w-0">
               <h2 className={`text-base font-semibold ${chrome.title}`}>
                 {activePanel === "participants" &&
                   (props.role === "teacher" ? "Class Register" : "Participants")}
@@ -332,7 +333,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           <button
             type="button"
             onClick={closePanel}
-            className={`rounded-lg p-2 transition ${chrome.closeIdle} ${chrome.closeHover}`}
+            className={`shrink-0 rounded-lg p-2 transition ${chrome.closeIdle} ${chrome.closeHover}`}
           >
             <X size={18} />
           </button>
@@ -454,17 +455,12 @@ export default function RightSidebar(props: RightSidebarProps) {
       {/* Fills the gap above the rail (behind the meeting header) with the same
           rail color, so there's no black seam for either role. */}
       <div
-        className={`absolute right-0 top-0 z-50 h-[104px] w-[72px] border-l ${chrome.panelBorder} ${chrome.panelBg}`}
+        className={`sl-rail-filler border-l ${chrome.panelBorder} ${chrome.panelBg}`}
       />
 
       <div
         className={`
-          absolute
-          right-0
-          top-[104px]
-          bottom-0
-          z-50
-          w-[72px]
+          sl-rail
           border-l
           ${chrome.panelBorder}
           ${chrome.panelBg}

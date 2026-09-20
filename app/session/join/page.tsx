@@ -1,3 +1,4 @@
+import type { Viewport } from "next";
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -5,6 +6,16 @@ import { redirect } from "next/navigation";
 
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import JitsiClassroom from "@/components/Jitsi/JitsiClassroom";
+
+// Scoped to the live classroom only. `viewportFit: cover` lets the layout use
+// env(safe-area-inset-*) on notched phones; `interactiveWidget: resizes-content`
+// makes Android shrink the layout (instead of covering it) when the keyboard opens.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+};
 
 type SessionJoinPageProps = {
   searchParams?: {

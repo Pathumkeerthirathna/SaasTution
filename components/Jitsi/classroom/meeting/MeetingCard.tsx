@@ -49,6 +49,9 @@ type MeetingCardProps = {
 
   showHeader?: boolean;
 
+  /** Lets the classroom measure the header (it can wrap onto two rows on narrow screens). */
+  headerRef?: Ref<HTMLDivElement>;
+
   /**
    * True while the teacher is inside a breakout room. Recording and YouTube Live run in
    * the main room, so Record / Stop / Start Live / Stop Live are disabled until they return.
@@ -92,6 +95,7 @@ export default function MeetingCard({
   isConferenceReady = false,
   youtubeLiveUrl,
   showHeader = true,
+  headerRef,
   breakoutActive = false,
   immersive,
   startLiveButtonRef,
@@ -199,9 +203,13 @@ export default function MeetingCard({
       {/* HEADER — navy/blue for the teacher, green for the student. */}
       {showHeader && (
       <div
+        ref={headerRef}
         onMouseEnter={immersive?.onPointerEnter}
         onMouseLeave={immersive?.onPointerLeave}
-        className={`flex h-[80px] shrink-0 items-center justify-between border-b px-5 py-3 ${
+        // Always at least the classic 80px tall, but it may wrap onto a second row on
+        // narrow screens so every control stays reachable (min height comes from
+        // --sl-header-min in globals.css).
+        className={`sl-header flex min-h-[var(--sl-header-min)] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-5 sm:py-3 lg:flex-nowrap ${
           role === "student"
             ? "border-[#1C332B] bg-[#10231D]"
             : "border-[#1E293B] bg-[#112D5C]"
@@ -209,21 +217,21 @@ export default function MeetingCard({
           immersive
             ? // Slides with `top`, not a transform, because the header holds a fixed modal.
               `absolute left-0 z-40 transition-[top,right] duration-200 ${
-                immersive.headerVisible ? "top-0" : "-top-[81px]"
-              } ${immersive.sidebarVisible ? "right-[72px]" : "right-0"}`
+                immersive.headerVisible ? "top-0" : "-top-[160px]"
+              } ${immersive.sidebarVisible ? "right-[var(--sl-rail-w)]" : "right-0"}`
             : ""
         }`}
       >
 
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <MonitorPlay
-            className={role === "student" ? "text-white" : "text-[#3B82F6]"}
+            className={`shrink-0 ${role === "student" ? "text-white" : "text-[#3B82F6]"}`}
             size={22}
           />
 
-          <div>
+          <div className="min-w-0">
             <h2
-              className={`font-semibold ${
+              className={`break-words font-semibold lg:truncate ${
                 role === "student" ? "text-white" : "text-[#F8FAFC]"
               }`}
             >
@@ -231,7 +239,7 @@ export default function MeetingCard({
             </h2>
 
             <p
-              className={`text-xs ${
+              className={`break-words text-xs lg:truncate ${
                 role === "student" ? "text-white/70" : "text-[#94A3B8]"
               }`}
             >
@@ -240,7 +248,7 @@ export default function MeetingCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-5">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-5 gap-y-2 lg:shrink-0 lg:flex-nowrap">
 
           {role === "student" && isLive && (
             <div className="flex items-center gap-2">
@@ -270,7 +278,7 @@ export default function MeetingCard({
           )}
 
           {role === "teacher" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
 
              {!isConferenceReady ? (
                 <div className="flex items-center gap-2 rounded-full bg-[#1E293B] px-4 py-2 text-sm font-medium text-[#94A3B8]">
@@ -603,7 +611,7 @@ export default function MeetingCard({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="max-w-[130px] truncate text-sm font-semibold text-[#F8FAFC]">
+                  <span className="max-w-[130px] truncate text-sm font-semibold text-[#F8FAFC] max-sm:max-w-[45vw]">
                     {youtubeChannelTitle}
                   </span>
 

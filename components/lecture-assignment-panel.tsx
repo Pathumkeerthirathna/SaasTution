@@ -478,9 +478,9 @@ export function LectureAssignmentPanel(props: {
       {isFormOpen ? (
         <>
           <div className="fixed inset-0 z-[70] bg-black/40" onClick={closeForm} aria-hidden />
-          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4 max-sm:p-2">
             <div
-              className="w-full max-h-[85vh] overflow-y-auto scrollbar-thin rounded-xl border border-slate-200 bg-white p-4 shadow-2xl"
+              className="w-full max-h-[85vh] max-sm:max-h-[94dvh] overflow-y-auto scrollbar-thin rounded-xl border border-slate-200 bg-white p-4 shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-3">

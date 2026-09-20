@@ -8,6 +8,7 @@ import MeetingCard from "./classroom/meeting/MeetingCard";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
+import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
@@ -192,6 +193,14 @@ export default function JitsiClassroom() {
 const [classStudents, setClassStudents] =
   useState<ClassroomStudent[]>([]);
 
+  const rootRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+
+  // Responsive layout (see .sl-classroom in globals.css): which mode we are in, and the
+  // on-screen keyboard height for the phone bottom sheets.
+  const viewport = useClassroomViewport();
+  useVisualViewportVars();
+
   // Fullscreen "immersive" mode: the header and the right rail are hidden and
   // slide in only while the pointer is at the top / right edge of the screen.
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -307,9 +316,15 @@ const [classStudents, setClassStudents] =
   const placeYoutubePrivacyPopover = useCallback(() => {
     const rect = startLiveButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // Anchored by its right edge under the button, but never past the left edge of the
+    // screen (the button can sit on the left when the header wraps onto two rows).
+    const popoverWidth = Math.min(384, window.innerWidth - 24);
     setYoutubePrivacyPos({
       top: rect.bottom + 8,
-      right: Math.max(8, window.innerWidth - rect.right),
+      right: Math.max(
+        8,
+        Math.min(window.innerWidth - rect.right, window.innerWidth - popoverWidth - 8)
+      ),
     });
   }, []);
 
@@ -471,6 +486,35 @@ const [classStudents, setClassStudents] =
   const [meetingReady, setMeetingReady] =
     useState(false);
 
+  // The header can wrap onto a second row on narrow screens, so its real height is
+  // measured and published as --sl-header-h. The side panel and the rail are offset
+  // by it (globals.css, .sl-classroom).
+  useEffect(() => {
+    const header = headerRef.current;
+    const root = rootRef.current;
+
+    if (!meetingReady || !header || !root) {
+      return;
+    }
+
+    const publish = () => {
+      root.style.setProperty("--sl-header-h", `${Math.round(header.getBoundingClientRect().height)}px`);
+    };
+
+    publish();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(publish);
+    observer.observe(header);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [meetingReady]);
+
   // Realtime chat — backed by Jitsi's own group chat, mirrored into our panel.
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
@@ -576,7 +620,7 @@ const [classStudents, setClassStudents] =
   // Loading
   if (loading) {
     return (
-      <main className="flex h-screen w-full items-center justify-center bg-[#0B1120]">
+      <main className="flex h-screen h-dvh w-full items-center justify-center bg-[#0B1120]">
         <div className="flex flex-col items-center text-center">
 
           {/* SL Classroom Logo */}
@@ -622,7 +666,7 @@ const [classStudents, setClassStudents] =
   // Error
   if (error || !joinInfo) {
     return (
-      <main className="flex h-screen w-full items-center justify-center bg-[#0B1120]">
+      <main className="flex h-screen h-dvh w-full items-center justify-center bg-[#0B1120]">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-[#F8FAFC]">
             Unable to Join Classroom
@@ -902,17 +946,21 @@ const [classStudents, setClassStudents] =
 
   // In fullscreen the header / rail stay hidden until the pointer reaches the
   // edge. They also stay put while something anchored to them is open.
-  const immersive = isFullscreen && meetingReady;
+  // Touch layouts have no hover, so there the normal header / bar stay visible.
+  const immersive = isFullscreen && meetingReady && !viewport.isTouchLayout;
   const headerVisible = revealTop || showYoutubePrivacy;
   const sidebarVisible = revealRight || sidebarPanelOpen;
 
   return (
-  <main className="h-screen w-full overflow-hidden bg-[#0B1120]">
+  <main
+    ref={rootRef}
+    className="sl-classroom h-screen h-dvh w-full overflow-hidden bg-[#0B1120]"
+  >
 
     <div
       className={
         meetingReady && !immersive
-          ? "grid h-full min-h-0 w-full grid-cols-[minmax(0,1fr)_72px]"
+          ? "sl-grid--split grid h-full min-h-0 w-full"
           : "grid h-full min-h-0 w-full grid-cols-1"
       }
     >
@@ -937,6 +985,7 @@ const [classStudents, setClassStudents] =
         liveStartFailed={liveStartFailed}
         isConferenceReady={isConferenceReady}
         showHeader={meetingReady}
+        headerRef={headerRef}
         breakoutActive={breakout.isInBreakout}
         immersive={
           immersive
@@ -1261,8 +1310,22 @@ const [classStudents, setClassStudents] =
         />
         <div
           ref={youtubePrivacyPopoverRef}
-          className="fixed z-50 w-[384px] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[#1E293B] bg-[#112D5C] p-5 shadow-2xl"
-          style={{ top: youtubePrivacyPos.top, right: youtubePrivacyPos.right }}
+          className={`fixed rounded-2xl border border-[#1E293B] bg-[#112D5C] p-5 shadow-2xl ${
+            viewport.isPhone
+              ? // Phone: a sheet above the bottom bar instead of a popover pinned to the header button.
+                "inset-x-3 bottom-[calc(var(--sl-bar-h)+env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[80dvh] overflow-y-auto"
+              : "z-50 w-[384px] max-w-[calc(100vw-1.5rem)] overflow-y-auto"
+          }`}
+          style={
+            viewport.isPhone
+              ? undefined
+              : {
+                  top: youtubePrivacyPos.top,
+                  right: youtubePrivacyPos.right,
+                  // Short landscape screens: scroll inside the popover instead of running off the bottom.
+                  maxHeight: `calc(100dvh - ${youtubePrivacyPos.top}px - 0.5rem)`,
+                }
+          }
         >
 
           <div className="mb-5">
@@ -1411,8 +1474,8 @@ const [classStudents, setClassStudents] =
             immersive
               ? // Slides with `right`, not a transform: a transform would become the
                 // containing block of the sidebar's fixed popovers and modals.
-                `fixed top-0 z-50 h-screen w-[72px] transition-[right] duration-200 ${
-                  sidebarVisible ? "right-0" : "-right-[72px]"
+                `fixed top-0 z-50 h-screen w-[var(--sl-rail-w)] transition-[right] duration-200 ${
+                  sidebarVisible ? "right-0" : "-right-[var(--sl-rail-w)]"
                 }`
               : "contents"
           }

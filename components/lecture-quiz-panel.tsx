@@ -622,9 +622,9 @@ export function LectureQuizPanel(props: {
       {isFormOpen ? (
         <>
           <div className="fixed inset-0 z-[70] bg-black/40" onClick={closeForm} aria-hidden />
-          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4 max-sm:p-2">
             <div
-              className="flex max-h-[85vh] w-full flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
+              className="flex max-h-[85vh] max-sm:max-h-[94dvh] w-full flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 p-4">

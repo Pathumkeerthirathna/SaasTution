@@ -322,3 +322,275 @@
     background: #64748b;
   }
 }
+
+/* ==========================================================================
+   Live classroom responsive layout (scoped to .sl-classroom)
+
+   Layout modes, chosen by the viewport and not by device type:
+     - desktop / tablet (default): video stage + a permanent right-hand rail.
+       Sidebar panels are OVERLAYS that slide out over the stage (never docked),
+       capped so they can never be wider than the screen.
+     - landscape phone (height <= 500px): slimmer rail from the very top, and
+       side drawers that use the full height.
+     - portrait phone (width <= 639px): the rail becomes a bottom bar under the
+       stage, and panels become bottom sheets ABOVE it. The Jitsi iframe keeps
+       the same size whether or not a sheet is open.
+
+   The rail width, header height and bar height live in variables here so they
+   are defined once. Unlayered rules on purpose: they must win over utilities.
+   ========================================================================== */
+
+.sl-classroom {
+  --sl-rail-w: 72px;
+  --sl-header-h: 80px; /* measured at runtime once the header is on screen */
+  --sl-header-min: 80px;
+  --sl-bar-h: 60px;
+
+  /* Notch / rounded-corner insets. They are 0 unless the page opts in with
+     viewport-fit=cover (done for /session/join only). */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.sl-grid--split {
+  grid-template-columns: minmax(0, 1fr) var(--sl-rail-w);
+}
+
+.sl-sidebar {
+  position: relative;
+  height: 100%;
+}
+
+/* Slide-out panel */
+.sl-panel {
+  position: absolute;
+  right: var(--sl-rail-w);
+  top: var(--sl-header-h);
+  bottom: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - var(--sl-rail-w)));
+}
+
+.sl-panel--wide {
+  width: min(460px, calc(100vw - var(--sl-rail-w)));
+}
+
+.sl-panel--xwide {
+  width: min(900px, calc(100vw - var(--sl-rail-w)));
+}
+
+/* Rail (SidebarNav) and the filler above it, which matches the header height */
+.sl-rail-filler {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 50;
+  height: calc(var(--sl-header-h) + 24px);
+  width: var(--sl-rail-w);
+}
+
+.sl-rail {
+  position: absolute;
+  right: 0;
+  top: calc(var(--sl-header-h) + 24px);
+  bottom: 0;
+  z-index: 50;
+  width: var(--sl-rail-w);
+}
+
+.sl-nav {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  padding: 20px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sl-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Landscape phone: very little height ---- */
+@media (max-height: 500px) {
+  .sl-classroom {
+    --sl-rail-w: 56px;
+    --sl-header-min: 52px;
+  }
+
+  .sl-panel {
+    top: 0;
+    width: min(360px, calc(100vw - var(--sl-rail-w) - 12px));
+  }
+
+  .sl-panel--wide {
+    width: min(440px, calc(100vw - var(--sl-rail-w) - 12px));
+  }
+
+  .sl-panel--xwide {
+    width: min(900px, calc(100vw - var(--sl-rail-w) - 12px));
+  }
+
+  .sl-rail-filler {
+    display: none;
+  }
+
+  .sl-rail {
+    top: 0;
+  }
+
+  .sl-nav {
+    padding: 6px 0;
+  }
+
+  .sl-nav-btn {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 4px;
+  }
+
+  .sl-nav-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* ---- Portrait phone: bottom bar + bottom sheets ---- */
+@media (max-width: 639px) and (min-height: 501px) {
+  .sl-classroom {
+    --sl-rail-w: 0px;
+    --sl-header-min: 56px;
+
+    /* Pinned to the viewport so the page itself never scrolls when the
+       keyboard opens; --sl-kb / --sl-vvh are kept up to date by the app. */
+    position: fixed;
+    inset: 0;
+    height: auto;
+  }
+
+  .sl-grid--split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .sl-sidebar {
+    height: auto;
+  }
+
+  .sl-rail-filler {
+    display: none;
+  }
+
+  .sl-rail {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    height: calc(var(--sl-bar-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    border-left-width: 0;
+    border-top-width: 1px;
+  }
+
+  .sl-nav {
+    height: var(--sl-bar-h);
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 8px;
+    border-right-width: 0;
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+  }
+
+  .sl-nav::-webkit-scrollbar {
+    display: block;
+    height: 4px;
+  }
+
+  .sl-nav::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 9999px;
+  }
+
+  .sl-nav-btn {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .sl-nav-divider {
+    width: 1px;
+    height: 32px;
+    margin: 0 4px;
+    flex-shrink: 0;
+  }
+
+  .sl-nav-settings {
+    margin-top: 0;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* Sheet above the bar; lifted further while the keyboard is open (iOS). Its height
+     leaves some of the stage visible above it, and never exceeds the visible viewport. */
+  .sl-panel {
+    --sl-sheet-avail: calc(
+      var(--sl-vvh, 100dvh) - max(var(--sl-kb, 0px), calc(var(--sl-bar-h) + env(safe-area-inset-bottom))) - 12px
+    );
+    --sl-stage-room: calc(100dvh - var(--sl-header-h) - var(--sl-bar-h) - env(safe-area-inset-bottom) - 120px);
+
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: max(var(--sl-kb, 0px), calc(var(--sl-bar-h) + env(safe-area-inset-bottom)));
+    z-index: 60;
+    width: auto;
+    height: min(var(--sl-sheet-avail), max(220px, min(55dvh, var(--sl-stage-room))));
+    border-left-width: 0;
+    border-top-width: 1px;
+    border-radius: 16px 16px 0 0;
+    /* No transform: it would trap fixed modals inside the sheet's box. */
+    transform: none;
+  }
+
+  .sl-panel--tall {
+    height: min(var(--sl-sheet-avail), max(260px, min(72dvh, var(--sl-stage-room))));
+  }
+
+  /* Compact header so the stage keeps as much height as possible. Nothing is hidden. */
+  .sl-header h2 {
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .sl-header button.rounded-full {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+/* ---- Small screens: inputs must be >= 16px or iOS zooms the page on focus ---- */
+@media (max-width: 639px) {
+  .sl-classroom input:not(.excalidraw *),
+  .sl-classroom textarea:not(.excalidraw *),
+  .sl-classroom select {
+    font-size: 16px;
+  }
+}
+
+/* ---- Touch: comfortable tap targets inside the panels (not the whiteboard's own UI) ---- */
+@media (max-width: 639px) and (min-height: 501px), (max-height: 500px) and (pointer: coarse) {
+  .sl-panel button:not(.excalidraw *) {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
