@@ -4,164 +4,109 @@ import Link from "next/link";
 import { Menu, X, GraduationCap } from "lucide-react";
 import { useState } from "react";
 
+const links = [
+  { href: "#features", label: "Features" },
+  { href: "#live", label: "Live Classroom" },
+  { href: "#profile", label: "Teacher Profile" },
+  { href: "#parents", label: "Parents" },
+  { href: "#how", label: "How It Works" },
+];
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 lg:px-8">
-
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         {/* Logo */}
-        <Link
-          href="/"
-          className="flex items-center gap-3"
-        >
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-md">
-            <GraduationCap className="h-6 w-6 text-white" />
+        <Link href="/" className="flex items-center gap-2.5" onClick={() => setOpen(false)}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-sm">
+            <GraduationCap className="h-5 w-5 text-white" />
           </div>
 
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
+          <div className="leading-tight">
+            <span className="block text-[17px] font-bold tracking-tight text-slate-900">
               SmartClass
-            </h1>
-
-            <p className="text-xs text-slate-500">
-              Learn Smarter
-            </p>
+            </span>
+            <span className="block text-[11px] text-slate-500">Learn Smarter</span>
           </div>
         </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden items-center gap-8 lg:flex">
-          <Link
-            href="#features"
-            className="font-medium text-slate-600 transition hover:text-emerald-600"
-          >
-            Features
-          </Link>
-
-          <Link
-            href="#teachers"
-            className="font-medium text-slate-600 transition hover:text-emerald-600"
-          >
-            Teachers
-          </Link>
-
-          <Link
-            href="#classes"
-            className="font-medium text-slate-600 transition hover:text-emerald-600"
-          >
-            Classes
-          </Link>
-
-          <Link
-            href="#how"
-            className="font-medium text-slate-600 transition hover:text-emerald-600"
-          >
-            How It Works
-          </Link>
-
-          <Link
-            href="#contact"
-            className="font-medium text-slate-600 transition hover:text-emerald-600"
-          >
-            Contact
-          </Link>
+        {/* Desktop navigation */}
+        <nav className="hidden items-center gap-6 lg:flex">
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-[13.5px] font-medium text-slate-600 transition hover:text-emerald-600"
+            >
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
-        {/* Desktop Buttons */}
-        <div className="hidden items-center gap-3 lg:flex">
-
+        {/* Desktop buttons */}
+        <div className="hidden items-center gap-2 lg:flex">
           <Link
             href="/login"
-            className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-emerald-500 hover:text-emerald-600"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:border-emerald-500 hover:text-emerald-600"
           >
             Login
           </Link>
 
           <Link
             href="/register"
-            className="rounded-xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-2.5 text-sm font-semibold text-white shadow transition hover:shadow-lg"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-700"
           >
             Start Free Trial
           </Link>
-
         </div>
 
-        {/* Mobile Button */}
+        {/* Mobile button */}
         <button
-          onClick={() => setOpen(!open)}
-          className="rounded-xl border border-slate-200 p-2 lg:hidden"
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          className="rounded-lg border border-slate-200 p-2 text-slate-700 lg:hidden"
         >
-          {open ? (
-            <X className="h-6 w-6" />
-          ) : (
-            <Menu className="h-6 w-6" />
-          )}
+          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
-      {/* Mobile Menu */}
+      {/* Mobile menu */}
       {open && (
-        <div className="border-t border-slate-200 bg-white lg:hidden">
+        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white lg:hidden">
+          <div className="space-y-1 px-4 py-4 sm:px-6">
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                {link.label}
+              </Link>
+            ))}
 
-          <div className="space-y-2 px-5 py-5">
-
-            <Link
-              href="#features"
-              className="block rounded-xl px-3 py-3 hover:bg-slate-100"
-            >
-              Features
-            </Link>
-
-            <Link
-              href="#teachers"
-              className="block rounded-xl px-3 py-3 hover:bg-slate-100"
-            >
-              Teachers
-            </Link>
-
-            <Link
-              href="#classes"
-              className="block rounded-xl px-3 py-3 hover:bg-slate-100"
-            >
-              Classes
-            </Link>
-
-            <Link
-              href="#how"
-              className="block rounded-xl px-3 py-3 hover:bg-slate-100"
-            >
-              How It Works
-            </Link>
-
-            <Link
-              href="#contact"
-              className="block rounded-xl px-3 py-3 hover:bg-slate-100"
-            >
-              Contact
-            </Link>
-
-            <div className="mt-5 flex flex-col gap-3">
-
+            <div className="grid grid-cols-2 gap-2 pt-3">
               <Link
                 href="/login"
-                className="rounded-xl border border-slate-300 py-3 text-center font-semibold"
+                onClick={() => setOpen(false)}
+                className="rounded-lg border border-slate-300 py-2.5 text-center text-sm font-semibold text-slate-700"
               >
                 Login
               </Link>
 
               <Link
                 href="/register"
-                className="rounded-xl bg-gradient-to-r from-emerald-600 to-orange-500 py-3 text-center font-semibold text-white"
+                onClick={() => setOpen(false)}
+                className="rounded-lg bg-emerald-600 py-2.5 text-center text-sm font-semibold text-white"
               >
                 Start Free Trial
               </Link>
-
             </div>
-
           </div>
-
         </div>
       )}
     </header>

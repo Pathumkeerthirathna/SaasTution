@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
 import { StudentSession } from "@/lib/auth-session";
+import { formatTeacherClassroomName } from "@/lib/teacher-title";
 
 type NotifyChannels = {
   email: boolean;
@@ -496,6 +497,17 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
           id: true,
           name: true,
           schedule: true,
+          teacher: {
+            select: {
+              name: true,
+              profile: {
+                select: {
+                  title: true,
+                  displayName: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -547,7 +559,12 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
           jitsiDomain: session.jitsiDomain,
       },
       lecture: session.lecture,
-      class: session.class,
+      class: {
+        id: session.class.id,
+        name: session.class.name,
+        schedule: session.class.schedule,
+      },
+      teacherDisplayName: formatTeacherClassroomName(session.class.teacher),
       student: {
           id: student.id,
           name: student.name,
@@ -584,6 +601,13 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
 
           teacher: {
             select: {
+              name: true,
+              profile: {
+                select: {
+                  title: true,
+                  displayName: true,
+                },
+              },
               youtubeConnection: {
                 select: {
                   channelTitle: true,
@@ -603,7 +627,7 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
 
   const jitsiToken = shouldUseJitsiJwtAuth(session.jitsiDomain)
     ? await generateJitsiToken({
-        name: "Teacher",
+        name: formatTeacherClassroomName(session.class.teacher),
         room: session.roomName,
         moderator: true,
         jitsiDomain: session.jitsiDomain,
@@ -620,6 +644,7 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
     },
     lecture: session.lecture,
     class: session.class,
+    teacherDisplayName: formatTeacherClassroomName(session.class.teacher),
       youtube: {
       channelTitle:
         session.class.teacher.youtubeConnection?.channelTitle ?? null,

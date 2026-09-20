@@ -21,6 +21,9 @@ export type JoinInfo = {
     schedule: string;
   };
 
+  /** e.g. "Mr. Pathum Kumara (Teacher)" — same value for teacher and students. */
+  teacherDisplayName?: string;
+
   youtube?: {
     channelTitle: string | null;
     status: "CONNECTED" | "REAUTH_REQUIRED" | null;

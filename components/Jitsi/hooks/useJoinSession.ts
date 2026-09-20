@@ -15,10 +15,14 @@ export default function useJoinSession() {
   const role: UserRole =
     roleParam === "teacher" ? "teacher" : "student";
 
-  const teacherName =
-    searchParams.get("teacherName") ?? "Teacher";
-
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
+
+  // Teacher and students both receive the same server-built name, which the
+  // classroom also uses to recognise the teacher among the participants.
+  const teacherName =
+    joinInfo?.teacherDisplayName ??
+    searchParams.get("teacherName") ??
+    "Teacher";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
