@@ -10,6 +10,7 @@ import {
   ListChecks,
   Settings,
   Check,
+  PenTool,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -218,6 +219,7 @@ export default function SidebarNav({
           <RailButton panel="notes" label="Notes" icon={FileText} />
           <RailButton panel="assignments" label="Assignments" icon={ClipboardList} />
           <RailButton panel="quiz" label="Quizzes" icon={ListChecks} />
+          <RailButton panel="whiteboard" label="Whiteboard" icon={PenTool} />
         </>
       ) : null}
 

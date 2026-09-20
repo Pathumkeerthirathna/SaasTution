@@ -188,3 +188,24 @@ export type CreateQuizInput = z.infer<typeof createQuizSchema>;
 export type UpdateQuizInput = z.infer<typeof updateQuizSchema>;
 export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;
 export type SubmitAssignmentInput = z.infer<typeof submitAssignmentSchema>;
+
+const whiteboardTitle = z
+  .string()
+  .trim()
+  .min(2, "Whiteboard title must be at least 2 characters long.")
+  .max(150, "Whiteboard title must be at most 150 characters long.");
+
+// `data` is checked and normalised by `sanitizeWhiteboardScene` (lib/whiteboard-data.ts).
+export const createWhiteboardSchema = z.object({
+  title: whiteboardTitle,
+  data: z.unknown(),
+});
+
+export const updateWhiteboardSchema = z
+  .object({
+    title: whiteboardTitle.optional(),
+    data: z.unknown().optional(),
+  })
+  .refine((value) => value.title !== undefined || value.data !== undefined, {
+    message: "At least one field is required.",
+  });

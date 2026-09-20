@@ -36,6 +36,7 @@ import toast from "react-hot-toast";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
+import { LectureWhiteboardPanel } from "@/components/lecture-whiteboard-panel";
 
 type ClassItem = {
   id: string;
@@ -60,6 +61,7 @@ type LectureItem = {
     notes: number;
     assignments: number;
     quizzes: number;
+    whiteboards?: number;
   };
 };
 
@@ -143,7 +145,7 @@ const ACCESS_OPTIONS: { value: RecordingAccess; label: string }[] = [
   { value: "LOCKED", label: "Locked" },
 ];
 
-type LectureTab = "notes" | "assignments" | "quizzes";
+type LectureTab = "notes" | "assignments" | "quizzes" | "whiteboards";
 
 type QuizPanelLecture = {
   id: string;
@@ -391,6 +393,8 @@ export function LectureManagementPanel() {
   const [assignmentPanelLecture, setAssignmentPanelLecture] = useState<AssignmentPanelLecture | null>(null);
   const [isNotePanelOpen, setIsNotePanelOpen] = useState(false);
   const [notePanelLecture, setNotePanelLecture] = useState<NotePanelLecture | null>(null);
+  const [isWhiteboardPanelOpen, setIsWhiteboardPanelOpen] = useState(false);
+  const [whiteboardPanelLecture, setWhiteboardPanelLecture] = useState<NotePanelLecture | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const [editingLecture, setEditingLecture] = useState<LectureItem | null>(null);
@@ -685,6 +689,22 @@ export function LectureManagementPanel() {
   }
 
   async function openLectureTab(lectureId: string, tab: LectureTab) {
+    if (tab === "whiteboards") {
+      const lecture = lectures.find((item) => item.id === lectureId);
+
+      if (lecture) {
+        setWhiteboardPanelLecture({
+          id: lecture.id,
+          title: lecture.title,
+          date: lecture.date,
+          class: lecture.class,
+        });
+        setIsWhiteboardPanelOpen(true);
+      }
+
+      return;
+    }
+
     if (tab === "notes") {
       const lecture = lectures.find((item) => item.id === lectureId);
 
@@ -1520,6 +1540,17 @@ export function LectureManagementPanel() {
                           }`}
                         >
                           Quizzes {lecture._count.quizzes}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openLectureTab(lecture.id, "whiteboards")}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            isWhiteboardPanelOpen && whiteboardPanelLecture?.id === lecture.id
+                              ? "border-brand-700 bg-brand-700 text-white"
+                              : "border-brand-100 bg-white text-slate-700"
+                          }`}
+                        >
+                          Whiteboards {lecture._count.whiteboards ?? 0}
                         </button>
                       </div>
                     </div>
@@ -2516,6 +2547,51 @@ export function LectureManagementPanel() {
         <div className="px-4 pb-5 pt-3 sm:px-6">
           {notePanelLecture ? (
             <LectureNotePanel lectureId={notePanelLecture.id} onChanged={() => loadLectures(page, filterClassId, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder)} />
+          ) : null}
+        </div>
+      </aside>
+
+      <aside
+        className={`fixed inset-0 z-50 transform overflow-y-auto scrollbar-thin bg-white shadow-2xl transition-transform duration-200 lg:left-auto lg:w-1/2 lg:min-w-[480px] lg:border-l lg:border-brand-100 ${
+          isWhiteboardPanelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        aria-hidden={!isWhiteboardPanelOpen}
+      >
+        <div className="sticky top-0 z-10 border-b border-brand-100 bg-white/95 px-4 py-2.5 backdrop-blur sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                <FileText size={15} />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Lecture whiteboards</h2>
+                {whiteboardPanelLecture ? (
+                  <p className="text-[11px] text-muted">
+                    {whiteboardPanelLecture.title} • {whiteboardPanelLecture.class.name} • {new Date(whiteboardPanelLecture.date).toLocaleString()}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted">Select a lecture card and open Whiteboards to manage saved whiteboards.</p>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsWhiteboardPanelOpen(false)}
+              className="btn-secondary shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-5 pt-3 sm:px-6">
+          {isWhiteboardPanelOpen && whiteboardPanelLecture ? (
+            <LectureWhiteboardPanel
+              key={whiteboardPanelLecture.id}
+              lectureId={whiteboardPanelLecture.id}
+              onChanged={() => loadLectures(page, filterClassId, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder)}
+            />
           ) : null}
         </div>
       </aside>

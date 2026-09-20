@@ -5,6 +5,7 @@ import { ReactNode } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { formatTeacherFullName } from "@/lib/teacher-title";
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -47,6 +48,12 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
       email: true,
       isConfirmed: true,
       isRejected: true,
+      profile: {
+        select: {
+          title: true,
+          displayName: true,
+        },
+      },
     },
   });
 
@@ -60,6 +67,7 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     <DashboardShell
       role="TEACHER"
       name={teacher.name}
+      displayName={formatTeacherFullName(teacher)}
       email={teacher.email}
       isPending={isPending}
     >

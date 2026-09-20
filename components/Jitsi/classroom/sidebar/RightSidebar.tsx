@@ -10,9 +10,11 @@ import {
   FileText,
   ListChecks,
   MessageSquare,
+  PenTool,
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
+import WhiteboardPanel from "./WhiteboardPanel";
 import ParticipantsPanel from "./ParticipantsPanel";
 import AttendancePanel from "./AttendancePanel";
 import ChatPanel from "./ChatPanel";
@@ -27,6 +29,7 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 const LECTURE_TOOL_PANELS = ["notes", "assignments", "quiz"] as const;
 
 type RightSidebarProps = {
+  sessionId?: string;
   classId : string;
   className : String;
   lectureId? : string | null;
@@ -62,6 +65,17 @@ export default function RightSidebar(props: RightSidebarProps) {
   const isStudentLecturePanel = isStudent && hasLecture && isLectureToolPanel;
   const isAttendancePanel = isTeacher && activePanel === "attendance";
   const isChatPanel = activePanel === "chat";
+  // The whiteboard needs the lecture (saved boards belong to it) and the session
+  // (live updates), exactly like the other lecture tools it sits beside.
+  const isWhiteboardPanel = hasLecture && activePanel === "whiteboard";
+  // Mounted on first open and then kept, so the drawing survives switching panels.
+  const [whiteboardMounted, setWhiteboardMounted] = useState(false);
+
+  useEffect(() => {
+    if (isWhiteboardPanel) {
+      setWhiteboardMounted(true);
+    }
+  }, [isWhiteboardPanel]);
 
   // The teacher's "Class Register" (participants panel) is styled like the
   // lecture tool panels: blue header, light body.
@@ -159,7 +173,7 @@ export default function RightSidebar(props: RightSidebarProps) {
   // The lecture tool panels (and the Class Register, whose "Notify" dialog is a
   // full-screen overlay) open their own modals outside this container — don't
   // collapse the sidebar when the teacher interacts with them.
-  if (isLectureToolPanel || isClassRegister) {
+  if (isLectureToolPanel || isClassRegister || isWhiteboardPanel) {
     return;
   }
 
@@ -188,7 +202,7 @@ export default function RightSidebar(props: RightSidebarProps) {
       );
     };
 
-  }, [activePanel, isLectureToolPanel, isClassRegister]);
+  }, [activePanel, isLectureToolPanel, isClassRegister, isWhiteboardPanel]);
 
 
 
@@ -207,7 +221,13 @@ export default function RightSidebar(props: RightSidebarProps) {
           top-[80px]
           bottom-0
           z-40
-          ${isLectureToolPanel || isClassRegister || isAttendancePanel ? "w-[460px] max-w-[92vw]" : "w-[360px]"}
+          ${
+            isWhiteboardPanel
+              ? "w-[900px] max-w-[92vw]"
+              : isLectureToolPanel || isClassRegister || isAttendancePanel
+                ? "w-[460px] max-w-[92vw]"
+                : "w-[360px]"
+          }
           overflow-hidden
           border-l
           ${chrome.panelBorder}
@@ -252,6 +272,9 @@ export default function RightSidebar(props: RightSidebarProps) {
             {activePanel === "quiz" && (
               <ListChecks size={18} className={chrome.iconAccent} />
             )}
+            {activePanel === "whiteboard" && (
+              <PenTool size={18} className={chrome.iconAccent} />
+            )}
 
             <div>
               <h2 className={`text-base font-semibold ${chrome.title}`}>
@@ -271,7 +294,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                 {activePanel === "notes" && "Notes"}
               </h2>
 
-              {isLectureToolPanel && props.lectureTitle ? (
+              {(isLectureToolPanel || isWhiteboardPanel) && props.lectureTitle ? (
                 <p className={`max-w-[300px] truncate text-[11px] ${chrome.subtitle}`}>
                   {props.lectureTitle}
                 </p>
@@ -303,6 +326,8 @@ export default function RightSidebar(props: RightSidebarProps) {
               ? "overflow-y-auto scrollbar-thin bg-white"
               : isStudentLecturePanel
                 ? "overflow-y-auto scrollbar-thin bg-emerald-50/40"
+                : isWhiteboardPanel
+                  ? "overflow-hidden bg-white p-2 text-slate-900"
                 : isClassRegister || isAttendancePanel || isChatPanel || isStudentParticipants
                   ? "overflow-hidden bg-white p-3 text-slate-900"
                   : "overflow-hidden p-3"
@@ -334,6 +359,18 @@ export default function RightSidebar(props: RightSidebarProps) {
               messages={chatMessages}
               onSend={(text) => props.onSendChat?.(text)}
             />
+          )}
+
+          {/* Whiteboard: teacher draws + saves (live to students), students watch read-only */}
+          {props.lectureId && props.sessionId && whiteboardMounted && (
+            <div className={isWhiteboardPanel ? "h-full" : "hidden"}>
+              <WhiteboardPanel
+                role={props.role}
+                sessionId={props.sessionId}
+                lectureId={props.lectureId}
+                active={isWhiteboardPanel}
+              />
+            </div>
           )}
 
           {/* Teacher: manage lecture tools */}

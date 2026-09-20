@@ -1061,11 +1061,31 @@ model Lecture {
   class       Class          @relation(fields: [classId], references: [id])
   notes       Note[]
   quizzes     Quiz[]
+  whiteboards LectureWhiteboard[]
 
   youtubeRecordings YouTubeRecording[]
   youtubeLives      YouTubeLiveBroadcast[]
 
   @@index([classId, status, date])
+}
+
+// A saved whiteboard snapshot that belongs to the lecture (not to one class
+// session), so it outlives the live session. `data` is the whole drawing
+// (Excalidraw elements + a few appState fields) as one JSON document.
+model LectureWhiteboard {
+  id        String   @id @default(uuid())
+  lectureId String
+  title     String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
+  status Int @default(0)
+
+  lecture Lecture @relation(fields: [lectureId], references: [id])
+
+  @@index([lectureId, status, createdAt])
 }
 
 enum ClassStatus {

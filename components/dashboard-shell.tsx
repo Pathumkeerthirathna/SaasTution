@@ -33,6 +33,8 @@ import { SidebarGraduate } from "@/components/sidebar-graduate";
 type DashboardShellProps = {
   role: "TEACHER" | "ADMIN";
   name: string;
+  /** Name shown to the user, e.g. "Mr. Pathum Kumara". Defaults to `name`. */
+  displayName?: string;
   email: string;
   children: ReactNode;
   isPending?: boolean;
@@ -61,6 +63,7 @@ function getInitials(name: string) {
 export function DashboardShell({
   role,
   name,
+  displayName,
   email,
   children,
   isPending = false,
@@ -356,7 +359,7 @@ export function DashboardShell({
                 {role === "ADMIN" ? "Admin Console" : "Teacher Workspace"}
               </p>
               <p className="text-base font-semibold text-foreground">
-                Welcome back, {name.split(" ")[0]} <span aria-hidden="true">👋</span>
+                Welcome back, {displayName ?? name.split(" ")[0]} <span aria-hidden="true">👋</span>
               </p>
             </div>
           </div>
@@ -382,7 +385,7 @@ export function DashboardShell({
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-800 text-xs font-bold text-white">
                 {getInitials(name)}
               </span>
-              <span className="hidden sm:block max-w-[120px] truncate">{name}</span>
+              <span className="hidden sm:block max-w-[160px] truncate">{displayName ?? name}</span>
               <ChevronDown size={14} className="text-muted hidden sm:block" />
             </button>
 
@@ -393,7 +396,7 @@ export function DashboardShell({
                     {getInitials(name)}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-foreground truncate">{name}</p>
+                    <p className="font-semibold text-foreground truncate">{displayName ?? name}</p>
                     <p className="text-xs text-muted truncate">{email}</p>
                     <span className="mt-1 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
                       {role}

@@ -70,6 +70,11 @@ export async function GET(
             },
           },
         },
+        whiteboards: {
+          where: { status: 0 },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, title: true, createdAt: true },
+        },
         youtubeRecordings: {
           where: { visibility: "PUBLIC" },
           orderBy: { createdAt: "desc" },
@@ -125,6 +130,11 @@ export async function GET(
               : null,
           };
         }),
+        whiteboards: lecture.whiteboards.map((w) => ({
+          id: w.id,
+          title: w.title,
+          createdAt: w.createdAt.toISOString(),
+        })),
         recordings: lecture.youtubeRecordings.map((r) => ({
           id: r.id,
           videoId: r.videoId,

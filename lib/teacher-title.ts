@@ -20,16 +20,23 @@ export function formatTeacherTitle(title: TeacherTitle): string {
   return TEACHER_TITLE_LABELS[title];
 }
 
-/**
- * How a teacher is named inside a live class, e.g. "Mr. Pathum Kumara (Teacher)".
- * Prefers the public profile's display name and falls back to the account name.
- */
-export function formatTeacherClassroomName(teacher: {
+type TeacherNameSource = {
   name: string;
   profile?: { title: TeacherTitle; displayName: string | null } | null;
-}): string {
+};
+
+/**
+ * A teacher's name with their title, e.g. "Mr. Pathum Kumara".
+ * Prefers the public profile's display name and falls back to the account name.
+ */
+export function formatTeacherFullName(teacher: TeacherNameSource): string {
   const name = teacher.profile?.displayName?.trim() || teacher.name.trim();
   const title = teacher.profile ? `${TEACHER_TITLE_LABELS[teacher.profile.title]} ` : "";
 
-  return `${title}${name} (Teacher)`;
+  return `${title}${name}`;
+}
+
+/** How a teacher is named inside a live class, e.g. "Mr. Pathum Kumara (Teacher)". */
+export function formatTeacherClassroomName(teacher: TeacherNameSource): string {
+  return `${formatTeacherFullName(teacher)} (Teacher)`;
 }

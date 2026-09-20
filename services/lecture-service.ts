@@ -365,6 +365,7 @@ export async function listLecturesForTeacher(params: {
             notes: { where: { status: 0 } },
             assignments: { where: { status: 0 } },
             quizzes: { where: { status: 0 } },
+            whiteboards: { where: { status: 0 } },
           },
         },
       },

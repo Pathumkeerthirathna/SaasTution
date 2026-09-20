@@ -1294,6 +1294,7 @@ const [classStudents, setClassStudents] =
       {/* RIGHT SIDEBAR */}
       {meetingReady && (
         <RightSidebar
+          sessionId={joinInfo.session.id}
           classId={joinInfo.class.id}
           className={joinInfo.class.name}
           lectureId={joinInfo.lecture?.id ?? null}

@@ -17,8 +17,11 @@ import {
   CalendarDays,
   Clock,
   CalendarPlus,
+  PenTool,
 } from "lucide-react";
 
+import SavedWhiteboardViewer from "@/components/whiteboard/SavedWhiteboardViewer";
+import { formatWhiteboardDate } from "@/components/whiteboard/scene-utils";
 import { AssignmentSubmitButton } from "@/components/student-portal/assignment-submit-button";
 import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 import { dashRangeToYmd } from "@/lib/dashboard-range";
@@ -97,6 +100,7 @@ type LectureDetail = {
   notes: NoteItem[];
   assignments: AssignmentItem[];
   recordings: RecordingItem[];
+  whiteboards?: { id: string; title: string; createdAt: string }[];
 };
 
 type Pagination = { page: number; limit: number; total: number; totalPages: number };
@@ -217,7 +221,12 @@ export function LectureListClient() {
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
 
   const [panelLectureId, setPanelLectureId] = useState<string | null>(null);
-  const [panelTab, setPanelTab] = useState<"notes" | "assignments">("notes");
+  const [panelTab, setPanelTab] = useState<"notes" | "assignments" | "whiteboards">("notes");
+  const [viewingWhiteboard, setViewingWhiteboard] = useState<{
+    lectureId: string;
+    id: string;
+    title: string;
+  } | null>(null);
 
   const [recordingsOpenId, setRecordingsOpenId] = useState<string | null>(null);
   const [playing, setPlaying] = useState<{ videoId: string; title: string } | null>(null);
@@ -330,7 +339,7 @@ export function LectureListClient() {
     [detailByLecture]
   );
 
-  async function openPanel(lectureId: string, tab: "notes" | "assignments") {
+  async function openPanel(lectureId: string, tab: "notes" | "assignments" | "whiteboards") {
     setPanelLectureId(lectureId);
     setPanelTab(tab);
     setPreviewNoteId(null);
@@ -653,6 +662,15 @@ export function LectureListClient() {
 
                       <button
                         type="button"
+                        onClick={() => void openPanel(item.id, "whiteboards")}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                      >
+                        <PenTool size={12} />
+                        Whiteboards
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => void toggleRecordings(item.id)}
                         className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
                           recordingsOpen
@@ -801,7 +819,7 @@ export function LectureListClient() {
         </div>
 
         <div className="flex shrink-0 gap-1 border-b border-slate-200 px-4 pt-2">
-          {(["notes", "assignments"] as const).map((tab) => (
+          {(["notes", "assignments", "whiteboards"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -817,6 +835,8 @@ export function LectureListClient() {
             >
               {tab === "notes" ? (
                 <FileText size={12} className="mr-1 inline" />
+              ) : tab === "whiteboards" ? (
+                <PenTool size={12} className="mr-1 inline" />
               ) : (
                 <ClipboardList size={12} className="mr-1 inline" />
               )}
@@ -914,7 +934,7 @@ export function LectureListClient() {
                 </div>
               ) : null}
             </>
-          ) : (
+          ) : panelTab === "assignments" ? (
             <>
               {panelDetail.assignments.length === 0 ? (
                 <p className="text-xs text-slate-500">No assignments for this lecture.</p>
@@ -956,6 +976,38 @@ export function LectureListClient() {
                 </div>
               )}
             </>
+          ) : (
+            <>
+              {!panelDetail.whiteboards || panelDetail.whiteboards.length === 0 ? (
+                <p className="text-xs text-slate-500">No whiteboards saved for this lecture.</p>
+              ) : (
+                <div className="space-y-2">
+                  {panelDetail.whiteboards.map((board) => (
+                    <div
+                      key={board.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="min-w-0">
+                        <h3 className="truncate text-xs font-semibold text-slate-900">{board.title}</h3>
+                        <p className="text-[11px] text-slate-500">
+                          {formatWhiteboardDate(board.createdAt)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setViewingWhiteboard({ lectureId: panelDetail.id, id: board.id, title: board.title })
+                        }
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                      >
+                        <Eye size={12} />
+                        View
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -980,6 +1032,16 @@ export function LectureListClient() {
             className="w-full flex-1 border-0"
           />
         </div>
+      ) : null}
+
+      {/* Saved whiteboard (read-only) */}
+      {viewingWhiteboard ? (
+        <SavedWhiteboardViewer
+          lectureId={viewingWhiteboard.lectureId}
+          whiteboardId={viewingWhiteboard.id}
+          title={viewingWhiteboard.title}
+          onClose={() => setViewingWhiteboard(null)}
+        />
       ) : null}
 
       {/* YouTube player modal */}

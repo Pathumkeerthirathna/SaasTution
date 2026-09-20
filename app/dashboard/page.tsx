@@ -20,6 +20,7 @@ import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { getCurrentMonthKey, getPaymentDueDate, getPaymentDueStatus } from "@/lib/payment-validation";
 import { formatStoredSriLankaDate, nowInSriLanka } from "@/lib/time";
 import { prisma } from "@/lib/prisma";
+import { formatTeacherFullName } from "@/lib/teacher-title";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
 import { DashboardCountdown } from "@/components/dashboard/dashboard-countdown";
 import { LiveBroadcastCard } from "@/components/dashboard/live-broadcast-card";
@@ -73,6 +74,12 @@ export default async function DashboardPage() {
       createdAt: true,
       isConfirmed: true,
       isRejected: true,
+      profile: {
+        select: {
+          title: true,
+          displayName: true,
+        },
+      },
     },
   });
   if (!teacher) redirect("/login");
@@ -599,7 +606,7 @@ export default async function DashboardPage() {
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-blue-300">Teacher Dashboard</p>
             <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
-              Welcome back, {teacher.name.split(" ")[0]}
+              Welcome back, {formatTeacherFullName(teacher)}
             </h1>
             <p className="mt-1.5 text-sm text-white/70">
               {todayLabel} · Full control of your teaching workspace.
