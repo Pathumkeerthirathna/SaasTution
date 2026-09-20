@@ -20,8 +20,12 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SaasTution",
-  description: "Next.js 14 starter with Prisma, PostgreSQL, and robust API utilities.",
+  title: {
+    default: "SL Classroom — Teach, Manage & Grow Online",
+    template: "%s | SL Classroom",
+  },
+  description:
+    "Live classes, whiteboard and breakout rooms, attendance, assignments, quizzes, fees and guardian access — one platform for teachers.",
 };
 
 export default function RootLayout({

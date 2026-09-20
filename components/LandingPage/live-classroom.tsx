@@ -1,100 +1,136 @@
+"use client";
+
 import {
-  CheckCircle2,
-  Mic,
-  MessageCircle,
-  Monitor,
+  ClipboardList,
+  Cog,
+  MessageSquare,
+  MonitorPlay,
+  NotebookPen,
+  PenTool,
   Radio,
-  UserCheck,
+  Users,
+  UsersRound,
   Video,
+  ListChecks,
+  ClipboardCheck,
+  BookOpen,
+  HelpCircle,
 } from "lucide-react";
-import SectionHeading from "./section-heading";
 
-const points = [
-  "Start a class in one click — no software to install",
-  "Screen sharing, chat and noise suppression built in",
-  "Choose 1080p, 720p or 480p to match your connection",
-  "Automatic attendance and session recording",
-  "Live-stream to YouTube for students who cannot join",
+import HotspotFigure, { type Pin } from "./hotspot-figure";
+import PanelTabs, { type PanelTab } from "./panel-tabs";
+import Reveal from "./reveal";
+import { Container, SectionHead } from "./ui";
+
+const PINS: Pin[] = [
+  { id: "stage", label: "Teacher video & screen sharing", text: "Teach on camera or share your screen with the whole class.", x: 40, y: 45, icon: MonitorPlay },
+  { id: "people", label: "Participants", text: "See every student who has joined the live class.", x: 87.2, y: 41, icon: Users },
+  { id: "controls", label: "Camera & mic controls", text: "Control your camera, microphone and screen share.", x: 40, y: 95, icon: Video },
+  { id: "record", label: "Record & YouTube Live", text: "Record the class or go live to your YouTube channel.", x: 57.5, y: 4.5, icon: Radio },
+  { id: "register", label: "Class register", text: "Open the register for the class in the session.", x: 95.2, y: 16.4, icon: ClipboardList },
+  { id: "attendance", label: "Attendance", text: "Mark and review who attended.", x: 95.2, y: 23.1, icon: ClipboardCheck },
+  { id: "chat", label: "Chat", text: "Message the class without interrupting the lesson.", x: 95.2, y: 29.8, icon: MessageSquare },
+  { id: "breakout", label: "Breakout rooms", text: "Split the class into smaller rooms.", x: 95.2, y: 36.4, icon: UsersRound },
+  { id: "tools", label: "Lecture tools", text: "Notes, assignments and quizzes for this lecture.", x: 95.2, y: 50.9, icon: BookOpen },
+  { id: "whiteboard", label: "Whiteboard", text: "Open a live whiteboard for the lecture.", x: 95.2, y: 64, icon: PenTool },
+  { id: "settings", label: "Settings", text: "Choose video quality up to 1080p and turn on noise suppression.", x: 95.2, y: 93.8, icon: Cog },
 ];
 
-const controls = [
-  { icon: Mic, label: "Mic" },
-  { icon: Video, label: "Camera" },
-  { icon: Monitor, label: "Share" },
-  { icon: MessageCircle, label: "Chat" },
-  { icon: Radio, label: "Stream" },
+const TABS: PanelTab[] = [
+  {
+    id: "register",
+    label: "Class register",
+    icon: ClipboardList,
+    image: "classroom-register",
+    mobile: true,
+    title: "The register is inside the class",
+    text: "Open the class register while you teach, without leaving the session.",
+  },
+  {
+    id: "attendance",
+    label: "Attendance",
+    icon: ClipboardCheck,
+    image: "classroom-attendance",
+    title: "Attendance without the paperwork",
+    text: "See who is present and keep the record with the session.",
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    icon: MessageSquare,
+    image: "classroom-chat",
+    mobile: true,
+    title: "Class chat, right beside the lesson",
+    text: "Students can ask questions in chat while you keep teaching.",
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    icon: NotebookPen,
+    image: "classroom-notes",
+    title: "Notes for the lecture",
+    text: "Open the lecture's notes from inside the classroom.",
+  },
+  {
+    id: "assignments",
+    label: "Assignments",
+    icon: ListChecks,
+    image: "classroom-assignments",
+    title: "Assignments from the live class",
+    text: "Give and follow assignments for the lecture you are teaching.",
+  },
+  {
+    id: "quiz",
+    label: "Quizzes",
+    icon: HelpCircle,
+    image: "classroom-quiz",
+    title: "Quizzes for the lecture",
+    text: "Reach the lecture's quizzes without leaving the classroom.",
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: Cog,
+    image: "classroom-settings",
+    title: "Video quality you control",
+    text: "Pick a video quality up to 1080p and switch on noise suppression.",
+  },
+  {
+    id: "golive",
+    label: "Record & Live",
+    icon: Radio,
+    image: "classroom-golive",
+    title: "Record, or go live on YouTube",
+    text: "Start a recording, or go live on your YouTube channel as Public, Unlisted or Private.",
+  },
 ];
-
-const students = ["Nimal P.", "Kavindu S.", "Sanduni R.", "Tharushi W."];
 
 export default function LiveClassroom() {
   return (
-    <section id="live" className="scroll-mt-16 bg-white py-12 sm:py-16">
-      <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-4 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-8">
-        {/* Mock classroom */}
-        <div className="order-2 overflow-hidden rounded-2xl border border-slate-200 bg-[#112D5C] shadow-lg lg:order-1">
-          <div className="flex items-center justify-between px-4 py-2.5 text-white">
-            <span className="text-[12px] font-semibold">Grade 11 Mathematics</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-              <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 px-3 pb-3">
-            <div className="col-span-3 flex aspect-video items-center justify-center rounded-xl bg-white/10 sm:col-span-2">
-              <div className="text-center text-white/80">
-                <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white/15">
-                  <Video className="h-5 w-5" />
-                </span>
-                <p className="mt-2 text-[12px]">Teacher camera &amp; screen</p>
-              </div>
-            </div>
-
-            <div className="col-span-3 grid grid-cols-4 gap-2 sm:col-span-1 sm:grid-cols-1">
-              {students.map((name) => (
-                <div
-                  key={name}
-                  className="flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-1.5 text-[11px] text-white/90"
-                >
-                  <UserCheck className="h-3 w-3 shrink-0 text-emerald-300" />
-                  <span className="truncate">{name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 border-t border-white/10 bg-black/20 px-3 py-3">
-            {controls.map(({ icon: Icon, label }) => (
-              <span
-                key={label}
-                title={label}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white"
-              >
-                <Icon className="h-4 w-4" />
-                <span className="sr-only">{label}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="order-1 lg:order-2">
-          <SectionHeading
-            align="left"
-            eyebrow="Live Classroom"
-            title="A classroom that works as hard as you do"
-            description="Everything you need to teach live is inside one screen, so you can focus on the lesson instead of the tools."
+    <section id="live" className="scroll-mt-20 bg-[#0B1120] py-16 sm:py-24">
+      <Container>
+        <Reveal>
+          <SectionHead
+            tone="dark"
+            eyebrow="Live classroom"
+            title="Teach Live, With Everything Within Reach"
+            lead="Video, screen sharing, whiteboard, breakout rooms, chat, attendance and lecture tools, all inside the class itself."
           />
+        </Reveal>
 
-          <ul className="mt-5 space-y-2.5">
-            {points.map((point) => (
-              <li key={point} className="flex items-start gap-2.5 text-[13.5px] text-slate-700">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                {point}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+        <Reveal className="mt-12">
+          <HotspotFigure
+            image="classroom-main"
+            alt="The SL Classroom live class: teacher stage, participants, camera controls and the classroom sidebar"
+            pins={PINS}
+          />
+        </Reveal>
+
+        <Reveal className="mt-16 sm:mt-20">
+          <p className="mb-6 text-center text-sm font-semibold uppercase tracking-wider text-teal-300">Look inside the classroom</p>
+          <PanelTabs dark tabs={TABS} frameTitle="SL Classroom · Live class" />
+        </Reveal>
+      </Container>
     </section>
   );
 }

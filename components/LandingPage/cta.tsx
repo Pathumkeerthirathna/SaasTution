@@ -1,35 +1,40 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
+import Reveal from "./reveal";
+import { Container } from "./ui";
+
 export default function CTA() {
   return (
-    <section className="bg-white px-4 pb-12 sm:px-6 sm:pb-16 lg:px-8">
-      <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-2xl bg-[#112D5C] px-5 py-10 text-center text-white sm:px-10 sm:py-12">
-        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          Start managing your classes today
-        </h2>
-
-        <p className="mx-auto mt-3 max-w-md text-sm text-white/75 sm:text-[15px]">
-          No setup needed. Start in minutes.
-        </p>
-
-        <div className="mt-6 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
-          <Link
-            href="/register"
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 sm:w-auto"
-          >
-            Get Started Free
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-
-          <Link
-            href="/login"
-            className="inline-flex w-full items-center justify-center rounded-lg border border-white/30 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 sm:w-auto"
-          >
-            Teacher Login
-          </Link>
-        </div>
-      </div>
+    <section className="bg-white py-16 sm:py-24">
+      <Container>
+        <Reveal>
+          <div className="mx-auto max-w-4xl rounded-3xl bg-gradient-to-br from-[#112D5C] to-[#1c4a86] px-6 py-12 text-center text-white shadow-2xl sm:px-12 sm:py-16">
+            <h2 className="text-[28px] font-bold leading-tight tracking-tight sm:text-4xl">Ready to run your classes in one place?</h2>
+            <p className="mx-auto mt-4 max-w-xl text-[15px] text-slate-200 sm:text-lg">
+              Set up your profile, create your first class and go live with your students.
+            </p>
+            <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+              <Link
+                href="/register"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-500 px-6 py-3.5 text-[15px] font-semibold text-white shadow-lg transition hover:bg-teal-400"
+              >
+                Start Teaching
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-xl border border-white/30 px-6 py-3.5 text-[15px] font-semibold text-white transition hover:bg-white/10"
+              >
+                Login
+              </Link>
+            </div>
+            <p className="mt-5 text-[12.5px] text-slate-300">
+              Already have an account? Login. Students and guardians access SL Classroom through their existing accounts.
+            </p>
+          </div>
+        </Reveal>
+      </Container>
     </section>
   );
 }

@@ -16,7 +16,9 @@ export function sceneSignature(scene: WhiteboardScene): string {
 
   const last: WhiteboardElement | undefined = elements[elements.length - 1];
 
-  return `${elements.length}:${versionSum}:${last?.id ?? ""}:${scene.viewBackgroundColor ?? ""}`;
+  // A scene without a background colour is the same as the default white one; the canvas
+  // always reports it, so treating "missing" as different would mark every new board unsaved.
+  return `${elements.length}:${versionSum}:${last?.id ?? ""}:${scene.viewBackgroundColor ?? "#ffffff"}`;
 }
 
 export function formatWhiteboardDate(iso: string): string {

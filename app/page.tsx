@@ -1,10 +1,14 @@
+import AfterClass from "@/components/LandingPage/after-class";
+import ControlCenter from "@/components/LandingPage/control-center";
 import CTA from "@/components/LandingPage/cta";
-import Features from "@/components/LandingPage/features";
-import Growth from "@/components/LandingPage/growth";
-import HowItWorks from "@/components/LandingPage/how-it-works";
+import Fees from "@/components/LandingPage/fees";
 import LiveClassroom from "@/components/LandingPage/live-classroom";
-import Parents from "@/components/LandingPage/parents";
-import TeacherProfileShowcase from "@/components/LandingPage/teacher-profile-showcase";
+import PlatformOverview from "@/components/LandingPage/platform-overview";
+import RecordCommunicate from "@/components/LandingPage/record-communicate";
+import Security from "@/components/LandingPage/security";
+import StudentManagement from "@/components/LandingPage/student-management";
+import StudentsGuardians from "@/components/LandingPage/students-guardians";
+import TeachingTools from "@/components/LandingPage/teaching-tools";
 import Footer from "@/components/Layout/footer";
 import Hero from "@/components/Layout/hero";
 import Navbar from "@/components/Layout/navbar";
@@ -14,12 +18,16 @@ export default function Home() {
     <main className="overflow-x-hidden bg-white text-slate-900">
       <Navbar />
       <Hero />
-      <Features />
+      <PlatformOverview />
+      <ControlCenter />
       <LiveClassroom />
-      <TeacherProfileShowcase />
-      <Parents />
-      <Growth />
-      <HowItWorks />
+      <TeachingTools />
+      <AfterClass />
+      <StudentManagement />
+      <Fees />
+      <StudentsGuardians />
+      <RecordCommunicate />
+      <Security />
       <CTA />
       <Footer />
     </main>

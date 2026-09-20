@@ -5,11 +5,12 @@ import { Menu, X, GraduationCap } from "lucide-react";
 import { useState } from "react";
 
 const links = [
-  { href: "#features", label: "Features" },
+  { href: "#platform", label: "Platform" },
+  { href: "#dashboard", label: "Dashboard" },
   { href: "#live", label: "Live Classroom" },
-  { href: "#profile", label: "Teacher Profile" },
-  { href: "#parents", label: "Parents" },
-  { href: "#how", label: "How It Works" },
+  { href: "#after-class", label: "Learning" },
+  { href: "#students", label: "Students" },
+  { href: "#security", label: "Security" },
 ];
 
 export default function Navbar() {
@@ -17,7 +18,7 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5" onClick={() => setOpen(false)}>
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-sm">
@@ -26,14 +27,14 @@ export default function Navbar() {
 
           <div className="leading-tight">
             <span className="block text-[17px] font-bold tracking-tight text-slate-900">
-              SmartClass
+              SL Classroom
             </span>
-            <span className="block text-[11px] text-slate-500">Learn Smarter</span>
+            <span className="block text-[11px] text-slate-500">Learn • Teach • Collaborate</span>
           </div>
         </Link>
 
         {/* Desktop navigation */}
-        <nav className="hidden items-center gap-6 lg:flex">
+        <nav className="hidden items-center gap-5 xl:flex">
           {links.map((link) => (
             <Link
               key={link.href}
@@ -46,7 +47,7 @@ export default function Navbar() {
         </nav>
 
         {/* Desktop buttons */}
-        <div className="hidden items-center gap-2 lg:flex">
+        <div className="hidden items-center gap-2 xl:flex">
           <Link
             href="/login"
             className="rounded-lg border border-slate-300 px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:border-emerald-500 hover:text-emerald-600"
@@ -58,7 +59,7 @@ export default function Navbar() {
             href="/register"
             className="rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-700"
           >
-            Start Free Trial
+            Start Teaching
           </Link>
         </div>
 
@@ -68,7 +69,7 @@ export default function Navbar() {
           onClick={() => setOpen((value) => !value)}
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
-          className="rounded-lg border border-slate-200 p-2 text-slate-700 lg:hidden"
+          className="rounded-lg border border-slate-200 p-2 text-slate-700 xl:hidden"
         >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
@@ -76,7 +77,7 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {open && (
-        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white lg:hidden">
+        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white xl:hidden">
           <div className="space-y-1 px-4 py-4 sm:px-6">
             {links.map((link) => (
               <Link
@@ -103,7 +104,7 @@ export default function Navbar() {
                 onClick={() => setOpen(false)}
                 className="rounded-lg bg-emerald-600 py-2.5 text-center text-sm font-semibold text-white"
               >
-                Start Free Trial
+                Start Teaching
               </Link>
             </div>
           </div>
