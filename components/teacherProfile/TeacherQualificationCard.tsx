@@ -296,14 +296,6 @@ export default function TeacherQualificationCard({
                       <h4 className="text-[16px] font-semibold text-slate-900">
                         {qualification.title}
                       </h4>
-
-                      <p className="mt-0.5 text-[14px] font-medium text-orange-600">
-                        {qualification.institute}
-                      </p>
-
-                      <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[12px] font-semibold text-orange-700">
-                        {qualification.startYear} - {qualification.endYear}
-                      </div>
                     </div>
 
                     {isPublic?null:(<div className="flex shrink-0 items-center gap-0.5">

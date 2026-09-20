@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     const slug =
-      request.nextUrl.searchParams.get("slug")?.trim().toLowerCase();
+      request.nextUrl.searchParams.get("slug")?.trim();
 
     if (!slug) {
       return NextResponse.json(
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     const exists = await prisma.teacherProfile.findFirst({
       where: {
-        slug,
+        slug: { equals: slug, mode: "insensitive" },
         NOT: {
           teacherId: session.teacherId,
         },

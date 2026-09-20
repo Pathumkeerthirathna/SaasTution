@@ -38,8 +38,35 @@ export async function GET(request: NextRequest) {
             ? rawReturnTo
             : "/";
 
+    /*
+     * Behind a reverse proxy, request.url can carry the internal host
+     * (localhost:3000). Google called us back on the origin registered in
+     * GOOGLE_YOUTUBE_REDIRECT_URI, so that origin is the public domain the
+     * teacher is actually on (localhost in dev, slclassroom.live in prod).
+     */
+    function getPublicOrigin() {
+        if (redirectUri) {
+            try {
+                return new URL(redirectUri).origin;
+            } catch {
+                // fall through to header-based detection
+            }
+        }
+
+        const host =
+            request.headers.get("x-forwarded-host") ??
+            request.headers.get("host");
+        const proto =
+            request.headers.get("x-forwarded-proto") ??
+            new URL(request.url).protocol.replace(":", "");
+
+        return host ? `${proto}://${host}` : new URL(request.url).origin;
+    }
+
+    const publicOrigin = getPublicOrigin();
+
     function redirectWithError(errorCode: string) {
-        const url = new URL(safeReturnTo, request.url);
+        const url = new URL(safeReturnTo, publicOrigin);
         url.searchParams.set("youtubeOauthError", errorCode);
 
         const response = NextResponse.redirect(url);
@@ -215,7 +242,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(
         new URL(
             safeReturnTo,
-            request.url
+            publicOrigin
         )
     );
 

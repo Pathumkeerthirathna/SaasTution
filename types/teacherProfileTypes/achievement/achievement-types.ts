@@ -9,6 +9,8 @@ export interface Achievement {
 
   year: number | null;
 
+  imageUrl?: string | null;
+
   displayOrder: number;
 
   createdAt: string;
@@ -22,4 +24,8 @@ export interface AchievementForm {
   description: string;
 
   year: number | "";
+
+  photo?: File | null;
+
+  removePhoto?: boolean;
 }

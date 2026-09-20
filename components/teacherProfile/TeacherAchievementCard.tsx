@@ -155,17 +155,26 @@ export default function TeacherAchievementCard({
       const method =
         editing ? "PUT" : "POST";
 
+      const body = new FormData();
+
+      body.append("title", form.title);
+      body.append("description", form.description);
+      body.append("year", String(form.year));
+
+      if (form.photo) {
+        body.append("photo", form.photo);
+      }
+
+      if (form.removePhoto) {
+        body.append("removePhoto", "true");
+      }
+
       const response =
         await fetch(url, {
 
           method,
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify(form),
+          body,
 
         });
 
@@ -437,6 +446,17 @@ export default function TeacherAchievementCard({
 
                       )}
 
+                      {achievement.imageUrl && (
+
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={achievement.imageUrl}
+                          alt={achievement.title}
+                          className="mt-2.5 max-h-56 w-full rounded-lg border border-slate-200 object-cover"
+                        />
+
+                      )}
+
                     </div>
 
                   </div>
@@ -500,6 +520,10 @@ export default function TeacherAchievementCard({
                   year:
                     editingAchievement.year ??
                     "",
+
+                  imageUrl:
+                    editingAchievement.imageUrl ??
+                    null,
                 }
               : undefined
           }

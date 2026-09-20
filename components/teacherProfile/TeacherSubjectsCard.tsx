@@ -1,6 +1,10 @@
 "use client";
 
-import { SubjectForm, TeacherSubject } from "@/types/teacherProfileTypes/teacherSubjects/teacherSubjectTypes";
+import {
+  SubjectForm,
+  TEACHING_LEVEL_LABELS,
+  TeacherSubject,
+} from "@/types/teacherProfileTypes/teacherSubjects/teacherSubjectTypes";
 import {
   BookOpen,
   Pencil,
@@ -118,13 +122,20 @@ export default function TeacherSubjectsCard({
       const method =
           editing ? "PUT" : "POST";
 
-      await fetch(url,{
+      const response = await fetch(url,{
           method,
           headers:{
               "Content-Type":"application/json"
           },
           body:JSON.stringify(form)
       });
+
+      if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          alert(error?.message ?? "Failed to save subject.");
+          setSaving(false);
+          return;
+      }
 
       setDrawerOpen(false);
 
@@ -186,7 +197,7 @@ export default function TeacherSubjectsCard({
       <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-[16px] font-bold text-slate-900">
-            Subjects &amp; Grade Levels
+            Subjects &amp; Teaching Levels
           </h3>
 
           <p className="mt-0.5 text-[14px] text-slate-500">
@@ -287,8 +298,15 @@ export default function TeacherSubjectsCard({
                   {subject.subject.name}
                 </h4>
 
-                <div className="mt-1.5 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[12px] font-semibold text-orange-700">
-                  Grade {subject.gradeFrom} - {subject.gradeTo}
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {subject.levels.map((level) => (
+                    <span
+                      key={level}
+                      className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[12px] font-semibold text-orange-700"
+                    >
+                      {TEACHING_LEVEL_LABELS[level]}
+                    </span>
+                  ))}
                 </div>
               </div>
             ))}
@@ -314,7 +332,7 @@ export default function TeacherSubjectsCard({
           </div>
 
           <p className="mt-2 text-[14px] leading-5 text-slate-700">
-            Subjects and grade levels shown here are visible to students and parents on your public profile.
+            Subjects and teaching levels shown here are visible to students and parents on your public profile.
           </p>
         </div>
       </div>

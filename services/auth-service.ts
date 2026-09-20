@@ -4,7 +4,8 @@ import { StudentConfirmationStatus, type Role } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
-import { buildPasswordResetLink, sendPasswordResetEmail } from "@/lib/mailer";
+import { buildPasswordResetLink, sendPasswordResetEmail, sendEmailVerificationCodeEmail } from "@/lib/mailer";
+import { createEmailVerificationCode, verifyEmailConfirmationCode } from "@/lib/email-verification";
 import { prisma } from "@/lib/prisma";
 import { defaultProfileSectionsCreateInput } from "@/services/teacher-profile-section-service";
 
@@ -96,11 +97,11 @@ export async function registerTeacher(input: {
   }
 
   // An email may not be shared with a student or guardian account either.
-  await assertEmailAvailable(input.email);
+  await assertEmailAvailable(input.email, { type: "TEACHER" });
 
   const hashedPassword = await bcrypt.hash(input.password, HASH_ROUNDS);
 
-  return prisma.teacher.create({
+  const teacher = await prisma.teacher.create({
     data: {
       name: input.name,
       email: input.email,
@@ -116,6 +117,27 @@ export async function registerTeacher(input: {
       createdAt: true,
     },
   });
+
+  try {
+    await sendEmailConfirmationCode("TEACHER", teacher.id, teacher.email);
+  } catch (error) {
+    console.error("Failed to send teacher email confirmation code:", error);
+  }
+
+  return teacher;
+}
+
+/**
+ * Generates a fresh confirmation code for a teacher or student and emails
+ * it to them. Used at registration and whenever a code needs to be resent.
+ */
+export async function sendEmailConfirmationCode(
+  role: "TEACHER" | "STUDENT",
+  userId: string,
+  email: string
+) {
+  const code = await createEmailVerificationCode({ role, userId, email });
+  await sendEmailVerificationCodeEmail({ to: email, code });
 }
 
 export async function loginTeacher(email: string, password: string) {
@@ -129,6 +151,15 @@ export async function loginTeacher(email: string, password: string) {
 
   if (!isPasswordValid) {
     throw new AppError("Invalid email or password.", 401, "INVALID_CREDENTIALS");
+  }
+
+  if (!teacher.emailConfirmed) {
+    throw new AppError(
+      "Please confirm your email before signing in. We've sent a confirmation code to your inbox.",
+      403,
+      "EMAIL_NOT_CONFIRMED",
+      { email: teacher.email }
+    );
   }
 
   if (teacher.isBlocked) {
@@ -170,6 +201,15 @@ export async function loginStudent(registrationNumber: string, password: string)
 
   if (!isPasswordValid) {
     throw new AppError("Invalid registration number or password.", 401, "INVALID_CREDENTIALS");
+  }
+
+  if (!student.emailConfirmed) {
+    throw new AppError(
+      "Please confirm your email before signing in. We've sent a confirmation code to your inbox.",
+      403,
+      "EMAIL_NOT_CONFIRMED",
+      { email: student.email }
+    );
   }
 
   if (student.confirmationStatus === StudentConfirmationStatus.PENDING) {
@@ -270,6 +310,72 @@ export async function loginByLoginId(loginId: string, password: string): Promise
       isConfirmed:authenticatedStudent.confirmationStatus==StudentConfirmationStatus.APPROVED?true:false
     }
   };
+}
+
+async function resolveAccountByLoginId(loginId: string): Promise<
+  | { role: "TEACHER"; id: string; email: string; emailConfirmed: boolean }
+  | { role: "STUDENT"; id: string; email: string; emailConfirmed: boolean }
+  | null
+> {
+  const normalized = loginId.trim();
+  const maybeEmail = normalized.toLowerCase();
+
+  const teacher = await findTeacherByEmail(maybeEmail);
+
+  if (teacher) {
+    return {
+      role: "TEACHER",
+      id: teacher.id,
+      email: teacher.email,
+      emailConfirmed: teacher.emailConfirmed,
+    };
+  }
+
+  const student = await findStudentByRegistrationNumber(normalized);
+
+  if (student && student.email) {
+    return {
+      role: "STUDENT",
+      id: student.id,
+      email: student.email,
+      emailConfirmed: student.emailConfirmed,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Validates a submitted confirmation code for whichever teacher or student
+ * account `loginId` resolves to. Does not sign the user in — the caller is
+ * expected to retry the normal login afterwards.
+ */
+export async function confirmEmailCode(loginId: string, code: string): Promise<void> {
+  const account = await resolveAccountByLoginId(loginId);
+
+  if (!account) {
+    throw new AppError("Account not found.", 404, "ACCOUNT_NOT_FOUND");
+  }
+
+  if (account.emailConfirmed) {
+    return;
+  }
+
+  await verifyEmailConfirmationCode({ role: account.role, userId: account.id, code });
+}
+
+export async function resendEmailConfirmationCode(loginId: string): Promise<void> {
+  const account = await resolveAccountByLoginId(loginId);
+
+  if (!account) {
+    throw new AppError("Account not found.", 404, "ACCOUNT_NOT_FOUND");
+  }
+
+  if (account.emailConfirmed) {
+    throw new AppError("This email is already confirmed.", 400, "ALREADY_CONFIRMED");
+  }
+
+  await sendEmailConfirmationCode(account.role, account.id, account.email);
 }
 
 export async function requestPasswordReset(loginId: string, appBaseUrl?: string) {

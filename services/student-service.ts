@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
+import { sendEmailConfirmationCode } from "@/services/auth-service";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
@@ -136,7 +137,7 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
   }
 
   if (input.email) {
-    await assertEmailAvailable(input.email);
+    await assertEmailAvailable(input.email, { type: "STUDENT", teacherId: teacher.id });
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -182,6 +183,12 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
           });
         } catch (err) {
           console.error("Email sending failed:", err);
+        }
+
+        try {
+          await sendEmailConfirmationCode("STUDENT", student.id, student.email);
+        } catch (err) {
+          console.error("Failed to send student email confirmation code:", err);
         }
       }
 
@@ -851,11 +858,15 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
     );
   }
 
+  const normalizedNewEmail = input.email?.trim().toLowerCase() ?? "";
+  const normalizedOldEmail = profile.email?.trim().toLowerCase() ?? "";
+  const emailChanged = normalizedNewEmail !== normalizedOldEmail;
+
   if (input.email) {
-    await assertEmailAvailable(input.email, { studentId });
+    await assertEmailAvailable(input.email, { type: "STUDENT", teacherId, excludeStudentId: studentId });
   }
 
-  return prisma.student.update({
+  const student = await prisma.student.update({
     where: {
       id: studentId,
     },
@@ -867,6 +878,9 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       contact01: input.contact01,
       contact02: input.contact02,
       email: input.email,
+      // Changing the email means it was never proven to belong to the
+      // student, so it must be confirmed again before their next login.
+      ...(emailChanged ? { emailConfirmed: false, emailConfirmedAt: null } : {}),
     },
     select: {
       id: true,
@@ -879,6 +893,16 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       createdAt: true,
     },
   });
+
+  if (emailChanged && student.email) {
+    try {
+      await sendEmailConfirmationCode("STUDENT", student.id, student.email);
+    } catch (err) {
+      console.error("Failed to send student email confirmation code:", err);
+    }
+  }
+
+  return student;
 }
 
 export async function removeStudentFromClassForTeacher(params: {
@@ -1850,7 +1874,7 @@ export async function RegisterStudentViaPublicClasses(
       );
     }
 
-    await assertEmailAvailable(emailValue);
+    await assertEmailAvailable(emailValue, { type: "STUDENT", teacherId: cls.teacherId });
   }
 
   const teacher = await prisma.teacher.findUnique({
@@ -1925,6 +1949,14 @@ export async function RegisterStudentViaPublicClasses(
     } catch (err) {
         console.error("Email sending failed:", err);
     }
+
+  if (emailValue) {
+    try {
+      await sendEmailConfirmationCode("STUDENT", student.id, emailValue.toLowerCase());
+    } catch (err) {
+      console.error("Failed to send student email confirmation code:", err);
+    }
+  }
 
   return {
     student,

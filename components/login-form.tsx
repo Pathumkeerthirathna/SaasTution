@@ -7,6 +7,7 @@ import { IdCard, Lock, LogIn, ShieldCheck } from "lucide-react";
 
 import { AuthShell } from "@/components/auth-shell";
 import { AuthIllustration } from "@/components/auth-illustration";
+import { VerifyEmailCodeForm } from "@/components/verify-email-code-form";
 import { getCurrentDevice } from "@/lib/current-device";
 import { RejectedDeviceCard } from "./RejectedDeviceCard";
 import toast from "react-hot-toast";
@@ -28,6 +29,8 @@ export function LoginForm() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
 
   type DeviceApprovalData = {
     currentDevice?: {
@@ -56,8 +59,13 @@ export function LoginForm() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await performLogin();
+  }
+
+  async function performLogin() {
     setIsSubmitting(true);
     setErrorMessage(null);
+    setNeedsEmailConfirmation(false);
 
     const device = await getCurrentDevice();
 
@@ -109,6 +117,11 @@ export function LoginForm() {
         }
 
         setErrorMessage(message);
+
+        if (err.code === "EMAIL_NOT_CONFIRMED") {
+          setNeedsEmailConfirmation(true);
+          setConfirmationEmail(err.details?.email ?? formState.loginId);
+        }
 
         if (
           err.code === "DEVICE_REJECTED" ||
@@ -307,6 +320,28 @@ export function LoginForm() {
         setDeviceApproval={setDeviceApproval}
       />
     ) : undefined;
+
+  if (needsEmailConfirmation) {
+    return (
+      <AuthShell
+        title="Confirm your email"
+        subtitle="One last step before you can sign in."
+        footerText="Need a teacher account?"
+        footerLinkHref="/register"
+        footerLinkLabel="Register"
+        icon={<ShieldCheck className="h-5 w-5" />}
+        illustration={<AuthIllustration />}
+        showBackToHome
+      >
+        <VerifyEmailCodeForm
+          loginId={formState.loginId}
+          email={confirmationEmail}
+          onVerified={performLogin}
+          onCancel={() => setNeedsEmailConfirmation(false)}
+        />
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

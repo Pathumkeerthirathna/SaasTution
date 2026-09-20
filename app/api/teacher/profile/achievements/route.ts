@@ -6,6 +6,7 @@ import {
   addAchievement,
 } from "@/services/teacher-profile-service";
 import { getOptionalSession, requireAppSession } from "@/lib/auth-session";
+import { parseAchievementForm } from "@/lib/teacher-achievement-image";
 
 export async function GET(request:Request) {
   try {
@@ -61,13 +62,15 @@ export async function POST(
       );
     }
 
-    const body =
-      await request.json();
+    const { dto, file } = parseAchievementForm(
+      await request.formData()
+    );
 
     const achievement =
       await addAchievement(
         session.userId,
-        body
+        dto,
+        file
       );
 
     return NextResponse.json(

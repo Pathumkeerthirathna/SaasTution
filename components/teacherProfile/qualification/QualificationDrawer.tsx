@@ -21,9 +21,6 @@ export default function QualificationDrawer({
 }: Props) {
   const [form, setForm] = useState<QualificationForm>({
     title: "",
-    institute: "",
-    startYear: null,
-    endYear: null,
     displayOrder: 0,
   });
 
@@ -31,17 +28,11 @@ export default function QualificationDrawer({
     if (qualification) {
       setForm({
         title: qualification.title,
-        institute: qualification.institute,
-        startYear: qualification.startYear,
-        endYear: qualification.endYear,
         displayOrder: qualification.displayOrder,
       });
     } else {
       setForm({
         title: "",
-        institute: "",
-        startYear: null,
-        endYear: null,
         displayOrder: 0,
       });
     }
@@ -121,80 +112,6 @@ export default function QualificationDrawer({
 
             </div>
 
-            {/* Institute */}
-
-            <div>
-
-              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
-                Institute *
-              </label>
-
-              <input
-                value={form.institute}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    institute: e.target.value,
-                  }))
-                }
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
-                placeholder="University of Colombo"
-              />
-
-            </div>
-
-            {/* Years */}
-
-            <div className="grid grid-cols-2 gap-3">
-
-              <div>
-
-                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
-                  Start Year
-                </label>
-
-                <input
-                  type="number"
-                  value={form.startYear ?? ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      startYear: e.target.value
-                        ? Number(e.target.value)
-                        : null,
-                    }))
-                  }
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
-                  placeholder="2018"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
-                  End Year
-                </label>
-
-                <input
-                  type="number"
-                  value={form.endYear ?? ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      endYear: e.target.value
-                        ? Number(e.target.value)
-                        : null,
-                    }))
-                  }
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-emerald-500"
-                  placeholder="2022"
-                />
-
-              </div>
-
-            </div>
-
             {/* Display Order */}
 
             <div>
@@ -240,8 +157,7 @@ export default function QualificationDrawer({
           <button
             disabled={
               saving ||
-              !form.title.trim() ||
-              !form.institute.trim()
+              !form.title.trim()
             }
             onClick={() => onSave(form)}
             className="flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60"

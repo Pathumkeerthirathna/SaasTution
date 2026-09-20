@@ -6,6 +6,7 @@ import { Lock, Mail, Phone, UserPlus, UserRound } from "lucide-react";
 
 import { AuthShell } from "@/components/auth-shell";
 import { AuthIllustration } from "@/components/auth-illustration";
+import { VerifyEmailCodeForm } from "@/components/verify-email-code-form";
 
 type RegisterFormState = {
   name: string;
@@ -48,6 +49,8 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [stage, setStage] = useState<"form" | "verify">("form");
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   function updateField(field: keyof RegisterFormState, value: string) {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -140,13 +143,69 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      setStage("verify");
     } catch {
       setErrorMessage("Unable to register right now. Please try again in a moment.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleVerified() {
+    setVerifyError(null);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loginId: formState.email,
+          password: formState.password,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || !payload.success) {
+        setVerifyError(
+          payload.error?.message ?? "Email confirmed, but sign-in failed. Please sign in manually."
+        );
+        return;
+      }
+
+      const redirectTo = payload.data?.redirectTo ?? "/dashboard";
+      router.push(redirectTo);
+      router.refresh();
+    } catch {
+      setVerifyError("Email confirmed, but sign-in failed. Please sign in manually.");
+    }
+  }
+
+  if (stage === "verify") {
+    return (
+      <AuthShell
+        title="Confirm your email"
+        subtitle="One last step before you can sign in."
+        footerText="Already have an account?"
+        footerLinkHref="/login"
+        footerLinkLabel="Sign in"
+        icon={<UserPlus className="h-5 w-5" />}
+        illustration={<AuthIllustration />}
+        showBackToHome
+      >
+        {verifyError ? (
+          <p className="mb-3.5 whitespace-pre-line rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+            {verifyError}
+          </p>
+        ) : null}
+        <VerifyEmailCodeForm
+          loginId={formState.email}
+          email={formState.email}
+          onVerified={handleVerified}
+          onCancel={() => setStage("form")}
+        />
+      </AuthShell>
+    );
   }
 
   return (

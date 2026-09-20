@@ -97,7 +97,7 @@ export async function createGuardianWithAccount(
 ) {
   const student = await assertTeacherCanManageStudent(teacherId, input.studentId);
 
-  await assertEmailAvailable(input.email);
+  await assertEmailAvailable(input.email, { type: "GUARDIAN" });
 
   const nameTaken = await prisma.guardian.findUnique({
     where: { fullName: input.fullName },
@@ -270,7 +270,7 @@ export async function updateGuardianDetails(
     );
   }
 
-  await assertEmailAvailable(input.email, { guardianId });
+  await assertEmailAvailable(input.email, { type: "GUARDIAN", excludeGuardianId: guardianId });
 
   const nameTaken = await prisma.guardian.findFirst({
     where: { fullName: input.fullName, NOT: { id: guardianId } },

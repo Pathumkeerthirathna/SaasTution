@@ -504,9 +504,8 @@ export default function TeacherProfileHeader({
 
   const slugify = (text: string) =>
     text
-        .toLowerCase()
         .trim()
-        .replace(/[^a-z0-9 ]/g, "")
+        .replace(/[^A-Za-z0-9 -]/g, "")
         .replace(/\s+/g, "-");
 
   const [checkingSlug, setCheckingSlug] = useState(false);

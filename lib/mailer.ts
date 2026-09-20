@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 
 import { AppError } from "@/lib/error-handler";
 import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
+import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
 import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
@@ -438,6 +439,15 @@ export async function sendPasswordResetEmail(
     "Reset your SLClassroom password",
     getPasswordResetEmail({ resetLink: input.resetLink, expiresIn: "30 minutes" }),
     `Reset your SLClassroom password by opening this link:\n${input.resetLink}\n\nIf you did not request this, you can ignore this email.`
+  );
+}
+
+export async function sendEmailVerificationCodeEmail(input: { to: string; code: string }) {
+  await sendEmail(
+    input.to,
+    "Your SLClassroom confirmation code",
+    getEmailVerificationCodeEmail({ code: input.code, expiresIn: "30 minutes" }),
+    `Your SLClassroom confirmation code is: ${input.code}\n\nThis code expires in 30 minutes. If you did not request this, you can ignore this email.`
   );
 }
 

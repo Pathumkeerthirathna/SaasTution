@@ -10,6 +10,9 @@ import {
 import {
   Subject,
   SubjectForm,
+  TEACHING_LEVELS,
+  TEACHING_LEVEL_LABELS,
+  TeachingLevel,
   TeacherSubject,
 } from "@/types/teacherProfileTypes/teacherSubjects/teacherSubjectTypes";
 
@@ -26,11 +29,6 @@ interface Props {
   ) => void;
 }
 
-const grades = Array.from(
-  { length: 13 },
-  (_, i) => i + 1
-);
-
 export default function SubjectDrawer({
   open,
   saving,
@@ -44,8 +42,7 @@ export default function SubjectDrawer({
   const [form, setForm] =
     useState<SubjectForm>({
       subjectId: 0,
-      gradeFrom: 6,
-      gradeTo: 11,
+      levels: [],
     });
 
   const [loading, setLoading] =
@@ -90,18 +87,24 @@ export default function SubjectDrawer({
     if (editingSubject) {
       setForm({
         subjectId: editingSubject.subjectId,
-        gradeFrom: editingSubject.gradeFrom,
-        gradeTo: editingSubject.gradeTo,
+        levels: editingSubject.levels,
       });
     } else {
       setForm({
         subjectId: 0,
-        gradeFrom: 6,
-        gradeTo: 11,
+        levels: [],
       });
     }
   }, [editingSubject, open]);
 
+  function toggleLevel(level: TeachingLevel) {
+    setForm((prev) => ({
+      ...prev,
+      levels: prev.levels.includes(level)
+        ? prev.levels.filter((item) => item !== level)
+        : [...prev.levels, level],
+    }));
+  }
 
 
   if (!open) return null;
@@ -200,80 +203,47 @@ export default function SubjectDrawer({
 
               </div>
 
-              {/* Grades */}
+              {/* Teaching levels */}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
 
-                <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                  Teaching Levels
+                </label>
 
-                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
-                    Grade From
-                  </label>
+                <div className="grid grid-cols-3 gap-2">
 
-                  <select
-                    value={form.gradeFrom}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        gradeFrom: Number(
-                          e.target.value
-                        ),
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none focus:border-emerald-500"
-                  >
-                    {grades.map((grade) => (
-                      <option
-                        key={grade}
-                        value={grade}
+                  {TEACHING_LEVELS.map((level) => {
+                    const checked = form.levels.includes(level);
+
+                    return (
+                      <label
+                        key={level}
+                        className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
+                          checked
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                        }`}
                       >
-                        Grade {grade}
-                      </option>
-                    ))}
-                  </select>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleLevel(level)}
+                          className="h-3.5 w-3.5 accent-emerald-600"
+                        />
+
+                        {TEACHING_LEVEL_LABELS[level]}
+                      </label>
+                    );
+                  })}
 
                 </div>
 
-                <div>
-
-                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
-                    Grade To
-                  </label>
-
-                  <select
-                    value={form.gradeTo}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        gradeTo: Number(
-                          e.target.value
-                        ),
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none focus:border-emerald-500"
-                  >
-                    {grades.map((grade) => (
-                      <option
-                        key={grade}
-                        value={grade}
-                      >
-                        Grade {grade}
-                      </option>
-                    ))}
-                  </select>
-
-                </div>
+                <p className="mt-1.5 text-[12px] text-slate-500">
+                  Choose every level you teach this subject for.
+                </p>
 
               </div>
-
-              {form.gradeTo <
-                form.gradeFrom && (
-
-                <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12.5px] text-red-600">
-                  Grade To cannot be less than Grade From.
-                </div>
-
-              )}
 
             </div>
 
@@ -295,8 +265,8 @@ export default function SubjectDrawer({
           <button
             disabled={
               saving ||
-              form.gradeTo <
-                form.gradeFrom
+              !form.subjectId ||
+              form.levels.length === 0
             }
             onClick={() =>
               onSave(form)

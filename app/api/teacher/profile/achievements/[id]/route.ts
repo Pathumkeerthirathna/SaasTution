@@ -5,6 +5,7 @@ import {
   deleteAchievement,
 } from "@/services/teacher-profile-service";
 import { requireAppSession } from "@/lib/auth-session";
+import { parseAchievementForm } from "@/lib/teacher-achievement-image";
 
 interface RouteParams {
   params: {
@@ -26,14 +27,16 @@ export async function PUT(
       );
     }
 
-    const body =
-      await request.json();
+    const { dto, file, removePhoto } = parseAchievementForm(
+      await request.formData()
+    );
 
     const achievement =
       await updateAchievement(
         session.userId,
         params.id,
-        body
+        dto,
+        { file, remove: removePhoto }
       );
 
     return NextResponse.json(

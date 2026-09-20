@@ -424,19 +424,19 @@ export default function useJitsi({
             startWithAudioMuted: true,
             startWithVideoMuted: true,
 
-            resolution: 360,
+            resolution: 720,
 
             constraints: {
               video: {
                 height: {
-                  ideal: 360,
-                  max: 360,
-                  min: 180,
+                  ideal: 720,
+                  max: 1080,
+                  min: 240,
                 },
               },
             },
 
-            disableSimulcast: true,
+            disableSimulcast: false,
             disableTileView: true,
 
             channelLastN: 1,

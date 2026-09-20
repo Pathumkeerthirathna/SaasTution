@@ -1,3 +1,4 @@
+import type { TeachingLevel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AddAchievement } from "@/types/AddAchievement";
 import { AddQualification } from "@/types/AddQualification";
@@ -7,6 +8,11 @@ import { UpdateTeacherProfile } from "@/types/teacherProfileTypes/UpdateTeacherP
 import { TeacherSearchFilter } from "@/types/TeacherSearchFilter";
 import { TeacherSubject } from "@/types/TeacherSubject";
 import { UpdateAchievement } from "@/types/UpdateAchievement";
+import {
+  achievementImageUrl,
+  removeAchievementImage,
+  saveAchievementImage,
+} from "@/lib/teacher-achievement-image";
 import { UpdateQualification } from "@/types/UpdateQualification";
 import { Prisma, TeacherTitle } from "@prisma/client";
 
@@ -122,7 +128,6 @@ export async function getTeacherProfile(
         id:true,
         displayOrder:true,
         title:true,
-        institute:true,
         profile:true
       }
     },
@@ -360,8 +365,8 @@ export async function createTeacherProfile(
     throw new Error("Please enter a display name.");
   }
 
-  const taken = await prisma.teacherProfile.findUnique({
-    where: { slug },
+  const taken = await prisma.teacherProfile.findFirst({
+    where: { slug: { equals: slug, mode: "insensitive" } },
     select: { id: true },
   });
 
@@ -449,7 +454,6 @@ export async function GetTeacherPublicProfileBySlug(
         id: true,
         displayOrder: true,
         title: true,
-        institute: true,
         profile: true,
       },
       orderBy: {
@@ -529,8 +533,10 @@ export async function GetTeacherPublicProfileBySlug(
     
   } satisfies Prisma.TeacherProfileSelect;
 
-  const profile = await prisma.teacherProfile.findUnique({
-    where: { slug },
+  // Profile URLs keep the capitals the teacher typed, but /pathum and /Pathum
+  // must open the same page.
+  const profile = await prisma.teacherProfile.findFirst({
+    where: { slug: { equals: slug, mode: "insensitive" } },
     select: teacherProfileSelect,
   });
 
@@ -658,7 +664,7 @@ export async function updateTeacherProfile(
   const existingSlug =
     await prisma.teacherProfile.findFirst({
       where: {
-        slug,
+        slug: { equals: slug, mode: "insensitive" },
         NOT: {
           teacherId,
         },
@@ -755,14 +761,9 @@ export async function getQualifications(
     },
     select: {
       qualifications: {
-        orderBy: [
-          {
-            displayOrder: "asc",
-          },
-          {
-            endYear: "desc",
-          },
-        ],
+        orderBy: {
+          displayOrder: "asc",
+        },
       },
     },
   });
@@ -809,10 +810,6 @@ export async function addQualification(
       profileId: profile.id,
 
       title: dto.title.trim(),
-      institute: dto.institute.trim(),
-
-      startYear: dto.startYear,
-      endYear: dto.endYear,
 
       displayOrder: nextDisplayOrder,
     },
@@ -844,10 +841,6 @@ export async function updateQualification(
     },
     data: {
       title: dto.title?.trim(),
-      institute: dto.institute?.trim(),
-
-      startYear: dto.startYear,
-      endYear: dto.endYear,
 
       displayOrder: dto.displayOrder,
     },
@@ -910,13 +903,25 @@ export async function getAchievements(
     },
   });
 
-  return profile?.achievements ?? [];
+  return (profile?.achievements ?? []).map(toAchievementDto);
+}
+
+function toAchievementDto<T extends { id: string; imageName: string | null }>(
+  achievement: T
+) {
+  return {
+    ...achievement,
+    imageUrl: achievement.imageName
+      ? achievementImageUrl(achievement.id, achievement.imageName)
+      : null,
+  };
 }
 
 
 export async function addAchievement(
   teacherId: string,
-  dto: AddAchievement
+  dto: AddAchievement,
+  imageFile: File | null = null
 ) {
   const profile = await prisma.teacherProfile.findUnique({
     where: {
@@ -943,7 +948,11 @@ export async function addAchievement(
   const nextDisplayOrder =
     (profile.achievements[0]?.displayOrder ?? 0) + 1;
 
-  return prisma.teacherAchievement.create({
+  const imageName = imageFile
+    ? await saveAchievementImage(teacherId, imageFile)
+    : null;
+
+  const created = await prisma.teacherAchievement.create({
     data: {
       profileId: profile.id,
 
@@ -952,15 +961,20 @@ export async function addAchievement(
 
       year: dto.year,
 
+      imageName,
+
       displayOrder: nextDisplayOrder,
     },
   });
+
+  return toAchievementDto(created);
 }
 
 export async function updateAchievement(
   teacherId: string,
   achievementId: string,
-  dto: UpdateAchievement
+  dto: UpdateAchievement,
+  image: { file: File | null; remove: boolean } = { file: null, remove: false }
 ) {
   const achievement =
     await prisma.teacherAchievement.findFirst({
@@ -976,7 +990,15 @@ export async function updateAchievement(
     throw new Error("Achievement not found");
   }
 
-  return prisma.teacherAchievement.update({
+  let imageName = achievement.imageName;
+
+  if (image.file) {
+    imageName = await saveAchievementImage(teacherId, image.file);
+  } else if (image.remove) {
+    imageName = null;
+  }
+
+  const updated = await prisma.teacherAchievement.update({
     where: {
       id: achievementId,
     },
@@ -984,9 +1006,16 @@ export async function updateAchievement(
       title: dto.title?.trim(),
       description: dto.description?.trim(),
       year: dto.year,
+      imageName,
       displayOrder: dto.displayOrder,
     },
   });
+
+  if (imageName !== achievement.imageName) {
+    await removeAchievementImage(teacherId, achievement.imageName);
+  }
+
+  return toAchievementDto(updated);
 }
 
 export async function deleteAchievement(
@@ -1003,6 +1032,7 @@ export async function deleteAchievement(
       },
       select: {
         id: true,
+        imageName: true,
       },
     });
 
@@ -1015,6 +1045,8 @@ export async function deleteAchievement(
       id: achievementId,
     },
   });
+
+  await removeAchievementImage(teacherId, achievement.imageName);
 
   return {
     success: true,
@@ -1104,9 +1136,94 @@ export async function getSubjects() {
   });
 }
 
+const TEACHING_LEVEL_ORDER: TeachingLevel[] = ["PRIMARY", "OL", "AL"];
+
+export interface TeacherSubjectDto {
+  id: string;
+  subjectId: number;
+  subject: { id: number; name: string };
+  levels: TeachingLevel[];
+}
+
+/**
+ * The database keeps one row per (subject, level); the UI works with one entry
+ * per subject listing every level taught. `id` is the id of one of the subject's
+ * rows and can be used to edit or delete the whole subject.
+ */
+function groupTeacherSubjects(
+  rows: Array<{
+    id: string;
+    subjectId: number;
+    teachingLevel: TeachingLevel;
+    subject: { id: number; name: string };
+  }>
+): TeacherSubjectDto[] {
+  const bySubject = new Map<number, TeacherSubjectDto>();
+
+  for (const row of rows) {
+    const existing = bySubject.get(row.subjectId);
+
+    if (existing) {
+      existing.levels.push(row.teachingLevel);
+    } else {
+      bySubject.set(row.subjectId, {
+        id: row.id,
+        subjectId: row.subjectId,
+        subject: { id: row.subject.id, name: row.subject.name },
+        levels: [row.teachingLevel],
+      });
+    }
+  }
+
+  return Array.from(bySubject.values()).map((entry) => ({
+    ...entry,
+    levels: TEACHING_LEVEL_ORDER.filter((level) =>
+      entry.levels.includes(level)
+    ),
+  }));
+}
+
+function normalizeTeachingLevels(levels: unknown): TeachingLevel[] {
+  if (!Array.isArray(levels)) {
+    throw new Error("Select at least one teaching level.");
+  }
+
+  const valid = TEACHING_LEVEL_ORDER.filter((level) =>
+    levels.includes(level)
+  );
+
+  if (valid.length === 0 || valid.length !== new Set(levels).size) {
+    throw new Error("Select at least one valid teaching level.");
+  }
+
+  return valid;
+}
+
+async function getProfileIdForTeacher(teacherId: string) {
+  const profile = await prisma.teacherProfile.findUnique({
+    where: { teacherId },
+    select: { id: true },
+  });
+
+  if (!profile) {
+    throw new Error("Teacher profile not found");
+  }
+
+  return profile.id;
+}
+
+async function getGroupedSubject(profileId: string, subjectId: number) {
+  const rows = await prisma.teacherProfileSubject.findMany({
+    where: { profileId, subjectId },
+    include: { subject: true },
+  });
+
+  return groupTeacherSubjects(rows)[0];
+}
+
 export async function getTeacherSubjects(
   teacherId: string
-) {
+): Promise<TeacherSubjectDto[]> {
   const profile = await prisma.teacherProfile.findUnique({
     where: {
       teacherId,
@@ -1116,16 +1233,11 @@ export async function getTeacherSubjects(
         include: {
           subject: true,
         },
-        orderBy: [
-          {
-            subject: {
-              name: "asc",
-            },
+        orderBy: {
+          subject: {
+            name: "asc",
           },
-          {
-            gradeFrom: "asc",
-          },
-        ],
+        },
       },
     },
   });
@@ -1134,65 +1246,48 @@ export async function getTeacherSubjects(
     throw new Error("Teacher profile not found");
   }
 
-  return profile.subjects;
+  return groupTeacherSubjects(profile.subjects);
 }
 
 export interface AddTeacherSubjectDto {
   subjectId: number;
-  gradeFrom: number;
-  gradeTo: number;
+  levels: TeachingLevel[];
 }
 
 export async function addTeacherSubject(
   teacherId: string,
   dto: AddTeacherSubjectDto
 ) {
-  const profile = await prisma.teacherProfile.findUnique({
-    where: {
-      teacherId,
-    },
-    select: {
-      id: true,
-    },
+  const profileId = await getProfileIdForTeacher(teacherId);
+  const levels = normalizeTeachingLevels(dto.levels);
+
+  const existing = await prisma.teacherProfileSubject.findMany({
+    where: { profileId, subjectId: dto.subjectId },
+    select: { teachingLevel: true },
   });
 
-  if (!profile) {
-    throw new Error("Teacher profile not found");
+  const existingLevels = new Set(existing.map((row) => row.teachingLevel));
+  const missing = levels.filter((level) => !existingLevels.has(level));
+
+  if (missing.length === 0) {
+    throw new Error("This subject and level already exists.");
   }
 
-  const exists =
-    await prisma.teacherProfileSubject.findFirst({
-      where: {
-        profileId: profile.id,
-        subjectId: dto.subjectId,
-        gradeFrom: dto.gradeFrom,
-        gradeTo: dto.gradeTo,
-      },
-    });
-
-  if (exists) {
-    throw new Error(
-      "This subject and grade range already exists."
-    );
-  }
-
-  return prisma.teacherProfileSubject.create({
-    data: {
-      profileId: profile.id,
+  await prisma.teacherProfileSubject.createMany({
+    data: missing.map((teachingLevel) => ({
+      profileId,
       subjectId: dto.subjectId,
-      gradeFrom: dto.gradeFrom,
-      gradeTo: dto.gradeTo,
-    },
-    include: {
-      subject: true,
-    },
+      teachingLevel,
+    })),
+    skipDuplicates: true,
   });
+
+  return getGroupedSubject(profileId, dto.subjectId);
 }
 
 export interface UpdateTeacherSubjectDto {
   subjectId: number;
-  gradeFrom: number;
-  gradeTo: number;
+  levels: TeachingLevel[];
 }
 
 export async function updateTeacherSubject(
@@ -1214,19 +1309,36 @@ export async function updateTeacherSubject(
     throw new Error("Subject not found.");
   }
 
-  return prisma.teacherProfileSubject.update({
-    where: {
-      id: teacherSubjectId,
-    },
-    data: {
-      subjectId: dto.subjectId,
-      gradeFrom: dto.gradeFrom,
-      gradeTo: dto.gradeTo,
-    },
-    include: {
-      subject: true,
-    },
+  const levels = normalizeTeachingLevels(dto.levels);
+  const { profileId } = existing;
+
+  await prisma.$transaction(async (tx) => {
+    // Changing the subject replaces the old subject's rows entirely.
+    if (dto.subjectId !== existing.subjectId) {
+      await tx.teacherProfileSubject.deleteMany({
+        where: { profileId, subjectId: existing.subjectId },
+      });
+    }
+
+    await tx.teacherProfileSubject.deleteMany({
+      where: {
+        profileId,
+        subjectId: dto.subjectId,
+        teachingLevel: { notIn: levels },
+      },
+    });
+
+    await tx.teacherProfileSubject.createMany({
+      data: levels.map((teachingLevel) => ({
+        profileId,
+        subjectId: dto.subjectId,
+        teachingLevel,
+      })),
+      skipDuplicates: true,
+    });
   });
+
+  return getGroupedSubject(profileId, dto.subjectId);
 }
 
 
@@ -1243,7 +1355,8 @@ export async function deleteTeacherSubject(
         },
       },
       select: {
-        id: true,
+        profileId: true,
+        subjectId: true,
       },
     });
 
@@ -1251,9 +1364,11 @@ export async function deleteTeacherSubject(
     throw new Error("Subject not found.");
   }
 
-  await prisma.teacherProfileSubject.delete({
+  // Removes the subject for every level.
+  await prisma.teacherProfileSubject.deleteMany({
     where: {
-      id: teacherSubjectId,
+      profileId: existing.profileId,
+      subjectId: existing.subjectId,
     },
   });
 
@@ -1289,7 +1404,7 @@ export async function getPublicTeacherProfile(
 ) {
   const profile = await prisma.teacherProfile.findFirst({
     where: {
-      slug,
+      slug: { equals: slug, mode: "insensitive" },
       isPublic: true,
     },
     include: {
@@ -1392,14 +1507,13 @@ export async function getPublicTeacherProfile(
       (x) => x.medium.name
     ),
 
-    subjects: profile.subjects.map(
-      (x) => ({
-        id: x.subject.id,
-        name: x.subject.name,
-        gradeFrom: x.gradeFrom,
-        gradeTo: x.gradeTo,
-      })
-    ),
+    subjects: groupTeacherSubjects(
+      profile.subjects
+    ).map((x) => ({
+      id: x.subject.id,
+      name: x.subject.name,
+      levels: x.levels,
+    })),
 
     qualifications:
       profile.qualifications,
@@ -1520,10 +1634,13 @@ export async function searchPublicTeachers(
           (x) => x.medium.name
         ),
 
-      subjects:
-        teacher.subjects.map(
-          (x) => x.subject.name
-        ),
+      subjects: Array.from(
+        new Set(
+          teacher.subjects.map(
+            (x) => x.subject.name
+          )
+        )
+      ),
 
       profileViewCount:
         teacher.profileViewCount,

@@ -44,8 +44,23 @@ export const passwordUpdateSchema = z.object({
   newPassword: passwordField,
 });
 
+export const verifyEmailSchema = z.object({
+  loginId: z.string().trim().min(1, "Email or registration number is required."),
+  code: z
+    .string()
+    .trim()
+    .min(1, "Confirmation code is required.")
+    .regex(/^[0-9]{6}$/, "Confirmation code must be 6 digits."),
+});
+
+export const resendVerificationSchema = z.object({
+  loginId: z.string().trim().min(1, "Email or registration number is required."),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
 export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchema>;
 export type PasswordUpdateInput = z.infer<typeof passwordUpdateSchema>;
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

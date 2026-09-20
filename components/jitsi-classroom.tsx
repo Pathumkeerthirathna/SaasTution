@@ -71,6 +71,8 @@ export function JitsiClassroom() {
   const apiRef = useRef<JitsiApi | null>(null);
   const teacherParticipantIdRef = useRef<string | null>(null);
 
+  const screenSharingParticipantIdRef = useRef<string | null>(null);
+
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
   const [isJitsiReady, setIsJitsiReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -493,17 +495,17 @@ export function JitsiClassroom() {
         },
         startWithAudioMuted: true,
         startWithVideoMuted: true,
-        resolution: 360,
+        resolution: 720,
         constraints: {
           video: {
             height: {
-              ideal: 360,
-              max: 360,
-              min: 180,
+              ideal: 720,
+              max: 1080,
+              min: 240,
             },
           },
         },
-        disableSimulcast: true,
+        disableSimulcast: false,
         disableTileView: true,
         channelLastN: 1,
         enableWelcomePage: false,
@@ -526,6 +528,31 @@ export function JitsiClassroom() {
     });
 
     apiRef.current = api;
+
+    const debugApi = api as JitsiApi & {
+      getSupportedCommands?: () => string[];
+      getSupportedEvents?: () => string[];
+      pinParticipant?: (
+        participantId?: string,
+        videoType?: "camera" | "desktop"
+      ) => void;
+    };
+
+    console.log(
+      "🔎 JITSI SUPPORTED COMMANDS:",
+      debugApi.getSupportedCommands?.()
+    );
+
+    console.log(
+      "🔎 JITSI SUPPORTED EVENTS:",
+      debugApi.getSupportedEvents?.()
+    );
+
+    console.log(
+      "🔎 pinParticipant function:",
+      typeof debugApi.pinParticipant
+    );
+
     // setIsTeacherControlsReady(role === "teacher");
 
     const markJoined = async () => {
@@ -550,76 +577,522 @@ export function JitsiClassroom() {
       });
     };
 
-    const handleJoined = () => {
-      void markJoined();
+    // const handleJoined = () => {
+    //   void markJoined();
 
-      if (role === "student") {
-        api.executeCommand("toggleAudio");
-        api.executeCommand("toggleVideo");
-        api.executeCommand("setTileView", false);
-        api.executeCommand("setFilmStripVisibility", true);
+    //   if (role === "student") {
+    //     api.executeCommand("toggleAudio");
+    //     api.executeCommand("toggleVideo");
+    //     api.executeCommand("setTileView", false);
+    //     api.executeCommand("setFilmStripVisibility", true);
 
-        try {
-          const participants = api.getParticipantsInfo();
-          const teacherParticipant = participants.find((p) => p.displayName === teacherName);
-          if (teacherParticipant?.participantId) {
-            teacherParticipantIdRef.current = teacherParticipant.participantId;
-            api.executeCommand("setLargeVideoParticipant", teacherParticipant.participantId);
-          }
-        } catch {
-          // getParticipantsInfo may not be available in all Jitsi builds.
-        }
-      }
-    };
+    //     try {
+    //       const participants = api.getParticipantsInfo();
+    //       const teacherParticipant = participants.find((p) => p.displayName === teacherName);
+    //       if (teacherParticipant?.participantId) {
+    //         teacherParticipantIdRef.current = teacherParticipant.participantId;
+    //         api.executeCommand("setLargeVideoParticipant", teacherParticipant.participantId);
+    //       }
+    //     } catch {
+    //       // getParticipantsInfo may not be available in all Jitsi builds.
+    //     }
+    //   }
+    // };
 
-    const handleLeftConference = () => {
-      void markLeft();
-    };
+    // const handleLeftConference = () => {
+    //   void markLeft();
+    // };
 
-    const handleParticipantJoined = (participant: unknown) => {
-      const candidate = participant as { id?: string; displayName?: string };
-      if (!candidate?.id) return;
+    // const handleParticipantJoined = (participant: unknown) => {
+    //   const candidate = participant as { id?: string; displayName?: string };
+    //   if (!candidate?.id) return;
 
-      if (candidate.displayName === teacherName) {
-        teacherParticipantIdRef.current = candidate.id;
-        if (role === "student") {
-          api.executeCommand("setLargeVideoParticipant", candidate.id);
-        }
-      }
-    };
+    //   if (candidate.displayName === teacherName) {
+    //     teacherParticipantIdRef.current = candidate.id;
+    //     if (role === "student") {
+    //       api.executeCommand("setLargeVideoParticipant", candidate.id);
+    //     }
+    //   }
+    // };
 
-    const handleScreenSharingChanged = (event: unknown) => {
-      if (role !== "student") return;
-      const e = event as { on?: boolean; id?: string };
-      if (e.on && e.id) {
-        api.executeCommand("setLargeVideoParticipant", e.id);
-      } else if (!e.on && teacherParticipantIdRef.current) {
-        api.executeCommand("setLargeVideoParticipant", teacherParticipantIdRef.current);
-      }
-    };
+    // const handleScreenSharingChanged = (event: unknown) => {
+    //   if (role !== "student") return;
 
-    api.addListener("videoConferenceJoined", handleJoined);
-    api.addListener("videoConferenceLeft", handleLeftConference);
-    api.addListener("participantJoined", handleParticipantJoined);
-    api.addListener("screenSharingStatusChanged", handleScreenSharingChanged);
+    //   const e = event as { on?: boolean; id?: string };
 
-    const handleBeforeUnload = () => {
-      void markLeft();
-    };
+    //   if (e.on && e.id) {
+    //     screenSharingParticipantIdRef.current = e.id;
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    //     // Keep the screen sharer large.
+    //     api.executeCommand("setLargeVideoParticipant", e.id);
+    //   } else {
+    //     screenSharingParticipantIdRef.current = null;
 
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      api.removeListener("videoConferenceJoined", handleJoined);
-      api.removeListener("videoConferenceLeft", handleLeftConference);
-      api.removeListener("participantJoined", handleParticipantJoined);
-      api.removeListener("screenSharingStatusChanged", handleScreenSharingChanged);
-      api.dispose();
-      apiRef.current = null;
-      // setIsTeacherControlsReady(false);
-      void markLeft();
-    };
+    //     // When screen sharing stops, return to teacher video.
+    //     if (teacherParticipantIdRef.current) {
+    //       api.executeCommand(
+    //         "setLargeVideoParticipant",
+    //         teacherParticipantIdRef.current
+    //       );
+    //     }
+    //   }
+    // };
+
+    
+
+    
+
+    // api.addListener("videoConferenceJoined", handleJoined);
+    // api.addListener("videoConferenceLeft", handleLeftConference);
+    // api.addListener("participantJoined", handleParticipantJoined);
+    // api.addListener("screenSharingStatusChanged", handleScreenSharingChanged);
+
+
+
+    // const handleBeforeUnload = () => {
+    //   void markLeft();
+    // };
+
+    // window.addEventListener("beforeunload", handleBeforeUnload);
+
+    // return () => {
+    //   window.removeEventListener("beforeunload", handleBeforeUnload);
+    //   api.removeListener("videoConferenceJoined", handleJoined);
+    //   api.removeListener("videoConferenceLeft", handleLeftConference);
+    //   api.removeListener("participantJoined", handleParticipantJoined);
+    //   api.removeListener("screenSharingStatusChanged", handleScreenSharingChanged);
+
+
+
+
+    //   api.dispose();
+    //   apiRef.current = null;
+    //   // setIsTeacherControlsReady(false);
+    //   void markLeft();
+    // };
+const getTeacherParticipantId = () => {
+  if (teacherParticipantIdRef.current) {
+    return teacherParticipantIdRef.current;
+  }
+
+  try {
+    const participants = api.getParticipantsInfo();
+
+    const teacherParticipant = participants.find(
+      (p) => p.displayName === teacherName
+    );
+
+    if (teacherParticipant?.participantId) {
+      teacherParticipantIdRef.current =
+        teacherParticipant.participantId;
+
+      console.log(
+        "👨‍🏫 Teacher participant found:",
+        teacherParticipant
+      );
+
+      return teacherParticipant.participantId;
+    }
+  } catch (error) {
+    console.warn(
+      "⚠️ Unable to get Jitsi participants:",
+      error
+    );
+  }
+
+  return null;
+};
+
+/**
+ * Pin teacher camera.
+ *
+ * IMPORTANT:
+ * We intentionally do NOT call setTileView(false) here.
+ */
+const pinTeacherCamera = () => {
+  if (role !== "student") return;
+
+  const teacherId = getTeacherParticipantId();
+
+  if (!teacherId) {
+    console.log(
+      "⏳ Teacher participant not available yet"
+    );
+    return;
+  }
+
+  console.log(
+    "📌 Pinning teacher:",
+    teacherName,
+    teacherId
+  );
+
+  // This is the important command.
+  api.executeCommand(
+    "pinParticipant",
+    teacherId
+  );
+
+  // Explicitly show teacher on the large video.
+  api.executeCommand(
+    "setLargeVideoParticipant",
+    teacherId
+  );
+};
+
+/**
+ * Show teacher's screen when teacher is sharing.
+ */
+const showTeacherScreen = () => {
+  if (role !== "student") return;
+
+  const teacherId = getTeacherParticipantId();
+
+  if (!teacherId) return;
+
+  console.log(
+    "🖥️ Teacher screen share detected:",
+    teacherId
+  );
+
+  screenSharingParticipantIdRef.current =
+    teacherId;
+
+  api.executeCommand(
+    "setLargeVideoParticipant",
+    teacherId,
+    "desktop"
+  );
+};
+
+/**
+ * Teacher stopped sharing.
+ * Return to teacher camera and pin teacher again.
+ */
+const restoreTeacherCamera = () => {
+  if (role !== "student") return;
+
+  screenSharingParticipantIdRef.current =
+    null;
+
+  pinTeacherCamera();
+};
+
+const handleJoined = () => {
+  void markJoined();
+
+  if (role !== "student") return;
+
+  api.executeCommand("toggleAudio");
+  api.executeCommand("toggleVideo");
+
+  // Keep filmstrip visible.
+  api.executeCommand(
+    "setFilmStripVisibility",
+    true
+  );
+
+  /*
+   * The teacher may not be present in getParticipantsInfo()
+   * immediately when videoConferenceJoined fires.
+   *
+   * Try several times after joining.
+   */
+  let attempts = 0;
+
+  const teacherRetry = window.setInterval(() => {
+    attempts++;
+
+    const teacherId =
+      getTeacherParticipantId();
+
+    if (teacherId) {
+      pinTeacherCamera();
+
+      window.clearInterval(
+        teacherRetry
+      );
+
+      return;
+    }
+
+    if (attempts >= 20) {
+      console.warn(
+        "⚠️ Could not find teacher after join"
+      );
+
+      window.clearInterval(
+        teacherRetry
+      );
+    }
+  }, 250);
+};
+
+const handleLeftConference = () => {
+  void markLeft();
+};
+
+const handleParticipantJoined = (
+  participant: unknown
+) => {
+  const candidate = participant as {
+    id?: string;
+    displayName?: string;
+  };
+
+  if (!candidate?.id) return;
+
+  console.log(
+    "👤 Jitsi participant joined:",
+    candidate
+  );
+
+  if (
+    candidate.displayName ===
+    teacherName
+  ) {
+    teacherParticipantIdRef.current =
+      candidate.id;
+
+    console.log(
+      "👨‍🏫 Teacher joined:",
+      candidate.id
+    );
+
+    if (role === "student") {
+      pinTeacherCamera();
+    }
+  }
+};
+
+const handleParticipantLeft = (
+  participant: unknown
+) => {
+  const candidate = participant as {
+    id?: string;
+  };
+
+  if (!candidate?.id) return;
+
+  if (
+    candidate.id ===
+    teacherParticipantIdRef.current
+  ) {
+    teacherParticipantIdRef.current =
+      null;
+  }
+
+  if (
+    candidate.id ===
+    screenSharingParticipantIdRef.current
+  ) {
+    screenSharingParticipantIdRef.current =
+      null;
+  }
+
+  if (role === "student") {
+    /*
+     * Give Jitsi a moment to update its
+     * participant list, then try to restore teacher.
+     */
+    window.setTimeout(() => {
+      pinTeacherCamera();
+    }, 300);
+  }
+};
+
+/**
+ * Remote screen sharing.
+ */
+const handleContentSharingParticipantsChanged = (
+  event: unknown
+) => {
+  if (role !== "student") return;
+
+  const e = event as {
+    data?: string[];
+  };
+
+  const sharingParticipants =
+    Array.isArray(e?.data)
+      ? e.data
+      : [];
+
+  const teacherId =
+    getTeacherParticipantId();
+
+  if (
+    teacherId &&
+    sharingParticipants.includes(
+      teacherId
+    )
+  ) {
+    showTeacherScreen();
+  } else {
+    restoreTeacherCamera();
+  }
+};
+
+/**
+ * Fallback screen sharing event.
+ */
+const handleScreenSharingChanged = (
+  event: unknown
+) => {
+  if (role !== "student") return;
+
+  const e = event as {
+    on?: boolean;
+  };
+
+  if (e.on) {
+    const teacherId =
+      getTeacherParticipantId();
+
+    if (teacherId) {
+      showTeacherScreen();
+    }
+
+    return;
+  }
+
+  restoreTeacherCamera();
+};
+
+/**
+ * Student speaking should NOT change the
+ * teacher stage.
+ */
+const handleDominantSpeakerChanged = () => {
+  if (role !== "student") return;
+
+  if (
+    screenSharingParticipantIdRef.current
+  ) {
+    showTeacherScreen();
+  } else {
+    pinTeacherCamera();
+  }
+};
+
+/**
+ * Jitsi changed the large video.
+ * Restore teacher immediately.
+ */
+const handleLargeVideoChanged = () => {
+  if (role !== "student") return;
+
+  if (
+    screenSharingParticipantIdRef.current
+  ) {
+    showTeacherScreen();
+  } else {
+    pinTeacherCamera();
+  }
+};
+
+api.addListener(
+  "videoConferenceJoined",
+  handleJoined
+);
+
+api.addListener(
+  "videoConferenceLeft",
+  handleLeftConference
+);
+
+api.addListener(
+  "participantJoined",
+  handleParticipantJoined
+);
+
+api.addListener(
+  "participantLeft",
+  handleParticipantLeft
+);
+
+api.addListener(
+  "contentSharingParticipantsChanged",
+  handleContentSharingParticipantsChanged
+);
+
+api.addListener(
+  "screenSharingStatusChanged",
+  handleScreenSharingChanged
+);
+
+api.addListener(
+  "dominantSpeakerChanged",
+  handleDominantSpeakerChanged
+);
+
+api.addListener(
+  "largeVideoChanged",
+  handleLargeVideoChanged
+);
+
+const handleBeforeUnload = () => {
+  void markLeft();
+};
+
+window.addEventListener(
+  "beforeunload",
+  handleBeforeUnload
+);
+
+return () => {
+  window.removeEventListener(
+    "beforeunload",
+    handleBeforeUnload
+  );
+
+  api.removeListener(
+    "videoConferenceJoined",
+    handleJoined
+  );
+
+  api.removeListener(
+    "videoConferenceLeft",
+    handleLeftConference
+  );
+
+  api.removeListener(
+    "participantJoined",
+    handleParticipantJoined
+  );
+
+  api.removeListener(
+    "participantLeft",
+    handleParticipantLeft
+  );
+
+  api.removeListener(
+    "contentSharingParticipantsChanged",
+    handleContentSharingParticipantsChanged
+  );
+
+  api.removeListener(
+    "screenSharingStatusChanged",
+    handleScreenSharingChanged
+  );
+
+  api.removeListener(
+    "dominantSpeakerChanged",
+    handleDominantSpeakerChanged
+  );
+
+  api.removeListener(
+    "largeVideoChanged",
+    handleLargeVideoChanged
+  );
+
+  api.dispose();
+  apiRef.current = null;
+
+  void markLeft();
+};
+
+
   }, [hasSessionEnded, joinInfo, isJitsiReady, role, teacherName]);
 
   useEffect(() => {

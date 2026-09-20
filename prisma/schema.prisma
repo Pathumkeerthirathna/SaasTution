@@ -26,6 +26,11 @@ model Teacher {
   blockedAt   DateTime?
   blockReason String?
 
+  // Email ownership confirmation via a one-time code. A teacher cannot log
+  // in until this is true.
+  emailConfirmed   Boolean   @default(false)
+  emailConfirmedAt DateTime?
+
   profile TeacherProfile?
 
   youtubeConnection YouTubeConnection?
@@ -441,11 +446,7 @@ model TeacherQualification {
 
   profileId String
 
-  title     String
-  institute String
-
-  startYear Int?
-  endYear   Int?
+  title String
 
   displayOrder Int @default(0)
 
@@ -459,6 +460,8 @@ model TeacherAchievement {
 
   title       String
   description String?
+
+  imageName String?
 
   displayOrder Int @default(0)
 
@@ -474,19 +477,24 @@ model Subject {
   teachers TeacherProfileSubject[]
 }
 
+enum TeachingLevel {
+  PRIMARY
+  OL
+  AL
+}
+
 model TeacherProfileSubject {
   id String @id @default(uuid())
 
   profileId String
   subjectId Int
 
-  gradeFrom Int?
-  gradeTo   Int?
+  teachingLevel TeachingLevel
 
   profile TeacherProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   subject Subject        @relation(fields: [subjectId], references: [id])
 
-  @@unique([profileId, subjectId])
+  @@unique([profileId, subjectId, teachingLevel])
 }
 
 //
@@ -549,6 +557,11 @@ model Student {
   confirmedAt   DateTime?
   confirmedById String?
   confirmedBy   Teacher?  @relation("ConfirmedStudents", fields: [confirmedById], references: [id])
+
+  // Email ownership confirmation via a one-time code. A student cannot log
+  // in until this is true.
+  emailConfirmed   Boolean   @default(false)
+  emailConfirmedAt DateTime?
 
   registeredAt DateTime @default(now())
 
@@ -667,6 +680,24 @@ model PasswordResetToken {
   role      Role
   userId    String
   email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([role, userId])
+  @@index([expiresAt])
+}
+
+// A one-time numeric code emailed to a teacher or student to confirm they
+// own the email address on their account. Only TEACHER and STUDENT roles
+// use this today.
+model EmailVerificationCode {
+  id        String    @id @default(uuid())
+  codeHash  String
+  role      Role
+  userId    String
+  email     String
+  attempts  Int       @default(0)
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Award, Save, Trophy, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Award, ImagePlus, Save, Trophy, X } from "lucide-react";
 import { AchievementForm } from "@/types/teacherProfileTypes/achievement/achievement-types";
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
 
   saving: boolean;
 
-  initialValue?: AchievementForm;
+  initialValue?: AchievementForm & { imageUrl?: string | null };
 
   onSave: (form: AchievementForm) => void;
 
@@ -20,7 +20,11 @@ const emptyForm: AchievementForm = {
   title: "",
   description: "",
   year: "",
+  photo: null,
+  removePhoto: false,
 };
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 export default function TeacherAchievementDrawer({
   open,
@@ -36,11 +40,44 @@ export default function TeacherAchievementDrawer({
     if (!open) return;
 
     setForm(
-      initialValue ?? emptyForm
+      initialValue
+        ? { ...initialValue, photo: null, removePhoto: false }
+        : emptyForm
     );
   }, [open, initialValue]);
 
+  const newPhotoUrl = useMemo(
+    () => (form.photo ? URL.createObjectURL(form.photo) : null),
+    [form.photo]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (newPhotoUrl) URL.revokeObjectURL(newPhotoUrl);
+    };
+  }, [newPhotoUrl]);
+
   if (!open) return null;
+
+  const previewUrl =
+    newPhotoUrl ??
+    (form.removePhoto ? null : initialValue?.imageUrl ?? null);
+
+  function handlePhotoChange(file: File | null) {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.");
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_BYTES) {
+      alert("Photo must be 5 MB or smaller.");
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, photo: file, removePhoto: false }));
+  }
 
   function submit() {
     if (!form.title.trim()) {
@@ -176,6 +213,71 @@ export default function TeacherAchievementDrawer({
                 placeholder="Describe this achievement, award or recognition..."
                 className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-[13px] outline-none transition focus:border-orange-500"
               />
+
+            </div>
+
+            {/* Photo */}
+
+            <div>
+
+              <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                Photo (optional)
+              </label>
+
+              {previewUrl && (
+
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt="Achievement photo preview"
+                  className="mb-2 max-h-56 w-full rounded-lg border border-slate-200 object-cover"
+                />
+
+              )}
+
+              <div className="flex items-center gap-2">
+
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50">
+
+                  <ImagePlus className="h-3.5 w-3.5" />
+
+                  {previewUrl ? "Change Photo" : "Choose Photo"}
+
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      handlePhotoChange(e.target.files?.[0] ?? null);
+                      e.target.value = "";
+                    }}
+                  />
+
+                </label>
+
+                {previewUrl && (
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        photo: null,
+                        removePhoto: true,
+                      }))
+                    }
+                    className="rounded-md px-3 py-1.5 text-[13px] font-medium text-red-500 transition hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+
+                )}
+
+              </div>
+
+              <p className="mt-1.5 text-[12px] text-slate-500">
+                JPG, PNG, WEBP or GIF, up to 5 MB.
+              </p>
 
             </div>
 
