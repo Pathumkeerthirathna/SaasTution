@@ -30,6 +30,11 @@ type ParticipantsPanelProps = {
   classId?: string;
   onMuteEveryone?: () => void;
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
+  /**
+   * Display name -> "Main room" / breakout room name, for people in a room other than
+   * the one this browser is in. They are in the class, so they must not show as absent.
+   */
+  breakoutRoomLabels?: Record<string, string>;
 };
 
 export default function ParticipantsPanel({
@@ -39,6 +44,7 @@ export default function ParticipantsPanel({
   classId,
   onMuteEveryone,
   onMuteParticipant,
+  breakoutRoomLabels,
 }: ParticipantsPanelProps) {
 
   console.log(participants);
@@ -67,12 +73,18 @@ export default function ParticipantsPanel({
     });
   };
 
+// A student in another room (e.g. a breakout room) is still in the class.
+const elsewhereLabel = (displayName: string) =>
+  participants.some((participant) => participant.displayName === displayName)
+    ? undefined
+    : breakoutRoomLabels?.[displayName];
+
 const presentStudents = ClassroomStudents?.filter(
   (student) =>
     participants.some(
       (participant) =>
         participant.displayName === student.displayName
-    )
+    ) || Boolean(elsewhereLabel(student.displayName))
 );
 
 const absentStudents = ClassroomStudents?.filter(
@@ -80,7 +92,7 @@ const absentStudents = ClassroomStudents?.filter(
     !participants.some(
       (participant) =>
         participant.displayName === student.displayName
-    )
+    ) && !elsewhereLabel(student.displayName)
 );
 
 console.log(presentStudents);
@@ -242,6 +254,11 @@ console.log(absentStudents);
                     <span className="block truncate text-sm font-medium text-slate-900">
                       {student.displayName}
                     </span>
+                    {elsewhereLabel(student.displayName) ? (
+                      <span className="mt-0.5 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                        In {elsewhereLabel(student.displayName)}
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* Live mic / camera state — the mic icon is the mute toggle:

@@ -116,3 +116,26 @@ export type ChatMessage = {
   /** True when this device sent the message. */
   self: boolean;
 };
+/* ------------------------------ Breakout rooms ------------------------------ */
+
+export type BreakoutParticipant = {
+  /** Full XMPP address. This is what `sendParticipantToRoom` accepts for anyone, wherever they are. */
+  jid: string;
+  displayName: string;
+};
+
+export type BreakoutRoom = {
+  /** Used by `sendParticipantToRoom` and `closeBreakoutRoom`. For breakout rooms it is also the Jitsi room name. */
+  id: string;
+  /** Used by `joinBreakoutRoom` and `removeBreakoutRoom`. */
+  jid: string;
+  name: string;
+  isMainRoom: boolean;
+  participants: BreakoutParticipant[];
+};
+
+/** The Jitsi room this browser is currently in. */
+export type CurrentRoomInfo = {
+  roomName: string;
+  isBreakoutRoom: boolean;
+};

@@ -11,10 +11,13 @@ import {
   ListChecks,
   MessageSquare,
   PenTool,
+  UsersRound,
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
 import WhiteboardPanel from "./WhiteboardPanel";
+import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
+import type { BreakoutController } from "../../hooks/useBreakoutRooms";
 import ParticipantsPanel from "./ParticipantsPanel";
 import AttendancePanel from "./AttendancePanel";
 import ChatPanel from "./ChatPanel";
@@ -29,6 +32,10 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 const LECTURE_TOOL_PANELS = ["notes", "assignments", "quiz"] as const;
 
 type RightSidebarProps = {
+  /** Breakout-room state + actions (the panel is hidden when this is not provided). */
+  breakout?: BreakoutController;
+  /** Participant display name -> "Main room" / breakout room name, for the register and attendance. */
+  breakoutRoomLabels?: Record<string, string>;
   /** Reports whether a slide-out panel is open (used to keep the rail visible in fullscreen). */
   onPanelOpenChange?: (open: boolean) => void;
   sessionId?: string;
@@ -67,6 +74,7 @@ export default function RightSidebar(props: RightSidebarProps) {
   const isStudentLecturePanel = isStudent && hasLecture && isLectureToolPanel;
   const isAttendancePanel = isTeacher && activePanel === "attendance";
   const isChatPanel = activePanel === "chat";
+  const isBreakoutPanel = Boolean(props.breakout) && activePanel === "breakoutRooms";
   // The whiteboard needs the lecture (saved boards belong to it) and the session
   // (live updates), exactly like the other lecture tools it sits beside.
   const isWhiteboardPanel = hasLecture && activePanel === "whiteboard";
@@ -233,7 +241,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           ${
             isWhiteboardPanel
               ? "w-[900px] max-w-[92vw]"
-              : isLectureToolPanel || isClassRegister || isAttendancePanel
+              : isLectureToolPanel || isClassRegister || isAttendancePanel || isBreakoutPanel
                 ? "w-[460px] max-w-[92vw]"
                 : "w-[360px]"
           }
@@ -284,6 +292,9 @@ export default function RightSidebar(props: RightSidebarProps) {
             {activePanel === "whiteboard" && (
               <PenTool size={18} className={chrome.iconAccent} />
             )}
+            {activePanel === "breakoutRooms" && (
+              <UsersRound size={18} className={chrome.iconAccent} />
+            )}
 
             <div>
               <h2 className={`text-base font-semibold ${chrome.title}`}>
@@ -293,6 +304,8 @@ export default function RightSidebar(props: RightSidebarProps) {
                 {activePanel === "attendance" && "Attendance"}
 
                 {activePanel === "whiteboard" && "Whiteboard"}
+
+                {activePanel === "breakoutRooms" && "Breakout Rooms"}
 
                 {activePanel === "chat" && "Chat"}
 
@@ -337,7 +350,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                 ? "overflow-y-auto scrollbar-thin bg-emerald-50/40"
                 : isWhiteboardPanel
                   ? "overflow-hidden bg-white p-2 text-slate-900"
-                : isClassRegister || isAttendancePanel || isChatPanel || isStudentParticipants
+                : isClassRegister || isAttendancePanel || isChatPanel || isStudentParticipants || isBreakoutPanel
                   ? "overflow-hidden bg-white p-3 text-slate-900"
                   : "overflow-hidden p-3"
           }`}
@@ -353,6 +366,7 @@ export default function RightSidebar(props: RightSidebarProps) {
               classId={props.classId}
               onMuteEveryone={props.onMuteEveryone}
               onMuteParticipant={props.onMuteParticipant}
+              breakoutRoomLabels={props.breakoutRoomLabels}
             />
           )}
 
@@ -360,6 +374,14 @@ export default function RightSidebar(props: RightSidebarProps) {
             <AttendancePanel
               classId={props.classId}
               participants={props.participants}
+              breakoutRoomLabels={props.breakoutRoomLabels}
+            />
+          )}
+
+          {isBreakoutPanel && props.breakout && (
+            <BreakoutRoomsPanel
+              controller={props.breakout}
+              teacherName={props.teacherName}
             />
           )}
 

@@ -11,6 +11,7 @@ import {
   Settings,
   Check,
   PenTool,
+  UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -212,6 +213,7 @@ export default function SidebarNav({
         icon={MessageSquare}
         badge={chatUnread}
       />
+      <RailButton panel="breakoutRooms" label="Breakout Rooms" icon={UsersRound} />
 
       {showLectureTools ? (
         <>

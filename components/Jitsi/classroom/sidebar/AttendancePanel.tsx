@@ -17,6 +17,8 @@ type AttendancePanelProps = {
   classId?: string;
   /** Live meeting participants, used to flag who joined this session. */
   participants: JitsiParticipant[];
+  /** Display name -> room label for people in another room (e.g. a breakout room). */
+  breakoutRoomLabels?: Record<string, string>;
 };
 
 function barTone(percent: number) {
@@ -34,6 +36,7 @@ function textTone(percent: number) {
 export default function AttendancePanel({
   classId,
   participants,
+  breakoutRoomLabels,
 }: AttendancePanelProps) {
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,7 +70,12 @@ export default function AttendancePanel({
     void load();
   }, [load]);
 
-  const joinedNames = new Set(participants.map((p) => p.displayName));
+  // People in a breakout room (or the main room while the teacher is in a breakout)
+  // are still in the session, just not in this browser's room.
+  const joinedNames = new Set([
+    ...participants.map((p) => p.displayName),
+    ...Object.keys(breakoutRoomLabels ?? {}),
+  ]);
   const joinedCount = rows.filter((r) => joinedNames.has(r.name)).length;
   const avgPercent =
     rows.length === 0
@@ -135,6 +143,10 @@ export default function AttendancePanel({
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
                       <CheckCircle2 size={10} />
                       In session
+                      {breakoutRoomLabels?.[row.name] &&
+                      !participants.some((p) => p.displayName === row.name)
+                        ? ` · ${breakoutRoomLabels[row.name]}`
+                        : ""}
                     </span>
                   ) : null}
                   <span

@@ -9,7 +9,9 @@ import {
 } from "react";
 
 import type {
+  BreakoutRoom,
   ChatMessage,
+  CurrentRoomInfo,
   JoinInfo,
   UserRole,
   JitsiParticipant,
@@ -56,6 +58,10 @@ type JitsiMeetingProps = {
   /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
   onModeratorStatusChanged?: (isModerator: boolean) => void;
 
+  onBreakoutRoomsUpdated?: (rooms: BreakoutRoom[]) => void;
+  onRoomChanged?: (room: CurrentRoomInfo) => void;
+  onBreakoutSupportChanged?: (supported: boolean) => void;
+
 };
 
 const JitsiMeeting = forwardRef<
@@ -73,6 +79,9 @@ const JitsiMeeting = forwardRef<
     onChatMessage,
     onConferenceJoined,
     onModeratorStatusChanged,
+    onBreakoutRoomsUpdated,
+    onRoomChanged,
+    onBreakoutSupportChanged,
   },
   ref
 ) {
@@ -165,6 +174,37 @@ const JitsiMeeting = forwardRef<
       setNoiseSuppression: (enabled: boolean) => {
         controlsRef.current?.setNoiseSuppression(enabled);
       },
+
+      createBreakoutRoom: (name?: string) => {
+        controlsRef.current?.createBreakoutRoom(name);
+      },
+
+      sendParticipantToBreakoutRoom: (participantJid: string, roomId: string) => {
+        controlsRef.current?.sendParticipantToBreakoutRoom(participantJid, roomId);
+      },
+
+      autoAssignBreakoutRooms: () => {
+        controlsRef.current?.autoAssignBreakoutRooms();
+      },
+
+      joinBreakoutRoom: (roomJid: string) => {
+        controlsRef.current?.joinBreakoutRoom(roomJid);
+      },
+
+      returnToMainRoom: () => {
+        controlsRef.current?.returnToMainRoom();
+      },
+
+      closeBreakoutRoom: (roomId: string) => {
+        controlsRef.current?.closeBreakoutRoom(roomId);
+      },
+
+      removeBreakoutRoom: (roomJid: string) => {
+        controlsRef.current?.removeBreakoutRoom(roomJid);
+      },
+
+      refreshBreakoutRooms: async () =>
+        (await controlsRef.current?.refreshBreakoutRooms()) ?? [],
     }),
     []
   );
@@ -185,6 +225,9 @@ const JitsiMeeting = forwardRef<
     onChatMessage,
     onConferenceJoined,
     onModeratorStatusChanged,
+    onBreakoutRoomsUpdated,
+    onRoomChanged,
+    onBreakoutSupportChanged,
   });
 
   return (

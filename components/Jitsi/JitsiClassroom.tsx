@@ -7,8 +7,10 @@ import useJoinSession from "./hooks/useJoinSession";
 import MeetingCard from "./classroom/meeting/MeetingCard";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
+import useBreakoutRooms from "./hooks/useBreakoutRooms";
+import { roomLabelByParticipantName } from "./breakout-utils";
 
-import { useCallback,useRef, useEffect, useState } from "react";
+import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import type { MutableRefObject } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
@@ -367,6 +369,21 @@ const [classStudents, setClassStudents] =
 
   const jitsiMeetingRef =
   useRef<JitsiControls | null>(null);
+
+  // Breakout rooms: state comes from Jitsi's own events, actions go through the
+  // centralized wrappers on the Jitsi controls.
+  const breakout = useBreakoutRooms({
+    role,
+    jitsiDomain: joinInfo?.session.jitsiDomain ?? "",
+    teacherName,
+    isStreaming: isRecording || isLive,
+    getControls: useCallback(() => jitsiMeetingRef.current, []),
+  });
+
+  const breakoutRoomLabels = useMemo(
+    () => roomLabelByParticipantName(breakout.rooms),
+    [breakout.rooms]
+  );
 
   const youtubeLiveRequestedRef =
   useRef(false);
@@ -920,6 +937,7 @@ const [classStudents, setClassStudents] =
         liveStartFailed={liveStartFailed}
         isConferenceReady={isConferenceReady}
         showHeader={meetingReady}
+        breakoutActive={breakout.isInBreakout}
         immersive={
           immersive
             ? {
@@ -1163,6 +1181,9 @@ const [classStudents, setClassStudents] =
         <PermissionGate onReadyChange={setMeetingReady}>
           <JitsiMeeting
             ref={jitsiMeetingRef}
+            onBreakoutRoomsUpdated={breakout.handleRoomsUpdated}
+            onRoomChanged={breakout.handleRoomChanged}
+            onBreakoutSupportChanged={breakout.handleSupportChanged}
             onRecordingStatusChanged={(recording) => {
               console.log(
                 "🎥 CLASSROOM RECORDING STATUS:",
@@ -1399,6 +1420,8 @@ const [classStudents, setClassStudents] =
           onMouseLeave={immersive ? () => hideEdgeSoon("right") : undefined}
         >
         <RightSidebar
+          breakout={breakout}
+          breakoutRoomLabels={breakoutRoomLabels}
           onPanelOpenChange={setSidebarPanelOpen}
           sessionId={joinInfo.session.id}
           classId={joinInfo.class.id}

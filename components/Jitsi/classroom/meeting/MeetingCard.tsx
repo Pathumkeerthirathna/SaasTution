@@ -50,6 +50,12 @@ type MeetingCardProps = {
   showHeader?: boolean;
 
   /**
+   * True while the teacher is inside a breakout room. Recording and YouTube Live run in
+   * the main room, so Record / Stop / Start Live / Stop Live are disabled until they return.
+   */
+  breakoutActive?: boolean;
+
+  /**
    * Fullscreen mode: the header floats over the meeting and slides in from the
    * top only while `headerVisible`. Omit for the normal, always-visible header.
    */
@@ -86,6 +92,7 @@ export default function MeetingCard({
   isConferenceReady = false,
   youtubeLiveUrl,
   showHeader = true,
+  breakoutActive = false,
   immersive,
   startLiveButtonRef,
 }: MeetingCardProps) {
@@ -119,7 +126,12 @@ export default function MeetingCard({
     isStartingRecording ||
     isStoppingRecording ||
     Boolean(isStartingLive) ||
-    isStoppingLive;
+    isStoppingLive ||
+    breakoutActive;
+
+  const breakoutHint = breakoutActive
+    ? "Return to the main room to record or go live"
+    : undefined;
 
   const handleStartRecording = async () => {
     if (isYoutubeActionBusy) return;
@@ -294,6 +306,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartRecording}
                   disabled={isYoutubeActionBusy}
+                  title={breakoutHint}
                   className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingRecording ? (
@@ -318,6 +331,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStopRecording}
                   disabled={isYoutubeActionBusy}
+                  title={breakoutHint}
                   className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-400 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStoppingRecording ? (
@@ -335,6 +349,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartLive}
                   disabled={isYoutubeActionBusy}
+                  title={breakoutHint}
                   className="flex items-center gap-2 rounded-full bg-[#EF4444] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStartingLive ? (
@@ -357,6 +372,7 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStopLive}
                   disabled={isYoutubeActionBusy}
+                  title={breakoutHint}
                   className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStoppingLive ? (

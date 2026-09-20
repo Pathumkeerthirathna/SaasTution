@@ -7,7 +7,9 @@ import {
 } from "react";
 
 import type {
+  BreakoutRoom,
   ChatMessage,
+  CurrentRoomInfo,
   JitsiParticipant,
   JoinInfo,
   UserRole,
@@ -18,7 +20,21 @@ import {
   teacherToolbar,
 } from "../constants/toolbar";
 
-export type JitsiControls = {
+import {
+  createBreakoutControls,
+  isBreakoutSupported,
+  mainRoomJidFallback,
+  normalizeBreakoutRooms,
+  type BreakoutControls,
+} from "../breakout-utils";
+
+// A breakout-room switch fires `videoConferenceLeft` and then `videoConferenceJoined`
+// (typically 1-3 s apart). A "left" is only treated as really leaving the class if no
+// "joined" follows within this window, so a room switch never becomes a fake
+// leave + rejoin in the attendance records.
+const ROOM_SWITCH_GRACE_MS = 6000;
+
+export type JitsiControls = BreakoutControls & {
   startRecording: () => void;
   stopRecording: () => void;
   startYouTubeLive: (
@@ -98,6 +114,15 @@ type UseJitsiProps = {
   /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
   onModeratorStatusChanged?: (isModerator: boolean) => void;
 
+  /** Fired whenever the breakout-room list or its participants change. */
+  onBreakoutRoomsUpdated?: (rooms: BreakoutRoom[]) => void;
+
+  /** Fired each time this browser enters a room (main or breakout). */
+  onRoomChanged?: (room: CurrentRoomInfo) => void;
+
+  /** Tells whether the installed Jitsi build supports the breakout-room commands. */
+  onBreakoutSupportChanged?: (supported: boolean) => void;
+
 };
 
 export default function useJitsi({
@@ -116,6 +141,9 @@ export default function useJitsi({
   onChatMessage,
   onConferenceJoined,
   onModeratorStatusChanged,
+  onBreakoutRoomsUpdated,
+  onRoomChanged,
+  onBreakoutSupportChanged,
 
 }: UseJitsiProps) {
 
@@ -139,6 +167,22 @@ export default function useJitsi({
   const onModeratorStatusChangedRef = useRef(onModeratorStatusChanged);
   onModeratorStatusChangedRef.current = onModeratorStatusChanged;
 
+  const onBreakoutRoomsUpdatedRef = useRef(onBreakoutRoomsUpdated);
+  onBreakoutRoomsUpdatedRef.current = onBreakoutRoomsUpdated;
+
+  const onRoomChangedRef = useRef(onRoomChanged);
+  onRoomChangedRef.current = onRoomChanged;
+
+  const onBreakoutSupportChangedRef = useRef(onBreakoutSupportChanged);
+  onBreakoutSupportChangedRef.current = onBreakoutSupportChanged;
+
+  // True while this browser is inside a breakout room instead of the main room.
+  const inBreakoutRef = useRef(false);
+
+  // JID of the main MUC: derived up front, replaced by the real one as soon as
+  // a rooms update reports it. Returning to the main room needs it.
+  const mainRoomJidRef = useRef(mainRoomJidFallback(joinInfo.session));
+
   const localName =
     role === "teacher"
       ? teacherName
@@ -150,14 +194,34 @@ export default function useJitsi({
   const nextChatId = () =>
     `chat-${Date.now().toString(36)}-${(chatSeqRef.current += 1)}`;
 
+  // Recording / live streaming belong to the MAIN room. Inside a breakout room the
+  // same commands would act on that breakout room instead, so they are blocked.
+  const blockedInBreakout = (action: string) => {
+    if (!inBreakoutRef.current) {
+      return false;
+    }
+
+    console.warn(`[breakout] ${action} is unavailable while in a breakout room. Return to the main room first.`);
+    return true;
+  };
+
   useImperativeHandle(
     controlsRef,
     () => ({
+      ...createBreakoutControls(
+        () => apiRef.current,
+        () => mainRoomJidRef.current
+      ),
+
       startRecording: () => {
         if (!apiRef.current) {
           console.warn(
             "Jitsi API is not ready"
           );
+          return;
+        }
+
+        if (blockedInBreakout("Recording")) {
           return;
         }
 
@@ -181,6 +245,10 @@ export default function useJitsi({
           return;
         }
 
+        if (blockedInBreakout("Stopping the recording")) {
+          return;
+        }
+
         console.log(
           "🛑 Stopping Jitsi recording..."
         );
@@ -197,6 +265,10 @@ export default function useJitsi({
           console.warn(
             "Jitsi API is not ready"
           );
+          return;
+        }
+
+        if (blockedInBreakout("YouTube Live")) {
           return;
         }
 
@@ -225,6 +297,10 @@ export default function useJitsi({
           console.warn(
             "Jitsi API is not ready"
           );
+          return;
+        }
+
+        if (blockedInBreakout("Stopping YouTube Live")) {
           return;
         }
 
@@ -640,13 +716,46 @@ export default function useJitsi({
         "Jitsi conference joined"
       );
 
-      const data = event as { id?: string } | undefined;
+      const data = event as
+        | { id?: string; roomName?: string; breakoutRoom?: boolean }
+        | undefined;
+
+      // Any "joined" means the earlier "left" (if there was one) was a room switch.
+      cancelPendingLeave();
 
       if (data?.id) {
         localParticipantIdRef.current = data.id;
       }
 
+      const enteringBreakout = data?.breakoutRoom === true;
+      const returningFromBreakout = !enteringBreakout && inBreakoutRef.current;
+
+      inBreakoutRef.current = enteringBreakout;
+
+      onRoomChangedRef.current?.({
+        roomName: data?.roomName ?? "",
+        isBreakoutRoom: enteringBreakout,
+      });
+
       updateParticipants();
+
+      // Populate the room list for people who joined after the rooms were created.
+      void createBreakoutControls(
+        () => api,
+        () => mainRoomJidRef.current
+      )
+        .refreshBreakoutRooms()
+        .then((rooms) => {
+          if (rooms.length > 0) {
+            handleBreakoutRoomsList(rooms);
+          }
+        });
+
+      // Moving into / back out of a breakout room is an internal room switch, not
+      // the student (re)joining the class, so it must not create attendance records.
+      if (enteringBreakout || returningFromBreakout) {
+        return;
+      }
 
       void markJoined();
 
@@ -660,10 +769,49 @@ export default function useJitsi({
      * ============================================================
      */
 
+    let pendingLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cancelPendingLeave = () => {
+      if (pendingLeaveTimer) {
+        clearTimeout(pendingLeaveTimer);
+        pendingLeaveTimer = null;
+      }
+    };
+
     const handleLeftConference = () => {
 
-      void markLeft();
+      // Breakout switches also fire "left". Wait briefly for the matching "joined"
+      // before recording that the student left the class.
+      cancelPendingLeave();
+
+      pendingLeaveTimer = setTimeout(() => {
+        pendingLeaveTimer = null;
+        inBreakoutRef.current = false;
+        void markLeft();
+      }, ROOM_SWITCH_GRACE_MS);
     };
+
+    /*
+     * ============================================================
+     * BREAKOUT ROOMS
+     * ============================================================
+     */
+
+    const handleBreakoutRoomsList = (rooms: BreakoutRoom[]) => {
+      const main = rooms.find((room) => room.isMainRoom);
+
+      if (main?.jid) {
+        mainRoomJidRef.current = main.jid;
+      }
+
+      onBreakoutRoomsUpdatedRef.current?.(rooms);
+    };
+
+    const handleBreakoutRoomsUpdated = (event: unknown) => {
+      handleBreakoutRoomsList(normalizeBreakoutRooms(event));
+    };
+
+    onBreakoutSupportChangedRef.current?.(isBreakoutSupported(api));
 
     /*
      * ============================================================
@@ -792,6 +940,14 @@ export default function useJitsi({
         JSON.stringify(data, null, 2)
       );
 
+      // Recording and live streaming run in the MAIN room. While the teacher is in a
+      // breakout room, status events describe that room, not the class stream, so
+      // they must not change the classroom's recording / live UI.
+      if (inBreakoutRef.current) {
+        console.log("[breakout] Ignoring recording status while in a breakout room.");
+        return;
+      }
+
       const isOn = data.on ?? false;
 
       /*
@@ -916,6 +1072,11 @@ export default function useJitsi({
       handleOutgoingMessage
     );
 
+    api.addListener(
+      "breakoutRoomsUpdated",
+      handleBreakoutRoomsUpdated
+    );
+
     /*
      * ============================================================
      * BROWSER CLOSE / REFRESH
@@ -989,6 +1150,14 @@ export default function useJitsi({
         "outgoingMessage",
         handleOutgoingMessage
       );
+
+      api.removeListener(
+        "breakoutRoomsUpdated",
+        handleBreakoutRoomsUpdated
+      );
+
+      cancelPendingLeave();
+      inBreakoutRef.current = false;
 
       api.dispose();
 
