@@ -49,6 +49,18 @@ type MeetingCardProps = {
 
   showHeader?: boolean;
 
+  /**
+   * Fullscreen mode: the header floats over the meeting and slides in from the
+   * top only while `headerVisible`. Omit for the normal, always-visible header.
+   */
+  immersive?: {
+    headerVisible: boolean;
+    /** The right rail is showing, so the header stops short of it. */
+    sidebarVisible: boolean;
+    onPointerEnter: () => void;
+    onPointerLeave: () => void;
+  };
+
   /** Anchor for the "Start YouTube Live" privacy popover, rendered by the parent. */
   startLiveButtonRef?: Ref<HTMLButtonElement>;
 };
@@ -74,6 +86,7 @@ export default function MeetingCard({
   isConferenceReady = false,
   youtubeLiveUrl,
   showHeader = true,
+  immersive,
   startLiveButtonRef,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
@@ -169,15 +182,24 @@ export default function MeetingCard({
   const testYoutubeStatus = "REAUTH_REQUIRED";
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0B1120]">
+    <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#0B1120]">
 
       {/* HEADER — navy/blue for the teacher, green for the student. */}
       {showHeader && (
       <div
+        onMouseEnter={immersive?.onPointerEnter}
+        onMouseLeave={immersive?.onPointerLeave}
         className={`flex h-[80px] shrink-0 items-center justify-between border-b px-5 py-3 ${
           role === "student"
             ? "border-[#1C332B] bg-[#10231D]"
             : "border-[#1E293B] bg-[#112D5C]"
+        } ${
+          immersive
+            ? // Slides with `top`, not a transform, because the header holds a fixed modal.
+              `absolute left-0 z-40 transition-[top,right] duration-200 ${
+                immersive.headerVisible ? "top-0" : "-top-[81px]"
+              } ${immersive.sidebarVisible ? "right-[72px]" : "right-0"}`
+            : ""
         }`}
       >
 

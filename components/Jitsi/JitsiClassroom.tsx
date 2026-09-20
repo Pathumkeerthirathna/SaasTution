@@ -190,6 +190,65 @@ export default function JitsiClassroom() {
 const [classStudents, setClassStudents] =
   useState<ClassroomStudent[]>([]);
 
+  // Fullscreen "immersive" mode: the header and the right rail are hidden and
+  // slide in only while the pointer is at the top / right edge of the screen.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [revealTop, setRevealTop] = useState(false);
+  const [revealRight, setRevealRight] = useState(false);
+  const [sidebarPanelOpen, setSidebarPanelOpen] = useState(false);
+  const hideTopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideRightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+
+    syncFullscreen();
+    document.addEventListener("fullscreenchange", syncFullscreen);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      setRevealTop(false);
+      setRevealRight(false);
+    }
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    // These refs hold timers (not DOM nodes), so the latest value is what we want.
+    /* eslint-disable react-hooks/exhaustive-deps */
+    return () => {
+      if (hideTopTimerRef.current) clearTimeout(hideTopTimerRef.current);
+      if (hideRightTimerRef.current) clearTimeout(hideRightTimerRef.current);
+    };
+    /* eslint-enable react-hooks/exhaustive-deps */
+  }, []);
+
+  const revealEdge = useCallback((edge: "top" | "right") => {
+    const timerRef = edge === "top" ? hideTopTimerRef : hideRightTimerRef;
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    (edge === "top" ? setRevealTop : setRevealRight)(true);
+  }, []);
+
+  const hideEdgeSoon = useCallback((edge: "top" | "right") => {
+    const timerRef = edge === "top" ? hideTopTimerRef : hideRightTimerRef;
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      (edge === "top" ? setRevealTop : setRevealRight)(false);
+    }, 500);
+  }, []);
+
   const [isRecording, setIsRecording] =
   useState(false);
 
@@ -824,12 +883,18 @@ const [classStudents, setClassStudents] =
     }
   };
 
+  // In fullscreen the header / rail stay hidden until the pointer reaches the
+  // edge. They also stay put while something anchored to them is open.
+  const immersive = isFullscreen && meetingReady;
+  const headerVisible = revealTop || showYoutubePrivacy;
+  const sidebarVisible = revealRight || sidebarPanelOpen;
+
   return (
   <main className="h-screen w-full overflow-hidden bg-[#0B1120]">
 
     <div
       className={
-        meetingReady
+        meetingReady && !immersive
           ? "grid h-full min-h-0 w-full grid-cols-[minmax(0,1fr)_72px]"
           : "grid h-full min-h-0 w-full grid-cols-1"
       }
@@ -855,6 +920,16 @@ const [classStudents, setClassStudents] =
         liveStartFailed={liveStartFailed}
         isConferenceReady={isConferenceReady}
         showHeader={meetingReady}
+        immersive={
+          immersive
+            ? {
+                headerVisible,
+                sidebarVisible,
+                onPointerEnter: () => revealEdge("top"),
+                onPointerLeave: () => hideEdgeSoon("top"),
+              }
+            : undefined
+        }
         startLiveButtonRef={startLiveButtonRef}
         youtubeLiveUrl={youtubeLiveUrl}
         youtubeChannelTitle={
@@ -1291,9 +1366,40 @@ const [classStudents, setClassStudents] =
         </>
     )}
 
+      {/* Fullscreen: invisible hover strips on the top / right edge. They sit above
+          the Jitsi iframe, which would otherwise swallow the pointer events. */}
+      {immersive && !headerVisible && (
+        <div
+          aria-hidden="true"
+          onMouseEnter={() => revealEdge("top")}
+          className="fixed inset-x-0 top-0 z-30 h-3"
+        />
+      )}
+      {immersive && !sidebarVisible && (
+        <div
+          aria-hidden="true"
+          onMouseEnter={() => revealEdge("right")}
+          className="fixed right-0 top-0 z-30 h-full w-3"
+        />
+      )}
+
       {/* RIGHT SIDEBAR */}
       {meetingReady && (
+        <div
+          className={
+            immersive
+              ? // Slides with `right`, not a transform: a transform would become the
+                // containing block of the sidebar's fixed popovers and modals.
+                `fixed top-0 z-50 h-screen w-[72px] transition-[right] duration-200 ${
+                  sidebarVisible ? "right-0" : "-right-[72px]"
+                }`
+              : "contents"
+          }
+          onMouseEnter={immersive ? () => revealEdge("right") : undefined}
+          onMouseLeave={immersive ? () => hideEdgeSoon("right") : undefined}
+        >
         <RightSidebar
+          onPanelOpenChange={setSidebarPanelOpen}
           sessionId={joinInfo.session.id}
           classId={joinInfo.class.id}
           className={joinInfo.class.name}
@@ -1316,6 +1422,7 @@ const [classStudents, setClassStudents] =
             jitsiMeetingRef.current?.setNoiseSuppression(enabled)
           }
         />
+        </div>
       )}
 
     </div>

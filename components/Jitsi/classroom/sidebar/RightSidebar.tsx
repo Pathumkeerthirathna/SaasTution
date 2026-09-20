@@ -29,6 +29,8 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 const LECTURE_TOOL_PANELS = ["notes", "assignments", "quiz"] as const;
 
 type RightSidebarProps = {
+  /** Reports whether a slide-out panel is open (used to keep the rail visible in fullscreen). */
+  onPanelOpenChange?: (open: boolean) => void;
   sessionId?: string;
   classId : string;
   className : String;
@@ -128,6 +130,13 @@ export default function RightSidebar(props: RightSidebarProps) {
       setChatUnread((prev) => prev + newRemoteCount);
     }
   }, [chatMessages, activePanel]);
+
+  const { onPanelOpenChange } = props;
+  const isPanelOpen = activePanel !== null;
+
+  useEffect(() => {
+    onPanelOpenChange?.(isPanelOpen);
+  }, [isPanelOpen, onPanelOpenChange]);
 
   const handlePanelChange = (panel: string) => {
     setActivePanel((current) =>
