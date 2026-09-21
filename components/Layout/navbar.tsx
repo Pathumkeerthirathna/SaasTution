@@ -29,7 +29,7 @@ export default function Navbar() {
             <span className="block text-[17px] font-bold tracking-tight text-slate-900">
               SL Classroom
             </span>
-            <span className="block text-[11px] text-slate-500">Learn • Teach • Collaborate</span>
+            <span className="hidden text-[11px] text-slate-500 min-[380px]:block">Learn • Teach • Collaborate</span>
           </div>
         </Link>
 
@@ -62,9 +62,15 @@ export default function Navbar() {
             Start Teaching
           </Link>
         </div>
-
-        {/* Mobile button */}
-        <button
+        {/* Compact CTA + menu below the desktop breakpoint */}
+        <div className="flex items-center gap-2 xl:hidden">
+          <Link
+            href="/register"
+            className="hidden rounded-lg bg-emerald-600 px-3 py-2 text-[12.5px] font-semibold text-white shadow-sm min-[400px]:inline-block"
+          >
+            Start Teaching
+          </Link>
+          <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-label={open ? "Close menu" : "Open menu"}
@@ -73,11 +79,12 @@ export default function Navbar() {
         >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
+        </div>
       </div>
 
       {/* Mobile menu */}
       {open && (
-        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white xl:hidden">
+        <div className="max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-slate-200 bg-white xl:hidden">
           <div className="space-y-1 px-4 py-4 sm:px-6">
             {links.map((link) => (
               <Link

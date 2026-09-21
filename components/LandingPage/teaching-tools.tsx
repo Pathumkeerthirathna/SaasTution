@@ -23,8 +23,8 @@ function Feature({
 }) {
   return (
     <Reveal>
-      <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
-        <div className={flip ? "lg:order-2" : ""}>
+      <div className="grid grid-cols-1 items-center gap-8 xl:grid-cols-[1fr_1.35fr] xl:gap-12">
+        <div className={flip ? "xl:order-2" : ""}>
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-600 text-white shadow-md">
             <Icon className="h-5 w-5" />
           </span>
@@ -37,7 +37,7 @@ function Feature({
             <CheckList items={points} />
           </div>
         </div>
-        <div className={flip ? "lg:order-1" : ""}>{children}</div>
+        <div className={flip ? "xl:order-1" : ""}>{children}</div>
       </div>
     </Reveal>
   );

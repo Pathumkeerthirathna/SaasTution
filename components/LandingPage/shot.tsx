@@ -48,13 +48,31 @@ export default function Shot({
   return (
     <div className={`relative ${className}`}>
       {scrollOnMobile && !mobile ? (
-        <div className="-mx-px overflow-x-auto max-sm:pb-1">
-          <div className="min-w-[760px] sm:min-w-0">{image}</div>
-        </div>
+        <>
+          <div
+            role="region"
+            aria-label="Product preview, scroll sideways to see the full screen"
+            tabIndex={0}
+            className="overflow-x-auto overscroll-x-contain rounded-b-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-teal-500 max-lg:pb-1"
+          >
+            <div className="min-w-[1000px] md:min-w-[900px] lg:min-w-0">{image}</div>
+          </div>
+          <p className="pointer-events-none px-3 py-1.5 text-center text-[11px] font-medium text-slate-400 lg:hidden">Swipe sideways to explore the full screen</p>
+        </>
       ) : (
         image
       )}
-      {tag ? <SampleTag className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3" /> : null}
+      {tag ? (
+        <SampleTag
+          className={`absolute left-2.5 sm:left-3 ${
+            scrollOnMobile && !mobile
+              ? "bottom-9 sm:bottom-9 lg:bottom-3"
+              : mobile
+                ? "max-sm:bottom-auto max-sm:left-auto max-sm:right-2.5 max-sm:top-2.5 bottom-2.5 sm:bottom-3"
+                : "bottom-2.5 sm:bottom-3"
+          }`}
+        />
+      ) : null}
     </div>
   );
 }

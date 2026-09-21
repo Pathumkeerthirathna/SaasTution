@@ -23,7 +23,7 @@ export default function StudentManagement() {
           />
         </Reveal>
 
-        <div className="mt-12 grid items-center gap-8 lg:grid-cols-[1.35fr_1fr] lg:gap-12">
+        <div className="mt-12 grid grid-cols-1 items-center gap-8 xl:grid-cols-[1.9fr_1fr] xl:gap-10">
           <Reveal>
             <Frame title="SL Classroom · Students">
               <Shot name="dash-students" scrollOnMobile alt="The students panel with pending approvals, class filters and import options" />

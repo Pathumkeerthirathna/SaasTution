@@ -16,8 +16,8 @@ export default function Fees() {
           />
         </Reveal>
 
-        <div className="mt-12 grid items-center gap-8 lg:grid-cols-[1fr_1.35fr] lg:gap-12">
-          <Reveal className="order-2 lg:order-1">
+        <div className="mt-12 grid grid-cols-1 items-center gap-8 xl:grid-cols-[1fr_1.9fr] xl:gap-10">
+          <Reveal className="order-2 xl:order-1">
             <ul className="space-y-4">
               <li className="flex gap-3.5">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Wallet className="h-5 w-5" /></span>
@@ -46,7 +46,7 @@ export default function Fees() {
             </div>
           </Reveal>
 
-          <Reveal delay={120} className="order-1 lg:order-2">
+          <Reveal delay={120} className="order-1 xl:order-2">
             <Frame title="SL Classroom · Payments">
               <Shot name="dash-fees" scrollOnMobile alt="The fee sheet showing discounts, final amounts and Paid, Pending and Unpaid status" />
             </Frame>

@@ -48,7 +48,7 @@ export default function HotspotFigure({ image, alt, pins }: { image: string; alt
                     onMouseLeave={() => setActive(null)}
                     onFocus={() => setActive(pin.id)}
                     onBlur={() => setActive(null)}
-                    className="group relative flex h-7 w-7 items-center justify-center rounded-full bg-teal-500 text-[12px] font-bold text-white shadow-lg ring-2 ring-white/90 transition hover:scale-110 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300"
+                    className="group relative flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-[10px] lg:h-7 lg:w-7 lg:text-[12px] font-bold text-white shadow-lg ring-1 ring-white/90 lg:ring-2 transition hover:scale-110 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300"
                   >
                     <span className="absolute inset-0 rounded-full bg-teal-400/50 motion-safe:animate-ping [animation-duration:2.6s]" />
                     <span className="relative">{index + 1}</span>

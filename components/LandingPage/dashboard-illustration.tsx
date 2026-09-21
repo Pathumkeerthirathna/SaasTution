@@ -78,7 +78,7 @@ export default function DashboardIllustration() {
           ))}
         </aside>
 
-        <div className="min-w-0 flex-1 p-3 sm:p-4">
+        <div className="min-w-0 flex-1 p-3 pb-10 sm:p-4 sm:pb-11">
           <div className="rounded-2xl bg-gradient-to-br from-[#33598f] to-[#2a4f86] p-4 text-white sm:p-5">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-200">Teacher dashboard</p>
             <p className="mt-1 text-lg font-bold sm:text-xl">Welcome back, Ms. Emily Hart</p>

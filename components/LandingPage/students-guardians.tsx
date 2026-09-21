@@ -37,7 +37,7 @@ export default function StudentsGuardians() {
           </div>
         </Reveal>
 
-        <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
+        <div className="mt-12 grid grid-cols-1 items-start gap-10 xl:grid-cols-[1fr_1.4fr]">
           <Reveal>
             <h3 className="mb-4 text-xl font-bold text-slate-900">For students</h3>
             <StudentIllustration />

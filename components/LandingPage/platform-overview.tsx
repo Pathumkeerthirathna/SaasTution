@@ -122,12 +122,16 @@ export default function PlatformOverview() {
                 key={title}
                 className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg lg:mt-7 lg:before:absolute lg:before:-top-7 lg:before:left-1/2 lg:before:h-7 lg:before:w-px lg:before:bg-teal-300"
               >
-                <span className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${tone} text-white shadow-md`}>
-                  <Icon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-3.5 text-lg font-bold text-slate-900">{title}</h3>
-                <p className="text-[13px] text-slate-500">{sub}</p>
-                <ul className="mt-3.5 space-y-1.5">
+                <div className="flex items-center gap-3">
+                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tone} text-white shadow-md`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-bold leading-tight text-slate-900">{title}</h3>
+                    <p className="text-[13px] text-slate-500">{sub}</p>
+                  </div>
+                </div>
+                <ul className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-1">
                   {items.map((item) => (
                     <li key={item} className="flex items-center gap-2 text-[13.5px] text-slate-700">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />

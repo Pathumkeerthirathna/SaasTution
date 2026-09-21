@@ -8,7 +8,7 @@ import { Frame, SampleTag } from "./ui";
 export default function StudentIllustration() {
   return (
     <Frame title="SL Classroom · Student dashboard (illustration)" className="relative">
-      <div className="space-y-3 bg-gradient-to-br from-slate-50 to-teal-50/60 p-3.5 sm:p-4">
+      <div className="space-y-3 bg-gradient-to-br from-slate-50 to-teal-50/60 p-3.5 pb-10 sm:p-4 sm:pb-11">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-600 text-white">
             <GraduationCap className="h-4.5 w-4.5" />

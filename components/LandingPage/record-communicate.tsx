@@ -16,7 +16,7 @@ export default function RecordCommunicate() {
           />
         </Reveal>
 
-        <div className="mt-12 grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
+        <div className="mt-12 grid grid-cols-1 items-center gap-8 xl:grid-cols-[1fr_1.25fr] xl:gap-10">
           <Reveal>
             <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#112D5C] px-3 py-2 text-white"><Video className="h-4 w-4" />Teacher</span>

@@ -71,7 +71,7 @@ export default function PanelTabs({
               aria-selected={selected}
               aria-controls={`panel-${tab.id}`}
               tabIndex={selected ? 0 : -1}
-              onClick={() => setActiveId(tab.id)}
+              onClick={(event) => { setActiveId(tab.id); event.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); }}
               className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition ${
                 selected
                   ? dark
@@ -93,9 +93,9 @@ export default function PanelTabs({
         role="tabpanel"
         id={`panel-${active.id}`}
         aria-labelledby={`tab-${active.id}`}
-        className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-8"
+        className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] xl:gap-8"
       >
-        <div className="order-2 lg:order-1 lg:pt-4">
+        <div className="order-2 xl:order-1 xl:pt-4">
           <h3 className={`text-xl font-bold leading-snug sm:text-2xl ${dark ? "text-white" : "text-slate-900"}`}>{active.title}</h3>
           <p className={`mt-3 text-[15px] leading-relaxed ${dark ? "text-slate-300" : "text-slate-600"}`}>{active.text}</p>
           {active.points ? (
@@ -110,7 +110,7 @@ export default function PanelTabs({
           ) : null}
         </div>
 
-        <Frame dark={dark} title={frameTitle} className="order-1 lg:order-2">
+        <Frame dark={dark} title={frameTitle} className="order-1 xl:order-2">
           <Shot key={active.image} name={active.image} mobile={active.mobile} scrollOnMobile={!active.mobile} alt={`${active.label}: ${active.title}`} />
         </Frame>
       </div>

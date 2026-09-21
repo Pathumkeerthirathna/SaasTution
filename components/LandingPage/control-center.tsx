@@ -41,7 +41,7 @@ export default function ControlCenter() {
           />
         </Reveal>
 
-        <div className="mt-12 grid items-start gap-8 lg:grid-cols-[1.2fr_1fr] lg:gap-10">
+        <div className="mt-12 grid grid-cols-1 items-start gap-8 xl:grid-cols-[1.2fr_1fr] xl:gap-10">
           <Reveal>
             <DashboardIllustration />
           </Reveal>

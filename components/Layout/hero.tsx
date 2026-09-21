@@ -10,7 +10,7 @@ export default function Hero() {
 
       <Container className="relative pb-4 pt-10 sm:pb-6 sm:pt-16 lg:pb-6 lg:pt-20">
         <div className="mx-auto max-w-4xl text-center">
-          <Eyebrow>SL Classroom · Learn • Teach • Collaborate</Eyebrow>
+          <Eyebrow>SL Classroom<span className="hidden sm:inline">&nbsp;· Learn • Teach • Collaborate</span></Eyebrow>
 
           <h1 className="mt-5 text-[34px] font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-[60px]">
             Everything You Need to <span className="text-teal-600">Teach, Manage &amp; Grow</span>
