@@ -49,4 +49,5 @@ export const studentToolbar = [
   "videoquality",
   "shortcuts",
   "hangup",
+  "desktop"
 ];

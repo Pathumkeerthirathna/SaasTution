@@ -766,20 +766,46 @@ export function LectureManagementPanel() {
         body: JSON.stringify(createLectureForm),
       });
 
-      const payload = (await response.json()) as { success: boolean };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { lecture: LectureItem };
+      };
 
-      if (!response.ok || !payload.success) {
+      if (!response.ok || !payload.success || !payload.data) {
         throw new Error(readApiError(payload, "Failed to create lecture."));
       }
 
-      setSuccessMessage("Lecture created successfully.");
+      const createdLecture = payload.data.lecture;
+
       setCreateLectureForm((prev) => ({
         ...prev,
         title: "",
         date: "",
       }));
       setIsAddLecturePanelOpen(false);
-      await loadLectures(1, filterClassId, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder);
+
+      // The list's active class/date filters may differ from what the teacher
+      // just created the lecture for (the "Add lecture" form's class/date are
+      // independent of the list filters). Only refresh — and only claim it's
+      // now visible — when the new lecture actually falls inside those filters.
+      const matchesClassFilter = !filterClassId || filterClassId === createdLecture.class.id;
+      const lectureDate = new Date(createdLecture.date);
+      const matchesDateFilter =
+        (!dateRange.from || lectureDate >= dateRange.from) &&
+        (!dateRange.to || lectureDate <= dateRange.to);
+
+      if (matchesClassFilter && matchesDateFilter) {
+        setSuccessMessage("Lecture created successfully.");
+        await loadLectures(1, filterClassId, appliedSearch, dateRange.from, dateRange.to, pageSize, sortOrder);
+      } else {
+        // Leave the teacher's current filters exactly as they are instead of
+        // silently switching what they're looking at — just say plainly where
+        // the new lecture actually went.
+        setSuccessMessage(
+          `Lecture created for ${createdLecture.class.name} on ${lectureDate.toLocaleString()}. ` +
+            "It doesn't match your current filters, so it isn't shown in this list right now."
+        );
+      }
     });
   }
 

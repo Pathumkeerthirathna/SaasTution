@@ -1511,6 +1511,37 @@ const [classStudents, setClassStudents] =
         </div>
       )}
 
+      {/* Orientation hint (teacher + student): a portrait phone presents a narrow
+          video to everyone (the camera's native portrait aspect ratio gets
+          pillarboxed inside Jitsi's stage). `viewport.isPhone` already means
+          "phone-width AND portrait" (see useClassroomViewport.ts), so it flips
+          off automatically — no extra detection logic — the instant either side
+          rotates to landscape. Advisory only: it never blocks joining/controls or
+          touches the video itself. One shared block, text only differs by role,
+          so the teacher and student cases can never drift out of sync. */}
+      {viewport.isPhone && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4"
+          style={{
+            bottom: "calc(var(--sl-bar-h) + env(safe-area-inset-bottom) + 0.5rem)",
+          }}
+        >
+          <div className="pointer-events-none flex max-w-[92vw] items-center gap-2 rounded-full border border-[#1E293B] bg-[#0F172A]/95 px-4 py-2 text-xs font-medium text-[#F8FAFC] shadow-lg backdrop-blur">
+            <RotateCcw
+              className="h-3.5 w-3.5 shrink-0 text-[#3B82F6]"
+              aria-hidden="true"
+            />
+            <span>
+              {role === "teacher"
+                ? "For the best classroom video, rotate your phone to landscape."
+                : "For the best classroom experience, rotate your phone to landscape."}
+            </span>
+          </div>
+        </div>
+      )}
+
     </div>
 
   </main>
