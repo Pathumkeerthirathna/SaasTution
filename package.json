@@ -13,7 +13,7 @@
     "prisma:studio": "prisma studio"
   },
   "prisma": {
-    "seed": "tsx prisma/SubjectSeeder.ts"
+    "seed": "tsx prisma/MediumSeeder.ts"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
