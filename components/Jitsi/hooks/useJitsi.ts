@@ -505,6 +505,8 @@ export default function useJitsi({
 
           configOverwrite: {
 
+            reducedUIEnabled: false,
+
             prejoinPageEnabled: false,
 
             prejoinConfig: {
