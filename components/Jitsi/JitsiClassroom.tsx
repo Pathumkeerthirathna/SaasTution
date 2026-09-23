@@ -1025,6 +1025,13 @@ const [classStudents, setClassStudents] =
     }
   };
 
+  // Mobile header button only: purely CSS/state — never calls
+  // Element.requestFullscreen() or touches document.fullscreenElement at all.
+  // Desktop keeps using handleEnterFullscreen (the real API) above, unchanged.
+  const handleEnterCssFullscreen = () => {
+    setIsCssFullscreenFallback(true);
+  };
+
   const handleExitFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch((error) => {
@@ -1319,6 +1326,8 @@ const [classStudents, setClassStudents] =
         }}
 
         onEndSession={handleEndSessionForEveryone}
+        isMobile={viewport.isTouchLayout}
+        onEnterFullscreen={handleEnterCssFullscreen}
       >
         <PermissionGate onReadyChange={setMeetingReady}>
           <JitsiMeeting
@@ -1637,16 +1646,15 @@ const [classStudents, setClassStudents] =
         </div>
       )}
 
-      {/* Fullscreen trigger: fullscreens JitsiMeeting's own wrapper (not
-          document.documentElement), so the header/right sidebar are hidden by the
-          browser's native fullscreen rendering itself — no CSS hide/reveal needed,
-          and it works the same on touch and non-touch layouts. Where the real
-          Fullscreen API isn't available at all (real iPhone Safari),
-          handleEnterFullscreen falls back to the same CSS presentation via
-          isCssFullscreenFallback instead. The matching "Exit fullscreen" button
-          lives inside that wrapper (components/Jitsi/JitsiMeeting.tsx), since only
-          elements inside the fullscreened subtree stay visible while active. */}
-      {meetingReady && !isFullscreenActive && (
+      {/* Fullscreen trigger — desktop only: fullscreens JitsiMeeting's own wrapper
+          (not document.documentElement) via the real Fullscreen API, so the
+          header/right sidebar are hidden by the browser's native fullscreen
+          rendering itself. Mobile/touch layouts use MeetingCard's own header
+          button instead (isMobile / onEnterFullscreen below), which never calls
+          the real API at all — see handleEnterCssFullscreen. The matching "Exit
+          fullscreen" button lives inside JitsiMeeting's wrapper and works for
+          both paths already. */}
+      {meetingReady && !isFullscreenActive && !viewport.isTouchLayout && (
         <button
           type="button"
           onClick={() => void handleEnterFullscreen()}

@@ -13,6 +13,7 @@ import {
   Loader2,
   RotateCcw,
   PhoneOff,
+  Maximize2,
 } from "lucide-react";
 
 type MeetingCardProps = {
@@ -81,6 +82,20 @@ type MeetingCardProps = {
    * in-flight/disabled state around that call, not the flow itself.
    */
   onEndSession?: () => void | Promise<void>;
+
+  /**
+   * True on phone/touch layouts. Shows the mobile-only header fullscreen
+   * button (visible for both roles) instead of the desktop floating one that
+   * JitsiClassroom.tsx renders separately.
+   */
+  isMobile?: boolean;
+
+  /**
+   * Mobile only: called when the header fullscreen button is pressed. Expected
+   * to set the existing CSS/state fullscreen mode directly — never calls
+   * Element.requestFullscreen() itself.
+   */
+  onEnterFullscreen?: () => void;
 };
 
 export default function MeetingCard({
@@ -109,6 +124,8 @@ export default function MeetingCard({
   immersive,
   startLiveButtonRef,
   onEndSession,
+  isMobile = false,
+  onEnterFullscreen,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -508,6 +525,23 @@ export default function MeetingCard({
               )}
 
             </div>
+          )}
+
+          {/* FULLSCREEN — mobile only, both roles. Beside End Session for the
+              teacher (it's the sibling immediately after that block); the only
+              content in this spot for the student. Sets the existing CSS/state
+              fullscreen mode directly (onEnterFullscreen) — never calls
+              Element.requestFullscreen() itself; the desktop floating button in
+              JitsiClassroom.tsx keeps using the real Fullscreen API, unchanged. */}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => onEnterFullscreen?.()}
+              className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569]"
+            >
+              <Maximize2 size={16} />
+              Fullscreen
+            </button>
           )}
 
           {showYoutubeShare &&
