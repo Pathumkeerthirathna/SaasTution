@@ -563,6 +563,16 @@ export default function useJitsi({
             p2p: {
               enabled: true,
             },
+
+            // Verified against this exact deployment's own config.js (both keys
+            // exist there, documented but commented out/default-off) — hides the
+            // local self-view tile and the participant filmstrip for both roles,
+            // set once at conference init rather than toggled after join.
+            disableSelfView: true,
+
+            filmstrip: {
+              disabled: true,
+            },
           },
 
           interfaceConfigOverwrite: {

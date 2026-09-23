@@ -35,7 +35,6 @@ const baseTeacherToolbar = [
   "hangup",
   "fullscreen",
   //"tileview",
-  "filmstrip",
   "settings",
   "videoquality",
   "select-background",
