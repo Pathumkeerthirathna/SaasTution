@@ -31,9 +31,14 @@ import useJitsi, {
  * Jitsi-command-only `JitsiControls` — fullscreening the wrapper div is a
  * plain browser API concern, not a Jitsi `executeCommand`, so it lives here
  * (where the wrapper DOM node actually is) rather than in useJitsi.ts.
+ *
+ * Returns a Promise so the caller (JitsiClassroom.tsx) can fall back to its
+ * own CSS-only fullscreen mode if the real Fullscreen API isn't available or
+ * the request fails — real iPhone Safari doesn't support
+ * Element.requestFullscreen() for arbitrary elements at all.
  */
 export type JitsiMeetingControls = JitsiControls & {
-  requestFullscreen: () => void;
+  requestFullscreen: () => Promise<void>;
 };
 
 type JitsiMeetingProps = {
@@ -41,8 +46,16 @@ type JitsiMeetingProps = {
   role: UserRole;
   teacherName: string;
 
-  /** Drives whether the in-classroom "Exit fullscreen" overlay button is shown. */
+  /**
+   * Drives whether the in-classroom fullscreen presentation (wrapper CSS +
+   * "Exit fullscreen" overlay button) is shown. Set by the parent for either
+   * real browser fullscreen or its own CSS-only fallback — this component
+   * doesn't need to know which.
+   */
   isFullscreen?: boolean;
+
+  /** Called when the "Exit fullscreen" overlay button is pressed. */
+  onExitFullscreen?: () => void;
 
   onParticipantsChanged?: (
     participants: JitsiParticipant[]
@@ -88,6 +101,7 @@ const JitsiMeeting = forwardRef<
     role,
     teacherName,
     isFullscreen = false,
+    onExitFullscreen,
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
@@ -204,11 +218,15 @@ const JitsiMeeting = forwardRef<
       },
 
       requestFullscreen: () => {
-        fullscreenWrapperRef.current
-          ?.requestFullscreen()
-          .catch((error) => {
-            console.error("Unable to enter fullscreen:", error);
-          });
+        const element = fullscreenWrapperRef.current;
+
+        if (!element?.requestFullscreen) {
+          return Promise.reject(
+            new Error("Fullscreen API is not available on this element.")
+          );
+        }
+
+        return element.requestFullscreen();
       },
 
       createBreakoutRoom: (name?: string) => {
@@ -282,15 +300,20 @@ const JitsiMeeting = forwardRef<
         element fullscreen "logically" (document.fullscreenElement is set) but
         still sized/positioned inside the normal page flow, with the header and
         right sidebar still visible around it. Driving the positioning
-        explicitly off the existing, already-reactive `isFullscreen` state
-        (sourced from the real `fullscreenchange` event) sidesteps that
-        conflict entirely instead of relying on the browser to win it for us.
+        explicitly off the `isFullscreen` prop sidesteps that conflict
+        entirely instead of relying on the browser to win it for us — and
+        since the parent can set this prop from its own CSS-only fallback
+        too (real iPhone Safari has no Element.requestFullscreen() support at
+        all), this same styling covers both real and simulated fullscreen.
+        `h-dvh` (layered after `h-screen`) is the dynamic-viewport-height unit,
+        so this doesn't get clipped behind iOS Safari's collapsing toolbar the
+        way a plain 100vh would.
       */}
       <div
         ref={fullscreenWrapperRef}
         className={
           isFullscreen
-            ? "fixed inset-0 z-[100] h-screen w-screen bg-black"
+            ? "fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black"
             : "relative h-full min-h-0 w-full"
         }
       >
@@ -302,11 +325,7 @@ const JitsiMeeting = forwardRef<
         {isFullscreen && (
           <button
             type="button"
-            onClick={() => {
-              document.exitFullscreen().catch((error) => {
-                console.error("Unable to exit fullscreen:", error);
-              });
-            }}
+            onClick={() => onExitFullscreen?.()}
             aria-label="Exit fullscreen"
             className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
           >

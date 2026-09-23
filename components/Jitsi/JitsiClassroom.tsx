@@ -204,6 +204,15 @@ const [classStudents, setClassStudents] =
   // Fullscreen "immersive" mode: the header and the right rail are hidden and
   // slide in only while the pointer is at the top / right edge of the screen.
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Real iPhone Safari has no Element.requestFullscreen() support for
+  // arbitrary elements, so document.fullscreenElement never becomes non-null
+  // there — this is a separate, CSS-only "simulated fullscreen" flag for that
+  // case (see handleEnterFullscreen below). isFullscreen itself stays a pure
+  // reflection of the real fullscreenchange event, unchanged.
+  const [isCssFullscreenFallback, setIsCssFullscreenFallback] = useState(false);
+  const isFullscreenActive = isFullscreen || isCssFullscreenFallback;
+
   const [revealTop, setRevealTop] = useState(false);
   const [revealRight, setRevealRight] = useState(false);
   const [sidebarPanelOpen, setSidebarPanelOpen] = useState(false);
@@ -995,6 +1004,37 @@ const [classStudents, setClassStudents] =
     router.push("/dashboard");
   };
 
+  // Capability check, not a device/user-agent check: document.fullscreenEnabled
+  // is false on real iPhone Safari (no Element.requestFullscreen() support for
+  // arbitrary elements there) and true everywhere the real API works, so this
+  // naturally covers "iPhone" without naming it.
+  const supportsElementFullscreen =
+    typeof document !== "undefined" && document.fullscreenEnabled === true;
+
+  const handleEnterFullscreen = async () => {
+    if (!supportsElementFullscreen) {
+      setIsCssFullscreenFallback(true);
+      return;
+    }
+
+    try {
+      await jitsiMeetingRef.current?.requestFullscreen();
+    } catch (error) {
+      console.error("Unable to enter fullscreen, using the CSS fallback instead:", error);
+      setIsCssFullscreenFallback(true);
+    }
+  };
+
+  const handleExitFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch((error) => {
+        console.error("Unable to exit fullscreen:", error);
+      });
+    }
+
+    setIsCssFullscreenFallback(false);
+  };
+
   // In fullscreen the header / rail stay hidden until the pointer reaches the
   // edge. They also stay put while something anchored to them is open.
   // Touch layouts have no hover, so there the normal header / bar stay visible.
@@ -1319,7 +1359,8 @@ const [classStudents, setClassStudents] =
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}
-            isFullscreen={isFullscreen}
+            isFullscreen={isFullscreenActive}
+            onExitFullscreen={handleExitFullscreen}
             onParticipantsChanged={handleParticipantsChanged}
             onChatMessage={handleChatMessage}
             onParticipantStatusChanged={(
@@ -1599,13 +1640,16 @@ const [classStudents, setClassStudents] =
       {/* Fullscreen trigger: fullscreens JitsiMeeting's own wrapper (not
           document.documentElement), so the header/right sidebar are hidden by the
           browser's native fullscreen rendering itself — no CSS hide/reveal needed,
-          and it works the same on touch and non-touch layouts. The matching "Exit
-          fullscreen" button lives inside that wrapper (components/Jitsi/JitsiMeeting.tsx),
-          since only elements inside the fullscreened subtree stay visible while active. */}
-      {meetingReady && !isFullscreen && (
+          and it works the same on touch and non-touch layouts. Where the real
+          Fullscreen API isn't available at all (real iPhone Safari),
+          handleEnterFullscreen falls back to the same CSS presentation via
+          isCssFullscreenFallback instead. The matching "Exit fullscreen" button
+          lives inside that wrapper (components/Jitsi/JitsiMeeting.tsx), since only
+          elements inside the fullscreened subtree stay visible while active. */}
+      {meetingReady && !isFullscreenActive && (
         <button
           type="button"
-          onClick={() => jitsiMeetingRef.current?.requestFullscreen()}
+          onClick={() => void handleEnterFullscreen()}
           aria-label="Enter fullscreen"
           className="fixed bottom-4 left-4 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
         >
