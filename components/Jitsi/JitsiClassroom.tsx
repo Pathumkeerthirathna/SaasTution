@@ -2,6 +2,7 @@
 
 import PermissionGate from "./PermissionGate";
 import JitsiMeeting from "./JitsiMeeting";
+import type { JitsiMeetingControls } from "./JitsiMeeting";
 
 import useJoinSession from "./hooks/useJoinSession";
 import MeetingCard from "./classroom/meeting/MeetingCard";
@@ -18,11 +19,10 @@ import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "../class-management-panel";
 
-import type { JitsiControls } from "./hooks/useJitsi";
 import toast from "react-hot-toast";
 import { getYoutubeFriendlyErrorMessage } from "@/lib/youtube-error-messages";
 import { announce } from "@/lib/voice-announcer";
-import { RotateCcw, Video, X, XCircle } from "lucide-react";
+import { RotateCcw, Video, X, XCircle, Maximize2 } from "lucide-react";
 
 function goToYouTubeOAuthConnect() {
   const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -383,7 +383,7 @@ const [classStudents, setClassStudents] =
   }, [showYoutubePrivacy, placeYoutubePrivacyPopover]);
 
   const jitsiMeetingRef =
-  useRef<JitsiControls | null>(null);
+  useRef<JitsiMeetingControls | null>(null);
 
   // Breakout rooms: state comes from Jitsi's own events, actions go through the
   // centralized wrappers on the Jitsi controls.
@@ -1319,6 +1319,7 @@ const [classStudents, setClassStudents] =
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}
+            isFullscreen={isFullscreen}
             onParticipantsChanged={handleParticipantsChanged}
             onChatMessage={handleChatMessage}
             onParticipantStatusChanged={(
@@ -1593,6 +1594,23 @@ const [classStudents, setClassStudents] =
             </span>
           </div>
         </div>
+      )}
+
+      {/* Fullscreen trigger: fullscreens JitsiMeeting's own wrapper (not
+          document.documentElement), so the header/right sidebar are hidden by the
+          browser's native fullscreen rendering itself — no CSS hide/reveal needed,
+          and it works the same on touch and non-touch layouts. The matching "Exit
+          fullscreen" button lives inside that wrapper (components/Jitsi/JitsiMeeting.tsx),
+          since only elements inside the fullscreened subtree stay visible while active. */}
+      {meetingReady && !isFullscreen && (
+        <button
+          type="button"
+          onClick={() => jitsiMeetingRef.current?.requestFullscreen()}
+          aria-label="Enter fullscreen"
+          className="fixed bottom-4 left-4 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
+        >
+          <Maximize2 size={16} />
+        </button>
       )}
 
     </div>

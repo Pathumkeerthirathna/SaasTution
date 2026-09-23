@@ -8,6 +8,8 @@ import {
   useRef,
 } from "react";
 
+import { X } from "lucide-react";
+
 import type {
   BreakoutRoom,
   ChatMessage,
@@ -24,10 +26,23 @@ import useJitsi, {
   JitsiControls,
 } from "./hooks/useJitsi";
 
+/**
+ * JitsiMeeting's own exposed ref adds `requestFullscreen` on top of the
+ * Jitsi-command-only `JitsiControls` — fullscreening the wrapper div is a
+ * plain browser API concern, not a Jitsi `executeCommand`, so it lives here
+ * (where the wrapper DOM node actually is) rather than in useJitsi.ts.
+ */
+export type JitsiMeetingControls = JitsiControls & {
+  requestFullscreen: () => void;
+};
+
 type JitsiMeetingProps = {
   joinInfo: JoinInfo;
   role: UserRole;
   teacherName: string;
+
+  /** Drives whether the in-classroom "Exit fullscreen" overlay button is shown. */
+  isFullscreen?: boolean;
 
   onParticipantsChanged?: (
     participants: JitsiParticipant[]
@@ -65,13 +80,14 @@ type JitsiMeetingProps = {
 };
 
 const JitsiMeeting = forwardRef<
-  JitsiControls,
+  JitsiMeetingControls,
   JitsiMeetingProps
 >(function JitsiMeeting(
   {
     joinInfo,
     role,
     teacherName,
+    isFullscreen = false,
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
@@ -87,6 +103,14 @@ const JitsiMeeting = forwardRef<
 ) {
 
   const containerRef =
+    useRef<HTMLDivElement | null>(null);
+
+  // Fullscreened instead of `containerRef` directly: `containerRef` is Jitsi's own
+  // exclusive DOM subtree (it injects its iframe there), so a sibling "Exit
+  // fullscreen" button is rendered next to it inside this wrapper instead — fullscreening
+  // the wrapper hides everything outside it (our header/right sidebar) while still
+  // letting our own overlay button render on top of the Jitsi iframe.
+  const fullscreenWrapperRef =
     useRef<HTMLDivElement | null>(null);
 
   const controlsRef =
@@ -179,6 +203,14 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.endConference();
       },
 
+      requestFullscreen: () => {
+        fullscreenWrapperRef.current
+          ?.requestFullscreen()
+          .catch((error) => {
+            console.error("Unable to enter fullscreen:", error);
+          });
+      },
+
       createBreakoutRoom: (name?: string) => {
         controlsRef.current?.createBreakoutRoom(name);
       },
@@ -243,9 +275,29 @@ const JitsiMeeting = forwardRef<
       )}
 
       <div
-        ref={containerRef}
-        className="h-full min-h-0 w-full"
-      />
+        ref={fullscreenWrapperRef}
+        className="relative h-full min-h-0 w-full"
+      >
+        <div
+          ref={containerRef}
+          className="h-full min-h-0 w-full"
+        />
+
+        {isFullscreen && (
+          <button
+            type="button"
+            onClick={() => {
+              document.exitFullscreen().catch((error) => {
+                console.error("Unable to exit fullscreen:", error);
+              });
+            }}
+            aria-label="Exit fullscreen"
+            className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
+          >
+            <X size={18} />
+          </button>
+        )}
+      </div>
     </>
   );
 });
