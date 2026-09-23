@@ -507,6 +507,18 @@ export default function useJitsi({
 
             reducedUIEnabled: false,
 
+            reducedUImainToolbarButtons: [
+                "microphone",
+                "camera",
+                "desktop",
+                "fullscreen",
+                "hangup",
+                "settings",
+                "videoquality",
+                "select-background",
+                "security",
+            ],
+
             prejoinPageEnabled: false,
 
             prejoinConfig: {
