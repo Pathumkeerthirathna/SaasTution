@@ -224,7 +224,22 @@ export async function GET(
           });
 
         const unsubscribe = subscribeLiveChanges((payload) => {
-          if (payload.classId !== classId || payload.kind !== "youtube") {
+          if (payload.classId !== classId) {
+            return;
+          }
+
+          // The application's ClassSession was ended (teacher's "End Session" flow,
+          // wherever it was triggered from) — tell anyone still connected to this
+          // exact session so they can leave the classroom. Kept as its own event,
+          // separate from the youtube "live-status" signal below.
+          if (payload.kind === "jitsi") {
+            if (payload.event === "ended") {
+              send("session-ended", { occurredAt: payload.occurredAt });
+            }
+            return;
+          }
+
+          if (payload.kind !== "youtube") {
             return;
           }
 

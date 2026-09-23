@@ -477,11 +477,28 @@ const [classStudents, setClassStudents] =
 
     source.addEventListener("live-status", handleLiveStatus);
 
+    // Student-only: the teacher ending the session (existing endClassSessionForTeacher
+    // flow, wherever it was triggered from) is signalled on this same per-session
+    // stream. The teacher already navigates away directly from its own End Session
+    // action, so it doesn't need to react to its own signal here.
+    let handleSessionEnded: (() => void) | null = null;
+
+    if (role === "student") {
+      handleSessionEnded = () => {
+        router.push("/student/dashboard");
+      };
+
+      source.addEventListener("session-ended", handleSessionEnded);
+    }
+
     return () => {
       source.removeEventListener("live-status", handleLiveStatus);
+      if (handleSessionEnded) {
+        source.removeEventListener("session-ended", handleSessionEnded);
+      }
       source.close();
     };
-  }, [joinInfo?.session?.id, role]);
+  }, [joinInfo?.session?.id, role, router]);
 
   const [meetingReady, setMeetingReady] =
     useState(false);
@@ -944,6 +961,40 @@ const [classStudents, setClassStudents] =
     }
   };
 
+  // Teacher-only: the existing End Session flow (same POST used by the lecture/session
+  // card in lecture-management-panel.tsx), triggered from inside the live classroom.
+  // Jitsi is only told to end the conference AFTER the application session has
+  // actually been ended — a failed API call leaves the teacher in the classroom with
+  // Jitsi untouched, exactly as required.
+  const handleEndSessionForEveryone = async () => {
+    console.log("🛑 END SESSION BUTTON CLICKED (teacher)");
+
+    try {
+      const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error?.message ?? "Unable to end the session.");
+      }
+    } catch (error) {
+      console.error("❌ Failed to end session:", error);
+
+      toast.error(
+        error instanceof Error ? error.message : "Unable to end the session."
+      );
+
+      // Keep the teacher in the classroom — Jitsi is not touched on failure.
+      return;
+    }
+
+    jitsiMeetingRef.current?.endConference();
+
+    router.push("/dashboard");
+  };
+
   // In fullscreen the header / rail stay hidden until the pointer reaches the
   // edge. They also stay put while something anchored to them is open.
   // Touch layouts have no hover, so there the normal header / bar stay visible.
@@ -1226,6 +1277,8 @@ const [classStudents, setClassStudents] =
             );
           }
         }}
+
+        onEndSession={handleEndSessionForEveryone}
       >
         <PermissionGate onReadyChange={setMeetingReady}>
           <JitsiMeeting

@@ -12,6 +12,7 @@ import {
   Video,
   Loader2,
   RotateCcw,
+  PhoneOff,
 } from "lucide-react";
 
 type MeetingCardProps = {
@@ -72,6 +73,14 @@ type MeetingCardProps = {
 
   /** Anchor for the "Start YouTube Live" privacy popover, rendered by the parent. */
   startLiveButtonRef?: Ref<HTMLButtonElement>;
+
+  /**
+   * Teacher only: called after the teacher confirms "End Session". Expected to run
+   * the existing application End Session flow (and, on success, end the Jitsi
+   * conference) — this component only owns the confirm popover and the
+   * in-flight/disabled state around that call, not the flow itself.
+   */
+  onEndSession?: () => void | Promise<void>;
 };
 
 export default function MeetingCard({
@@ -99,6 +108,7 @@ export default function MeetingCard({
   breakoutActive = false,
   immersive,
   startLiveButtonRef,
+  onEndSession,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -110,6 +120,9 @@ export default function MeetingCard({
 
   const [showYoutubeShare, setShowYoutubeShare] =
   useState(false);
+
+  const [showEndSessionConfirm, setShowEndSessionConfirm] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
 
   // isRecording/isLive changing is the only reliable signal that the
   // async start/stop actually completed, so use it to clear loading state.
@@ -192,6 +205,20 @@ export default function MeetingCard({
     } catch (error) {
       console.error("❌ Failed to stop live:", error);
       setIsStoppingLive(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (isEndingSession) return;
+
+    setIsEndingSession(true);
+    try {
+      await onEndSession?.();
+    } catch (error) {
+      console.error("❌ Failed to end session:", error);
+    } finally {
+      setIsEndingSession(false);
+      setShowEndSessionConfirm(false);
     }
   };
 
@@ -429,6 +456,55 @@ export default function MeetingCard({
                   <span>🔗</span>
                   <span>Get Link</span>
                 </button>
+              )}
+
+              {/* END SESSION — teacher only. Reuses the existing application End
+                  Session flow (passed in as onEndSession); this component only owns
+                  the confirm popover and the in-flight/disabled state. */}
+              {isConferenceReady && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowEndSessionConfirm((prev) => !prev)}
+                    disabled={isEndingSession}
+                    className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <PhoneOff size={16} />
+                    {isEndingSession ? "Ending..." : "End Session"}
+                  </button>
+
+                  {showEndSessionConfirm && (
+                    <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-[#1E293B] bg-[#172033] p-4 shadow-2xl">
+                      <p className="text-sm font-semibold text-[#F8FAFC]">
+                        End this session for everyone?
+                      </p>
+                      <p className="mt-1 text-xs text-[#94A3B8]">
+                        Every student currently in the classroom will be removed and
+                        the class session will be marked as ended.
+                      </p>
+
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowEndSessionConfirm(false)}
+                          disabled={isEndingSession}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#CBD5E1] transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleEndSession}
+                          disabled={isEndingSession}
+                          className="rounded-lg bg-[#EF4444] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isEndingSession ? "Ending..." : "End Session"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
             </div>

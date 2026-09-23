@@ -69,6 +69,9 @@ export type JitsiControls = BreakoutControls & {
 
   /** Enable/disable noise suppression on the local (teacher's) microphone track. */
   setNoiseSuppression: (enabled: boolean) => void;
+
+  /** Moderator: end the Jitsi conference for every participant (teacher included). */
+  endConference: () => void;
 };
 
 type YouTubeStreamPurpose =
@@ -383,6 +386,17 @@ export default function useJitsi({
 
         apiRef.current.executeCommand("setNoiseSuppressionEnabled", { enabled });
       },
+
+      endConference: () => {
+        if (!apiRef.current) {
+          console.warn("Jitsi API is not ready");
+          return;
+        }
+
+        console.log("🛑 Ending the conference for everyone...");
+
+        apiRef.current.executeCommand("endConference");
+      },
     }),
     []
   );
@@ -558,6 +572,8 @@ export default function useJitsi({
       );
 
       apiRef.current = api;
+
+
 
 
     /*

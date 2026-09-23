@@ -175,6 +175,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setNoiseSuppression(enabled);
       },
 
+      endConference: () => {
+        controlsRef.current?.endConference();
+      },
+
       createBreakoutRoom: (name?: string) => {
         controlsRef.current?.createBreakoutRoom(name);
       },
