@@ -274,9 +274,25 @@ const JitsiMeeting = forwardRef<
         </div>
       )}
 
+      {/*
+        Browser fullscreen's own UA stylesheet wants to set `position: fixed;
+        inset: 0` on this element, but the CSS cascade always lets our own
+        (author) styles win over the UA stylesheet regardless of specificity —
+        so a plain `relative` class here would silently defeat it, leaving the
+        element fullscreen "logically" (document.fullscreenElement is set) but
+        still sized/positioned inside the normal page flow, with the header and
+        right sidebar still visible around it. Driving the positioning
+        explicitly off the existing, already-reactive `isFullscreen` state
+        (sourced from the real `fullscreenchange` event) sidesteps that
+        conflict entirely instead of relying on the browser to win it for us.
+      */}
       <div
         ref={fullscreenWrapperRef}
-        className="relative h-full min-h-0 w-full"
+        className={
+          isFullscreen
+            ? "fixed inset-0 z-[100] h-screen w-screen bg-black"
+            : "relative h-full min-h-0 w-full"
+        }
       >
         <div
           ref={containerRef}
