@@ -83,6 +83,9 @@ type JitsiMeetingProps = {
   /** Fired once the local user's Jitsi conference has actually joined. */
   onConferenceJoined?: () => void;
 
+  /** Fired once the local user has genuinely left the conference (never for a breakout-room switch). */
+  onLocalUserLeft?: () => void;
+
   /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
   onModeratorStatusChanged?: (isModerator: boolean) => void;
 
@@ -108,6 +111,7 @@ const JitsiMeeting = forwardRef<
     onLiveStatusChanged,
     onChatMessage,
     onConferenceJoined,
+    onLocalUserLeft,
     onModeratorStatusChanged,
     onBreakoutRoomsUpdated,
     onRoomChanged,
@@ -278,6 +282,7 @@ const JitsiMeeting = forwardRef<
     onLiveStatusChanged,
     onChatMessage,
     onConferenceJoined,
+    onLocalUserLeft,
     onModeratorStatusChanged,
     onBreakoutRoomsUpdated,
     onRoomChanged,

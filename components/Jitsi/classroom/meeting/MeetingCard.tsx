@@ -253,7 +253,7 @@ export default function MeetingCard({
         // Always at least the classic 80px tall, but it may wrap onto a second row on
         // narrow screens so every control stays reachable (min height comes from
         // --sl-header-min in globals.css).
-        className={`sl-header flex min-h-[var(--sl-header-min)] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-5 sm:py-3 lg:flex-nowrap ${
+        className={`sl-header flex min-h-[var(--sl-header-min)] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-3 py-1.5 sm:px-4 sm:py-2 lg:flex-nowrap lg:px-5 ${
           role === "student"
             ? "border-[#1C332B] bg-[#10231D]"
             : "border-[#1E293B] bg-[#112D5C]"
@@ -270,12 +270,12 @@ export default function MeetingCard({
         <div className="flex min-w-0 items-center gap-3">
           <MonitorPlay
             className={`shrink-0 ${role === "student" ? "text-white" : "text-[#3B82F6]"}`}
-            size={22}
+            size={18}
           />
 
           <div className="min-w-0">
             <h2
-              className={`break-words font-semibold lg:truncate ${
+              className={`break-words text-sm font-semibold sm:text-base lg:truncate lg:text-lg ${
                 role === "student" ? "text-white" : "text-[#F8FAFC]"
               }`}
             >
@@ -283,7 +283,7 @@ export default function MeetingCard({
             </h2>
 
             <p
-              className={`break-words text-xs lg:truncate ${
+              className={`break-words text-[11px] sm:text-xs lg:truncate ${
                 role === "student" ? "text-white/70" : "text-[#94A3B8]"
               }`}
             >
@@ -295,14 +295,14 @@ export default function MeetingCard({
         <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-5 gap-y-2 lg:shrink-0 lg:flex-nowrap">
 
           {role === "student" && isLive && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-3 py-1.5">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <Radio
                   size={16}
                   className="animate-pulse text-[#EF4444]"
                 />
 
-                <span className="font-semibold text-[#EF4444]">
+                <span className="text-xs font-semibold text-[#EF4444] sm:text-sm">
                   LIVE
                 </span>
               </div>
@@ -312,7 +312,7 @@ export default function MeetingCard({
                   href={youtubeLiveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#DC2626]"
+                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-[#DC2626] sm:px-3 sm:py-1.5 sm:text-sm"
                 >
                   <MonitorPlay size={16} />
                   Watch on YouTube
@@ -322,11 +322,11 @@ export default function MeetingCard({
           )}
 
           {role === "teacher" && (
-            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:flex-nowrap">
 
              {!isConferenceReady ? (
-                <div className="flex items-center gap-2 rounded-full bg-[#1E293B] px-4 py-2 text-sm font-medium text-[#94A3B8]">
-                  <Loader2 size={16} className="animate-spin" />
+                <div className="flex items-center gap-2 rounded-full bg-[#1E293B] px-3 py-1.5 text-xs font-medium text-[#94A3B8] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm">
+                  <Loader2 size={14} className="animate-spin" />
                   Connecting to session...
                 </div>
              ) : !youtubeStatus && !isLive && !isRecording ? (
@@ -336,18 +336,18 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleReconnectYoutube}
-                  className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569]"
+                  className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
-                  <Video size={16} />
+                  <Video size={14} />
                   Connect YouTube
                 </button>
              ) : youtubeReauthRequired && !isLive && !isRecording ? (
                 <button
                   type="button"
                   onClick={handleReconnectYoutube}
-                  className="flex items-center gap-2 rounded-full bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25"
+                  className="flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
-                  <RotateCcw size={16} />
+                  <RotateCcw size={14} />
                   Reconnect YouTube
                 </button>
              ) : (
@@ -359,15 +359,15 @@ export default function MeetingCard({
                   onClick={handleStartRecording}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
                   {isStartingRecording ? (
                     <Loader2
-                      size={16}
+                      size={14}
                       className="animate-spin"
                     />
                   ) : (
-                    <Video size={16} />
+                    <Video size={14} />
                   )}
 
                   {isStartingRecording
@@ -384,12 +384,12 @@ export default function MeetingCard({
                   onClick={handleStopRecording}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-400 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-400 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
                   {isStoppingRecording ? (
-                    <Loader2 size={16} className="animate-spin" />
+                    <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <CircleStop size={16} />
+                    <CircleStop size={14} />
                   )}
                   {isStoppingRecording ? "Stopping Recording..." : "Stop Recording"}
                 </button>
@@ -402,15 +402,15 @@ export default function MeetingCard({
                   onClick={handleStartLive}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
                   {isStartingLive ? (
                     <Loader2
-                      size={16}
+                      size={14}
                       className="animate-spin"
                     />
                   ) : (
-                    <Radio size={16} />
+                    <Radio size={14} />
                   )}
 
                   {isStartingLive
@@ -425,16 +425,16 @@ export default function MeetingCard({
                   onClick={handleStopLive}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                 >
                   {isStoppingLive ? (
                     <Loader2
-                      size={16}
+                      size={14}
                       className="animate-spin"
                     />
                   ) : (
                     <Radio
-                      size={16}
+                      size={14}
                       className="animate-pulse"
                     />
                   )}
@@ -450,13 +450,13 @@ export default function MeetingCard({
 
               {/* LIVE */}
               {isLive && (
-                <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-2.5 py-1 sm:px-3 sm:py-1.5">
                   <Radio
                     size={16}
                     className="animate-pulse text-[#EF4444]"
                   />
 
-                  <span className="font-semibold text-[#EF4444]">
+                  <span className="text-xs font-semibold text-[#EF4444] sm:text-sm">
                     LIVE
                   </span>
                 </div>
@@ -468,7 +468,7 @@ export default function MeetingCard({
                   onClick={() =>
                     setShowYoutubeShare(true)
                   }
-                  className="flex items-center gap-2 rounded-full bg-[#1E293B] px-3 py-1.5 text-sm font-medium text-[#F8FAFC] transition hover:bg-[#334155]"
+                  className="flex items-center gap-2 rounded-full bg-[#1E293B] px-2.5 py-1 text-xs font-medium text-[#F8FAFC] transition hover:bg-[#334155] sm:px-3 sm:py-1.5 sm:text-sm"
                 >
                   <span>🔗</span>
                   <span>Get Link</span>
@@ -484,9 +484,9 @@ export default function MeetingCard({
                     type="button"
                     onClick={() => setShowEndSessionConfirm((prev) => !prev)}
                     disabled={isEndingSession}
-                    className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
                   >
-                    <PhoneOff size={16} />
+                    <PhoneOff size={14} />
                     {isEndingSession ? "Ending..." : "End Session"}
                   </button>
 
@@ -537,9 +537,9 @@ export default function MeetingCard({
             <button
               type="button"
               onClick={() => onEnterFullscreen?.()}
-              className="flex items-center gap-2 rounded-full bg-[#334155] px-4 py-2 text-sm font-semibold text-[#F8FAFC] transition hover:bg-[#475569]"
+              className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
             >
-              <Maximize2 size={16} />
+              <Maximize2 size={14} />
               Fullscreen
             </button>
           )}
@@ -701,12 +701,12 @@ export default function MeetingCard({
           )} */}
 
          {role === "teacher" && youtubeChannelTitle && (
-            <div className="flex items-center gap-3 rounded-xl border border-[#1E293B] bg-[#172033] px-3.5 py-2">
+            <div className="flex items-center gap-3 rounded-xl border border-[#1E293B] bg-[#172033] px-2.5 py-1.5 sm:px-3 sm:py-2">
               {/* YouTube icon */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FF0033]/10">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#FF0033]/10 sm:h-7 sm:w-7">
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-4.5 w-4.5 text-[#FF0033]"
+                  className="h-3.5 w-3.5 text-[#FF0033] sm:h-4 sm:w-4"
                   fill="currentColor"
                   aria-hidden="true"
                 >
@@ -716,12 +716,12 @@ export default function MeetingCard({
 
               {/* Channel information */}
               <div className="min-w-0">
-                <div className="text-[11px] font-medium uppercase tracking-wide text-[#94A3B8]">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-[#94A3B8] sm:text-[11px]">
                   YouTube Channel
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="max-w-[130px] truncate text-sm font-semibold text-[#F8FAFC] max-sm:max-w-[45vw]">
+                  <span className="max-w-[130px] truncate text-xs font-semibold text-[#F8FAFC] max-sm:max-w-[45vw] sm:text-sm">
                     {youtubeChannelTitle}
                   </span>
 
@@ -729,13 +729,13 @@ export default function MeetingCard({
                     <button
                       type="button"
                       onClick={handleReconnectYoutube}
-                      className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25"
+                      className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25 sm:text-[11px]"
                     >
                       <RotateCcw size={11} />
                       Reconnect
                     </button>
                   ) : (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#22C55E]">
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-[#22C55E] sm:text-[11px]">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
                       Connected
                     </span>

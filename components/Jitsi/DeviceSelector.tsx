@@ -31,7 +31,7 @@ export default function DeviceSelector({
   onSpeakerChange,
 }: DeviceSelectorProps) {
   const selectClassName =
-    "w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none";
+    "w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none";
 
   const labelClassName =
     "mb-1.5 block text-xs font-medium text-slate-400";

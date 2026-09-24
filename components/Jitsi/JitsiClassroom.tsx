@@ -394,6 +394,26 @@ const [classStudents, setClassStudents] =
   const jitsiMeetingRef =
   useRef<JitsiMeetingControls | null>(null);
 
+  // Guards handleLocalUserLeft below against firing more than once (defensive —
+  // unmounting from any other redirect already cancels the pending leave timer
+  // that calls it, but this makes the "only navigate once" guarantee explicit).
+  const hasLeftClassroomRef = useRef(false);
+
+  // Fired by useJitsi.ts only once the local user has genuinely left the
+  // conference (never for a breakout-room switch — see onLocalUserLeft's own
+  // doc comment there). Does not touch the application ClassSession at all —
+  // "Leave Classroom" only leaves Jitsi and goes back to the right dashboard,
+  // exactly like the native Jitsi hangup behavior did before this existed.
+  // Declared here (unconditionally, alongside the other hooks) rather than
+  // after the loading/error early returns below, since useCallback must run
+  // on every render regardless of which branch this component takes.
+  const handleLocalUserLeft = useCallback(() => {
+    if (hasLeftClassroomRef.current) return;
+    hasLeftClassroomRef.current = true;
+
+    router.push(role === "teacher" ? "/dashboard" : "/student/dashboard");
+  }, [role, router]);
+
   // Breakout rooms: state comes from Jitsi's own events, actions go through the
   // centralized wrappers on the Jitsi controls.
   const breakout = useBreakoutRooms({
@@ -1364,6 +1384,7 @@ const [classStudents, setClassStudents] =
               }
             }}
             onConferenceJoined={() => setIsConferenceJoined(true)}
+            onLocalUserLeft={handleLocalUserLeft}
             onModeratorStatusChanged={setIsModerator}
             joinInfo={joinInfo}
             role={role}

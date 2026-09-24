@@ -36,7 +36,7 @@ export default function DevicePreview({
       {!cameraEnabled && (
         <div className="flex aspect-video items-center justify-center">
 
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-600 text-2xl font-semibold text-white">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-lg font-semibold text-white sm:h-20 sm:w-20 sm:text-2xl">
             {initials}
           </div>
 

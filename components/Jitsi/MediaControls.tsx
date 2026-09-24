@@ -22,7 +22,7 @@ export default function MediaControls({
       <button
         type="button"
         onClick={onToggleCamera}
-        className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
+        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
           cameraEnabled
             ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
             : "bg-red-500 text-white hover:bg-red-600"
@@ -34,7 +34,7 @@ export default function MediaControls({
       <button
         type="button"
         onClick={onToggleMicrophone}
-        className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
+        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
           microphoneEnabled
             ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
             : "bg-red-500 text-white hover:bg-red-600"

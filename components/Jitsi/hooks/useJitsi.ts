@@ -114,6 +114,14 @@ type UseJitsiProps = {
   /** Fired once the local user's Jitsi conference has actually joined. */
   onConferenceJoined?: () => void;
 
+  /**
+   * Fired once the local user has genuinely left the conference (clicked
+   * "Leave Classroom", or was disconnected) — never for a breakout-room
+   * switch. Mirrors the same "not a room switch" grace-period check already
+   * used for attendance (`markLeft`), so it fires exactly when that does.
+   */
+  onLocalUserLeft?: () => void;
+
   /** Fired whenever the local user's real Jitsi role (moderator/none) changes. */
   onModeratorStatusChanged?: (isModerator: boolean) => void;
 
@@ -143,6 +151,7 @@ export default function useJitsi({
   onLiveStatusChanged,
   onChatMessage,
   onConferenceJoined,
+  onLocalUserLeft,
   onModeratorStatusChanged,
   onBreakoutRoomsUpdated,
   onRoomChanged,
@@ -166,6 +175,9 @@ export default function useJitsi({
 
   const onConferenceJoinedRef = useRef(onConferenceJoined);
   onConferenceJoinedRef.current = onConferenceJoined;
+
+  const onLocalUserLeftRef = useRef(onLocalUserLeft);
+  onLocalUserLeftRef.current = onLocalUserLeft;
 
   const onModeratorStatusChangedRef = useRef(onModeratorStatusChanged);
   onModeratorStatusChangedRef.current = onModeratorStatusChanged;
@@ -828,6 +840,7 @@ export default function useJitsi({
         pendingLeaveTimer = null;
         inBreakoutRef.current = false;
         void markLeft();
+        onLocalUserLeftRef.current?.();
       }, ROOM_SWITCH_GRACE_MS);
     };
 

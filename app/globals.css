@@ -341,9 +341,9 @@
    ========================================================================== */
 
 .sl-classroom {
-  --sl-rail-w: 72px;
-  --sl-header-h: 80px; /* measured at runtime once the header is on screen */
-  --sl-header-min: 80px;
+  --sl-rail-w: 60px;
+  --sl-header-h: 64px; /* measured at runtime once the header is on screen */
+  --sl-header-min: 64px;
   --sl-bar-h: 60px;
 
   /* Notch / rounded-corner insets. They are 0 unless the page opts in with
@@ -406,7 +406,7 @@
   flex-direction: column;
   align-items: center;
   overflow-y: auto;
-  padding: 20px 0;
+  padding: 14px 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -418,7 +418,7 @@
 /* ---- Landscape phone: very little height ---- */
 @media (max-height: 500px) {
   .sl-classroom {
-    --sl-rail-w: 56px;
+    --sl-rail-w: 52px;
     --sl-header-min: 52px;
   }
 
@@ -563,18 +563,6 @@
 
   .sl-panel--tall {
     height: min(var(--sl-sheet-avail), max(260px, min(72dvh, var(--sl-stage-room))));
-  }
-
-  /* Compact header so the stage keeps as much height as possible. Nothing is hidden. */
-  .sl-header h2 {
-    font-size: 14px;
-    line-height: 1.25;
-  }
-
-  .sl-header button.rounded-full {
-    min-height: 36px;
-    padding: 6px 12px;
-    font-size: 13px;
   }
 }
 

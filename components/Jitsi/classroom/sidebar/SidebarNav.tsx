@@ -184,15 +184,15 @@ export default function SidebarNav({
       className={`
         sl-nav-btn
         relative
-        mb-3
-        flex h-12 w-12
+        mb-2
+        flex h-10 w-10
         items-center justify-center
         rounded-xl
         transition-all duration-200
         ${(panel ? activePanel === panel : active) ? theme.active : theme.idle}
       `}
     >
-      <Icon size={24} />
+      <Icon size={20} />
       {badge ? (
         <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
           {badge > 9 ? "9+" : badge}
