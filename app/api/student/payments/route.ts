@@ -11,6 +11,7 @@ import {
 } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
+import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,29 @@ export async function GET(request: Request) {
     const session = await requireStudentSession();
     const { searchParams } = new URL(request.url);
     const classId = searchParams.get("classId")?.trim() || undefined;
+
+    // Defensive backfill: a ClassStudent normally gets its current-month fee
+    // row created the moment it's assigned (see assignStudentToClass /
+    // registerStudentForPublicClass in services/student-service.ts). This
+    // covers any ClassStudent that predates that, or was created by some
+    // other path — scoped to only this authenticated student's own active
+    // memberships, never anyone else's. Reuses the exact same single-row
+    // helper those flows call; it no-ops if the fee already exists.
+    const activeClassStudents = await prisma.classStudent.findMany({
+      where: {
+        studentId: session.studentId,
+        isActive: true,
+        class: { status: 0 },
+        ...(classId ? { classId } : {}),
+      },
+      select: { id: true },
+    });
+
+    await Promise.all(
+      activeClassStudents.map((entry) =>
+        ensureCurrentMonthFeeForClassStudent(prisma, entry.id)
+      )
+    );
 
     const fees = await prisma.classStudentFee.findMany({
       where: {

@@ -7,6 +7,7 @@ import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { sendEmailConfirmationCode } from "@/services/auth-service";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
+import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 import { requireTeacherSession } from "@/lib/auth-session";
@@ -291,6 +292,11 @@ export async function assignStudentToClass(teacherId: string, classId: string, s
           actionDate: assignedAt,
         },
       });
+
+      // Same transaction: if the assignment rolls back, this fee row rolls
+      // back with it. Reuses the exact amount/due-date calculation the
+      // teacher's Fee Sheet already uses — see class-student-fee-service.ts.
+      await ensureCurrentMonthFeeForClassStudent(tx, assignment.id);
 
       return assignment;
     });
@@ -1908,7 +1914,7 @@ export async function RegisterStudentViaPublicClasses(
 
     const assignedAt = nowInSriLanka();
 
-    await tx.classStudent.create({
+    const classStudentRecord = await tx.classStudent.create({
       data: {
         classId: cls.id,
         studentId: student.id,
@@ -1924,6 +1930,11 @@ export async function RegisterStudentViaPublicClasses(
         actionDate: assignedAt,
       },
     });
+
+    // Same transaction: if this registration rolls back, this fee row rolls
+    // back with it. Reuses the exact amount/due-date calculation the
+    // teacher's Fee Sheet already uses — see class-student-fee-service.ts.
+    await ensureCurrentMonthFeeForClassStudent(tx, classStudentRecord.id);
 
     // await sendStudentRegistrationEmail({
     //   to: request.email!,

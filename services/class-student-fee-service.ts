@@ -1,8 +1,20 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
 import { getPaymentDueStatus } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
+
+/**
+ * Anything that can run the model queries this file needs — either the plain
+ * `prisma` singleton, or the `tx` client Prisma hands to a
+ * `prisma.$transaction(async (tx) => {...})` callback. Lets the new
+ * single-ClassStudent helper below participate in a caller's own transaction
+ * (so a rollback there rolls back the fee row too) while every existing
+ * function in this file keeps using the plain `prisma` singleton, unchanged.
+ */
+type Db = Prisma.TransactionClient;
 
 export type EnrolmentPeriod = {
   assignedAt: string;
@@ -147,15 +159,100 @@ async function getClassFeeForPeriod(
   return earliest?.amount ?? fallback;
 }
 
-/** The class's live fee: the open ClassFee period, else the class monthly fee. */
-async function getCurrentClassFee(classId: string, fallback: number) {
-  const open = await prisma.classFee.findFirst({
+/**
+ * The class's live fee: the open ClassFee period, else the class monthly fee.
+ * Defaults to the plain `prisma` singleton — every existing call site omits
+ * `db` and behaves exactly as before; `ensureCurrentMonthFeeForClassStudent`
+ * below is the only caller that passes a transaction client.
+ */
+async function getCurrentClassFee(classId: string, fallback: number, db: Db = prisma) {
+  const open = await db.classFee.findFirst({
     where: { classId, effectiveTo: null },
     orderBy: { effectiveFrom: "desc" },
     select: { amount: true },
   });
 
   return open?.amount ?? fallback;
+}
+
+/**
+ * Creates the CURRENT month's ClassStudentFee for exactly ONE ClassStudent, if
+ * it doesn't already exist — reusing the exact same amount/due-date/final-
+ * amount calculation `processCurrentMonthFees` already uses for the teacher's
+ * Fee Sheet, just scoped to a single enrolment instead of every active student
+ * in the class. This never touches, and is never called by,
+ * `processCurrentMonthFees`/`processPastMonthFees`/`reprocessMonthlyFees` —
+ * their existing behavior for the teacher Fee Sheet is unchanged.
+ *
+ * Pass `tx` (from `prisma.$transaction(async (tx) => {...})`) to run this as
+ * part of an assignment transaction, so a rollback there also rolls back the
+ * fee row; pass the plain `prisma` singleton to run it standalone (e.g. a
+ * defensive backfill from a GET route).
+ *
+ * No-ops — creates nothing — if the ClassStudent can't be found, isn't
+ * active, its student isn't active, its class isn't active, or a fee row for
+ * the current month already exists. The same
+ * `@@unique([classStudentId, year, month])` constraint the rest of this file
+ * already relies on protects against ever creating a duplicate.
+ */
+export async function ensureCurrentMonthFeeForClassStudent(
+  db: Db,
+  classStudentId: string
+): Promise<void> {
+  const classStudent = await db.classStudent.findFirst({
+    where: {
+      id: classStudentId,
+      isActive: true,
+      student: { status: 0 },
+      class: { status: 0 },
+    },
+    select: {
+      id: true,
+      classId: true,
+      class: { select: { monthlyFee: true, paymentDueWeek: true } },
+    },
+  });
+
+  if (!classStudent) {
+    return;
+  }
+
+  const now = nowInSriLanka();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+
+  const existing = await db.classStudentFee.findFirst({
+    where: { classStudentId, year, month },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return;
+  }
+
+  const currentFee = await getCurrentClassFee(
+    classStudent.classId,
+    classStudent.class.monthlyFee,
+    db
+  );
+
+  const dueDate = computeDueDate(year, month, classStudent.class.paymentDueWeek);
+
+  await db.classStudentFee.create({
+    data: {
+      classStudentId,
+      year,
+      month,
+      amount: currentFee,
+      discount: 0,
+      lateJoinDeduct: 0,
+      waiverAmount: 0,
+      finalAmount: computeFinalAmount(currentFee, 0, 0, 0),
+      dueDate,
+      status: 0,
+      createdAt: now,
+    },
+  });
 }
 
 /**
