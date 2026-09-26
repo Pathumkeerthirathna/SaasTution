@@ -813,7 +813,20 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
   console.log("Updating student with input:", input);
   console.log("Teacher ID:", teacherId, "Student ID:", studentId);
 
-  const profile = await getStudentProfileForTeacher(teacherId, studentId);
+  // Ownership/existence check: a student belongs to this teacher via the
+  // direct Student.teacherId field (the same check the students list and
+  // the duplicate-registration-number/name checks below already use).
+  // This must NOT require any ClassStudent assignment — a student can be
+  // owned by a teacher and still have zero class assignments.
+  const profile = await prisma.student.findFirst({
+    where: {
+      id: studentId,
+      teacherId,
+    },
+    select: {
+      email: true,
+    },
+  });
 
   if (!profile) {
     throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");

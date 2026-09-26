@@ -1,12 +1,27 @@
 import nodemailer from "nodemailer";
 
-import { AppError } from "@/lib/error-handler";
+import { AppError, getErrorMessage } from "@/lib/error-handler";
 import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
 import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
 import { getGuardianRegistrationEmail, GuardianRegistrationEmailProps } from "@/emails/GuardianRegistrationEmail";
+
+// Identifies *why* an email is being sent, purely for diagnostic logging in
+// the central sender below. Every caller of sendEmail() picks the literal
+// that matches its own purpose — this is never inferred from subject/body
+// text, so it can't be fooled by a template change.
+export type EmailPurpose =
+  | "StudentRegistration"
+  | "TeacherAccountConfirmed"
+  | "GuardianRegistration"
+  | "PasswordReset"
+  | "EmailVerificationCode"
+  | "DeviceApproval"
+  | "Announcement"
+  | "LiveSessionInvite"
+  | "ClassStartedNotification";
 
 type PasswordResetEmailInput = {
   to: string;
@@ -56,6 +71,26 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Masks a recipient address for logging, e.g. "keertin...@gmail.com" ->
+// "ke*************@gmail.com". Never logs the full address. Anything
+// without a recognizable "local@domain" shape is fully redacted rather
+// than risking a partial leak.
+function maskEmailForLogging(email: string): string {
+  const at = email.indexOf("@");
+
+  if (at <= 0 || at === email.length - 1) {
+    return "[REDACTED]";
+  }
+
+  const user = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const visibleLength = Math.min(2, user.length);
+  const visible = user.slice(0, visibleLength);
+  const maskedLength = Math.max(user.length - visibleLength, 3);
+
+  return `${visible}${"*".repeat(maskedLength)}@${domain}`;
 }
 
 // function createTransport() {
@@ -150,7 +185,8 @@ Log in at ${input.loginLink}
 Email: ${input.email}
 Password: ${input.password}
 
-For your security, please sign in and change your password.`
+For your security, please sign in and change your password.`,
+    "GuardianRegistration"
   );
 }
 
@@ -383,7 +419,8 @@ export async function sendClassAnnouncementEmail(
 
 Your teacher has sent an announcement for ${input.className}
 
-${input.content}`
+${input.content}`,
+    "Announcement"
   );
 }
 
@@ -427,7 +464,8 @@ export async function sendLiveSessionInviteEmail(
 
 ${input.teacherName} has ${actionText} a live class for ${input.className}.
 
-${input.loginLink}`
+${input.loginLink}`,
+    "LiveSessionInvite"
   );
 }
 
@@ -438,7 +476,8 @@ export async function sendPasswordResetEmail(
     input.to,
     "Reset your SLClassroom password",
     getPasswordResetEmail({ resetLink: input.resetLink, expiresIn: "30 minutes" }),
-    `Reset your SLClassroom password by opening this link:\n${input.resetLink}\n\nIf you did not request this, you can ignore this email.`
+    `Reset your SLClassroom password by opening this link:\n${input.resetLink}\n\nIf you did not request this, you can ignore this email.`,
+    "PasswordReset"
   );
 }
 
@@ -447,7 +486,8 @@ export async function sendEmailVerificationCodeEmail(input: { to: string; code: 
     input.to,
     "Your SLClassroom confirmation code",
     getEmailVerificationCodeEmail({ code: input.code, expiresIn: "30 minutes" }),
-    `Your SLClassroom confirmation code is: ${input.code}\n\nThis code expires in 30 minutes. If you did not request this, you can ignore this email.`
+    `Your SLClassroom confirmation code is: ${input.code}\n\nThis code expires in 30 minutes. If you did not request this, you can ignore this email.`,
+    "EmailVerificationCode"
   );
 }
 
@@ -457,7 +497,9 @@ export async function sendStudentRegistrationEmail(
   return sendEmail(
     input.to,
     "Welcome to SLClassroom",
-    getStudentRegistrationEmail(input)
+    getStudentRegistrationEmail(input),
+    undefined,
+    "StudentRegistration"
   );
 }
 
@@ -480,7 +522,8 @@ Operating System: ${input.os}
 IP Address: ${input.ipAddress}
 Requested At: ${input.requestedAt}
 
-Review and confirm this device here: ${input.reviewLink}`
+Review and confirm this device here: ${input.reviewLink}`,
+    "DeviceApproval"
   );
 }
 
@@ -499,7 +542,8 @@ ${
     ? `\nYour selected plan: ${input.planName} (${input.planPrice} / ${input.planInterval})\n`
     : ""
 }
-Log in here: ${input.loginLink}`
+Log in here: ${input.loginLink}`,
+    "TeacherAccountConfirmed"
   );
 }
 
@@ -507,15 +551,22 @@ export async function sendEmail(
   to: string,
   subject: string,
   html: string,
-  text?: string
+  text: string | undefined,
+  purpose: EmailPurpose
 ) {
   const from =
     process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
 
   const transporter = createTransport();
+  const maskedTo = maskEmailForLogging(to);
+  const startedAt = Date.now();
 
   if (!transporter) {
     if (process.env.NODE_ENV === "production") {
+      console.error(
+        `[EMAIL] Send failed\npurpose=${purpose}\nto=${maskedTo}\nerror="Email service is not configured."\ndurationMs=${Date.now() - startedAt}`
+      );
+
       throw new AppError(
         "Email service is not configured.",
         500,
@@ -523,26 +574,47 @@ export async function sendEmail(
       );
     }
 
-    console.info("[DEV ONLY] Email", {
-      to,
-      subject,
-    });
+    console.info(
+      `[EMAIL] Skipped (dev only, SMTP not configured)\npurpose=${purpose}\nto=${maskedTo}\nsubject="${subject}"`
+    );
 
     return;
   }
 
+  console.log(
+    `[EMAIL] Sending\npurpose=${purpose}\nto=${maskedTo}\nsubject="${subject}"`
+  );
+
   try {
     await transporter.verify();
+  } catch (verifyError) {
+    console.error(
+      `[EMAIL] SMTP verify failed\npurpose=${purpose}\nto=${maskedTo}\nerror="${getErrorMessage(verifyError)}"\ndurationMs=${Date.now() - startedAt}`
+    );
+    throw verifyError;
+  }
 
-    return await transporter.sendMail({
+  try {
+    const info = await transporter.sendMail({
       from,
       to,
       subject,
       html,
       text: text ?? html.replace(/<[^>]+>/g, ""),
     });
+
+    const accepted = Array.isArray(info.accepted) && info.accepted.length > 0;
+    const rejected = Array.isArray(info.rejected) && info.rejected.length > 0;
+
+    console.log(
+      `[EMAIL] Sent successfully\npurpose=${purpose}\nto=${maskedTo}\nsmtpResponse="${info.response ?? ""}"\naccepted=${accepted}\nrejected=${rejected}\nmessageId="${info.messageId ?? ""}"\ndurationMs=${Date.now() - startedAt}`
+    );
+
+    return info;
   } catch (error) {
-    console.error("❌ Failed to send email", error);
+    console.error(
+      `[EMAIL] Send failed\npurpose=${purpose}\nto=${maskedTo}\nerror="${getErrorMessage(error)}"\ndurationMs=${Date.now() - startedAt}`
+    );
     throw error;
   }
 }
@@ -625,7 +697,7 @@ async function sendEmailWithRetry(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await sendEmail(to, subject, html, text);
+      await sendEmail(to, subject, html, text, "ClassStartedNotification");
       return;
     } catch (error) {
       lastError = error;

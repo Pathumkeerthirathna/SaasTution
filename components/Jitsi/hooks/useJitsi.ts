@@ -580,10 +580,10 @@ export default function useJitsi({
             // exist there, documented but commented out/default-off) — hides the
             // local self-view tile and the participant filmstrip for both roles,
             // set once at conference init rather than toggled after join.
-            disableSelfView: true,
+            disableSelfView: false,
 
             filmstrip: {
-              disabled: true,
+              disabled: false,
             },
           },
 

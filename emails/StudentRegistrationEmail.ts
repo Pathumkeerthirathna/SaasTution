@@ -137,19 +137,62 @@ export function getStudentRegistrationEmail(
         <td style="padding:28px;">
 
         <div style="font-size:22px;font-weight:bold;color:#9a3412;">
-        🚀 Access Your Student Portal
+        🚀 How to Access Your SLClassroom Account
         </div>
 
-        <p style="margin-top:18px;color:#444;line-height:28px;font-size:15px;">
-        You can now access your student account online.
+        <p style="margin-top:14px;color:#444;line-height:26px;font-size:15px;">
+        Your account has been created successfully. Before you can sign in for the first time, please complete the steps below.
         </p>
 
-        <ol style="padding-left:20px;color:#444;line-height:30px;font-size:15px;">
-        <li>Visit <strong>https://slclassroom.live</strong></li>
-        <li>Click the <strong>Student Login</strong> button.</li>
-        <li>Sign in using your registered credentials.</li>
-        <li>View your enrolled classes, learning materials, live lessons, assignments, and other student resources.</li>
+        <ol style="padding-left:20px;margin:18px 0 0;color:#444;line-height:29px;font-size:15px;">
+
+        <li><strong>Open SLClassroom</strong><br/>
+        Visit <strong>https://slclassroom.live/login</strong>.
+        </li>
+
+        <li style="margin-top:10px;"><strong>Reset your password</strong><br/>
+        On the login page, click <strong>"Forgot Password"</strong>, enter the Registration Number provided above, and request a password reset link.
+        </li>
+
+        <li style="margin-top:10px;"><strong>Set your password</strong><br/>
+        Check your registered email for the password reset email. Open the reset link, create a strong password, and click <strong>"Reset password"</strong> — then click <strong>"Sign in"</strong>.
+        </li>
+
+        <li style="margin-top:10px;"><strong>Sign in with your Registration Number</strong><br/>
+        Registration Number: <strong>{{RegistrationNumber}}</strong><br/>
+        Password: the password you just created.
+        </li>
+
+        <li style="margin-top:10px;"><strong>Enter your confirmation code</strong><br/>
+        After signing in, SLClassroom will ask for a confirmation code — check your inbox for a <strong>separate</strong> confirmation-code email and enter the code shown there.
+        </li>
+
+        <li style="margin-top:10px;"><strong>Wait for device approval</strong><br/>
+        You will then see a Device Approval request. Once your teacher approves your device, you can sign in and start using your SLClassroom account.
+        </li>
+
         </ol>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;">
+        <tr>
+        <td style="padding:16px 18px;">
+
+        <div style="font-size:14px;font-weight:bold;color:#1e3a8a;">
+        📌 Two different emails, two different codes
+        </div>
+
+        <p style="margin-top:8px;color:#334155;line-height:24px;font-size:14px;">
+        <strong>This email</strong> contains your <strong>Registration Number</strong> — used to sign in.<br/>
+        A <strong>separate</strong> confirmation-code email contains your <strong>Confirmation Code</strong> — used only to verify your sign-in. It is not the same as your Registration Number.
+        </p>
+
+        </td>
+        </tr>
+        </table>
+
+        <p style="margin-top:16px;color:#6b7280;font-size:13px;line-height:22px;">
+        Can't find one of these emails? Please check your Spam/Junk folder.
+        </p>
 
         </td>
         </tr>
