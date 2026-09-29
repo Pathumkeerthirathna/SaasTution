@@ -555,7 +555,7 @@ export default function useJitsi({
             disableSimulcast: false,
             disableTileView: true,
 
-            channelLastN: 1,
+            channelLastN: 5,
 
             enableWelcomePage: false,
 
