@@ -2020,42 +2020,25 @@ export async function checkIfEmailExists(
   studentId: string | undefined,
   teacherId: string
 ) {
-  const normalizedEmail = email.trim().toLowerCase();
+  // Same rules as saving a student (lib/email-uniqueness.ts): students are only
+  // unique within this teacher, while teacher and guardian emails are global.
+  // Reusing it keeps the live check from disagreeing with the actual save.
+  try {
+    await assertEmailAvailable(email, {
+      type: "STUDENT",
+      teacherId,
+      excludeStudentId: studentId,
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === "EMAIL_ALREADY_EXISTS") {
+      return { exists: true };
+    }
 
-  const [student, otherAccount] = await Promise.all([
-    prisma.student.findFirst({
-      where: {
-        teacherId,
-        email: normalizedEmail,
-        ...(studentId && {
-          NOT: {
-            id: studentId,
-          },
-        }),
-      },
-      select: {
-        id: true,
-      },
-    }),
-    // An email may not be shared with a teacher or guardian account either.
-    (async () => {
-      const [teacher, guardian, anyStudent] = await Promise.all([
-        prisma.teacher.findFirst({ where: { email: normalizedEmail }, select: { id: true } }),
-        prisma.guardian.findFirst({ where: { email: normalizedEmail }, select: { id: true } }),
-        prisma.student.findFirst({
-          where: {
-            email: normalizedEmail,
-            ...(studentId ? { NOT: { id: studentId } } : {}),
-          },
-          select: { id: true },
-        }),
-      ]);
-      return Boolean(teacher || guardian || anyStudent);
-    })(),
-  ]);
+    throw error;
+  }
 
   return {
-    exists: !!student || otherAccount,
+    exists: false,
   };
 }
 
