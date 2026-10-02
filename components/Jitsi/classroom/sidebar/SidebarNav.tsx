@@ -12,6 +12,7 @@ import {
   Check,
   PenTool,
   UsersRound,
+  ScanEye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -22,6 +23,8 @@ type SidebarNavProps = {
   showLectureTools?: boolean;
   /** Show the Attendance tool (teacher only). */
   showAttendance?: boolean;
+  /** Show the Camera Monitoring tool (teacher only). */
+  showMonitoring?: boolean;
   /** Unread chat message count shown as a badge on the Chat button. */
   chatUnread?: number;
   /** Rail color scheme: navy/blue for the teacher, green for the student. */
@@ -86,6 +89,7 @@ export default function SidebarNav({
   onPanelChange,
   showLectureTools = false,
   showAttendance = false,
+  showMonitoring = false,
   chatUnread = 0,
   variant = "teacher",
   showSettings = false,
@@ -210,6 +214,9 @@ export default function SidebarNav({
       <RailButton panel="participants" label="Participants" icon={Users} />
       {showAttendance ? (
         <RailButton panel="attendance" label="Attendance" icon={ClipboardCheck} />
+      ) : null}
+      {showMonitoring ? (
+        <RailButton panel="monitoring" label="Camera Monitoring" icon={ScanEye} />
       ) : null}
       <RailButton
         panel="chat"

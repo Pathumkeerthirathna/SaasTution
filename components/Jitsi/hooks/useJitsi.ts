@@ -80,6 +80,14 @@ export type JitsiControls = BreakoutControls & {
    * Receive-side only: nothing is muted or changed for the students.
    */
   setReceiveSet: (participantIds: string[] | null) => void;
+
+  /**
+   * Teacher only: tells the teacher's own Jitsi iframe (custom.js) which
+   * students' already-received camera tracks to show in the monitoring grid,
+   * by Jitsi participant ID. `null` hides the grid. Display only: what is
+   * received is still decided by setReceiveSet.
+   */
+  setMonitorView: (participantIds: string[] | null) => void;
 };
 
 /** Message the teacher page posts into the Jitsi iframe (handled by custom.js). */
@@ -87,6 +95,16 @@ type ReceiveSetMessage = {
   type: "SL_RECEIVE_SET";
   v: 1;
   /** Increases on every change, so custom.js can ignore a message older than the one it has. */
+  epoch: number;
+  enabled: boolean;
+  participantIds: string[];
+};
+
+/** Display-only message for the teacher's monitoring grid (handled by custom.js). */
+type MonitorViewMessage = {
+  type: "SL_MONITOR_VIEW";
+  v: 1;
+  /** Own counter, independent of the receive set's epoch. */
   epoch: number;
   enabled: boolean;
   participantIds: string[];
@@ -254,6 +272,27 @@ export default function useJitsi({
 
   const postReceiveSet = () => {
     const message = receiveSetRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
+  // Teacher monitoring grid: kept and resent on SL_RECEIVE_READY, like the receive set.
+  const monitorViewEpochRef = useRef(0);
+  const monitorViewRef = useRef<MonitorViewMessage | null>(null);
+
+  const postMonitorView = () => {
+    const message = monitorViewRef.current;
 
     if (!message || roleRef.current !== "teacher") {
       return;
@@ -475,6 +514,23 @@ export default function useJitsi({
 
         postReceiveSet();
       },
+
+      setMonitorView: (participantIds) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        monitorViewEpochRef.current += 1;
+        monitorViewRef.current = {
+          type: "SL_MONITOR_VIEW",
+          v: 1,
+          epoch: monitorViewEpochRef.current,
+          enabled: participantIds !== null,
+          participantIds: participantIds ? Array.from(new Set(participantIds)) : [],
+        };
+
+        postMonitorView();
+      },
     }),
     []
   );
@@ -504,9 +560,11 @@ export default function useJitsi({
       }
 
       // custom.js is (re)ready inside the teacher's iframe: send the current
-      // receive set again, since anything sent earlier may have been missed.
+      // receive set again, since anything sent earlier may have been missed,
+      // followed by the current monitoring-grid view.
       if (event.data?.type === "SL_RECEIVE_READY") {
         postReceiveSet();
+        postMonitorView();
         return;
       }
 

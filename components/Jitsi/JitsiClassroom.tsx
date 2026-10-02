@@ -9,6 +9,7 @@ import MeetingCard from "./classroom/meeting/MeetingCard";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
+import useCameraMonitoring from "./hooks/useCameraMonitoring";
 import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
@@ -604,6 +605,33 @@ const [classStudents, setClassStudents] =
       }
     };
   }, [role]);
+
+  // Teacher only: camera monitoring. Pages through the present students and, in
+  // exam mode, limits the student cameras this teacher receives to the current
+  // page (via the Phase 1 receive set). Kept here, not in the sidebar, so it
+  // keeps working while the Class Register panel is closed.
+  const setReceiveSet = useCallback((participantIds: string[] | null) => {
+    jitsiMeetingRef.current?.setReceiveSet(participantIds);
+  }, []);
+
+  // Display only: which received cameras the in-iframe monitoring grid shows.
+  const setMonitorView = useCallback((participantIds: string[] | null) => {
+    jitsiMeetingRef.current?.setMonitorView(participantIds);
+  }, []);
+
+  // Bumped on every Jitsi conference join (first join, rejoin, or a remounted
+  // JitsiMeeting), so monitoring can resend its receive set to a fresh iframe.
+  const [conferenceGeneration, setConferenceGeneration] = useState(0);
+
+  const cameraMonitoring = useCameraMonitoring({
+    enabled: role === "teacher",
+    conferenceGeneration,
+    classStudents,
+    participantMap,
+    participants,
+    setReceiveSet,
+    setMonitorView,
+  });
 
   const [meetingReady, setMeetingReady] =
     useState(false);
@@ -1459,7 +1487,10 @@ const [classStudents, setClassStudents] =
                 setIsLive(live);
               }
             }}
-            onConferenceJoined={() => setIsConferenceJoined(true)}
+            onConferenceJoined={() => {
+              setIsConferenceJoined(true);
+              setConferenceGeneration((generation) => generation + 1);
+            }}
             onLocalUserLeft={handleLocalUserLeft}
             onModeratorStatusChanged={setIsModerator}
             joinInfo={joinInfo}
@@ -1696,6 +1727,7 @@ const [classStudents, setClassStudents] =
           role={role}
           participants={participants}
           ClassroomStudents={classStudents}
+          cameraMonitoring={role === "teacher" ? cameraMonitoring : undefined}
           onMuteEveryone={() => jitsiMeetingRef.current?.muteEveryone()}
           onMuteParticipant={(participantId, muted) =>
             jitsiMeetingRef.current?.setParticipantAudioMuted(participantId, muted)

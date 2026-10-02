@@ -12,14 +12,17 @@ import {
   MessageSquare,
   PenTool,
   UsersRound,
+  ScanEye,
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
 import WhiteboardPanel from "./WhiteboardPanel";
 import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
+import type { CameraMonitoringController } from "../../hooks/useCameraMonitoring";
 import ParticipantsPanel from "./ParticipantsPanel";
 import AttendancePanel from "./AttendancePanel";
+import CameraMonitoringPanel from "./CameraMonitoringPanel";
 import ChatPanel from "./ChatPanel";
 import StudentNotesPanel from "../student/StudentNotesPanel";
 import StudentAssignmentsPanel from "../student/StudentAssignmentsPanel";
@@ -47,6 +50,8 @@ type RightSidebarProps = {
   role : UserRole;
   participants: JitsiParticipant[];
   ClassroomStudents?: ClassroomStudent[];
+  /** Teacher only: camera monitoring state + actions, shown in the Camera Monitoring panel. */
+  cameraMonitoring?: CameraMonitoringController;
   onMuteEveryone?: () => void;
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
   chatMessages?: ChatMessage[];
@@ -73,6 +78,8 @@ export default function RightSidebar(props: RightSidebarProps) {
   const isTeacherLecturePanel = isTeacher && hasLecture && isLectureToolPanel;
   const isStudentLecturePanel = isStudent && hasLecture && isLectureToolPanel;
   const isAttendancePanel = isTeacher && activePanel === "attendance";
+  const showMonitoring = isTeacher && Boolean(props.cameraMonitoring);
+  const isMonitoringPanel = showMonitoring && activePanel === "monitoring";
   const isChatPanel = activePanel === "chat";
   const isBreakoutPanel = Boolean(props.breakout) && activePanel === "breakoutRooms";
   // The whiteboard needs the lecture (saved boards belong to it) and the session
@@ -189,8 +196,9 @@ export default function RightSidebar(props: RightSidebarProps) {
 
   // The lecture tool panels (and the Class Register, whose "Notify" dialog is a
   // full-screen overlay) open their own modals outside this container — don't
-  // collapse the sidebar when the teacher interacts with them.
-  if (isLectureToolPanel || isClassRegister || isWhiteboardPanel) {
+  // collapse the sidebar when the teacher interacts with them. Camera Monitoring
+  // stays open too: it is a working panel the teacher keeps beside the meeting.
+  if (isLectureToolPanel || isClassRegister || isWhiteboardPanel || isMonitoringPanel) {
     return;
   }
 
@@ -219,7 +227,7 @@ export default function RightSidebar(props: RightSidebarProps) {
       );
     };
 
-  }, [activePanel, isLectureToolPanel, isClassRegister, isWhiteboardPanel]);
+  }, [activePanel, isLectureToolPanel, isClassRegister, isWhiteboardPanel, isMonitoringPanel]);
 
 
 
@@ -278,6 +286,9 @@ export default function RightSidebar(props: RightSidebarProps) {
             {activePanel === "attendance" && (
               <ClipboardCheck size={18} className={chrome.iconAccent} />
             )}
+            {isMonitoringPanel && (
+              <ScanEye size={18} className={chrome.iconAccent} />
+            )}
             {activePanel === "chat" && (
               <MessageSquare size={18} className={chrome.iconAccent} />
             )}
@@ -304,6 +315,8 @@ export default function RightSidebar(props: RightSidebarProps) {
 
                 {activePanel === "attendance" && "Attendance"}
 
+                {isMonitoringPanel && "Camera Monitoring"}
+
                 {activePanel === "whiteboard" && "Whiteboard"}
 
                 {activePanel === "breakoutRooms" && "Breakout Rooms"}
@@ -321,7 +334,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                 <p className={`max-w-[300px] truncate text-[11px] ${chrome.subtitle}`}>
                   {props.lectureTitle}
                 </p>
-              ) : (isClassRegister || isAttendancePanel) && props.className ? (
+              ) : (isClassRegister || isAttendancePanel || isMonitoringPanel) && props.className ? (
                 <p className={`max-w-[300px] truncate text-[11px] ${chrome.subtitle}`}>
                   {props.className}
                 </p>
@@ -351,6 +364,8 @@ export default function RightSidebar(props: RightSidebarProps) {
                 ? "overflow-y-auto scrollbar-thin bg-emerald-50/40"
                 : isWhiteboardPanel
                   ? "overflow-hidden bg-white p-2 text-slate-900"
+                : isMonitoringPanel
+                  ? "overflow-y-auto scrollbar-thin bg-white p-3 text-slate-900"
                 : isClassRegister || isAttendancePanel || isChatPanel || isStudentParticipants || isBreakoutPanel
                   ? "overflow-hidden bg-white p-3 text-slate-900"
                   : "overflow-hidden p-3"
@@ -369,6 +384,10 @@ export default function RightSidebar(props: RightSidebarProps) {
               onMuteParticipant={props.onMuteParticipant}
               breakoutRoomLabels={props.breakoutRoomLabels}
             />
+          )}
+
+          {isMonitoringPanel && props.cameraMonitoring && (
+            <CameraMonitoringPanel monitoring={props.cameraMonitoring} />
           )}
 
           {isAttendancePanel && (
@@ -472,6 +491,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           onPanelChange={handlePanelChange}
           showLectureTools={showLectureTools}
           showAttendance={isTeacher}
+          showMonitoring={showMonitoring}
           chatUnread={chatUnread}
           variant={isStudent ? "student" : "teacher"}
           showSettings={isTeacher}
