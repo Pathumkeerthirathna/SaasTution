@@ -529,6 +529,82 @@ const [classStudents, setClassStudents] =
     };
   }, [joinInfo?.session?.id, role, router]);
 
+  // Teacher only: studentId -> Jitsi participantId for this session, pushed over
+  // SSE (each student registers its own ID after joining Jitsi). Lets the teacher
+  // address students by application ID instead of by display name.
+  const [participantMap, setParticipantMap] =
+    useState<Record<string, string>>({});
+  const participantMapRef = useRef(participantMap);
+  participantMapRef.current = participantMap;
+
+  useEffect(() => {
+    const sessionId = joinInfo?.session?.id;
+
+    if (!sessionId || role !== "teacher") return;
+
+    const source = new EventSource(`/api/sessions/${sessionId}/participant-map`);
+
+    // Every event carries the whole map, so the latest one simply replaces it.
+    const handleParticipantMap = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          participants?: Record<string, string>;
+        };
+
+        setParticipantMap(data.participants ?? {});
+      } catch {
+        /* ignore malformed payloads */
+      }
+    };
+
+    source.addEventListener("participant-map", handleParticipantMap);
+
+    return () => {
+      source.removeEventListener("participant-map", handleParticipantMap);
+      source.close();
+    };
+  }, [joinInfo?.session?.id, role]);
+
+  // ---------------------------------------------------------------------------
+  // PHASE 1 TESTING ONLY — remove once the paging UI drives the receive set.
+  // Teacher-only console hook for choosing which students' cameras this
+  // teacher receives, e.g. in DevTools (top frame):
+  //   __slReceiveTest.map()                      // studentId -> participantId
+  //   __slReceiveTest.set(["de809448"])          // by Jitsi participant ID
+  //   __slReceiveTest.setStudents(["<studentId>"]) // by application student ID
+  //   __slReceiveTest.off()                      // back to Jitsi's own choice
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (role !== "teacher") return;
+
+    const testApi = {
+      map: () => ({ ...participantMapRef.current }),
+      set: (participantIds: string[]) => {
+        jitsiMeetingRef.current?.setReceiveSet(participantIds);
+      },
+      setStudents: (studentIds: string[]) => {
+        const participantIds = studentIds
+          .map((studentId) => participantMapRef.current[studentId])
+          .filter((participantId): participantId is string => Boolean(participantId));
+
+        jitsiMeetingRef.current?.setReceiveSet(participantIds);
+        return participantIds;
+      },
+      off: () => {
+        jitsiMeetingRef.current?.setReceiveSet(null);
+      },
+    };
+
+    const testWindow = window as typeof window & { __slReceiveTest?: typeof testApi };
+    testWindow.__slReceiveTest = testApi;
+
+    return () => {
+      if (testWindow.__slReceiveTest === testApi) {
+        delete testWindow.__slReceiveTest;
+      }
+    };
+  }, [role]);
+
   const [meetingReady, setMeetingReady] =
     useState(false);
 

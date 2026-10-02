@@ -221,6 +221,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.endConference();
       },
 
+      setReceiveSet: (participantIds: string[] | null) => {
+        controlsRef.current?.setReceiveSet(participantIds);
+      },
+
       requestFullscreen: () => {
         const element = fullscreenWrapperRef.current;
 

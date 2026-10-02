@@ -72,7 +72,31 @@ export type JitsiControls = BreakoutControls & {
 
   /** Moderator: end the Jitsi conference for every participant (teacher included). */
   endConference: () => void;
+
+  /**
+   * Teacher only: tells the teacher's own Jitsi iframe (custom.js) which
+   * students' camera video it should receive, by Jitsi participant ID. `null`
+   * turns the override off, so Jitsi picks what to receive by itself again.
+   * Receive-side only: nothing is muted or changed for the students.
+   */
+  setReceiveSet: (participantIds: string[] | null) => void;
 };
+
+/** Message the teacher page posts into the Jitsi iframe (handled by custom.js). */
+type ReceiveSetMessage = {
+  type: "SL_RECEIVE_SET";
+  v: 1;
+  /** Increases on every change, so custom.js can ignore a message older than the one it has. */
+  epoch: number;
+  enabled: boolean;
+  participantIds: string[];
+};
+
+/**
+ * The SL Classroom Jitsi server. The only origin the receive set is posted to,
+ * and the only origin messages from the Jitsi iframe (custom.js) are accepted from.
+ */
+const SL_JITSI_ORIGIN = "https://meet.slclassroom.live";
 
 type YouTubeStreamPurpose =
   | "recording"
@@ -218,6 +242,31 @@ export default function useJitsi({
 
     console.warn(`[breakout] ${action} is unavailable while in a breakout room. Return to the main room first.`);
     return true;
+  };
+
+  const roleRef = useRef(role);
+  roleRef.current = role;
+
+  // Teacher receive set: the latest one is kept so it can be sent again when
+  // custom.js reports it is ready (iframe loaded late / conference replaced).
+  const receiveSetEpochRef = useRef(0);
+  const receiveSetRef = useRef<ReceiveSetMessage | null>(null);
+
+  const postReceiveSet = () => {
+    const message = receiveSetRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
   useImperativeHandle(
@@ -409,6 +458,23 @@ export default function useJitsi({
 
         apiRef.current.executeCommand("endConference");
       },
+
+      setReceiveSet: (participantIds) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        receiveSetEpochRef.current += 1;
+        receiveSetRef.current = {
+          type: "SL_RECEIVE_SET",
+          v: 1,
+          epoch: receiveSetEpochRef.current,
+          enabled: participantIds !== null,
+          participantIds: participantIds ? Array.from(new Set(participantIds)) : [],
+        };
+
+        postReceiveSet();
+      },
     }),
     []
   );
@@ -424,6 +490,25 @@ export default function useJitsi({
     const handleClassroomMode = async (
       event: MessageEvent
     ) => {
+
+      // Only messages from our own Jitsi iframe (custom.js) are trusted: right
+      // origin, and sent by that iframe's window rather than any other frame.
+      const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow;
+
+      if (
+        event.origin !== SL_JITSI_ORIGIN ||
+        !frameWindow ||
+        event.source !== frameWindow
+      ) {
+        return;
+      }
+
+      // custom.js is (re)ready inside the teacher's iframe: send the current
+      // receive set again, since anything sent earlier may have been missed.
+      if (event.data?.type === "SL_RECEIVE_READY") {
+        postReceiveSet();
+        return;
+      }
 
       if (event.data?.type !== "SL_CLASSROOM_MODE") {
         return;
@@ -573,7 +658,7 @@ export default function useJitsi({
             },
 
             p2p: {
-              enabled: true,
+              enabled: false,
             },
 
             // Verified against this exact deployment's own config.js (both keys
@@ -665,6 +750,49 @@ export default function useJitsi({
     //   console.log(mappedParticipants);
 
     // };
+
+    /*
+     * ============================================================
+     * STUDENT -> PARTICIPANT ID REGISTRATION
+     * ============================================================
+     * Lets the teacher address this student by application student ID
+     * instead of by display name. Only the ID is sent; camera and mic are
+     * not touched.
+     */
+
+    const registerParticipantId = async (participantId: string) => {
+      const url = `/api/sessions/${joinInfo.session.id}/participant-map`;
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participantId }),
+          });
+
+          if (response.ok) {
+            return;
+          }
+
+          // 4xx (not enrolled, conflict, bad ID) will not get better on retry.
+          if (response.status < 500) {
+            console.warn(
+              "Participant ID registration rejected:",
+              response.status,
+              await response.text()
+            );
+            return;
+          }
+        } catch (error) {
+          console.warn("Participant ID registration failed:", error);
+        }
+
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    };
 
     const updateParticipants = () => {
 
@@ -777,6 +905,13 @@ export default function useJitsi({
 
       if (data?.id) {
         localParticipantIdRef.current = data.id;
+
+        // Every join (first join, reconnect, breakout-room switch) can come with
+        // a new participant ID, so the student re-registers it each time. The
+        // server takes the student from the login session, not from this body.
+        if (role === "student") {
+          void registerParticipantId(data.id);
+        }
       }
 
       const enteringBreakout = data?.breakoutRoom === true;
