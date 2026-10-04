@@ -422,6 +422,7 @@ export default function ClassRegisterCard({
 
           <input
             type="email"
+            required
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);

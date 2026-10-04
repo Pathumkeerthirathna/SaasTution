@@ -69,7 +69,8 @@ const baseStudentToolbar = [
   // "chat",
   "raisehand",
   // "participants-pane",
-  "tileview",
+  // No "tileview": students see only the teacher / screen share, never a
+  // participant grid (their receive policy does not fetch other cameras).
   "fullscreen",
   "settings",
   "videoquality",

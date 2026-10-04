@@ -161,10 +161,17 @@ export async function POST(request: Request) {
             });
         }
 
-        if (
-            student.email &&
+        // Every student needs an email to log in and reset their password.
+        if (!student.email?.trim()) {
+            errors.push({
+            row: rowNumber,
+            field: "email",
+            message:
+                "Email is required.",
+            });
+        } else if (
             !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-            student.email
+            student.email.trim()
             )
         ) {
             errors.push({
@@ -323,6 +330,95 @@ export async function POST(request: Request) {
         });
         }
     });
+
+    // ----------------------------------
+    // Email Uniqueness
+    // ----------------------------------
+    // Same rule as assertEmailAvailable (used by the add form and public
+    // registration): an email can't be shared with another student of this
+    // teacher, a teacher account, or a guardian account. Checked in bulk so
+    // every clash is reported at once.
+
+    const firstRowByEmail = new Map<string, number>();
+
+    students.forEach((student, index) => {
+        const rowNumber = index + 2;
+        const email = student.email?.trim().toLowerCase();
+
+        if (!email) {
+            return;
+        }
+
+        const firstRow = firstRowByEmail.get(email);
+
+        if (firstRow) {
+            errors.push({
+            row: rowNumber,
+            field: "email",
+            message:
+                `Duplicate email in uploaded file (same as row ${firstRow}).`,
+            });
+        } else {
+            firstRowByEmail.set(email, rowNumber);
+        }
+    });
+
+    const uploadedEmails = [...firstRowByEmail.keys()];
+
+    if (uploadedEmails.length > 0) {
+        const [existingStudentEmails, teacherEmails, guardianEmails] =
+            await Promise.all([
+            prisma.student.findMany({
+                where: {
+                teacherId: session.teacherId,
+                email: {
+                    in: uploadedEmails,
+                    mode: "insensitive",
+                },
+                },
+                select: { email: true },
+            }),
+            prisma.teacher.findMany({
+                where: { email: { in: uploadedEmails } },
+                select: { email: true },
+            }),
+            prisma.guardian.findMany({
+                where: { email: { in: uploadedEmails } },
+                select: { email: true },
+            }),
+            ]);
+
+        const clashMessages = new Map<string, string>();
+
+        guardianEmails.forEach(({ email }) => {
+            if (email) {
+            clashMessages.set(email.toLowerCase(), "This email is already in use by another account.");
+            }
+        });
+
+        existingStudentEmails.forEach(({ email }) => {
+            if (email) {
+            clashMessages.set(email.toLowerCase(), "Another student already uses this email.");
+            }
+        });
+
+        teacherEmails.forEach(({ email }) => {
+            clashMessages.set(email.toLowerCase(), "This email is already in use by a teacher account.");
+        });
+
+        students.forEach((student, index) => {
+            const email = student.email?.trim().toLowerCase();
+            const message = email ? clashMessages.get(email) : undefined;
+
+            if (message) {
+            errors.push({
+                row: index + 2,
+                field: "email",
+                message,
+            });
+            }
+        });
+    }
 
 
     if (errors.length > 0) {

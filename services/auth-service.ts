@@ -193,7 +193,7 @@ export async function loginStudent(registrationNumber: string, password: string)
 
   const student = await findStudentByRegistrationNumber(registrationNumber);
 
-  if (!student || !student.password || !student.email) {
+  if (!student || !student.password) {
     throw new AppError("Invalid registration number or password. If you are new click forogt password and reset the password first", 401, "INVALID_CREDENTIALS");
   }
 
@@ -201,6 +201,30 @@ export async function loginStudent(registrationNumber: string, password: string)
 
   if (!isPasswordValid) {
     throw new AppError("Invalid registration number or password.", 401, "INVALID_CREDENTIALS");
+  }
+
+  // Only told after the password is verified, so this can't be used to probe
+  // which registration numbers exist or are missing an email.
+  if (!student.email) {
+    const profile = await prisma.teacherProfile.findUnique({
+      where: { teacherId: student.teacherId },
+      select: {
+        phone: true,
+        whatsapp: true,
+        teacher: { select: { name: true } },
+      },
+    });
+
+    throw new AppError(
+      "No email is linked to this account. Please ask your teacher to add one.",
+      403,
+      "STUDENT_EMAIL_MISSING",
+      {
+        teacherName: profile?.teacher.name ?? null,
+        phone: profile?.phone ?? null,
+        whatsapp: profile?.whatsapp ?? null,
+      }
+    );
   }
 
   if (!student.emailConfirmed) {

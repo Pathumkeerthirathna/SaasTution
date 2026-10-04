@@ -31,18 +31,14 @@ const studentContact = z.preprocess(
     .optional()
 );
 
-const studentEmail = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === ""
-      ? undefined
-      : value,
-  z
-    .string()
-    .trim()
-    .email("Invalid email format.")
-    .max(120, "Email must be at most 120 characters long.")
-    .optional()
-);
+// Every student needs an email to log in (and to reset their password), so it
+// is required when adding a student and can be changed but never cleared.
+const requiredStudentEmail = z
+  .string({ error: "Email is required." })
+  .trim()
+  .min(1, "Email is required.")
+  .email("Invalid email format.")
+  .max(120, "Email must be at most 120 characters long.");
 
 const entityId = z.string().trim().uuid("Invalid id format.");
 
@@ -52,7 +48,7 @@ export const createStudentSchema = z.object({
   gradeId: gradeId,
   contact01: studentContact,
   contact02: studentContact,
-  email: studentEmail,
+  email: requiredStudentEmail,
 });
 
 export const assignStudentSchema = z.object({
@@ -77,7 +73,7 @@ export const updateStudentSchema = z.object({
   gradeId: gradeId,
   contact01: studentContact,
   contact02: studentContact,
-  email: studentEmail,
+  email: requiredStudentEmail,
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;

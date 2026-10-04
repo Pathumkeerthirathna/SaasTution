@@ -111,6 +111,19 @@ type MonitorViewMessage = {
 };
 
 /**
+ * Student page -> its own Jitsi iframe (handled by custom.js): receive only the
+ * teacher's camera and active screen shares, not other students' cameras.
+ * Receive-side only: the student's own camera keeps being sent to the teacher.
+ */
+type StudentViewMessage = {
+  type: "SL_STUDENT_VIEW";
+  v: 1;
+  /** Own counter; the same message is resent as-is, so it never needs to grow. */
+  epoch: number;
+  enabled: boolean;
+};
+
+/**
  * The SL Classroom Jitsi server. The only origin the receive set is posted to,
  * and the only origin messages from the Jitsi iframe (custom.js) are accepted from.
  */
@@ -306,6 +319,30 @@ export default function useJitsi({
     }
 
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
+  // Student view: always on for students. Sent after every conference join and
+  // again on SL_RECEIVE_READY (iframe loaded late / conference replaced).
+  const studentViewRef = useRef<StudentViewMessage>({
+    type: "SL_STUDENT_VIEW",
+    v: 1,
+    epoch: 1,
+    enabled: true,
+  });
+
+  const postStudentView = () => {
+    if (roleRef.current !== "student") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(studentViewRef.current, SL_JITSI_ORIGIN);
   };
 
   useImperativeHandle(
@@ -559,12 +596,14 @@ export default function useJitsi({
         return;
       }
 
-      // custom.js is (re)ready inside the teacher's iframe: send the current
-      // receive set again, since anything sent earlier may have been missed,
-      // followed by the current monitoring-grid view.
+      // custom.js is (re)ready inside the iframe: send the current state again,
+      // since anything sent earlier may have been missed. Teacher: receive set,
+      // then the monitoring-grid view. Student: the student view. Each post
+      // checks the role itself, so only the matching ones are sent.
       if (event.data?.type === "SL_RECEIVE_READY") {
         postReceiveSet();
         postMonitorView();
+        postStudentView();
         return;
       }
 
@@ -720,13 +759,16 @@ export default function useJitsi({
             },
 
             // Verified against this exact deployment's own config.js (both keys
-            // exist there, documented but commented out/default-off) — hides the
-            // local self-view tile and the participant filmstrip for both roles,
-            // set once at conference init rather than toggled after join.
-            disableSelfView: false,
+            // exist there, documented but commented out/default-off). Students
+            // get no self-view tile and no participant filmstrip; the teacher
+            // keeps both. Display only: hiding the self-view does not stop the
+            // student's camera from being sent (the teacher monitors it). What
+            // a student actually receives is limited by the student view
+            // (SL_STUDENT_VIEW) in custom.js, not by hiding the filmstrip.
+            disableSelfView: role === "student",
 
             filmstrip: {
-              disabled: false,
+              disabled: role === "student",
             },
           },
 
@@ -971,6 +1013,9 @@ export default function useJitsi({
           void registerParticipantId(data.id);
         }
       }
+
+      // Student view on every join (first join, reconnect, breakout switch).
+      postStudentView();
 
       const enteringBreakout = data?.breakoutRoom === true;
       const returningFromBreakout = !enteringBreakout && inBreakoutRef.current;

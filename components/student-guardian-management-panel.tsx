@@ -319,6 +319,13 @@ export function StudentGuardianManagementPanel() {
         return;
       }
 
+      // A student's email can be changed but not removed.
+      if (!editStudentForm.email.trim()) {
+        setEmailError("Email is required.");
+        toast.error("Email is required.");
+        return;
+      }
+
       setIsSubmitting(true);
 
       try {
@@ -940,8 +947,10 @@ const pendingCount = pendingStudents.length;
         secondaryContact:
           row.getCell(6).value?.toString() ?? "",
 
+        // .text, not .value: Excel turns typed emails into hyperlink cells,
+        // whose value is an object ("[object Object]" via toString).
         email:
-          row.getCell(7).value?.toString() ?? "",
+          row.getCell(7).text?.trim() ?? "",
       });
     });
 
@@ -1042,6 +1051,13 @@ const pendingCount = pendingStudents.length;
 
     if (registrationNumberError || EmailError || NameError) {
       toast.error("Please fix the highlighted fields before saving.");
+      return;
+    }
+
+    // Students log in and reset their password through their email.
+    if (!studentForm.email.trim()) {
+      setEmailError("Email is required.");
+      toast.error("Email is required.");
       return;
     }
 
@@ -2614,6 +2630,7 @@ const handleConfirmAllStudents = async () => {
 
                   <input
                     type="email"
+                    required
                     value={studentForm.email}
                     onChange={(event) => {
                       setStudentForm((prev) => ({
@@ -2987,6 +3004,7 @@ const handleConfirmAllStudents = async () => {
 
                   <input
                     type="email"
+                    required
                     value={editStudentForm.email}
                     onChange={(event) =>{
                       setEditStudentForm((prev) => ({

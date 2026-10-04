@@ -877,13 +877,7 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
     );
   }
 
-  const normalizedNewEmail = input.email?.trim().toLowerCase() ?? "";
-  const normalizedOldEmail = profile.email?.trim().toLowerCase() ?? "";
-  const emailChanged = normalizedNewEmail !== normalizedOldEmail;
-
-  if (input.email) {
-    await assertEmailAvailable(input.email, { type: "STUDENT", teacherId, excludeStudentId: studentId });
-  }
+  await assertEmailAvailable(input.email, { type: "STUDENT", teacherId, excludeStudentId: studentId });
 
   const student = await prisma.student.update({
     where: {
@@ -896,10 +890,9 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       contact: input.contact01,
       contact01: input.contact01,
       contact02: input.contact02,
+      // A teacher's edit never touches emailConfirmed / emailConfirmedAt:
+      // the student's confirmation status stays exactly as it was.
       email: input.email,
-      // Changing the email means it was never proven to belong to the
-      // student, so it must be confirmed again before their next login.
-      ...(emailChanged ? { emailConfirmed: false, emailConfirmedAt: null } : {}),
     },
     select: {
       id: true,
@@ -912,14 +905,6 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       createdAt: true,
     },
   });
-
-  if (emailChanged && student.email) {
-    try {
-      await sendEmailConfirmationCode("STUDENT", student.id, student.email);
-    } catch (err) {
-      console.error("Failed to send student email confirmation code:", err);
-    }
-  }
 
   return student;
 }
@@ -1875,7 +1860,18 @@ export async function RegisterStudentViaPublicClasses(
     throw new AppError("Class not found.", 404, "CLASS_NOT_FOUND");
   }
 
-  const emailValue = request.email?.trim();
+  // The email is how the student logs in and receives their login details,
+  // so registration without a valid one is refused.
+  const emailValue = typeof request.email === "string" ? request.email.trim() : "";
+
+  if (!emailValue) {
+    throw new AppError("Email address is required.", 400, "VALIDATION_ERROR");
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) {
+    throw new AppError("Please enter a valid email address.", 400, "VALIDATION_ERROR");
+  }
+
   if (emailValue) {
     const existingByEmail = await prisma.student.findFirst({
       where: {

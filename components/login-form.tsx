@@ -106,7 +106,8 @@ export function LoginForm() {
 
         if (
           err.code === "STUDENT_PENDING_APPROVAL" ||
-          err.code === "STUDENT_DEACTIVATED"
+          err.code === "STUDENT_DEACTIVATED" ||
+          err.code === "STUDENT_EMAIL_MISSING"
         ) {
           const d = err.details ?? {};
           const contacts = [d.phone, d.whatsapp].filter(Boolean).join(" / ");
