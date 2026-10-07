@@ -229,6 +229,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setMonitorView(participantIds);
       },
 
+      setTeacherView: (enabled: boolean) => {
+        controlsRef.current?.setTeacherView(enabled);
+      },
+
       requestFullscreen: () => {
         const element = fullscreenWrapperRef.current;
 

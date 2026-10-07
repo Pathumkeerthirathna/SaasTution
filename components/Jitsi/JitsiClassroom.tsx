@@ -633,6 +633,23 @@ const [classStudents, setClassStudents] =
     setMonitorView,
   });
 
+  // Teacher only: SL Classroom's own normal mode view (custom stage + custom
+  // filmstrip) in the teacher's Jitsi iframe, shown in normal mode and hidden
+  // in exam mode. Reads the monitoring mode only; exam mode itself is driven by
+  // useCameraMonitoring as before. Sent again for every new conference
+  // generation (a remounted iframe starts without it); custom.js also hides
+  // the view on its own while the exam grid is showing.
+  const isTeacherNormalView =
+    role === "teacher" && cameraMonitoring.mode === "normal";
+
+  useEffect(() => {
+    if (role !== "teacher" || conferenceGeneration === 0) {
+      return;
+    }
+
+    jitsiMeetingRef.current?.setTeacherView(isTeacherNormalView);
+  }, [role, isTeacherNormalView, conferenceGeneration]);
+
   const [meetingReady, setMeetingReady] =
     useState(false);
 

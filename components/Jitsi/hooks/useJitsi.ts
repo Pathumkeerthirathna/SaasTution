@@ -88,7 +88,80 @@ export type JitsiControls = BreakoutControls & {
    * received is still decided by setReceiveSet.
    */
   setMonitorView: (participantIds: string[] | null) => void;
+
+  /**
+   * Teacher only: shows (`true`) or hides (`false`) SL Classroom's own normal
+   * mode view in the teacher's Jitsi iframe (custom.js): custom main stage plus
+   * a custom filmstrip. Display only: what is received does not change. Has no
+   * effect unless the app is built with NEXT_PUBLIC_SL_TEACHER_FILMSTRIP=true.
+   */
+  setTeacherView: (enabled: boolean) => void;
 };
+
+/**
+ * Where the teacher's normal mode filmstrip sits (custom.js, Phase B). The
+ * teacher picks it on the filmstrip itself; custom.js reports the choice
+ * (SL_TEACHER_LAYOUT) and this page remembers it (localStorage) and sends it
+ * with every teacher view message, so it survives reloads and rejoins.
+ */
+type TeacherFilmstripPosition = "right" | "left" | "top" | "bottom";
+
+const TEACHER_FILMSTRIP_POSITIONS: TeacherFilmstripPosition[] = [
+  "right",
+  "left",
+  "top",
+  "bottom",
+];
+
+const TEACHER_FILMSTRIP_POSITION_STORAGE_KEY = "sl-classroom-teacher-filmstrip-position";
+
+function isTeacherFilmstripPosition(value: unknown): value is TeacherFilmstripPosition {
+  return TEACHER_FILMSTRIP_POSITIONS.some((position) => position === value);
+}
+
+/** `null` when the teacher has never chosen (custom.js defaults to right). */
+function readStoredTeacherFilmstripPosition(): TeacherFilmstripPosition | null {
+  try {
+    const raw = localStorage.getItem(TEACHER_FILMSTRIP_POSITION_STORAGE_KEY);
+    return isTeacherFilmstripPosition(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The filmstrip's auto-hide preference (default off). Only the preference
+ * is kept: the filmstrip always starts shown. */
+const TEACHER_FILMSTRIP_AUTOHIDE_STORAGE_KEY = "sl-classroom-teacher-filmstrip-autohide";
+
+function readStoredTeacherFilmstripAutoHide(): boolean | null {
+  try {
+    const raw = localStorage.getItem(TEACHER_FILMSTRIP_AUTOHIDE_STORAGE_KEY);
+    return raw === null ? null : raw === "true";
+  } catch {
+    return null;
+  }
+}
+
+/** iframe (custom.js) -> teacher page: the teacher changed the filmstrip layout. */
+type TeacherLayoutMessage = {
+  type: "SL_TEACHER_LAYOUT";
+  v: 1;
+  position: TeacherFilmstripPosition;
+  /** Absent from an older custom.js. */
+  autoHide?: boolean;
+};
+
+function isTeacherLayoutMessage(data: unknown): data is TeacherLayoutMessage {
+  const message = data as Partial<TeacherLayoutMessage> | null;
+
+  return (
+    !!message &&
+    message.type === "SL_TEACHER_LAYOUT" &&
+    message.v === 1 &&
+    isTeacherFilmstripPosition(message.position) &&
+    (message.autoHide === undefined || typeof message.autoHide === "boolean")
+  );
+}
 
 /** Message the teacher page posts into the Jitsi iframe (handled by custom.js). */
 type ReceiveSetMessage = {
@@ -122,6 +195,70 @@ type StudentViewMessage = {
   epoch: number;
   enabled: boolean;
 };
+
+/**
+ * Student page -> its own Jitsi iframe (handled by custom.js): show SL Classroom's
+ * own main stage over Jitsi's large video, reusing the already received tracks.
+ * Display only.
+ */
+type StageViewMessage = {
+  type: "SL_STAGE_VIEW";
+  v: 1;
+  /** Own counter; the same message is resent as-is, so it never needs to grow. */
+  epoch: number;
+  enabled: boolean;
+};
+
+/**
+ * Phase 4 custom stage for students. Off unless the app is built with
+ * NEXT_PUBLIC_SL_CUSTOM_STAGE=true, so it can be tried without changing what
+ * students see by default. Jitsi's own large video stays underneath either way.
+ */
+const SL_CUSTOM_STAGE_ENABLED = process.env.NEXT_PUBLIC_SL_CUSTOM_STAGE === "true";
+
+/** Teacher page -> its own Jitsi iframe (handled by custom.js): normal mode view. */
+type TeacherViewMessage = {
+  type: "SL_TEACHER_VIEW";
+  v: 1;
+  /** Own counter; increases on every change. */
+  epoch: number;
+  enabled: boolean;
+  /** Where the filmstrip sits (Phase B). */
+  position: TeacherFilmstripPosition;
+  /** Whether the filmstrip auto-hides (Phase B, default off). */
+  autoHide: boolean;
+};
+
+/**
+ * Teacher normal mode view (custom stage + custom filmstrip). Off unless the app
+ * is built with NEXT_PUBLIC_SL_TEACHER_FILMSTRIP=true; while off, the teacher's
+ * iframe is always told `enabled: false`, so Jitsi's own layout stays as it is.
+ */
+const SL_TEACHER_FILMSTRIP_ENABLED =
+  process.env.NEXT_PUBLIC_SL_TEACHER_FILMSTRIP === "true";
+
+/**
+ * Page -> its own Jitsi iframe (handled by custom.js): compact toolbar look with
+ * a hide/show control, optionally auto-hiding. Presentation only.
+ */
+type ToolbarViewMessage = {
+  type: "SL_TOOLBAR_VIEW";
+  v: 1;
+  /** Own counter; the same message is resent as-is, so it never needs to grow. */
+  epoch: number;
+  enabled: boolean;
+  autoHide: boolean;
+};
+
+/**
+ * Toolbar polish, for teachers and students. Off unless the app is built with
+ * NEXT_PUBLIC_SL_TOOLBAR_POLISH=true; auto-hide additionally needs
+ * NEXT_PUBLIC_SL_TOOLBAR_AUTOHIDE=true. While off, Jitsi's own toolbar is used.
+ */
+const SL_TOOLBAR_POLISH_ENABLED =
+  process.env.NEXT_PUBLIC_SL_TOOLBAR_POLISH === "true";
+const SL_TOOLBAR_AUTOHIDE_ENABLED =
+  process.env.NEXT_PUBLIC_SL_TOOLBAR_AUTOHIDE === "true";
 
 /**
  * The SL Classroom Jitsi server. The only origin the receive set is posted to,
@@ -343,6 +480,89 @@ export default function useJitsi({
     }
 
     frameWindow.postMessage(studentViewRef.current, SL_JITSI_ORIGIN);
+  };
+
+  // Custom stage: students only, on/off by SL_CUSTOM_STAGE_ENABLED. Sent (also
+  // when off, so custom.js is told explicitly) after every conference join and
+  // again on SL_RECEIVE_READY, like the student view.
+  const stageViewRef = useRef<StageViewMessage>({
+    type: "SL_STAGE_VIEW",
+    v: 1,
+    epoch: 1,
+    enabled: SL_CUSTOM_STAGE_ENABLED,
+  });
+
+  const postStageView = () => {
+    if (roleRef.current !== "student") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(stageViewRef.current, SL_JITSI_ORIGIN);
+  };
+
+  // Toolbar polish: every role. Sent (also when off, so custom.js is told
+  // explicitly) after every conference join and again on SL_RECEIVE_READY.
+  const toolbarViewRef = useRef<ToolbarViewMessage>({
+    type: "SL_TOOLBAR_VIEW",
+    v: 1,
+    epoch: 1,
+    enabled: SL_TOOLBAR_POLISH_ENABLED,
+    autoHide: SL_TOOLBAR_POLISH_ENABLED && SL_TOOLBAR_AUTOHIDE_ENABLED,
+  });
+
+  const postToolbarView = () => {
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(toolbarViewRef.current, SL_JITSI_ORIGIN);
+  };
+
+  // Teacher normal mode view: kept and resent on SL_RECEIVE_READY, like the
+  // receive set and the monitoring grid.
+  const teacherViewEpochRef = useRef(0);
+  const teacherViewRef = useRef<TeacherViewMessage | null>(null);
+  const teacherFilmstripPositionRef = useRef<TeacherFilmstripPosition>("right");
+  const teacherFilmstripAutoHideRef = useRef(false);
+
+  // The teacher's saved filmstrip position and auto-hide preference, read
+  // once on mount (before any teacher view message is built: that only
+  // happens after the join).
+  useEffect(() => {
+    const stored = readStoredTeacherFilmstripPosition();
+
+    if (stored) {
+      teacherFilmstripPositionRef.current = stored;
+    }
+
+    teacherFilmstripAutoHideRef.current = readStoredTeacherFilmstripAutoHide() ?? false;
+  }, []);
+
+  const postTeacherView = () => {
+    const message = teacherViewRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
   useImperativeHandle(
@@ -568,6 +788,24 @@ export default function useJitsi({
 
         postMonitorView();
       },
+
+      setTeacherView: (enabled) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        teacherViewEpochRef.current += 1;
+        teacherViewRef.current = {
+          type: "SL_TEACHER_VIEW",
+          v: 1,
+          epoch: teacherViewEpochRef.current,
+          enabled: enabled && SL_TEACHER_FILMSTRIP_ENABLED,
+          position: teacherFilmstripPositionRef.current,
+          autoHide: teacherFilmstripAutoHideRef.current,
+        };
+
+        postTeacherView();
+      },
     }),
     []
   );
@@ -598,12 +836,46 @@ export default function useJitsi({
 
       // custom.js is (re)ready inside the iframe: send the current state again,
       // since anything sent earlier may have been missed. Teacher: receive set,
-      // then the monitoring-grid view. Student: the student view. Each post
-      // checks the role itself, so only the matching ones are sent.
+      // then the monitoring-grid view, then the normal mode teacher view.
+      // Student: the student view, then the custom stage view. Each post
+      // checks the role itself, so only the matching ones are sent. Both: the
+      // toolbar view.
       if (event.data?.type === "SL_RECEIVE_READY") {
         postReceiveSet();
         postMonitorView();
         postStudentView();
+        postStageView();
+        postTeacherView();
+        postToolbarView();
+        return;
+      }
+
+      // The teacher changed the filmstrip layout on the filmstrip itself
+      // (position, auto-hide): remember it (localStorage) and keep it in the
+      // teacher view message, so a resend or the next join restores it. The
+      // iframe already shows it, so nothing is posted back.
+      if (isTeacherLayoutMessage(event.data)) {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        const { position } = event.data;
+        const autoHide = event.data.autoHide ?? teacherFilmstripAutoHideRef.current;
+
+        teacherFilmstripPositionRef.current = position;
+        teacherFilmstripAutoHideRef.current = autoHide;
+
+        if (teacherViewRef.current) {
+          teacherViewRef.current = { ...teacherViewRef.current, position, autoHide };
+        }
+
+        try {
+          localStorage.setItem(TEACHER_FILMSTRIP_POSITION_STORAGE_KEY, position);
+          localStorage.setItem(TEACHER_FILMSTRIP_AUTOHIDE_STORAGE_KEY, String(autoHide));
+        } catch {
+          /* private mode — the choice just won't persist */
+        }
+
         return;
       }
 
@@ -1014,8 +1286,11 @@ export default function useJitsi({
         }
       }
 
-      // Student view on every join (first join, reconnect, breakout switch).
+      // Student view, custom stage view and toolbar view on every join (first
+      // join, reconnect, breakout switch).
       postStudentView();
+      postStageView();
+      postToolbarView();
 
       const enteringBreakout = data?.breakoutRoom === true;
       const returningFromBreakout = !enteringBreakout && inBreakoutRef.current;
