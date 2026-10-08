@@ -125,6 +125,418 @@ function slPickStudentStage(sources) {
     return teacherCamera ? { ...teacherCamera, videoType: "camera" } : null;
 }
 
+
+/* ==========================================================
+   SL Classroom - Phase D configuration (teacher camera rotation)
+
+   The only place these values live. MAX is a CEILING: lib-jitsi-
+   meet's own CPU limiter may still lower it (see the receive
+   policy below).
+========================================================== */
+
+// Student camera streams the teacher receives at once in Normal mode,
+// including a selected (priority) student. Co-teacher cameras and screen
+// shares are not student cameras and are not counted.
+const SL_TEACHER_MAX_LIVE_CAMERAS = 18;
+// How long a rotating student camera stays live (dwell).
+const SL_TEACHER_CAMERA_ROTATION_SECONDS = 10;
+// How often a few rotating cameras are replaced (rolling window).
+const SL_TEACHER_CAMERA_ROTATION_SUBTICK_SECONDS = 2;
+// Requested heights: filmstrip tiles; screen shares not on the stage.
+const SL_TEACHER_ROTATION_CAMERA_MAX_HEIGHT = 180;
+const SL_TEACHER_ROTATION_SHARE_MAX_HEIGHT = 360;
+
+
+/*
+ * Phase D: which STUDENT CAMERAS the teacher receives in Normal mode.
+ *
+ * Only students whose camera SourceInfo (presence) exists and is not muted
+ * take part; camera-OFF students use no slot. A selected student (Phase C)
+ * is a priority camera and uses one slot; co-teacher cameras are always
+ * received and use none. While all fit, all are received and nothing
+ * rotates. Otherwise the rest share the remaining slots in a deterministic
+ * ROLLING window: the students are spread over G = ceil(N / slots) stable
+ * groups by stride (filmstrip index mod G), so consecutive live cameras
+ * are spread over the whole filmstrip; every sub-tick the k longest-live
+ * cameras are replaced by the next k in that order, so only a few sources
+ * (keyframes) change at a time, never a whole group.
+ *
+ * It decides only WHICH cameras; the receive policy turns that into
+ * receiver constraints (the one setReceiverConstraints wrapper), and the
+ * teacher view pauses a tile (keeps its last frame) BEFORE its camera is
+ * dropped. Display only: nothing here touches media or tracks.
+ */
+const slTeacherRotation = (function () {
+
+    const DWELL_MS = SL_TEACHER_CAMERA_ROTATION_SECONDS * 1000;
+    const SUBTICK_MS = SL_TEACHER_CAMERA_ROTATION_SUBTICK_SECONDS * 1000;
+
+    let active = false;
+    let priorityIds = [];
+    // Student-camera budget while lib-jitsi-meet limits lastN for CPU; null
+    // = not limited.
+    let cpuCameraBudget = null;
+
+    let pool = [];
+    let slots = 0;
+    let poolKey = "";
+    let groupCount = 0;
+    const groupOf = new Map();
+    let sequence = [];
+    let cursor = 0;
+    // Rotating live cameras: participant ID -> sub-tick it went live.
+    const live = new Map();
+    let tickNo = 0;
+    let timer = null;
+    // TESTING ONLY switch (via __slTeacherViewTest): sub-ticks by hand.
+    let autoTick = true;
+    let lastConference = null;
+    let coTeacherIds = [];
+    let priorityLive = [];
+
+    // Callbacks: the teacher view freezes tiles; the receive policy re-applies.
+    let onWillDrop = null;
+    let onChange = null;
+
+    function cameraOn(participant) {
+        const videoSources = participant?.sources?.get?.("video");
+
+        if (!videoSources || typeof videoSources.values !== "function") {
+            return false;
+        }
+
+        for (const info of videoSources.values()) {
+            if (info?.videoType === "camera" && !info.muted) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Camera-ON students (filmstrip order: join order) and co-teachers.
+    function collect(state) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+        const students = [];
+        const coTeachers = [];
+
+        if (remote && typeof remote.entries === "function") {
+            for (const [participantId, participant] of remote.entries()) {
+                if (!participant || participant.fakeParticipant
+                    || participantId === participants.local?.id || !cameraOn(participant)) {
+                    continue;
+                }
+
+                (participant.role === "moderator" ? coTeachers : students).push(participantId);
+            }
+        }
+
+        return { students, coTeachers };
+    }
+
+    function stopTimer() {
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+    }
+
+    function startTimer() {
+        if (!timer && autoTick) {
+            timer = setInterval(subtick, SUBTICK_MS);
+        }
+    }
+
+    function notify() {
+        if (typeof onChange === "function") {
+            onChange();
+        }
+    }
+
+    // Live -> not live while the camera stays ON: the teacher view pauses
+    // these tiles first (their last frame stays), then they are dropped.
+    function drop(ids) {
+        if (!ids.length) {
+            return;
+        }
+
+        if (typeof onWillDrop === "function") {
+            onWillDrop(ids.slice());
+        }
+
+        ids.forEach(id => live.delete(id));
+    }
+
+    function dropOldest(count, keep) {
+        if (count <= 0) {
+            return [];
+        }
+
+        const order = new Map(sequence.map((id, index) => [id, index]));
+        const oldest = Array.from(live.entries())
+            .filter(([id]) => !keep || !keep.has(id))
+            .sort((a, b) => a[1] - b[1] || (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0))
+            .slice(0, count)
+            .map(([id]) => id);
+
+        drop(oldest);
+
+        return oldest;
+    }
+
+    // Fills free slots with the next students in the rotation order.
+    function fill(exclude) {
+        const length = sequence.length;
+
+        for (let step = 0; step < length && live.size < Math.min(slots, pool.length); step++) {
+            const id = sequence[cursor % length];
+
+            cursor = (cursor + 1) % length;
+
+            if (!live.has(id) && !(exclude && exclude.has(id))) {
+                live.set(id, tickNo);
+            }
+        }
+    }
+
+    // Stable groups: re-striped only when the group count changes; a join
+    // goes to the least-loaded group, a leave just disappears.
+    function regroup() {
+        const count = Math.ceil(pool.length / slots);
+
+        if (count !== groupCount) {
+            groupCount = count;
+            groupOf.clear();
+            pool.forEach((id, index) => groupOf.set(id, index % count));
+            cursor = 0;
+        } else {
+            // A selected (priority) student keeps its group, so it returns
+            // to the same place in the rotation when deselected.
+            const keep = new Set([...pool, ...priorityLive]);
+
+            Array.from(groupOf.keys()).forEach(id => {
+                if (!keep.has(id)) {
+                    groupOf.delete(id);
+                }
+            });
+
+            pool.forEach(id => {
+                if (!groupOf.has(id)) {
+                    const sizes = new Array(count).fill(0);
+
+                    groupOf.forEach(group => { sizes[group] += 1; });
+                    groupOf.set(id, sizes.indexOf(Math.min(...sizes)));
+                }
+            });
+        }
+
+        sequence = [];
+
+        for (let group = 0; group < groupCount; group++) {
+            pool.forEach(id => {
+                if (groupOf.get(id) === group) {
+                    sequence.push(id);
+                }
+            });
+        }
+
+        cursor = sequence.length ? cursor % sequence.length : 0;
+    }
+
+    function rebalance(nextPool, nextSlots) {
+        pool = nextPool;
+        slots = nextSlots;
+
+        // Camera off / left / now a priority camera: no longer rotating
+        // (no freeze: off and left tiles detach; priority stays live).
+        const inPool = new Set(pool);
+
+        Array.from(live.keys()).forEach(id => {
+            if (!inPool.has(id)) {
+                live.delete(id);
+            }
+        });
+
+        if (slots <= 0) {
+            drop(Array.from(live.keys()));
+            groupCount = 0;
+            groupOf.clear();
+            sequence = [];
+            stopTimer();
+            return;
+        }
+
+        if (pool.length <= slots) {
+            // Everyone fits: all live, no rotation.
+            groupCount = pool.length ? 1 : 0;
+            groupOf.clear();
+            sequence = pool.slice();
+            cursor = 0;
+            pool.forEach(id => {
+                if (!live.has(id)) {
+                    live.set(id, tickNo);
+                }
+            });
+            stopTimer();
+            return;
+        }
+
+        regroup();
+        dropOldest(live.size - slots);
+        fill();
+        startTimer();
+    }
+
+    function subtick() {
+        if (!active || slots <= 0 || pool.length <= slots) {
+            stopTimer();
+            return;
+        }
+
+        tickNo += 1;
+
+        const replace = Math.min(
+            Math.ceil(slots * SUBTICK_MS / DWELL_MS),
+            pool.length - slots
+        );
+        const dropped = new Set(dropOldest(replace));
+
+        fill(dropped);
+        notify();
+    }
+
+    function reset() {
+        stopTimer();
+        pool = [];
+        slots = 0;
+        poolKey = "";
+        groupCount = 0;
+        groupOf.clear();
+        sequence = [];
+        cursor = 0;
+        live.clear();
+        coTeacherIds = [];
+        priorityLive = [];
+    }
+
+    // Recomputes membership from the current store. Cheap when nothing that
+    // matters changed (same camera-ON students, same slots).
+    function update(state) {
+        if (!active || !state) {
+            return;
+        }
+
+        const conference = state["features/base/conference"]?.conference ?? null;
+
+        // A new conference (reconnect): nothing carries over.
+        if (conference !== lastConference) {
+            lastConference = conference;
+            reset();
+        }
+
+        const { students, coTeachers } = collect(state);
+        const cameraOnIds = new Set(students);
+        const priority = priorityIds.filter(id => cameraOnIds.has(id));
+        const budget = Math.max(0, Math.min(SL_TEACHER_MAX_LIVE_CAMERAS, cpuCameraBudget ?? SL_TEACHER_MAX_LIVE_CAMERAS));
+        const nextSlots = Math.max(0, budget - priority.length);
+        const nextPool = students.filter(id => !priority.includes(id));
+        const key = [nextPool.join(","), nextSlots, priority.join(","), coTeachers.join(",")].join("|");
+
+        if (key === poolKey) {
+            return;
+        }
+
+        // Planned live before this change (to freeze anyone who loses it).
+        const before = new Set(publicReceiveIds());
+
+        poolKey = key;
+        coTeacherIds = coTeachers;
+        priorityLive = priority;
+        rebalance(nextPool, nextSlots);
+
+        // Still camera-ON but no longer received (e.g. a deselected student
+        // who does not fit the window right now): freeze before re-applying.
+        const after = new Set(publicReceiveIds());
+        const lost = Array.from(before).filter(id => !after.has(id) && cameraOnIds.has(id));
+
+        if (lost.length && typeof onWillDrop === "function") {
+            onWillDrop(lost);
+        }
+
+        notify();
+    }
+
+    function publicReceiveIds() {
+        return [...priorityLive, ...coTeacherIds, ...sequence.filter(id => live.has(id))];
+    }
+
+    return {
+        setActive(next) {
+            if (active === next) {
+                return;
+            }
+
+            active = next;
+            lastConference = null;
+            reset();
+            notify();
+        },
+        isActive: () => active,
+        setPriority(ids) {
+            priorityIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+        },
+        // From the receive policy, while lib-jitsi-meet limits lastN.
+        setCpuCameraBudget(budget) {
+            const next = typeof budget === "number" && budget >= 0 ? Math.floor(budget) : null;
+
+            if (next !== cpuCameraBudget) {
+                cpuCameraBudget = next;
+                // Applied on the next update (never inside a constraint call).
+                setTimeout(() => {
+                    if (active && window.APP && APP.store) {
+                        update(APP.store.getState());
+                    }
+                }, 0);
+            }
+        },
+        update,
+        // Whether the teacher should be receiving this participant's camera.
+        isPlannedLive: id => priorityLive.includes(id) || coTeacherIds.includes(id) || live.has(id),
+        // Rotating camera dropped for now (camera still ON).
+        isRotatingOut: id => pool.includes(id) && !live.has(id),
+        // Cameras to receive: priority, co-teachers, then the rotating window.
+        receiveIds: () => publicReceiveIds(),
+        onWillDrop(callback) { onWillDrop = callback; },
+        onChange(callback) { onChange = callback; },
+        subtick,
+        // TESTING ONLY: stop / restart the automatic sub-ticks.
+        setAutoTick(on) {
+            autoTick = Boolean(on);
+
+            if (!autoTick) {
+                stopTimer();
+            } else if (active && slots > 0 && pool.length > slots) {
+                startTimer();
+            }
+        },
+        stats: () => ({
+            active,
+            cameraStudents: pool.length + priorityLive.length,
+            priority: priorityLive.slice(),
+            coTeachers: coTeacherIds.slice(),
+            slots,
+            rotating: slots > 0 && pool.length > slots,
+            groups: groupCount,
+            perSubtick: slots > 0 ? Math.min(Math.ceil(slots * SUBTICK_MS / DWELL_MS), Math.max(pool.length - slots, 0)) : 0,
+            live: sequence.filter(id => live.has(id)),
+            cpuCameraBudget,
+            timerActive: Boolean(timer),
+            tick: tickNo
+        })
+    };
+})();
+
 window.addEventListener("load", () => {
 
     const interval = setInterval(() => {
@@ -504,6 +916,14 @@ document.addEventListener(
      sent to the bridge (the teacher monitors it), and audio is
      not affected (receiver constraints are video only).
 
+   Moderator (teacher), Normal mode, Phase D (while the teacher
+   view runs the camera rotation, slTeacherRotation above):
+     Jitsi's own stage (onStageSources, the Phase C pin) and every
+     active screen share exactly as Jitsi asks, plus the student
+     cameras the rotation selects (priority + co-teachers + rolling
+     window, at tile height); nothing else is forwarded. Respects
+     lib-jitsi-meet's CPU limiter (see setCpuLimiterCeiling).
+
    Otherwise (no override enabled): Jitsi's own constraints,
    unchanged.
 
@@ -548,6 +968,11 @@ document.addEventListener(
     // (and restored as-is when it is turned off). A replaced conference never
     // gets the old conference's constraints.
     const SL_LAST_CONSTRAINTS = "__slLastAppConstraints";
+
+    // Phase D: the last rotation signature applied (per conference object),
+    // and whether a rewrite is running (no nested re-apply from it).
+    const SL_ROTATION_SIGNATURE = "__slRotationSignature";
+    let rewriting = false;
 
     function getState() {
         return window.APP && APP.store ? APP.store.getState() : null;
@@ -594,6 +1019,14 @@ document.addEventListener(
         }
 
         if (isLocalModerator(state)) {
+            // Exam Mode (receive set) first and unchanged; then Phase D in
+            // Normal mode while the teacher view runs its rotation.
+            if (!receiveSet.enabled && slTeacherRotation.isActive()) {
+                return rewriteTeacherRotationConstraints(original, state);
+            }
+
+            restoreCpuLimiterCeiling(state);
+
             return receiveSet.enabled
                 ? rewriteTeacherConstraints(original, state)
                 : original;
@@ -603,6 +1036,195 @@ document.addEventListener(
             ? rewriteStudentConstraints(original, state)
             : original;
     }
+
+    // ---- Phase D: teacher Normal mode, rotating student cameras ----------
+
+    // The active remote screen shares, from presence (any sharer).
+    function getActiveShareSources(state) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+        const shares = [];
+
+        if (!remote || typeof remote.entries !== "function") {
+            return shares;
+        }
+
+        for (const [participantId, participant] of remote.entries()) {
+            if (!participant || participant.fakeParticipant || participantId === participants.local?.id) {
+                continue;
+            }
+
+            const videoSources = participant.sources?.get?.("video");
+
+            if (videoSources && typeof videoSources.entries === "function") {
+                for (const [sourceName, info] of videoSources.entries()) {
+                    if (info?.videoType === "desktop" && !info.muted) {
+                        shares.push(sourceName);
+                    }
+                }
+            }
+        }
+
+        return shares;
+    }
+
+    // lib-jitsi-meet's receive controller (its CPU limiter lives there).
+    function getReceiveController(state) {
+        const controller = getConference(state)?.qualityController?.receiveVideoController;
+
+        return controller && typeof controller.getLastN === "function" ? controller : null;
+    }
+
+    /*
+     * CPU limiter: lib-jitsi-meet lowers lastN when the teacher's own camera
+     * encoder is CPU-limited, and ramps it back up later. It treats
+     * config.channelLastN (5 here) as the normal level: only below it does it
+     * mark itself "limited" and keep its lower value against new receiver
+     * constraints. With Phase D's ceiling above 5, a cut (e.g. 18 -> 9) would
+     * not count as limited and our next constraints would undo it at once.
+     * So, while Phase D is active, its normal level is set to Phase D's own
+     * lastN on lib-jitsi-meet's private copy of the config (the only value it
+     * reads there at run time; Jitsi's redux config is a separate object):
+     * its own limiter then works as designed. The original value is put back
+     * whenever Phase D is not active (Exam Mode, view off).
+     */
+    const SL_LIMITER_SAVED = "__slSavedChannelLastN";
+
+    function setCpuLimiterCeiling(state, lastN) {
+        const conference = getConference(state);
+        const config = conference?.options?.config;
+
+        if (!config || typeof config !== "object") {
+            return;
+        }
+
+        if (!(SL_LIMITER_SAVED in conference)) {
+            conference[SL_LIMITER_SAVED] = config.channelLastN;
+        }
+
+        config.channelLastN = lastN;
+    }
+
+    function restoreCpuLimiterCeiling(state) {
+        const conference = getConference(state);
+        const config = conference?.options?.config;
+
+        if (!conference || !(SL_LIMITER_SAVED in conference)) {
+            return;
+        }
+
+        if (config && typeof config === "object") {
+            config.channelLastN = conference[SL_LIMITER_SAVED];
+        }
+
+        delete conference[SL_LIMITER_SAVED];
+    }
+
+    // Phase D: Jitsi's own stage (onStageSources, Phase C pin) and every
+    // active screen share stay exactly as Jitsi requests them; the student
+    // cameras are the scheduler's: priority (selected) + co-teachers + the
+    // rotating window, at tile height. Nothing else is forwarded.
+    function rewriteTeacherRotationConstraints(original, state) {
+        // lastN 0 is Jitsi's audio-only / low-bandwidth mode: left as it is.
+        if (!original || original.lastN === 0) {
+            return original;
+        }
+
+        slTeacherRotation.update(state);
+
+        const onStage = Array.isArray(original.onStageSources) ? original.onStageSources.slice() : [];
+        const shares = getActiveShareSources(state);
+        const cameras = [];
+
+        slTeacherRotation.receiveIds().forEach(participantId => {
+            const sourceName = getCameraSourceName(state, participantId);
+
+            if (sourceName && !cameras.includes(sourceName)) {
+                cameras.push(sourceName);
+            }
+        });
+
+        const selectedSources = [];
+        const add = sourceName => {
+            if (sourceName && !selectedSources.includes(sourceName)) {
+                selectedSources.push(sourceName);
+            }
+        };
+
+        onStage.forEach(add);
+        shares.forEach(add);
+        cameras.forEach(add);
+
+        const constraints = {};
+
+        selectedSources.forEach(sourceName => {
+            if (onStage.includes(sourceName) && original.constraints?.[sourceName]) {
+                constraints[sourceName] = original.constraints[sourceName];
+            } else {
+                constraints[sourceName] = {
+                    maxHeight: shares.includes(sourceName)
+                        ? SL_TEACHER_ROTATION_SHARE_MAX_HEIGHT
+                        : SL_TEACHER_ROTATION_CAMERA_MAX_HEIGHT
+                };
+            }
+        });
+
+        // At least 1: lastN 0 is Jitsi's "audio only" meaning (nothing is
+        // forwarded anyway: everything not selected has maxHeight 0).
+        const lastN = Math.max(1, selectedSources.length);
+        const stats = slTeacherRotation.stats();
+        const nonCamera = selectedSources.filter(sourceName => !cameras.includes(sourceName)).length;
+
+        // The limiter's normal level: what Phase D would request without any
+        // CPU limit (so its ramp-up can go all the way back up).
+        setCpuLimiterCeiling(
+            state,
+            Math.max(1, nonCamera + stats.coTeachers.length + Math.min(SL_TEACHER_MAX_LIVE_CAMERAS, stats.cameraStudents))
+        );
+
+        // While lib-jitsi-meet limits lastN, the rotation shrinks to what is
+        // left of it after the stage, shares and co-teachers (only what will
+        // be forwarded is planned live, so no tile waits for a camera that
+        // will not come). Its own lastN wins meanwhile, whatever we send.
+        const controller = getReceiveController(state);
+        const limited = Boolean(controller && typeof controller.isLastNLimitedByCpu === "function"
+            && controller.isLastNLimitedByCpu());
+
+        slTeacherRotation.setCpuCameraBudget(limited
+            ? Math.max(0, controller.getLastN() - nonCamera - stats.coTeachers.length)
+            : null);
+
+        return {
+            ...original,
+            lastN,
+            defaultConstraints: { maxHeight: 0 },
+            constraints,
+            selectedSources,
+            onStageSources: onStage
+        };
+    }
+
+    // What the Phase D policy currently depends on (a change re-applies it).
+    function getRotationSignature(state) {
+        if (!slTeacherRotation.isActive() || receiveSet.enabled || !isLocalModerator(state)) {
+            return "";
+        }
+
+        return JSON.stringify([
+            slTeacherRotation.receiveIds().map(id => getCameraSourceName(state, id)),
+            getActiveShareSources(state)
+        ]);
+    }
+
+    // Exposed for tests (read-only view of the last applied policy).
+    window.__slTeacherReceiveTest = {
+        lastApplied: () => {
+            const conference = getConference(getState());
+
+            return conference ? conference.__slLastApplied || null : null;
+        },
+        limiterCeiling: () => getConference(getState())?.options?.config?.channelLastN
+    };
 
     // Phase 1, unchanged: only the receive set's student cameras.
     function rewriteTeacherConstraints(original, state) {
@@ -782,9 +1404,19 @@ document.addEventListener(
             conference.setReceiverConstraints = function (constraints) {
                 conference[SL_LAST_CONSTRAINTS] = constraints;
 
-                return originalSetReceiverConstraints(
-                    rewriteConstraints(constraints)
-                );
+                rewriting = true;
+
+                let rewritten;
+
+                try {
+                    rewritten = rewriteConstraints(constraints);
+                } finally {
+                    rewriting = false;
+                }
+
+                conference.__slLastApplied = rewritten;
+
+                return originalSetReceiverConstraints(rewritten);
             };
 
             conference[SL_WRAP_MARKER] = true;
@@ -814,7 +1446,42 @@ document.addEventListener(
             conference[SL_STUDENT_SIGNATURE] = signature;
             reapplyReceiveSet();
         }
+
+        // Phase D (teacher, Normal): keep the rotation in step with the
+        // store, and re-apply only when the cameras / shares it selects change.
+        if (slTeacherRotation.isActive()) {
+            slTeacherRotation.update(state);
+        }
+
+        reapplyRotationIfChanged();
     }
+
+    // Re-applies the receive policy only when Phase D's selection actually
+    // changed (identical constraints are never re-sent from here; lib-jitsi-
+    // meet also drops identical ones). Skipped inside a rewrite: that rewrite
+    // already uses the current selection.
+    function reapplyRotationIfChanged() {
+        if (rewriting) {
+            return;
+        }
+
+        const state = getState();
+        const conference = getConference(state);
+
+        if (!conference || !conference[SL_WRAP_MARKER]) {
+            return;
+        }
+
+        const signature = getRotationSignature(state);
+
+        if (conference[SL_ROTATION_SIGNATURE] !== signature) {
+            conference[SL_ROTATION_SIGNATURE] = signature;
+            reapplyReceiveSet();
+        }
+    }
+
+    // Rotation sub-ticks, membership changes and activation / deactivation.
+    slTeacherRotation.onChange(reapplyRotationIfChanged);
 
     window.addEventListener("message", function (event) {
 
@@ -2427,6 +3094,9 @@ document.addEventListener(
                 kind: "camera",
                 role: roleOf(participant),
                 local: false,
+                // Phase D: camera ON from presence (SourceInfo), whether or
+                // not it is being received right now.
+                cameraOn: isCameraSourceOn(participant),
                 track: findCameraTrack(state, participantId, false)
             });
 
@@ -3425,7 +4095,20 @@ document.addEventListener(
             "#" + SL_TV_ID + " .sl-tv-tile.sl-pinned .sl-tv-pin { display: block; }",
             "#" + SL_TV_ID + " .sl-tv-stage-chip { position: absolute; top: 6px; left: 6px; display: none; align-items: center; gap: 5px; padding: 1px 7px 1px 6px; border-radius: 999px; border: 1px solid rgba(96, 165, 250, 0.45); background: rgba(23, 37, 84, 0.82); color: #BFDBFE; font: 600 10px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 0.02em; }",
             "#" + SL_TV_ID + " .sl-tv-stage-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; box-shadow: 0 0 6px rgba(96, 165, 250, 0.8); }",
-            "#" + SL_TV_ID + " .sl-tv-tile.sl-on-stage .sl-tv-stage-chip { display: inline-flex; }"
+            "#" + SL_TV_ID + " .sl-tv-tile.sl-on-stage .sl-tv-stage-chip { display: inline-flex; }",
+
+            // ---- Phase D: camera states of rotating student tiles. ----
+            // Off-screen tiles are not rendered (their elements and streams
+            // stay as they are); the tile box keeps its own size.
+            "#" + SL_TV_ID + " .sl-tv-tile { content-visibility: auto; }",
+            // "Camera on" (waiting to be received) / "Camera off".
+            "#" + SL_TV_ID + " .sl-tv-ph-status { font-size: 10px; font-weight: 500; line-height: 1.3; color: #64748B; }",
+            "#" + SL_TV_ID + " .sl-tv-ph-status:empty { display: none; }",
+            "#" + SL_TV_ID + " .sl-tv-placeholder[data-status=on] .sl-tv-ph-status { color: #5EEAD4; }",
+            // Frozen: the last frame, with a small quiet pause marker.
+            "#" + SL_TV_ID + " .sl-tv-frozen-chip { position: absolute; right: 6px; bottom: 6px; display: none; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 6px; background: rgba(15, 23, 42, 0.7); color: #94A3B8; }",
+            "#" + SL_TV_ID + " .sl-tv-frozen-chip svg { width: 10px; height: 10px; }",
+            "#" + SL_TV_ID + " .sl-tv-tile.sl-frozen .sl-tv-frozen-chip { display: flex; }"
         ].join("\n");
 
         document.head.appendChild(style);
@@ -3536,15 +4219,21 @@ document.addEventListener(
         const roleEl = document.createElement("div");
         roleEl.className = "sl-tv-ph-role";
 
+        // Phase D: "Camera on" (waiting to be received) / "Camera off".
+        const statusEl = document.createElement("div");
+        statusEl.className = "sl-tv-ph-status";
+
         el.appendChild(iconEl);
         el.appendChild(nameEl);
         el.appendChild(roleEl);
+        el.appendChild(statusEl);
 
-        return { el, iconEl, nameEl, roleEl };
+        return { el, iconEl, nameEl, roleEl, statusEl };
     }
 
-    // variant: "teacher" | "student" | "screen"
-    function setPlaceholder(placeholder, name, variant) {
+    // variant: "teacher" | "student" | "screen"; status: Phase D camera
+    // state text for a student tile ("" = none).
+    function setPlaceholder(placeholder, name, variant, status) {
         if (placeholder.el.dataset.variant !== variant) {
             placeholder.el.dataset.variant = variant;
             placeholder.iconEl.innerHTML = SL_ICONS[variant] || SL_ICONS.student;
@@ -3552,6 +4241,8 @@ document.addEventListener(
 
         placeholder.nameEl.textContent = name;
         placeholder.roleEl.textContent = variant === "teacher" ? "(Teacher)" : "";
+        placeholder.statusEl.textContent = status || "";
+        placeholder.el.dataset.status = status === "Camera on" ? "on" : status ? "off" : "";
     }
 
     function createVideo() {
@@ -3774,6 +4465,14 @@ document.addEventListener(
         el.appendChild(pinEl);
         el.appendChild(stageChipEl);
 
+        // Phase D: a frozen tile (last frame kept while the camera is not
+        // received right now) gets a small, quiet marker.
+        const frozenEl = document.createElement("div");
+        frozenEl.className = "sl-tv-frozen-chip";
+        frozenEl.title = "Live view resumes shortly";
+        frozenEl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>';
+        el.appendChild(frozenEl);
+
         el.addEventListener("click", () => pinTile(tileId));
         el.addEventListener("keydown", event => {
             if (event.key === "Enter" || event.key === " ") {
@@ -3782,7 +4481,9 @@ document.addEventListener(
             }
         });
 
-        const tile = { el, video, nameEl, placeholder, jitsiTrack: null };
+        // frozen: paused on its last frame (never played, never detached while
+        // the camera stays ON).
+        const tile = { el, video, nameEl, placeholder, jitsiTrack: null, frozen: false, mode: "" };
 
         tiles.set(tileId, tile);
 
@@ -3798,8 +4499,132 @@ document.addEventListener(
 
         detachFrom(tile.jitsiTrack, tile.video);
         tile.jitsiTrack = null;
+        tile.frozen = false;
         tile.el.remove();
         tiles.delete(tileId);
+    }
+
+    // ---- Phase D: rotating student camera tiles -----------------------------
+
+    // A remote student's camera tile is governed by the rotation (the
+    // teacher's own, co-teachers' and screen-share tiles are not).
+    function isRotatingCameraTile(item) {
+        return item.kind === "camera" && !item.local && item.role === "student"
+            && slTeacherRotation.isActive();
+    }
+
+    // Priority cameras: the teacher's selected student, and the student on
+    // Jitsi's stage (the same one, unless a share has the stage).
+    function getPriorityStudents(state) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+        const isStudent = id => {
+            const participant = id ? remote?.get?.(id) : null;
+
+            return Boolean(participant && !participant.fakeParticipant && participant.role !== "moderator");
+        };
+        const ids = [];
+
+        if (manualSelection && manualSelection !== "self" && isStudent(manualSelection)) {
+            ids.push(manualSelection);
+        }
+
+        const staged = state?.["features/large-video"]?.participantId;
+
+        if (isStudent(staged) && !ids.includes(staged)) {
+            ids.push(staged);
+        }
+
+        return ids;
+    }
+
+    function hasFrame(video) {
+        return Boolean(video && video.videoWidth > 0 && video.readyState >= 2);
+    }
+
+    // Keeps the tile's last frame: paused in place, nothing detached. A paused
+    // element shows the frame it has, whatever its stream carries next (with
+    // SSRC rewriting a pooled stream can be re-mapped to another student).
+    function freezeTile(tile) {
+        if (!tile.frozen) {
+            tile.video.pause();
+            tile.frozen = true;
+        }
+    }
+
+    // The scheduler is about to stop receiving these cameras: freeze their
+    // tiles FIRST (before the receiver constraints change). A tile that has
+    // no frame yet simply lets go of its stream (it shows "Camera on").
+    function freezeTiles(participantIds) {
+        participantIds.forEach(participantId => {
+            const tile = tiles.get(participantId);
+
+            if (!tile || !tile.jitsiTrack) {
+                return;
+            }
+
+            if (hasFrame(tile.video)) {
+                freezeTile(tile);
+            } else {
+                detachFrom(tile.jitsiTrack, tile.video);
+                tile.jitsiTrack = null;
+            }
+        });
+
+        // The tiles' state changed outside a store update: redraw soon.
+        lastSignature = "";
+        Promise.resolve().then(render);
+    }
+
+    // A remote student's camera tile while Phase D runs. Returns its mode:
+    // "live" (receiving), "frozen" (last frame), "waiting" (camera on, no
+    // frame yet) or "off" (camera off).
+    function updateRotatingTile(tile, item) {
+        if (!item.cameraOn) {
+            detachFrom(tile.jitsiTrack, tile.video);
+            tile.jitsiTrack = null;
+            tile.frozen = false;
+
+            return "off";
+        }
+
+        // The track this participant owns NOW (looked up again every time;
+        // a pooled stream may have been re-mapped since).
+        const track = item.track && !item.muted ? item.track.jitsiTrack : null;
+
+        if (track && slTeacherRotation.isPlannedLive(item.id)) {
+            if (tile.jitsiTrack !== track) {
+                detachFrom(tile.jitsiTrack, tile.video);
+                tile.jitsiTrack = null;
+
+                if (attachTo(track, tile.video)) {
+                    tile.jitsiTrack = track;
+                }
+            }
+
+            tile.frozen = false;
+
+            return tile.jitsiTrack ? "live" : "waiting";
+        }
+
+        // Camera ON but not received now (or not owned any more): never let
+        // this tile play what its old stream carries next.
+        if (tile.frozen) {
+            return "frozen";
+        }
+
+        if (tile.jitsiTrack && hasFrame(tile.video)) {
+            freezeTile(tile);
+
+            return "frozen";
+        }
+
+        if (tile.jitsiTrack) {
+            detachFrom(tile.jitsiTrack, tile.video);
+            tile.jitsiTrack = null;
+        }
+
+        return "waiting";
     }
 
     function onStageStatusChanged() {
@@ -3845,6 +4670,10 @@ document.addEventListener(
         lastSignature = "";
 
         document.body?.classList.toggle(SL_TV_ACTIVE_CLASS, false);
+
+        // Phase D stops with the view (Exam Mode, disabled): the receive
+        // policy goes back to Exam's / Jitsi's own at once.
+        slTeacherRotation.setActive(false);
 
         if (!root) {
             return;
@@ -3927,6 +4756,13 @@ document.addEventListener(
         applyStagePolicy(getState());
 
         const state = getState();
+
+        // Phase D: the rotation runs while this view shows (teacher, Normal).
+        // The selected student (and the staged one) are priority cameras.
+        slTeacherRotation.setActive(true);
+        slTeacherRotation.setPriority(getPriorityStudents(state));
+        slTeacherRotation.update(state);
+
         const items = collectTiles(state);
         const stage = resolveStage(state);
         const status = stage.track ? getStreamingStatus(stage.track) : null;
@@ -3958,7 +4794,9 @@ document.addEventListener(
             items.map(item => [
                 item.id, item.name, item.kind, item.role, item.local,
                 trackKey(item.track && item.track.jitsiTrack),
-                item.muted, item.pinned, item.onStage
+                item.muted, item.pinned, item.onStage,
+                // Phase D: camera ON / planned live change a tile's state.
+                Boolean(item.cameraOn), isRotatingCameraTile(item) && slTeacherRotation.isPlannedLive(item.id)
             ]),
             [stage.id, trackKey(stage.track), stage.empty, statusMessage, stage.local,
                 stage.placeholder ? [stage.placeholder.name, stage.placeholder.role] : null]
@@ -3980,39 +4818,59 @@ document.addEventListener(
             .filter(tileId => !wanted.has(tileId))
             .forEach(removeTile);
 
+        // Walks the tiles in list order; a tile is moved only when it is out
+        // of place (no re-append of every tile on every render).
+        let nextInPlace = tilesEl.firstChild;
+
         items.forEach(item => {
             const tile = tiles.get(item.id) || createTile(item.id);
-            const jitsiTrack = item.track && !item.muted ? item.track.jitsiTrack : null;
+            let mode;
 
-            if (tile.jitsiTrack !== jitsiTrack) {
-                detachFrom(tile.jitsiTrack, tile.video);
-                tile.jitsiTrack = null;
+            if (isRotatingCameraTile(item)) {
+                mode = updateRotatingTile(tile, item);
+            } else {
+                const jitsiTrack = item.track && !item.muted ? item.track.jitsiTrack : null;
 
-                if (jitsiTrack && attachTo(jitsiTrack, tile.video)) {
-                    tile.jitsiTrack = jitsiTrack;
+                if (tile.jitsiTrack !== jitsiTrack) {
+                    detachFrom(tile.jitsiTrack, tile.video);
+                    tile.jitsiTrack = null;
+
+                    if (jitsiTrack && attachTo(jitsiTrack, tile.video)) {
+                        tile.jitsiTrack = jitsiTrack;
+                    }
                 }
+
+                tile.frozen = false;
+                mode = tile.jitsiTrack ? "live" : "off";
             }
 
+            tile.mode = mode;
             tile.nameEl.textContent = item.name;
             tile.el.title = item.name;
             tile.el.setAttribute("aria-pressed", item.pinned ? "true" : "false");
             setPlaceholder(
                 tile.placeholder,
                 item.name,
-                item.kind === "desktop" ? "screen" : item.role
+                item.kind === "desktop" ? "screen" : item.role,
+                isRotatingCameraTile(item) ? (mode === "waiting" ? "Camera on" : mode === "off" ? "Camera off" : "") : ""
             );
-            tile.el.classList.toggle("sl-no-video", !tile.jitsiTrack);
+            tile.el.classList.toggle("sl-no-video", mode === "off" || mode === "waiting");
+            tile.el.classList.toggle("sl-frozen", mode === "frozen");
             tile.el.classList.toggle("sl-mirror", item.local && item.kind === "camera");
             tile.el.classList.toggle("sl-desktop", item.kind === "desktop");
             tile.el.classList.toggle("sl-pinned", item.pinned);
             tile.el.classList.toggle("sl-on-stage", item.onStage);
 
-            if (tile.jitsiTrack) {
+            // Only a live tile plays (a frozen one must keep its frame).
+            if (mode === "live" && tile.jitsiTrack) {
                 playVideo(tile.video);
             }
 
-            // Appending moves the tile into list order.
-            tilesEl.appendChild(tile.el);
+            if (tile.el === nextInPlace) {
+                nextInPlace = nextInPlace.nextSibling;
+            } else {
+                tilesEl.insertBefore(tile.el, nextInPlace);
+            }
         });
 
         // Stage.
@@ -4118,6 +4976,17 @@ document.addEventListener(
             render();
         },
         position: position => setPreferredPosition(position),
+        // Phase D: scheduler state, a forced sub-tick, and each tile's mode.
+        rotation: () => slTeacherRotation.stats(),
+        rotationTick: () => slTeacherRotation.subtick(),
+        rotationAutoTick: on => slTeacherRotation.setAutoTick(on),
+        tileModes: () => {
+            const modes = {};
+
+            tiles.forEach((tile, id) => { modes[id] = tile.mode || ""; });
+
+            return modes;
+        },
         autoHide: enabled => {
             setAutoHide(enabled);
             updateLayoutMenu();
@@ -4147,6 +5016,9 @@ document.addEventListener(
     document.addEventListener("keydown", () => { keyboardInUse = true; }, { capture: true, passive: true });
     ["pointermove", "pointerdown"].forEach(type =>
         document.addEventListener(type, () => { keyboardInUse = false; }, { capture: true, passive: true }));
+
+    // Phase D: tiles are frozen before their camera is dropped.
+    slTeacherRotation.onWillDrop(freezeTiles);
 
     // Page teardown: detach every element of ours.
     window.addEventListener("pagehide", hide);

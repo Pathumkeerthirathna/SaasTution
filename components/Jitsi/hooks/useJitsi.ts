@@ -1051,6 +1051,12 @@ export default function useJitsi({
 
             DISABLE_TILE_VIEW: true,
 
+            // Jitsi's blurred large-video background redraws the large video
+            // onto a full-screen canvas every 200 ms under a CSS blur (Chrome /
+            // Edge). It is never seen under SL Classroom's own stage, so it is
+            // pure CPU/GPU cost. Rendering only: media is unchanged.
+            DISABLE_VIDEO_BACKGROUND: true,
+
             SHOW_JITSI_WATERMARK: false,
             SHOW_WATERMARK_FOR_GUESTS: false,
             SHOW_BRAND_WATERMARK: false,
