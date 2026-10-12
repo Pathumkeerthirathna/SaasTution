@@ -22,6 +22,7 @@ export async function POST(
 
     const body = (await request.json()) as {
       studentId?: string;
+      attendanceId?: string;
     };
 
     const parsed = studentSessionActionSchema.safeParse(body);
@@ -33,7 +34,8 @@ export async function POST(
 
     const student = await requireStudentSession();
 
-    const result = await markStudentLeftSession(sessionId, student);
+    // attendanceId (the visit this page started) closes exactly that visit.
+    const result = await markStudentLeftSession(sessionId, student, parsed.data.attendanceId);
 
     if (result.attendance) {
       emitSessionAttendanceEvent({

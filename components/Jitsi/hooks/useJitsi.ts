@@ -28,6 +28,9 @@ import {
   type BreakoutControls,
 } from "../breakout-utils";
 
+import type { TeacherTilesState } from "./useTeacherTiles";
+import { toYouTubeStreamStatus } from "../youtube-jibri";
+
 // A breakout-room switch fires `videoConferenceLeft` and then `videoConferenceJoined`
 // (typically 1-3 s apart). A "left" is only treated as really leaving the class if no
 // "joined" follows within this window, so a room switch never becomes a fake
@@ -96,7 +99,73 @@ export type JitsiControls = BreakoutControls & {
    * effect unless the app is built with NEXT_PUBLIC_SL_TEACHER_FILMSTRIP=true.
    */
   setTeacherView: (enabled: boolean) => void;
+
+  /**
+   * Teacher only: the Normal mode view's layout (List / Tiles) and, for Tiles,
+   * the current page of students (roster order) for the teacher's Jitsi
+   * iframe (custom.js). The Tiles view's camera rotation covers that page
+   * only. Display and receive policy only: nothing is changed for students.
+   */
+  setTeacherTiles: (state: TeacherTilesState) => void;
 };
+
+/** Teacher page -> its own Jitsi iframe (handled by custom.js): Tiles view. */
+type TeacherTilesMessage = TeacherTilesState & {
+  type: "SL_TEACHER_TILES";
+  v: 1;
+  /** Own counter; increases on every change. */
+  epoch: number;
+};
+
+/** Teacher's Jitsi iframe (custom.js) -> page: Previous / Next in the Tiles view. */
+type TeacherTilesNavMessage = {
+  type: "SL_TEACHER_TILES_NAV";
+  v: 1;
+  action: TeacherTilesNavAction;
+};
+
+export type TeacherTilesNavAction = "previous" | "next";
+
+/**
+ * Teacher's Jitsi iframe (custom.js) -> page: View / Tiles page size chosen in
+ * the filmstrip settings menu. The page owns both (useTeacherTiles) and answers
+ * with a new SL_TEACHER_TILES; the values are validated again there.
+ */
+type TeacherTilesSettingsMessage = {
+  type: "SL_TEACHER_TILES_SETTINGS";
+  v: 1;
+  layout?: "list" | "tiles";
+  pageSize?: number;
+};
+
+export type TeacherTilesSettingsChange = {
+  layout?: "list" | "tiles";
+  pageSize?: number;
+};
+
+function isTeacherTilesSettingsMessage(data: unknown): data is TeacherTilesSettingsMessage {
+  const message = data as Partial<TeacherTilesSettingsMessage> | null;
+
+  return (
+    !!message &&
+    message.type === "SL_TEACHER_TILES_SETTINGS" &&
+    message.v === 1 &&
+    (message.layout === undefined || message.layout === "list" || message.layout === "tiles") &&
+    (message.pageSize === undefined || (typeof message.pageSize === "number" && Number.isInteger(message.pageSize))) &&
+    (message.layout !== undefined || message.pageSize !== undefined)
+  );
+}
+
+function isTeacherTilesNavMessage(data: unknown): data is TeacherTilesNavMessage {
+  const message = data as Partial<TeacherTilesNavMessage> | null;
+
+  return (
+    !!message &&
+    message.type === "SL_TEACHER_TILES_NAV" &&
+    message.v === 1 &&
+    (message.action === "previous" || message.action === "next")
+  );
+}
 
 /**
  * Where the teacher's normal mode filmstrip sits (custom.js, Phase B). The
@@ -266,6 +335,7 @@ const SL_TOOLBAR_AUTOHIDE_ENABLED =
  */
 const SL_JITSI_ORIGIN = "https://meet.slclassroom.live";
 
+/** Which feature asked for the stream (logging only; status is per stream). */
 type YouTubeStreamPurpose =
   | "recording"
   | "live";
@@ -292,12 +362,18 @@ type UseJitsiProps = {
     }
   ) => void;
 
+  /** Jitsi "file" recordings only (not used by YouTube Recording / Live). */
   onRecordingStatusChanged?: (
     isRecording: boolean
   ) => void;
 
-  onLiveStatusChanged?: (
-    isLive: boolean
+  /**
+   * The class's YouTube Jibri stream (mode "stream", main room only) started
+   * or stopped / failed. YouTube Recording and Live both ride on this one
+   * stream; the page applies it to whichever features use it.
+   */
+  onYouTubeStreamStatusChanged?: (
+    status: { on: boolean; error?: string }
   ) => void;
 
   /** Fired for every chat message (remote arrivals + this device's own sends). */
@@ -326,6 +402,12 @@ type UseJitsiProps = {
   /** Tells whether the installed Jitsi build supports the breakout-room commands. */
   onBreakoutSupportChanged?: (supported: boolean) => void;
 
+  /** Teacher only: Previous / Next pressed in the Tiles view inside the iframe. */
+  onTeacherTilesNav?: (action: TeacherTilesNavAction) => void;
+
+  /** Teacher only: View / Tiles page size chosen in the iframe's settings menu. */
+  onTeacherTilesSettings?: (change: TeacherTilesSettingsChange) => void;
+
 };
 
 export default function useJitsi({
@@ -340,7 +422,7 @@ export default function useJitsi({
   onParticipantsChanged,
   onParticipantStatusChanged,
   onRecordingStatusChanged,
-  onLiveStatusChanged,
+  onYouTubeStreamStatusChanged,
   onChatMessage,
   onConferenceJoined,
   onLocalUserLeft,
@@ -348,13 +430,16 @@ export default function useJitsi({
   onBreakoutRoomsUpdated,
   onRoomChanged,
   onBreakoutSupportChanged,
+  onTeacherTilesNav,
+  onTeacherTilesSettings,
 
 }: UseJitsiProps) {
 
   const apiRef = useRef<any>(null);
 
-  const youtubeStreamPurposeRef =
-  useRef<YouTubeStreamPurpose | null>(null);
+  // Latest callback for the (long-lived) Jitsi listener.
+  const onYouTubeStreamStatusChangedRef = useRef(onYouTubeStreamStatusChanged);
+  onYouTubeStreamStatusChangedRef.current = onYouTubeStreamStatusChanged;
 
   // Set from `videoConferenceJoined` so `participantRoleChanged` events can
   // be matched against the local participant.
@@ -373,6 +458,12 @@ export default function useJitsi({
 
   const onModeratorStatusChangedRef = useRef(onModeratorStatusChanged);
   onModeratorStatusChangedRef.current = onModeratorStatusChanged;
+
+  const onTeacherTilesNavRef = useRef(onTeacherTilesNav);
+  onTeacherTilesNavRef.current = onTeacherTilesNav;
+
+  const onTeacherTilesSettingsRef = useRef(onTeacherTilesSettings);
+  onTeacherTilesSettingsRef.current = onTeacherTilesSettings;
 
   const onBreakoutRoomsUpdatedRef = useRef(onBreakoutRoomsUpdated);
   onBreakoutRoomsUpdatedRef.current = onBreakoutRoomsUpdated;
@@ -565,6 +656,28 @@ export default function useJitsi({
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
+  // Teacher Tiles view: kept and resent on SL_RECEIVE_READY, like the teacher
+  // view. Only sent once the page has set it (after the join).
+  const teacherTilesEpochRef = useRef(0);
+  const teacherTilesRef = useRef<TeacherTilesMessage | null>(null);
+
+  const postTeacherTiles = () => {
+    const message = teacherTilesRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
   useImperativeHandle(
     controlsRef,
     () => ({
@@ -632,10 +745,9 @@ export default function useJitsi({
           return;
         }
 
-        youtubeStreamPurposeRef.current = purpose;
-
         console.log(
-          "🔴 Starting YouTube Live..."
+          "🔴 Starting the YouTube stream for:",
+          purpose
         );
 
         apiRef.current.executeCommand(
@@ -806,6 +918,29 @@ export default function useJitsi({
 
         postTeacherView();
       },
+
+      setTeacherTiles: (state) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        teacherTilesEpochRef.current += 1;
+        teacherTilesRef.current = {
+          type: "SL_TEACHER_TILES",
+          v: 1,
+          epoch: teacherTilesEpochRef.current,
+          layout: state.layout,
+          participantIds: Array.from(new Set(state.participantIds)),
+          page: state.page,
+          pageCount: state.pageCount,
+          rangeStart: state.rangeStart,
+          rangeEnd: state.rangeEnd,
+          total: state.total,
+          pageSize: state.pageSize,
+        };
+
+        postTeacherTiles();
+      },
     }),
     []
   );
@@ -836,7 +971,8 @@ export default function useJitsi({
 
       // custom.js is (re)ready inside the iframe: send the current state again,
       // since anything sent earlier may have been missed. Teacher: receive set,
-      // then the monitoring-grid view, then the normal mode teacher view.
+      // then the monitoring-grid view, then the normal mode teacher view and
+      // its Tiles view page.
       // Student: the student view, then the custom stage view. Each post
       // checks the role itself, so only the matching ones are sent. Both: the
       // toolbar view.
@@ -846,7 +982,30 @@ export default function useJitsi({
         postStudentView();
         postStageView();
         postTeacherView();
+        postTeacherTiles();
         postToolbarView();
+        return;
+      }
+
+      // Teacher Tiles view: Previous / Next pressed inside the iframe. The
+      // page owns the paging; it answers with a new SL_TEACHER_TILES.
+      if (isTeacherTilesNavMessage(event.data)) {
+        if (roleRef.current === "teacher") {
+          onTeacherTilesNavRef.current?.(event.data.action);
+        }
+
+        return;
+      }
+
+      // Teacher Tiles view: View / page size from the iframe's settings menu.
+      if (isTeacherTilesSettingsMessage(event.data)) {
+        if (roleRef.current === "teacher") {
+          onTeacherTilesSettingsRef.current?.({
+            layout: event.data.layout,
+            pageSize: event.data.pageSize,
+          });
+        }
+
         return;
       }
 
@@ -1328,6 +1487,9 @@ export default function useJitsi({
         return;
       }
 
+      // A new visit only when the previous one was confirmed left: a "joined"
+      // that cancelled a pending leave above (a brief reconnect) continues
+      // the open visit, and useAttendance sends nothing for it.
       void markJoined();
 
       onConferenceJoinedRef.current?.();
@@ -1523,53 +1685,17 @@ export default function useJitsi({
       const isOn = data.on ?? false;
 
       /*
-     * Our YouTube Recording and YouTube Live
-     * both use Jitsi mode: "stream".
-     *
-     * The purpose ref tells us which one
-     * started this stream.
+     * YouTube Recording and YouTube Live both use Jitsi mode "stream": ONE
+     * Jibri stream for the conference. Its status is reported as such; the
+     * page applies it to every feature riding on it (never "whichever
+     * feature started it last").
      */
-      if (data.mode === "stream") {
+      const streamStatus = toYouTubeStreamStatus(event, {
+        inBreakout: inBreakoutRef.current,
+      });
 
-          const purpose =
-              youtubeStreamPurposeRef.current;
-
-          console.log(
-              "🎥 YOUTUBE STREAM PURPOSE:",
-              purpose
-          );
-
-          if (purpose === "recording") {
-
-              console.log(
-                  "⏺ YouTube Recording status:",
-                  isOn
-              );
-
-              onRecordingStatusChanged?.(
-                  isOn
-              );
-
-              return;
-          }
-
-          if (purpose === "live") {
-
-              console.log(
-                  "🔴 YouTube Live status:",
-                  isOn
-              );
-
-              onLiveStatusChanged?.(
-                  isOn
-              );
-
-              return;
-          }
-
-          console.warn(
-              "⚠️ YouTube stream status received without a purpose."
-          );
+      if (streamStatus) {
+          onYouTubeStreamStatusChangedRef.current?.(streamStatus);
 
           return;
       }
@@ -1655,12 +1781,20 @@ export default function useJitsi({
      * ============================================================
      */
 
+    // A refresh / tab close ends the visit (sent with keepalive by
+    // useAttendance; one request per visit however many of these fire).
+    // pagehide also covers mobile Safari, which often skips beforeunload.
     const handleBeforeUnload = () => {
       void markLeft();
     };
 
     window.addEventListener(
       "beforeunload",
+      handleBeforeUnload
+    );
+
+    window.addEventListener(
+      "pagehide",
       handleBeforeUnload
     );
 
@@ -1675,6 +1809,11 @@ export default function useJitsi({
 
       window.removeEventListener(
         "beforeunload",
+        handleBeforeUnload
+      );
+
+      window.removeEventListener(
+        "pagehide",
         handleBeforeUnload
       );
 

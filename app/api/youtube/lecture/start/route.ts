@@ -3,6 +3,7 @@ import { requireTeacherSession } from "@/lib/auth-session";
 import { startYouTubeLecture } from "@/lib/youtube-lecture";
 import { YouTubeReauthorizationRequiredError } from "@/lib/youtube-auth";
 import { prisma } from "@/lib/prisma";
+import { AppError } from "@/lib/error-handler";
 
 export async function POST(request: NextRequest) {
     try {
@@ -33,11 +34,30 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // The classroom's class session: only its current session may start
+        // anything (a page left open on an ended / replaced session gets 409).
+        const sessionId =
+            typeof body.sessionId === "string"
+                ? body.sessionId.trim()
+                : "";
+
+        if (!sessionId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "sessionId is required.",
+                    code: "VALIDATION_ERROR",
+                },
+                { status: 400 }
+            );
+        }
+
         const result =
             await startYouTubeLecture(
                 teacherSession.teacherId,
                 lectureId,
-                privacy
+                privacy,
+                sessionId
             );
 
         return NextResponse.json({
@@ -79,6 +99,18 @@ export async function POST(request: NextRequest) {
                     code: "YOUTUBE_REAUTH_REQUIRED",
                 },
                 { status: 401 }
+            );
+        }
+
+        // e.g. YOUTUBE_SHARED_BROADCAST_PRIVACY (409).
+        if (error instanceof AppError) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: error.message,
+                    code: error.code,
+                },
+                { status: error.statusCode }
             );
         }
 

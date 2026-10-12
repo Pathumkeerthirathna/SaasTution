@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { encryptYouTubeToken } from "@/lib/youtube-crypto";
 import { prisma } from "@/lib/prisma";
+import { youtubeFetch } from "@/lib/youtube-request";
+import { saveYouTubeConnection } from "@/lib/youtube-connection";
 
 export async function GET(request: NextRequest) {
     const teacherSession = await requireTeacherSession();
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange authorization code for Google tokens
-    const tokenResponse = await fetch(
+    const tokenResponse = await youtubeFetch(
         "https://oauth2.googleapis.com/token",
         {
             method: "POST",
@@ -121,7 +123,15 @@ export async function GET(request: NextRequest) {
                 grant_type: "authorization_code",
             }),
         }
-    );
+    ).catch((error: unknown) => {
+        // Network failure or timeout (youtubeFetch): no tokens.
+        console.error("YouTube OAuth token exchange did not complete:", error);
+        return null;
+    });
+
+    if (!tokenResponse) {
+        return redirectWithError("TOKEN_EXCHANGE_FAILED");
+    }
 
     if (!tokenResponse.ok) {
         const errorDetails = await tokenResponse.text();
@@ -153,14 +163,21 @@ export async function GET(request: NextRequest) {
      * Get the YouTube channel belonging to the
      * Google account that just authorized SLClassroom.
      */
-    const channelResponse = await fetch(
+    const channelResponse = await youtubeFetch(
         "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
         {
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },
         }
-    );
+    ).catch((error: unknown) => {
+        console.error("YouTube channel lookup did not complete:", error);
+        return null;
+    });
+
+    if (!channelResponse) {
+        return redirectWithError("CHANNEL_LOOKUP_FAILED");
+    }
 
     if (!channelResponse.ok) {
         const errorDetails =
@@ -213,26 +230,13 @@ export async function GET(request: NextRequest) {
     }
 
     /*
-     * Save the teacher's YouTube connection.
+     * Save the teacher's YouTube connection (a different channel than before
+     * also clears the saved reusable stream: it belongs to the old channel).
      */
-    await prisma.youTubeConnection.upsert({
-        where: {
-            teacherId: teacherSession.teacherId,
-        },
-        create: {
-            teacherId: teacherSession.teacherId,
-            channelId,
-            channelTitle,
-            refreshTokenEncrypted,
-            status: "CONNECTED",
-        },
-        update: {
-            channelId,
-            channelTitle,
-            refreshTokenEncrypted,
-            // A fresh refresh token clears any prior reauth requirement.
-            status: "CONNECTED",
-        },
+    await saveYouTubeConnection(teacherSession.teacherId, {
+        channelId,
+        channelTitle,
+        refreshTokenEncrypted,
     });
 
     /*

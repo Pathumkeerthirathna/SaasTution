@@ -1,9 +1,23 @@
 import { NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
-import { createYouTubeLiveStream } from "@/lib/youtube-live";
+import { AppError } from "@/lib/error-handler";
+import { debugRouteDisabledResponse } from "@/lib/debug-routes";
+import { ensureTeacherReusableStream } from "@/lib/youtube-lecture";
 
+/*
+ * Developer-only (404 in production): ensures the teacher's reusable YouTube
+ * stream exists. Created under the teacher's stream lock like every stream
+ * creation, so it never races a start into a second stream. The stream key
+ * (RTMP stream name / ingestion address) is never returned.
+ */
 export async function POST() {
+    const disabled = debugRouteDisabledResponse();
+
+    if (disabled) {
+        return disabled;
+    }
+
     try {
         const teacherSession = await requireTeacherSession();
 
@@ -24,54 +38,15 @@ export async function POST() {
             );
         }
 
-        // Don't create another stream if this teacher
-        // already has one stored.
-        if (connection.liveStreamId) {
-            return NextResponse.json({
-                success: true,
-                message:
-                    "Teacher already has a reusable YouTube live stream.",
-                liveStreamId: connection.liveStreamId,
-            });
-        }
-
-        const liveStream =
-            await createYouTubeLiveStream(
-                connection.refreshTokenEncrypted
-            );
-
-        if (!liveStream.id) {
-            return NextResponse.json(
-                {
-                    error:
-                        "YouTube did not return a live stream ID.",
-                },
-                { status: 500 }
-            );
-        }
-
-        await prisma.youTubeConnection.update({
-            where: {
-                teacherId: teacherSession.teacherId,
-            },
-            data: {
-                liveStreamId: liveStream.id,
-            },
-        });
+        const liveStreamId = await ensureTeacherReusableStream(
+            teacherSession.teacherId,
+            connection.refreshTokenEncrypted
+        );
 
         return NextResponse.json({
             success: true,
-            message:
-                "Reusable YouTube live stream created.",
-            liveStreamId: liveStream.id,
-            ingestionAddress:
-                liveStream.cdn?.ingestionInfo
-                    ?.ingestionAddress,
-            streamName:
-                liveStream.cdn?.ingestionInfo
-                    ?.streamName,
-            streamStatus:
-                liveStream.status?.streamStatus,
+            message: "The teacher has a reusable YouTube live stream.",
+            liveStreamId,
         });
     } catch (error) {
         console.error(
@@ -82,9 +57,11 @@ export async function POST() {
         return NextResponse.json(
             {
                 error:
-                    "Failed to create YouTube live stream.",
+                    error instanceof AppError
+                        ? error.message
+                        : "Failed to create YouTube live stream.",
             },
-            { status: 500 }
+            { status: error instanceof AppError ? error.statusCode : 500 }
         );
     }
 }

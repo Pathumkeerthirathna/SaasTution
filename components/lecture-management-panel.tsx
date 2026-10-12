@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { showYoutubeCleanupWarning } from "@/components/youtube-cleanup-warning";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
@@ -1121,13 +1122,17 @@ export function LectureManagementPanel() {
       const response = await fetch(`/api/lectures/${lectureId}/sessions`, {
         method: "POST",
       });
-      const payload = (await response.json()) as { success: boolean };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { youtubeCleanup?: { status?: string; reason?: string } };
+      };
 
       if (!response.ok || !payload.success) {
         throw new Error(readApiError(payload, "Failed to create session."));
       }
 
       toast.success("New session created for this lecture.");
+      showYoutubeCleanupWarning(payload.data?.youtubeCleanup, "start");
       await loadSessionsForLecture(lectureId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create session.");
@@ -1156,13 +1161,17 @@ export function LectureManagementPanel() {
       const response = await fetch(`/api/sessions/${sessionId}/end`, {
         method: "POST",
       });
-      const payload = (await response.json()) as { success: boolean };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { youtubeCleanup?: { status?: string; reason?: string } };
+      };
 
       if (!response.ok || !payload.success) {
         throw new Error(readApiError(payload, "Failed to end session."));
       }
 
       toast.success("Live session ended.");
+      showYoutubeCleanupWarning(payload.data?.youtubeCleanup, "end");
       await loadSessionsForLecture(lectureId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to end session.");

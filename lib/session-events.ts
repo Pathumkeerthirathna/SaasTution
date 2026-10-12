@@ -75,6 +75,12 @@ export type LiveChangePayload = {
   classId: string;
   kind: "jitsi" | "youtube";
   event: "started" | "ended";
+  /**
+   * Jitsi events: the class session that started / ended. Per-session
+   * listeners (a classroom's live-updates stream) act only on their own
+   * session; class-wide listeners (dashboards) just refresh.
+   */
+  sessionId?: string;
   occurredAt: string;
 };
 

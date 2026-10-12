@@ -26,6 +26,10 @@ interface LectureAttendance {
   attended: boolean;
   joinedAt?: string | null;
   leftAt?: string | null;
+  /** Visits in this lecture (a student can leave and come back). */
+  visitCount?: number;
+  /** Time present, summed over the visits (server side). */
+  durationMs?: number;
 }
 
 interface ApiResponse<T> {
@@ -56,9 +60,15 @@ function fmtTime(value?: string | null) {
   });
 }
 
-function fmtDuration(joinedAt?: string | null, leftAt?: string | null) {
-  if (!joinedAt || !leftAt) return null;
-  const ms = new Date(leftAt).getTime() - new Date(joinedAt).getTime();
+function fmtDuration(joinedAt?: string | null, leftAt?: string | null, durationMs?: number) {
+  // The visits' summed time when the server sends it (gaps between visits are
+  // not counted); otherwise first join to last leave.
+  const ms =
+    typeof durationMs === "number"
+      ? durationMs
+      : joinedAt && leftAt
+        ? new Date(leftAt).getTime() - new Date(joinedAt).getTime()
+        : 0;
   if (ms <= 0) return null;
   const mins = Math.round(ms / 60000);
   if (mins < 60) return `${mins}m`;
@@ -245,7 +255,8 @@ export function StudentAttendance({ studentId, data }: StudentAttendanceProps) {
                   const left = fmtTime(lecture.leftAt);
                   const duration = fmtDuration(
                     lecture.joinedAt,
-                    lecture.leftAt
+                    lecture.leftAt,
+                    lecture.durationMs
                   );
 
                   return (

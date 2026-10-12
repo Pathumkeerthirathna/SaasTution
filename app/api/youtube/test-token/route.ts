@@ -2,8 +2,19 @@ import { NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 import { getYouTubeAccessToken } from "@/lib/youtube-auth";
+import { debugRouteDisabledResponse } from "@/lib/debug-routes";
 
+/*
+ * Developer-only (404 in production): checks that the teacher's YouTube
+ * token can be refreshed. Only a yes/no is returned, never the token.
+ */
 export async function GET() {
+    const disabled = debugRouteDisabledResponse();
+
+    if (disabled) {
+        return disabled;
+    }
+
     try {
         const teacherSession = await requireTeacherSession();
 

@@ -24,7 +24,10 @@ import useJitsiScript from "./hooks/useJitsiScript";
 
 import useJitsi, {
   JitsiControls,
+  type TeacherTilesNavAction,
+  type TeacherTilesSettingsChange,
 } from "./hooks/useJitsi";
+import type { TeacherTilesState } from "./hooks/useTeacherTiles";
 
 /**
  * JitsiMeeting's own exposed ref adds `requestFullscreen` on top of the
@@ -70,12 +73,14 @@ type JitsiMeetingProps = {
   ) => void;
 
 
+  /** Jitsi "file" recordings only. */
   onRecordingStatusChanged?: (
     isRecording: boolean
   ) => void;
 
-  onLiveStatusChanged?: (
-    isLive: boolean
+  /** The class's YouTube Jibri stream started / stopped (see useJitsi). */
+  onYouTubeStreamStatusChanged?: (
+    status: { on: boolean; error?: string }
   ) => void;
 
   onChatMessage?: (message: ChatMessage) => void;
@@ -93,6 +98,12 @@ type JitsiMeetingProps = {
   onRoomChanged?: (room: CurrentRoomInfo) => void;
   onBreakoutSupportChanged?: (supported: boolean) => void;
 
+  /** Teacher only: Previous / Next pressed in the Tiles view inside the iframe. */
+  onTeacherTilesNav?: (action: TeacherTilesNavAction) => void;
+
+  /** Teacher only: View / Tiles page size chosen in the iframe's settings menu. */
+  onTeacherTilesSettings?: (change: TeacherTilesSettingsChange) => void;
+
 };
 
 const JitsiMeeting = forwardRef<
@@ -108,7 +119,7 @@ const JitsiMeeting = forwardRef<
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
-    onLiveStatusChanged,
+    onYouTubeStreamStatusChanged,
     onChatMessage,
     onConferenceJoined,
     onLocalUserLeft,
@@ -116,6 +127,8 @@ const JitsiMeeting = forwardRef<
     onBreakoutRoomsUpdated,
     onRoomChanged,
     onBreakoutSupportChanged,
+    onTeacherTilesNav,
+    onTeacherTilesSettings,
   },
   ref
 ) {
@@ -233,6 +246,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setTeacherView(enabled);
       },
 
+      setTeacherTiles: (state: TeacherTilesState) => {
+        controlsRef.current?.setTeacherTiles(state);
+      },
+
       requestFullscreen: () => {
         const element = fullscreenWrapperRef.current;
 
@@ -291,7 +308,7 @@ const JitsiMeeting = forwardRef<
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
-    onLiveStatusChanged,
+    onYouTubeStreamStatusChanged,
     onChatMessage,
     onConferenceJoined,
     onLocalUserLeft,
@@ -299,6 +316,8 @@ const JitsiMeeting = forwardRef<
     onBreakoutRoomsUpdated,
     onRoomChanged,
     onBreakoutSupportChanged,
+    onTeacherTilesNav,
+    onTeacherTilesSettings,
   });
 
   return (

@@ -34,6 +34,12 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 
 const LECTURE_TOOL_PANELS = ["notes", "assignments", "quiz"] as const;
 
+// The Camera Monitoring rail button is hidden for now: the List / Tiles view
+// and its page size moved to the filmstrip settings menu in the Jitsi view.
+// The panel, useCameraMonitoring and Exam Mode stay as they are; with the
+// button hidden, Normal / Exam Mode has no entry point in this sidebar.
+const SHOW_CAMERA_MONITORING_TAB = false;
+
 type RightSidebarProps = {
   /** Breakout-room state + actions (the panel is hidden when this is not provided). */
   breakout?: BreakoutController;
@@ -491,7 +497,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           onPanelChange={handlePanelChange}
           showLectureTools={showLectureTools}
           showAttendance={isTeacher}
-          showMonitoring={showMonitoring}
+          showMonitoring={showMonitoring && SHOW_CAMERA_MONITORING_TAB}
           chatUnread={chatUnread}
           variant={isStudent ? "student" : "teacher"}
           showSettings={isTeacher}

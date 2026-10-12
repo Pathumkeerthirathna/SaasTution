@@ -6,6 +6,12 @@ import { signSessionInviteToken } from "@/lib/session-invite";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
 import { StudentSession } from "@/lib/auth-session";
 import { formatTeacherClassroomName } from "@/lib/teacher-title";
+import { attendedMs } from "@/lib/attendance-duration";
+import {
+  endYouTubeFeaturesForLecture,
+  reconcileYouTubeFeaturesForNewSession,
+  type YouTubeSessionCleanupResult,
+} from "@/lib/youtube-feature-lifecycle";
 
 type NotifyChannels = {
   email: boolean;
@@ -82,11 +88,75 @@ async function assertTeacherOwnsLectureInClass(teacherId: string, classId: strin
   return lecture;
 }
 
+/**
+ * After class sessions ended: end the YouTube Recording / Live of their
+ * lecture, unless another session of that lecture is still active (its
+ * features belong to that session). Best effort, never throws; see
+ * endYouTubeFeaturesForLecture (pending cleanup is reconciled by the next
+ * Recording / Live start of the lecture).
+ */
+async function endYouTubeFeaturesAfterSessionEnd(
+  teacherId: string,
+  lectureId: string,
+  endedSessionIds: string[]
+): Promise<YouTubeSessionCleanupResult> {
+  try {
+    const stillActive = await prisma.classSession.findFirst({
+      where: {
+        lectureId,
+        isActive: true,
+        id: { notIn: endedSessionIds },
+      },
+      select: { id: true },
+    });
+
+    if (stillActive) {
+      return { status: "skipped", closed: 0, reason: "another session of this lecture is active" };
+    }
+  } catch (error) {
+    console.error("Could not check other sessions before the YouTube cleanup:", { lectureId, error });
+    return { status: "pending", closed: 0, reason: "error", pendingBroadcastIds: [] };
+  }
+
+  return endYouTubeFeaturesForLecture(teacherId, lectureId);
+}
+
+/**
+ * One outcome for several YouTube cleanups (replaced sessions, the new
+ * session's reconciliation): "pending" if any is pending (nothing is reported
+ * done that YouTube did not confirm), else "done" if any closed something.
+ */
+function combineYouTubeCleanups(results: YouTubeSessionCleanupResult[]): YouTubeSessionCleanupResult {
+  const closed = results.reduce((sum, result) => sum + result.closed, 0);
+  const pending = results.filter(
+    (result): result is Extract<YouTubeSessionCleanupResult, { status: "pending" }> => result.status === "pending"
+  );
+
+  if (pending.length > 0) {
+    return {
+      status: "pending",
+      closed,
+      reason: pending[0].reason,
+      pendingBroadcastIds: [...new Set(pending.flatMap((result) => result.pendingBroadcastIds))],
+    };
+  }
+
+  return { status: closed > 0 ? "done" : "none", closed };
+}
+
 export async function startClassSessionForTeacher(teacherId: string, classId: string, lectureId: string) {
   const [classroom, lecture] = await Promise.all([
     assertTeacherOwnsClass(teacherId, classId),
     assertTeacherOwnsLectureInClass(teacherId, classId, lectureId),
   ]);
+
+  const replacedSessions = await prisma.classSession.findMany({
+    where: {
+      classId,
+      isActive: true,
+    },
+    select: { id: true, lectureId: true },
+  });
 
   await prisma.classSession.updateMany({
     where: {
@@ -98,6 +168,25 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
       endedAt: new Date(),
     },
   });
+
+  // Each replaced session ended: its own classroom pages are told (students
+  // leave, the teacher's page stops its Jibri stream), exactly as for End
+  // Session. Session-specific, so the new session is never affected.
+  for (const replaced of replacedSessions) {
+    emitLiveChange({ classId, kind: "jitsi", event: "ended", sessionId: replaced.id });
+  }
+
+  // The replaced sessions ended: their lectures' YouTube features end with
+  // them (before the new session exists, so it is never counted as "still
+  // active"). Best effort; never blocks the new session.
+  const replacedIds = replacedSessions.map((replaced) => replaced.id);
+  const youtubeCleanups: YouTubeSessionCleanupResult[] = [];
+
+  for (const replacedLectureId of new Set(
+    replacedSessions.map((replaced) => replaced.lectureId).filter((id): id is string => Boolean(id))
+  )) {
+    youtubeCleanups.push(await endYouTubeFeaturesAfterSessionEnd(teacherId, replacedLectureId, replacedIds));
+  }
 
   const roomName = createRoomName(classId);
   const jitsiDomain = getJitsiDomain();
@@ -133,12 +222,19 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     data: { classStatus: "LIVE" },
   });
 
-  emitLiveChange({ classId, kind: "jitsi", event: "started" });
+  emitLiveChange({ classId, kind: "jitsi", event: "started", sessionId: session.id });
+
+  // Leftover Recording / Live of this lecture from earlier sessions (a
+  // cleanup that stayed pending) are ended now, bounded; the session is
+  // already started and is never held up or failed by it.
+  youtubeCleanups.push(await reconcileYouTubeFeaturesForNewSession(teacherId, lecture.id, session.startedAt));
 
   return {
     session,
     class: classroom,
     joinBaseUrl: `/session/join?sessionId=${session.id}`,
+    // "pending": YouTube did not confirm every cleanup (shown to the teacher).
+    youtubeCleanup: combineYouTubeCleanups(youtubeCleanups),
   };
 }
 
@@ -657,35 +753,23 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
 }
 
 export async function markStudentJoinedSession(sessionId: string, student: StudentSession) {
-  const joinInfo = await getSessionJoinInfo(sessionId, student);
-
-  const attendance = await prisma.attendance.create({
-    data: {
-      classSessionId: sessionId,
-      classId: joinInfo.session.classId,
-      studentId:student.studentId,
-      joinedAt: new Date(),
-      leftAt: null,
-    },
-    select: {
-      id: true,
-      classSessionId: true,
-      studentId: true,
-      joinedAt: true,
-      leftAt: true,
-    },
-  });
-
-  emitStudentDataChange({
-    studentId: student.studentId,
-    classId: joinInfo.session.classId,
-  });
-
-  return {
-    attendance,
-  };
+  // Same visit rules as the attendance endpoint (one place decides them).
+  return markAttendanceOnJoin({ sessionId, student });
 }
 
+/**
+ * Records a NEW visit (Attendance row) for the logged-in student. Each row is
+ * one actual visit: a student who left at 08:10 and comes back at 08:50 gets
+ * a second row; closed rows are never reopened or reused.
+ *
+ * The classroom page sends this once per visit: a short Jitsi reconnect or a
+ * breakout-room switch is not a new visit and is not sent (useAttendance /
+ * attendance-visit.ts). So when a join arrives while an older visit of this
+ * student is still open in this session, that visit's leave never arrived
+ * (page refresh or tab closed before the leave request got out, browser
+ * crash): it is closed now, at the new visit's start, so visits never overlap.
+ * Nothing is deleted.
+ */
 export async function markAttendanceOnJoin(params: {
   sessionId: string;
   student: StudentSession;
@@ -697,21 +781,46 @@ export async function markAttendanceOnJoin(params: {
     throw new AppError("classId does not match the session class.", 400, "CLASS_SESSION_MISMATCH");
   }
 
-  const attendance = await prisma.attendance.create({
-    data: {
-      classSessionId: params.sessionId,
-      classId: joinInfo.session.classId,
-      studentId: params.student.studentId,
-      joinedAt: new Date(),
-    },
-    select: {
-      id: true,
-      classSessionId: true,
-      studentId: true,
-      classId: true,
-      joinedAt: true,
-      leftAt: true,
-    },
+  const now = new Date();
+
+  const { attendance, closedVisitIds } = await prisma.$transaction(async (tx) => {
+    const stale = await tx.attendance.findMany({
+      where: {
+        classSessionId: params.sessionId,
+        studentId: params.student.studentId,
+        leftAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (stale.length > 0) {
+      await tx.attendance.updateMany({
+        where: {
+          id: { in: stale.map((row) => row.id) },
+          leftAt: null,
+        },
+        data: { leftAt: now },
+      });
+    }
+
+    const created = await tx.attendance.create({
+      data: {
+        classSessionId: params.sessionId,
+        classId: joinInfo.session.classId,
+        studentId: params.student.studentId,
+        joinedAt: now,
+      },
+      select: {
+        id: true,
+        classSessionId: true,
+        studentId: true,
+        classId: true,
+        joinedAt: true,
+        leftAt: true,
+      },
+    });
+
+    return { attendance: created, closedVisitIds: stale.map((row) => row.id) };
   });
 
   emitStudentDataChange({
@@ -721,18 +830,33 @@ export async function markAttendanceOnJoin(params: {
 
   return {
     attendance,
+    // A new visit is always recorded (kept for the response shape).
     duplicate: false,
+    // Older visits of this student closed because their leave never arrived.
+    closedVisitIds,
   };
 }
 
-export async function markStudentLeftSession(sessionId: string, student: StudentSession) {
+/**
+ * Ends the logged-in student's visit. With `attendanceId` (sent by the
+ * classroom page for the visit it started) exactly that visit is closed, and
+ * only while it is still open, so a late leave can never close a later visit
+ * or another device's. Without it (older clients) the newest open visit is
+ * closed, as before.
+ */
+export async function markStudentLeftSession(
+  sessionId: string,
+  student: StudentSession,
+  attendanceId?: string
+) {
   const joinInfo = await getSessionJoinInfo(sessionId, student);
 
   const openAttendance = await prisma.attendance.findFirst({
     where: {
+      ...(attendanceId ? { id: attendanceId } : {}),
       classSessionId: sessionId,
-      studentId:student.studentId,
-      leftAt: null, 
+      studentId: student.studentId,
+      leftAt: null,
     },
     orderBy: {
       joinedAt: "desc",
@@ -742,13 +866,25 @@ export async function markStudentLeftSession(sessionId: string, student: Student
     },
   });
 
-  const attendance = openAttendance
-    ? await prisma.attendance.update({
+  // Conditional on still being open, so a leave racing the session end (or
+  // another leave) never moves an already recorded leave time.
+  const leftAt = new Date();
+  const closed = openAttendance
+    ? await prisma.attendance.updateMany({
         where: {
           id: openAttendance.id,
+          leftAt: null,
         },
         data: {
-          leftAt: new Date(),
+          leftAt,
+        },
+      })
+    : { count: 0 };
+
+  const attendance = closed.count > 0 && openAttendance
+    ? await prisma.attendance.findUnique({
+        where: {
+          id: openAttendance.id,
         },
         select: {
           id: true,
@@ -829,11 +965,13 @@ export async function listSessionAttendanceForTeacher(params: {
         },
       },
     }),
+    // Every visit, oldest first: a student's visits are listed in the order
+    // they happened (08:00-08:10, then 08:50-09:00).
     prisma.attendance.findMany({
       where: {
         classSessionId: params.sessionId,
       },
-      orderBy: [{ joinedAt: "desc" }],
+      orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
         joinedAt: true,
@@ -895,11 +1033,25 @@ export async function listSessionAttendanceForTeacher(params: {
     });
   }
 
-  const joinedStudents = Array.from(joinedStudentsMap.values()).sort((left, right) => {
-    const leftDate = left.logs[0]?.joinedAt.getTime() ?? 0;
-    const rightDate = right.logs[0]?.joinedAt.getTime() ?? 0;
-    return rightDate - leftDate;
-  });
+  // Per student: total time present from the actual visits (overlaps merged;
+  // an open visit counts up to the session's end, or now while it is live),
+  // and whether they are in the session now. Students: latest visit first.
+  const now = new Date();
+  const joinedStudents = Array.from(joinedStudentsMap.values())
+    .map((entry) => ({
+      ...entry,
+      totalAttendedMs: attendedMs(entry.logs, {
+        openUntil: session.endedAt ?? now,
+        sessionStart: session.startedAt,
+        sessionEnd: session.endedAt,
+      }),
+      isPresent: !session.endedAt && entry.logs.some((log) => log.leftAt === null),
+    }))
+    .sort((left, right) => {
+      const leftDate = left.logs[left.logs.length - 1]?.joinedAt.getTime() ?? 0;
+      const rightDate = right.logs[right.logs.length - 1]?.joinedAt.getTime() ?? 0;
+      return rightDate - leftDate;
+    });
 
   const joinedStudentIds = new Set(joinedStudents.map((entry) => entry.student.id));
   const notJoinedStudents = classStudents
@@ -974,15 +1126,24 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
 
   const endedAt = new Date();
 
-  const ended = await prisma.classSession.update({
+  const session = await prisma.classSession.findUnique({
     where: {
       id: sessionId,
+    },
+    select: { classId: true, lectureId: true, endedAt: true },
+  });
+
+  // Ends the session only while it is active, once (a concurrent second End
+  // Session finds it already ended).
+  const { count: endedNow } = await prisma.classSession.updateMany({
+    where: {
+      id: sessionId,
+      isActive: true,
     },
     data: {
       isActive: false,
       endedAt,
     },
-    select: { classId: true },
   });
 
   await prisma.attendance.updateMany({
@@ -995,10 +1156,37 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
     },
   });
 
-  emitLiveChange({ classId: ended.classId, kind: "jitsi", event: "ended" });
+  if (!session || endedNow === 0) {
+    // Already ended, or replaced by a newer session (e.g. End Session from a
+    // stale tab): its end time is kept, and there is no second end event and
+    // no YouTube cleanup, so the class's current session and its features
+    // are never affected. (Attendance still open for it was closed above, as
+    // before.)
+    return {
+      sessionId,
+      endedAt: session?.endedAt ?? endedAt,
+      alreadyEnded: true,
+      youtubeCleanup: {
+        status: "skipped",
+        closed: 0,
+        reason: "session already ended",
+      } satisfies YouTubeSessionCleanupResult,
+    };
+  }
+
+  emitLiveChange({ classId: session.classId, kind: "jitsi", event: "ended", sessionId });
+
+  // The lecture's YouTube Recording / Live end with the session (after the
+  // session and attendance are ended, so this can never fail them). A busy
+  // lock or a YouTube failure is reported, not hidden.
+  const youtubeCleanup: YouTubeSessionCleanupResult = session.lectureId
+    ? await endYouTubeFeaturesAfterSessionEnd(teacherId, session.lectureId, [sessionId])
+    : { status: "none", closed: 0 };
 
   return {
     sessionId,
     endedAt,
+    alreadyEnded: false,
+    youtubeCleanup,
   };
 }

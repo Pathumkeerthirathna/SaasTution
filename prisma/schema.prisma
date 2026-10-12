@@ -1117,6 +1117,11 @@ model YouTubeRecording {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Row version for failed-start cleanup: 0 when a start creates the row,
+  /// incremented only when a start reuses or reactivates it; the cleanup of a
+  /// failed start closes the row only at the version that start observed.
+  version Int @default(0)
+
   @@index([lectureId])
 }
 
@@ -1149,7 +1154,25 @@ model YouTubeLiveBroadcast {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Row version for failed-start cleanup: 0 when a start creates the row,
+  /// incremented only when a start reuses or reactivates it; the cleanup of a
+  /// failed start closes the row only at the version that start observed.
+  version Int @default(0)
+
   @@index([lectureId])
+}
+
+/// Short-lived per-lecture lock around YouTube Recording / Live start, stop
+/// and failed-start cleanup, so two requests for the same lecture (two tabs,
+/// two devices, two server processes) cannot interleave and create duplicate
+/// broadcasts or both decide to start Jibri. One row per lecture while an
+/// operation runs; deleted by its owner when done. A crashed holder cannot
+/// block the lecture: an expired row is taken over atomically.
+model YouTubeOperationLock {
+  lectureId String   @id
+  ownerId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 enum YouTubePrivacy {

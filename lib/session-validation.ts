@@ -4,6 +4,8 @@ const uuid = z.string().trim().uuid("Invalid id format.");
 
 export const studentSessionActionSchema = z.object({
   studentId: uuid,
+  // Leave only: the visit (Attendance row) to close.
+  attendanceId: uuid.optional(),
 });
 
 export const classSessionQuerySchema = z.object({

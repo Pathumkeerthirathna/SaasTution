@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { showYoutubeCleanupWarning } from "@/components/youtube-cleanup-warning";
 
 const FALLBACK_REFRESH_INTERVAL_MS = 15_000;
 const RECONNECT_BASE_DELAY_MS = 1_000;
@@ -37,7 +38,10 @@ type SessionStudentLog = {
 
 type SessionStudentGroup = {
   student: StudentItem;
+  /** Every visit, oldest first. */
   logs: SessionStudentLog[];
+  /** Time present summed over the visits (absent from older servers). */
+  totalAttendedMs?: number;
 };
 
 type SessionItem = {
@@ -97,6 +101,20 @@ type PendingConfirmation = {
   description: string;
   confirmLabel: string;
 } | null;
+
+// "45 min", "1h 20m", "0 min".
+function formatAttendedMs(ms: number) {
+  const minutes = Math.round(Math.max(0, ms) / 60000);
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
+}
 
 function formatGradeLabel(value: string | null) {
   if (!value) {
@@ -432,6 +450,7 @@ export function TeacherSessionPanel() {
         success: boolean;
         data?: {
           session: SessionItem;
+          youtubeCleanup?: { status?: string; reason?: string };
         };
         error?: ApiError;
       };
@@ -440,6 +459,8 @@ export function TeacherSessionPanel() {
         setErrorMessage(payload.error?.message ?? "Failed to start class session.");
         return;
       }
+
+      showYoutubeCleanupWarning(payload.data.youtubeCleanup, "start");
 
       setActiveSession(payload.data.session);
       setNotificationType("started");
@@ -481,6 +502,7 @@ export function TeacherSessionPanel() {
         success: boolean;
         data?: {
           sessionId: string;
+          youtubeCleanup?: { status?: string; reason?: string };
         };
         error?: ApiError;
       };
@@ -489,6 +511,8 @@ export function TeacherSessionPanel() {
         setErrorMessage(payload.error?.message ?? "Failed to end class session.");
         return;
       }
+
+      showYoutubeCleanupWarning(payload.data.youtubeCleanup, "end");
 
       setActiveSession(null);
       const historyResult = await loadSessionHistory(selectedClassId, 1, {
@@ -539,6 +563,7 @@ export function TeacherSessionPanel() {
         success: boolean;
         data?: {
           session: SessionItem;
+          youtubeCleanup?: { status?: string; reason?: string };
         };
         error?: ApiError;
       };
@@ -547,6 +572,8 @@ export function TeacherSessionPanel() {
         setErrorMessage(payload.error?.message ?? "Failed to restart class session.");
         return;
       }
+
+      showYoutubeCleanupWarning(payload.data.youtubeCleanup, "start");
 
       setActiveSession(payload.data.session);
       setNotificationType("restarted");
@@ -1312,7 +1339,12 @@ export function TeacherSessionPanel() {
                           <div>
                             <p className="font-semibold">{entry.student.name}</p>
                             <p className="text-xs text-muted">{formatGradeLabel(entry.student.grade)}</p>
-                            <p className="text-xs text-muted">Entries: {entry.logs.length}</p>
+                            <p className="text-xs text-muted">
+                              Visits: {entry.logs.length}
+                              {typeof entry.totalAttendedMs === "number"
+                                ? ` · Total: ${formatAttendedMs(entry.totalAttendedMs)}`
+                                : ""}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -1327,7 +1359,7 @@ export function TeacherSessionPanel() {
                           <div className="mt-3 space-y-2 border-t border-black/10 pt-3 dark:border-white/10">
                             {entry.logs.map((log, index) => (
                               <div key={log.id} className="rounded-lg border border-black/10 px-3 py-2 text-xs dark:border-white/10">
-                                <p className="font-semibold">Log {index + 1}</p>
+                                <p className="font-semibold">Visit {index + 1}</p>
                                 <p className="text-muted">Joined: {new Date(log.joinedAt).toLocaleString()}</p>
                                 <p className="text-muted">Left: {log.leftAt ? new Date(log.leftAt).toLocaleString() : "Still in session"}</p>
                               </div>

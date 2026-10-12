@@ -25,28 +25,28 @@ export async function POST(request: Request) {
 
     const student = await requireStudentSession();
 
+    // The student is the logged-in one; a studentId in the body is never used.
     const result = await markAttendanceOnJoin({
       sessionId: parsed.data.sessionId,
-      student:student,
+      student: student,
       classId: parsed.data.classId,
-      
     });
 
-    // emitSessionAttendanceEvent({
-    //   sessionId: parsed.data.sessionId,
-    //   attendanceId: result.attendance.id,
-    //   studentId: result.attendance.studentId,
-    //   joinedAt: result.attendance.joinedAt.toISOString(),
-    //   leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
-    //   event: "joined",
-    //   occurredAt: new Date().toISOString(),
-    // });
+    // One "joined" event for the new visit (the teacher's attendance view
+    // refreshes on it).
+    emitSessionAttendanceEvent({
+      sessionId: parsed.data.sessionId,
+      attendanceId: result.attendance.id,
+      studentId: result.attendance.studentId,
+      joinedAt: result.attendance.joinedAt.toISOString(),
+      leftAt: result.attendance.leftAt ? result.attendance.leftAt.toISOString() : null,
+      event: "joined",
+      occurredAt: new Date().toISOString(),
+    });
 
-    // return apiSuccess(result, {
-    //   message: result.duplicate
-    //     ? "Attendance already existed for this session; duplicate prevented."
-    //     : "Attendance marked successfully.",
-    // });
+    return apiSuccess(result, {
+      message: "Attendance marked successfully.",
+    });
   } catch (error) {
     return handleRouteError(error);
   }

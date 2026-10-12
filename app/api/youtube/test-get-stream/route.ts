@@ -2,8 +2,19 @@ import { NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 import { getYouTubeLiveStream } from "@/lib/youtube-live";
+import { debugRouteDisabledResponse } from "@/lib/debug-routes";
 
+/*
+ * Developer-only (404 in production): the teacher's reusable stream status.
+ * The stream key (RTMP stream name / ingestion address) is never returned.
+ */
 export async function GET() {
+    const disabled = debugRouteDisabledResponse();
+
+    if (disabled) {
+        return disabled;
+    }
+
     try {
         const teacherSession =
             await requireTeacherSession();
@@ -51,14 +62,6 @@ export async function GET() {
 
             streamStatus:
                 stream.status?.streamStatus,
-
-            ingestionAddress:
-                stream.cdn?.ingestionInfo
-                    ?.ingestionAddress,
-
-            streamName:
-                stream.cdn?.ingestionInfo
-                    ?.streamName,
         });
 
     } catch (error) {

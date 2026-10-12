@@ -6,24 +6,41 @@ import type { JitsiMeetingControls } from "./JitsiMeeting";
 
 import useJoinSession from "./hooks/useJoinSession";
 import MeetingCard from "./classroom/meeting/MeetingCard";
+import OrientationHint from "./classroom/meeting/OrientationHint";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
 import useCameraMonitoring from "./hooks/useCameraMonitoring";
+import useTeacherTiles from "./hooks/useTeacherTiles";
+import type { TeacherTilesNavAction, TeacherTilesSettingsChange } from "./hooks/useJitsi";
 import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
-import type { MutableRefObject } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatMessage, ClassroomStudent, JitsiParticipant } from "./types";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "../class-management-panel";
 
 import toast from "react-hot-toast";
-import { getYoutubeFriendlyErrorMessage } from "@/lib/youtube-error-messages";
+import { showYoutubeCleanupWarning } from "@/components/youtube-cleanup-warning";
+import {
+  getYoutubeFriendlyErrorMessage,
+  getYoutubeStopErrorMessage,
+  getYoutubeStreamStoppedMessage,
+  getYoutubeCleanupPendingMessage,
+} from "@/lib/youtube-error-messages";
 import { announce } from "@/lib/voice-announcer";
-import { RotateCcw, Video, X, XCircle, Maximize2 } from "lucide-react";
+import {
+  createYouTubeStreamController,
+  DEFAULT_CLEANUP_TIMEOUT_MS,
+  type StartOutcome,
+  type YouTubeFeature,
+  type YouTubeStartData,
+  type YouTubeStopData,
+  type YouTubeStreamController,
+} from "./youtube-stream-controller";
+import { RotateCcw, Video, X, XCircle, Maximize2, Globe, Link2, Lock, Radio } from "lucide-react";
 
 function goToYouTubeOAuthConnect() {
   const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -70,6 +87,10 @@ function showYoutubeActionToast(
     </div>
   ));
 }
+
+// Width of the "Start YouTube Live" popover (desktop / tablet), shared by its
+// placement under the Start Live button and its markup.
+const YOUTUBE_PRIVACY_POPOVER_WIDTH = 336;
 
 const YOUTUBE_OAUTH_ERROR_MESSAGES: Record<string, string> = {
   DENIED: "YouTube authorization was cancelled.",
@@ -328,7 +349,7 @@ const [classStudents, setClassStudents] =
     if (!rect) return;
     // Anchored by its right edge under the button, but never past the left edge of the
     // screen (the button can sit on the left when the header wraps onto two rows).
-    const popoverWidth = Math.min(384, window.innerWidth - 24);
+    const popoverWidth = Math.min(YOUTUBE_PRIVACY_POPOVER_WIDTH, window.innerWidth - 24);
     setYoutubePrivacyPos({
       top: rect.bottom + 8,
       right: Math.max(
@@ -430,53 +451,114 @@ const [classStudents, setClassStudents] =
     [breakout.rooms]
   );
 
-  const youtubeLiveRequestedRef =
-  useRef(false);
-
   const [youtubeLiveUrl, setYoutubeLiveUrl] =
     useState<string | null>(null);
 
-  // Recording and Live share one Jitsi → YouTube stream, which Jibri takes
-  // a few seconds to actually join once told to start. These resolvers let
-  // handleStartYouTubeRecording/handleStartYouTubeLive await Jitsi's own
-  // `recordingStatusChanged` confirmation (surfaced as
-  // onRecordingStatusChanged/onLiveStatusChanged below) instead of marking
-  // isRecording/isLive true the moment the start API call merely succeeds —
-  // that's what keeps the *other* button disabled for the whole handoff.
-  const recordingStreamConfirmedResolverRef =
-    useRef<(() => void) | null>(null);
+  // Teacher: YouTube Recording / Live around the ONE Jibri stream
+  // (youtube-stream-controller.ts). A start stays "Starting" until Jibri
+  // confirms the stream (or rides on one already confirmed); a failed start
+  // cleans up only what it owns; Jibri stopping on its own ends the features
+  // riding on it. The buttons show its state (isRecording / isLive below).
+  const joinInfoRef = useRef(joinInfo);
+  joinInfoRef.current = joinInfo;
 
-  const liveStreamConfirmedResolverRef =
-    useRef<(() => void) | null>(null);
+  const youtubeStreamRef = useRef<YouTubeStreamController | null>(null);
 
-  function waitForYoutubeStreamConfirmation(
-    resolverRef: MutableRefObject<(() => void) | null>,
-    timeoutMs = 25000
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        resolverRef.current = null;
-        reject(
-          new Error(
-            "Timed out waiting for Jitsi to confirm the YouTube stream started."
-          )
-        );
-      }, timeoutMs);
+  if (!youtubeStreamRef.current) {
+    const postYouTube = async <T,>(
+      url: string,
+      body: Record<string, unknown>,
+      timeoutMs?: number
+    ): Promise<{ status: number; data: T }> => {
+      const lectureId = joinInfoRef.current?.lecture?.id;
 
-      resolverRef.current = () => {
-        clearTimeout(timeoutId);
-        resolverRef.current = null;
-        resolve();
-      };
+      if (!lectureId) {
+        throw new Error("No lecture ID available.");
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lectureId, ...body }),
+        // The controller also limits the wait itself; this frees the request.
+        ...(timeoutMs && typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+          ? { signal: AbortSignal.timeout(timeoutMs) }
+          : {}),
+      });
+
+      let data: unknown;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = { success: false, error: "Unexpected response from the server." };
+      }
+
+      console.log("🎥 YouTube", url, response.status, data);
+
+      return { status: response.status, data: data as T };
+    };
+
+    youtubeStreamRef.current = createYouTubeStreamController({
+      // Starts carry this classroom's session: the server refuses (409) a
+      // session that has ended or been replaced.
+      startFeature: (feature, { privacy }) =>
+        feature === "recording"
+          ? postYouTube<YouTubeStartData>("/api/youtube/lecture/recording/start", {
+              privacy: "unlisted",
+              isLive: youtubeStreamRef.current?.getState().live !== "off",
+              sessionId: joinInfoRef.current?.session?.id,
+            })
+          : postYouTube<YouTubeStartData>("/api/youtube/lecture/start", {
+              privacy,
+              sessionId: joinInfoRef.current?.session?.id,
+            }),
+      abortStart: (feature, body) =>
+        postYouTube<YouTubeStopData>(
+          "/api/youtube/lecture/start/abort",
+          { feature, ...body },
+          DEFAULT_CLEANUP_TIMEOUT_MS
+        ),
+      stopFeature: (feature) =>
+        postYouTube<YouTubeStopData>(
+          feature === "recording"
+            ? "/api/youtube/lecture/recording/stop"
+            : "/api/youtube/lecture/stop",
+          {}
+        ),
+      startJibri: (streamKey, broadcastId, feature) =>
+        jitsiMeetingRef.current?.startYouTubeLive(streamKey, broadcastId, feature),
+      stopJibri: () => jitsiMeetingRef.current?.stopYouTubeLive(),
+      log: (...args) => console.log("🎥", ...args),
     });
   }
 
-  // const testRecordingControl = () => {
-  //   jitsiMeetingRef.current?.startRecording();
-  // };
+  // The teacher's buttons follow the controller (students keep the SSE below).
+  useEffect(() => {
+    const controller = youtubeStreamRef.current;
 
-  const [youtubeLiveReusedRecording, setYoutubeLiveReusedRecording] =
-    useState(false);
+    if (!controller || role !== "teacher") {
+      return;
+    }
+
+    return controller.subscribe((state, change) => {
+      setIsRecording(state.recording === "on" || state.recording === "restored");
+      setIsLive(state.live === "on" || state.live === "restored");
+
+      if (state.live === "off") {
+        setYoutubeLiveUrl(null);
+      }
+
+      if (change.type === "jibri-stopped") {
+        toast.error(getYoutubeStreamStoppedMessage(change.features));
+        announce("The YouTube stream stopped.");
+      }
+
+      if (change.type === "cleanup-pending") {
+        toast.error(getYoutubeCleanupPendingMessage(change.feature));
+      }
+    });
+  }, [role]);
 
   // Real-time "is this class live on YouTube right now" signal, pushed via
   // SSE so students see the stream start without refreshing — the Jitsi
@@ -498,6 +580,20 @@ const [classStudents, setClassStudents] =
           youtubeUrl: string | null;
         };
 
+        if (role === "teacher") {
+          // Restores Live after a reload / reflects a stop elsewhere; never
+          // overrides a start in progress (the controller ignores it then).
+          const controller = youtubeStreamRef.current;
+
+          controller?.serverReport("live", data.isLive);
+
+          if (controller?.getState().live !== "off" && data.youtubeUrl) {
+            setYoutubeLiveUrl(data.youtubeUrl);
+          }
+
+          return;
+        }
+
         setIsLive(data.isLive);
         setYoutubeLiveUrl(data.youtubeUrl);
       } catch {
@@ -507,17 +603,37 @@ const [classStudents, setClassStudents] =
 
     source.addEventListener("live-status", handleLiveStatus);
 
-    // Student-only: the teacher ending the session (existing endClassSessionForTeacher
-    // flow, wherever it was triggered from) is signalled on this same per-session
-    // stream. The teacher already navigates away directly from its own End Session
-    // action, so it doesn't need to react to its own signal here.
-    let handleSessionEnded: (() => void) | null = null;
+    // The teacher ending the session (existing endClassSessionForTeacher flow,
+    // wherever it was triggered from) is signalled on this same per-session
+    // stream. Students leave the classroom. The teacher's page ends its
+    // YouTube features and stops the Jibri stream it may still have running
+    // (e.g. the session was ended from the dashboard while this page stayed
+    // open); the teacher's own End Session action navigates away itself.
+    // The server sends only this session's end; the check below also
+    // ignores any event naming another session.
+    let handleSessionEnded: ((event: MessageEvent) => void) | null = null;
+
+    const isThisSession = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as { sessionId?: string };
+
+        return data.sessionId === sessionId;
+      } catch {
+        return false;
+      }
+    };
 
     if (role === "student") {
-      handleSessionEnded = () => {
-        router.push("/student/dashboard");
+      handleSessionEnded = (event) => {
+        if (isThisSession(event)) router.push("/student/dashboard");
       };
+    } else if (role === "teacher") {
+      handleSessionEnded = (event) => {
+        if (isThisSession(event)) youtubeStreamRef.current?.sessionEnded();
+      };
+    }
 
+    if (handleSessionEnded) {
       source.addEventListener("session-ended", handleSessionEnded);
     }
 
@@ -650,6 +766,72 @@ const [classStudents, setClassStudents] =
     jitsiMeetingRef.current?.setTeacherView(isTeacherNormalView);
   }, [role, isTeacherNormalView, conferenceGeneration]);
 
+  // Teacher only: the Normal mode view's layout (List / Tiles) and the Tiles
+  // page: the same present students as monitoring, in roster order, with the
+  // Tiles view's own page sizes (10-50). Exam Mode keeps its own paging and is
+  // not affected. Sent on every change and again for every new conference
+  // generation (a remounted iframe starts in List view).
+  const teacherTiles = useTeacherTiles({
+    enabled: role === "teacher",
+    presentStudents: cameraMonitoring.presentStudents,
+    participantMap,
+  });
+
+  const teacherTilesRef = useRef(teacherTiles);
+  teacherTilesRef.current = teacherTiles;
+
+  const teacherTilesKey = JSON.stringify([
+    teacherTiles.layout,
+    teacherTiles.participantIds,
+    teacherTiles.page,
+    teacherTiles.pageCount,
+    teacherTiles.rangeStart,
+    teacherTiles.rangeEnd,
+    teacherTiles.total,
+    teacherTiles.pageSize,
+  ]);
+
+  useEffect(() => {
+    if (role !== "teacher" || conferenceGeneration === 0) {
+      return;
+    }
+
+    const tiles = teacherTilesRef.current;
+
+    jitsiMeetingRef.current?.setTeacherTiles({
+      layout: tiles.layout,
+      participantIds: tiles.participantIds,
+      page: tiles.page,
+      pageCount: tiles.pageCount,
+      rangeStart: tiles.rangeStart,
+      rangeEnd: tiles.rangeEnd,
+      total: tiles.total,
+      pageSize: tiles.pageSize,
+    });
+  }, [role, conferenceGeneration, teacherTilesKey]);
+
+  // Previous / Next pressed inside the iframe's Tiles view.
+  const handleTeacherTilesNav = useCallback((action: TeacherTilesNavAction) => {
+    if (action === "previous") {
+      teacherTilesRef.current.goToPreviousPage();
+    } else {
+      teacherTilesRef.current.goToNextPage();
+    }
+  }, []);
+
+  // View / Tiles page size chosen in the iframe's filmstrip settings menu: the
+  // same state and setters (useTeacherTiles validates both), answered with a
+  // new SL_TEACHER_TILES by the effect above.
+  const handleTeacherTilesSettings = useCallback((change: TeacherTilesSettingsChange) => {
+    if (change.layout) {
+      teacherTilesRef.current.setLayout(change.layout);
+    }
+
+    if (change.pageSize !== undefined) {
+      teacherTilesRef.current.setPageSize(change.pageSize);
+    }
+  }, []);
+
   const [meetingReady, setMeetingReady] =
     useState(false);
 
@@ -768,8 +950,10 @@ const [classStudents, setClassStudents] =
 
         const data = await response.json();
 
-        if (!cancelled && data.success && data.isRecording) {
-          setIsRecording(true);
+        // Restored as "active per the server"; Jibri's own events confirm
+        // (or end) it.
+        if (!cancelled && data.success) {
+          youtubeStreamRef.current?.serverReport("recording", data.isRecording === true);
         }
       } catch (error) {
         console.error(
@@ -847,268 +1031,114 @@ const [classStudents, setClassStudents] =
     );
   }
 
+  // A start's failure, shown to the teacher (and thrown for MeetingCard).
+  const reportYoutubeStartFailure = (
+    feature: YouTubeFeature,
+    outcome: Exclude<StartOutcome, { ok: true } | { reason: "busy" } | { reason: "session-ended" }>
+  ): never => {
+    const code =
+      outcome.reason === "api"
+        ? outcome.data?.code ?? null
+        : outcome.reason === "jibri-timeout"
+          ? "JIBRI_START_TIMEOUT"
+          : "JIBRI_START_FAILED";
+
+    const message =
+      outcome.reason === "api" ? outcome.data?.error : outcome.error;
+
+    console.error("❌ YouTube " + feature + " did not start:", outcome);
+
+    if (code === "YOUTUBE_REAUTH_REQUIRED") {
+      setYoutubeReauthRequired(true);
+    }
+
+    const friendlyMessage = getYoutubeFriendlyErrorMessage(
+      typeof message === "string" ? message : undefined,
+      feature,
+      code
+    );
+
+    if (code === "YOUTUBE_NOT_CONNECTED") {
+      setYoutubeConnectionLost(true);
+      showYoutubeActionToast(friendlyMessage, "Connect YouTube");
+    } else if (code === "YOUTUBE_REAUTH_REQUIRED") {
+      showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
+    } else {
+      toast.error(friendlyMessage);
+    }
+
+    throw new Error(friendlyMessage);
+  };
+
   const handleStartYouTubeLive = async () => {
 
     console.log("🔴 START LIVE BUTTON CLICKED");
 
-    const lectureId = joinInfo.lecture?.id;
+    setLiveStartFailed(false);
 
-    if (!lectureId) {
-      console.error("❌ No lecture ID available.");
+    const outcome = await youtubeStreamRef.current!.start("live", {
+      privacy: youtubePrivacy,
+    });
+
+    if (outcome.ok) {
+      setYoutubeReauthRequired(false);
+      setYoutubeConnectionLost(false);
+      setYoutubeLiveUrl(outcome.data.youtubeUrl ?? null);
+      announce("Live stream has started.");
       return;
     }
 
-    setLiveStartFailed(false);
-
-    let youtubeErrorCode: string | null = null;
-
-    try {
-      const response = await fetch(
-        "/api/youtube/lecture/start",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            lectureId,
-            privacy: youtubePrivacy,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      console.log(
-        "🎥 YOUTUBE LIVE START RESPONSE:",
-        data
-      );
-
-      youtubeErrorCode = data?.code ?? null;
-
-      if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
-        setYoutubeReauthRequired(true);
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.error ?? "Unable to start YouTube Live."
-        );
-      }
-
-      setYoutubeReauthRequired(false);
-      setYoutubeConnectionLost(false);
-
-      if (!data.streamName) {
-        throw new Error(
-          "YouTube stream key is missing."
-        );
-      }
-
-      if (!data.broadcastId) {
-        throw new Error(
-          "YouTube broadcast ID is missing."
-        );
-      }
-
-      console.log(
-        "🔴 YOUTUBE LIVE PREPARED:",
-        data
-      );
-
-      setYoutubeLiveUrl(data.youtubeUrl);
-
-      setYoutubeLiveReusedRecording(
-          data.reusedRecording === true
-      );
-
-      if (!data.alreadyStreaming) {
-          console.log(
-            "🚀 Starting Jitsi → YouTube stream..."
-          );
-
-          jitsiMeetingRef.current?.startYouTubeLive(
-            data.streamName,
-            data.broadcastId,
-            "live"
-          );
-
-          console.log(
-            "⏳ Waiting for Jitsi to confirm the live stream has actually started..."
-          );
-
-          await waitForYoutubeStreamConfirmation(
-            liveStreamConfirmedResolverRef
-          );
-
-      } else {
-
-        console.log(
-          "♻️ Reusing existing active YouTube stream."
-        );
-
-      }
-
-      // Only now — after Jibri has actually confirmed the stream, not just
-      // after the start API call succeeded — mark Live as active. This is
-      // what keeps Record disabled for the whole handoff.
-      setIsLive(true);
-
-      announce("Live stream has started.");
-
-    } catch (error) {
-      console.error(
-        "❌ Failed to start YouTube live:",
-        error
-      );
-
-      // Important: don't leave the UI showing Live
-      setIsLive(false);
-      setLiveStartFailed(true);
-
-      const friendlyMessage = getYoutubeFriendlyErrorMessage(
-        error instanceof Error ? error.message : undefined,
-        "live",
-        youtubeErrorCode
-      );
-
-      if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
-        setYoutubeConnectionLost(true);
-        showYoutubeActionToast(friendlyMessage, "Connect YouTube");
-      } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
-        showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
-      } else {
-        toast.error(friendlyMessage);
-      }
-
-      throw error;
+    // session-ended: the session-ended handling already informs the teacher.
+    if (outcome.reason === "busy" || outcome.reason === "session-ended") {
+      return;
     }
+
+    setLiveStartFailed(true);
+    reportYoutubeStartFailure("live", outcome);
   };
 
   const handleStartYouTubeRecording = async () => {
 
     console.log("🎥 START YOUTUBE RECORDING BUTTON CLICKED");
 
-    youtubeLiveRequestedRef.current = false;
+    const outcome = await youtubeStreamRef.current!.start("recording");
 
-    const lectureId =
-      joinInfo.lecture?.id;
-
-    if (!lectureId) {
-      console.error("❌ No lecture ID available.");
+    if (outcome.ok) {
+      setYoutubeReauthRequired(false);
+      setYoutubeConnectionLost(false);
+      announce("Recording has started.");
       return;
     }
 
-    let youtubeErrorCode: string | null = null;
-
-    try {
-      const response = await fetch(
-        "/api/youtube/lecture/recording/start",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            lectureId,
-            privacy: "unlisted",
-            isLive,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      console.log(
-        "🎥 YOUTUBE RECORDING START RESPONSE:",
-        data
-      );
-
-      youtubeErrorCode = data?.code ?? null;
-
-      if (data?.code === "YOUTUBE_REAUTH_REQUIRED") {
-        setYoutubeReauthRequired(true);
-      }
-
-      if (!data.success) {
-        throw new Error(
-          data.error ?? "Unable to start YouTube recording."
-        );
-      }
-
-      setYoutubeReauthRequired(false);
-      setYoutubeConnectionLost(false);
-
-      if (!data.streamName) {
-        throw new Error(
-          "YouTube stream key is missing."
-        );
-      }
-
-      if (!data.broadcastId) {
-        throw new Error(
-          "YouTube broadcast ID is missing."
-        );
-      }
-
-      console.log(
-        "🚀 Starting Jitsi → YouTube recording..."
-      );
-
-      if (data.alreadyStreaming) {
-        console.log(
-          "♻️ YouTube reusable stream is already active. Reusing it."
-        );
-      } else {
-        console.log(
-          "🚀 YouTube stream is inactive. Starting Jitsi → YouTube..."
-        );
-
-        jitsiMeetingRef.current?.startYouTubeLive(
-          data.streamName,
-          data.broadcastId,
-          "recording"
-        );
-
-        console.log(
-          "⏳ Waiting for Jitsi to confirm the recording stream has actually started..."
-        );
-
-        await waitForYoutubeStreamConfirmation(
-          recordingStreamConfirmedResolverRef
-        );
-      }
-
-      // Only now — after Jibri has actually confirmed the stream, not just
-      // after the start API call succeeded — mark recording as active. This
-      // is what keeps Start Live disabled for the whole handoff.
-      setIsRecording(true);
-
-      announce("Recording has started.");
-
-    } catch (error) {
-      console.error(
-        "❌ Failed to start YouTube recording:",
-        error
-      );
-
-      const friendlyMessage = getYoutubeFriendlyErrorMessage(
-        error instanceof Error ? error.message : undefined,
-        "recording",
-        youtubeErrorCode
-      );
-
-      if (youtubeErrorCode === "YOUTUBE_NOT_CONNECTED") {
-        setYoutubeConnectionLost(true);
-        showYoutubeActionToast(friendlyMessage, "Connect YouTube");
-      } else if (youtubeErrorCode === "YOUTUBE_REAUTH_REQUIRED") {
-        showYoutubeActionToast(friendlyMessage, "Reconnect YouTube");
-      } else {
-        toast.error(friendlyMessage);
-      }
-
-      throw error;
+    // session-ended: the session-ended handling already informs the teacher.
+    if (outcome.reason === "busy" || outcome.reason === "session-ended") {
+      return;
     }
+
+    reportYoutubeStartFailure("recording", outcome);
+  };
+
+  // Stop Recording / Stop Live: the server decides what ends (shared
+  // broadcast, Jibri); a stop that did not go through keeps the feature and
+  // is reported (and thrown, so MeetingCard clears its "Stopping…" state).
+  const handleStopYouTubeFeature = async (feature: YouTubeFeature) => {
+    const outcome = await youtubeStreamRef.current!.stop(feature);
+
+    if (outcome.ok) {
+      announce(feature === "recording" ? "Recording has stopped." : "Live stream has stopped.");
+      return;
+    }
+
+    const code = outcome.data?.code ?? null;
+
+    if (code === "YOUTUBE_REAUTH_REQUIRED") {
+      setYoutubeReauthRequired(true);
+    }
+
+    const message = getYoutubeStopErrorMessage(feature, code);
+
+    toast.error(message);
+    throw new Error(message);
   };
 
   // Teacher-only: the existing End Session flow (same POST used by the lecture/session
@@ -1129,6 +1159,9 @@ const [classStudents, setClassStudents] =
       if (!response.ok || !data.success) {
         throw new Error(data.error?.message ?? "Unable to end the session.");
       }
+
+      // YouTube cleanup the server could not confirm: said, not hidden.
+      showYoutubeCleanupWarning(data.data?.youtubeCleanup, "end");
     } catch (error) {
       console.error("❌ Failed to end session:", error);
 
@@ -1224,6 +1257,13 @@ const [classStudents, setClassStudents] =
         liveStartFailed={liveStartFailed}
         isConferenceReady={isConferenceReady}
         showHeader={meetingReady}
+        // Orientation tip (teacher + student): a portrait phone presents a
+        // narrow, pillarboxed video to everyone. Its own row under the header,
+        // so it never covers the video, filmstrip, bottom bar or sidebar.
+        // `viewport.isPhone` (phone width AND portrait) turns it off the
+        // instant the phone rotates; the tip itself also checks for a touch
+        // device and remembers a dismissal.
+        belowHeader={viewport.isPhone ? <OrientationHint /> : undefined}
         headerRef={headerRef}
         breakoutActive={breakout.isInBreakout}
         immersive={
@@ -1251,219 +1291,21 @@ const [classStudents, setClassStudents] =
 
            return handleStartYouTubeRecording();
         }}
-      onStopRecording={async () => {
-        console.log(
-            "🛑 STOP RECORDING BUTTON CLICKED"
-        );
+      onStopRecording={() => {
+        console.log("🛑 STOP RECORDING BUTTON CLICKED");
 
-        const lectureId =
-            joinInfo.lecture?.id;
-
-        if (!lectureId) {
-            console.error(
-                "❌ No lecture ID available."
-            );
-            return;
-        }
-
-        try {
-
-            /*
-            * First tell backend to stop the
-            * specific YouTube recording broadcast.
-            */
-            const response =
-                await fetch(
-                    "/api/youtube/lecture/recording/stop",
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json",
-                        },
-
-                        body: JSON.stringify({
-                            lectureId,
-                        }),
-                    }
-                );
-
-            const data =
-                await response.json();
-
-            console.log(
-                "⏹ YOUTUBE RECORDING STOP RESPONSE:",
-                data
-            );
-
-            if (!data.success) {
-                console.error(
-                    "❌ Failed to stop YouTube recording:",
-                    data.error
-                );
-
-                return;
-            }
-
-            /*
-            * Now stop the Jitsi recording itself.
-            *
-            * This does NOT mean stopping the
-            * shared YouTube/Jibri stream.
-            */
-            // jitsiMeetingRef.current?.stopRecording();
-
-            setIsRecording(false);
-
-            announce("Recording has stopped.");
-
-            if (!isLive) {
-            console.log(
-                "🛑 Recording and Live are both stopped."
-            );
-
-            console.log(
-                "🛑 Stopping shared Jitsi/Jibri stream..."
-            );
-
-            jitsiMeetingRef.current?.stopYouTubeLive();
-        } else {
-            console.log(
-                "🔴 Live is still active. Keeping shared Jitsi/Jibri stream alive."
-            );
-        }
-
-        } catch (error) {
-
-            console.error(
-                "❌ Failed to stop YouTube recording:",
-                error
-            );
-        }
-    }}
+        return handleStopYouTubeFeature("recording");
+      }}
 
         onStartLive={() => {
           console.log("🔴 START LIVE BUTTON CLICKED");
           setShowYoutubePrivacy(true);
         }}
 
-        onStopLive={async () => {
-
-          if (
-              youtubeLiveReusedRecording &&
-              isRecording
-          ) {
-              console.log(
-                  "♻️ This Live uses the active recording broadcast."
-              );
-
-              console.log(
-                  "⏹ Stopping Live mode only. Recording will continue."
-              );
-
-              setIsLive(false);
-
-              setYoutubeLiveUrl(null);
-
-              setYoutubeLiveReusedRecording(false);
-
-              announce("Live stream has stopped.");
-
-              return;
-          }
-
+        onStopLive={() => {
           console.log("🛑 STOP LIVE BUTTON CLICKED");
 
-          youtubeLiveRequestedRef.current = false;
-
-          const lectureId =
-            joinInfo.lecture?.id;
-
-          if (!lectureId) {
-            console.error(
-              "❌ No lecture ID available."
-            );
-            return;
-          }
-
-          try {
-            const response = await fetch(
-              "/api/youtube/lecture/stop",
-              {
-                method: "POST",
-
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-
-                body: JSON.stringify({
-                  lectureId,
-                }),
-              }
-            );
-
-            const data =
-              await response.json();
-
-            console.log(
-              "🎥 YOUTUBE STOP LIVE RESPONSE:",
-              data
-            );
-
-            if (!data.success) {
-              console.error(
-                "❌ Failed to stop YouTube Live:",
-                data.error
-              );
-              return;
-            }
-
-            /*
-            * Only update the UI after the backend
-            * successfully stopped the Live broadcast.
-            */
-            setIsLive(false);
-
-            announce("Live stream has stopped.");
-
-            if (!isRecording) {
-              console.log(
-                  "🛑 Live and Recording are both stopped."
-              );
-
-              console.log(
-                  "🛑 Stopping shared Jitsi/Jibri stream..."
-              );
-
-              jitsiMeetingRef.current?.stopYouTubeLive();
-          } else {
-              console.log(
-                  "⏺ Recording is still active. Keeping shared Jitsi/Jibri stream alive."
-              );
-          }
-
-            /*
-            * IMPORTANT:
-            *
-            * Do NOT call:
-            *
-            * jitsiMeetingRef.current?.stopYouTubeLive();
-            *
-            * here.
-            *
-            * Recording may still be using the same
-            * Jitsi → YouTube reusable stream.
-            */
-
-          } catch (error) {
-
-            console.error(
-              "❌ Failed to stop YouTube Live:",
-              error
-            );
-          }
+          return handleStopYouTubeFeature("live");
         }}
 
         onEndSession={handleEndSessionForEveryone}
@@ -1476,40 +1318,22 @@ const [classStudents, setClassStudents] =
             onBreakoutRoomsUpdated={breakout.handleRoomsUpdated}
             onRoomChanged={breakout.handleRoomChanged}
             onBreakoutSupportChanged={breakout.handleSupportChanged}
-            onRecordingStatusChanged={(recording) => {
-              console.log(
-                "🎥 CLASSROOM RECORDING STATUS:",
-                recording
-              );
+            onYouTubeStreamStatusChanged={(status) => {
+              console.log("🎥 CLASSROOM YOUTUBE STREAM STATUS:", status);
 
-              if (recording && recordingStreamConfirmedResolverRef.current) {
-                recordingStreamConfirmedResolverRef.current();
-              }
-
-              //setIsRecording(recording);
-            }}
-            onLiveStatusChanged={(live) => {
-              console.log(
-                "🔴 CLASSROOM LIVE STATUS:",
-                live
-              );
-
-              if (live && liveStreamConfirmedResolverRef.current) {
-                liveStreamConfirmedResolverRef.current();
-              }
-
-              // Only update the Live button state when
-              // the teacher explicitly started YouTube Live.
-              if (youtubeLiveRequestedRef.current) {
-                setIsLive(live);
-              }
+              youtubeStreamRef.current?.onStreamStatus(status);
             }}
             onConferenceJoined={() => {
+              // A (re)joined conference: Jibri's state is unknown until its
+              // next status event.
+              youtubeStreamRef.current?.conferenceChanged();
               setIsConferenceJoined(true);
               setConferenceGeneration((generation) => generation + 1);
             }}
             onLocalUserLeft={handleLocalUserLeft}
             onModeratorStatusChanged={setIsModerator}
+            onTeacherTilesNav={role === "teacher" ? handleTeacherTilesNav : undefined}
+            onTeacherTilesSettings={role === "teacher" ? handleTeacherTilesSettings : undefined}
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}
@@ -1559,16 +1383,20 @@ const [classStudents, setClassStudents] =
         />
         <div
           ref={youtubePrivacyPopoverRef}
-          className={`fixed rounded-2xl border border-[#1E293B] bg-[#112D5C] p-5 shadow-2xl ${
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="sl-youtube-privacy-title"
+          className={`fixed rounded-[18px] border border-white/[0.08] bg-[#0E2347] p-4 text-left shadow-[0_18px_48px_-12px_rgba(2,6,23,0.7),inset_0_1px_0_rgba(255,255,255,0.04)] ${
             viewport.isPhone
               ? // Phone: a sheet above the bottom bar instead of a popover pinned to the header button.
                 "inset-x-3 bottom-[calc(var(--sl-bar-h)+env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[80dvh] overflow-y-auto"
-              : "z-50 w-[384px] max-w-[calc(100vw-1.5rem)] overflow-y-auto"
+              : "z-50 max-w-[calc(100vw-1.5rem)] overflow-y-auto"
           }`}
           style={
             viewport.isPhone
               ? undefined
               : {
+                  width: YOUTUBE_PRIVACY_POPOVER_WIDTH,
                   top: youtubePrivacyPos.top,
                   right: youtubePrivacyPos.right,
                   // Short landscape screens: scroll inside the popover instead of running off the bottom.
@@ -1577,96 +1405,96 @@ const [classStudents, setClassStudents] =
           }
         >
 
-          <div className="mb-5">
-            <h3 className="text-lg font-semibold text-[#F8FAFC]">
+          <div className="px-0.5">
+            <h3
+              id="sl-youtube-privacy-title"
+              className="text-[15px] font-semibold leading-tight tracking-[-0.01em] text-[#F8FAFC]"
+            >
               Start YouTube Live
             </h3>
 
-            <p className="mt-1 text-sm text-[#94A3B8]">
+            <p className="mt-1 text-xs leading-snug text-[#94A3B8]">
               Choose who can watch your live stream.
             </p>
           </div>
 
-          <div className="space-y-3">
+          <div
+            role="radiogroup"
+            aria-label="Live stream visibility"
+            className="mt-3.5 space-y-1.5"
+          >
+            {(
+              [
+                { value: "public", label: "Public", description: "Anyone can find and watch this live stream.", Icon: Globe },
+                { value: "unlisted", label: "Unlisted", description: "Only people with the link can watch.", Icon: Link2 },
+                { value: "private", label: "Private", description: "Only you, the account owner, can view it.", Icon: Lock },
+              ] as const
+            ).map(({ value, label, description, Icon }) => {
+              const selected = youtubePrivacy === value;
 
-            {/* PUBLIC */}
-            <button
-              type="button"
-              onClick={() => {
-                setYoutubePrivacy("public");
-              }}
-              className={`w-full rounded-xl border p-4 text-left transition ${
-                youtubePrivacy === "public"
-                  ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
-              }`}
-            >
-              <div className="font-semibold text-[#F8FAFC]">
-                Public
-              </div>
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => {
+                    setYoutubePrivacy(value);
+                  }}
+                  className={`flex min-h-[52px] w-full items-center gap-3 rounded-xl px-3 py-2 text-left ring-1 ring-inset transition-[background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA]/80 ${
+                    selected
+                      ? "bg-[#3B82F6]/[0.12] ring-[#60A5FA]/45"
+                      : "bg-white/[0.03] ring-white/[0.07] hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                      selected ? "bg-[#3B82F6]/20 text-[#93C5FD]" : "bg-white/[0.06] text-[#94A3B8]"
+                    }`}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                  </span>
 
-              <div className="mt-1 text-xs text-[#94A3B8]">
-                Anyone can find and watch this live stream.
-              </div>
-            </button>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-semibold leading-tight text-[#F8FAFC]">
+                        {label}
+                      </span>
+                      {value === "private" && (
+                        <span className="rounded px-1 py-px text-[9px] font-semibold uppercase leading-[1.4] tracking-[0.06em] text-amber-300/90 ring-1 ring-inset ring-amber-400/25">
+                          Not recommended
+                        </span>
+                      )}
+                    </span>
 
-            {/* UNLISTED */}
-            <button
-              type="button"
-              onClick={() => {
-                setYoutubePrivacy("unlisted");
-              }}
-              className={`w-full rounded-xl border p-4 text-left transition ${
-                youtubePrivacy === "unlisted"
-                  ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
-              }`}
-            >
-              <div className="font-semibold text-[#F8FAFC]">
-                Unlisted
-              </div>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-[#94A3B8]">
+                      {description}
+                    </span>
+                  </span>
 
-              <div className="mt-1 text-xs text-[#94A3B8]">
-                Only people with the link can watch.
-              </div>
-            </button>
-
-            {/* PRIVATE */}
-            <button
-              type="button"
-              onClick={() => {
-                setYoutubePrivacy("private");
-              }}
-              className={`w-full rounded-xl border p-4 text-left transition ${
-                youtubePrivacy === "private"
-                  ? "border-[#3B82F6] bg-[#3B82F6]/10"
-                  : "border-[#1B3A6B] bg-[#0B2044]/70 hover:bg-[#153060]"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-[#F8FAFC]">
-                  Private
-                </span>
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-                  Not recommended
-                </span>
-              </div>
-
-              <div className="mt-1 text-xs text-[#94A3B8]">
-                Only you, the account owner, can view it.
-              </div>
-            </button>
-
+                  {/* Selection indicator: a small radio dot. */}
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
+                      selected ? "bg-[#3B82F6]" : "ring-1 ring-inset ring-white/25"
+                    }`}
+                  >
+                    {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="mt-6 flex justify-end gap-3">
+          <div className="mt-4 border-t border-white/[0.08] pt-3">
+          <div className="flex items-center justify-end gap-2">
 
             <button
               type="button"
               onClick={() => {
                 setShowYoutubePrivacy(false);
               }}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-[#CBD5E1] transition hover:bg-[#1E293B]"
+              className="inline-flex h-8 items-center rounded-[10px] px-3 text-[13px] font-medium text-[#CBD5E1] transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA]/70"
             >
               Cancel
             </button>
@@ -1675,8 +1503,6 @@ const [classStudents, setClassStudents] =
               type="button"
               onClick={async () => {
                 setShowYoutubePrivacy(false);
-
-                youtubeLiveRequestedRef.current = true;
 
                 setIsStartingLive(true);
 
@@ -1688,11 +1514,13 @@ const [classStudents, setClassStudents] =
                   setIsStartingLive(false);
                 }
               }}
-              className="rounded-lg bg-[#EF4444] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#DC2626]"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[10px] bg-gradient-to-b from-[#F25555] to-[#DC2626] px-3.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(2,6,23,0.35)] transition-[background-color,box-shadow] hover:from-[#F46666] hover:to-[#E23131] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA]/70"
             >
+              <Radio size={14} aria-hidden="true" />
               Start Live
             </button>
 
+          </div>
           </div>
 
         </div>
@@ -1758,37 +1586,6 @@ const [classStudents, setClassStudents] =
             jitsiMeetingRef.current?.setNoiseSuppression(enabled)
           }
         />
-        </div>
-      )}
-
-      {/* Orientation hint (teacher + student): a portrait phone presents a narrow
-          video to everyone (the camera's native portrait aspect ratio gets
-          pillarboxed inside Jitsi's stage). `viewport.isPhone` already means
-          "phone-width AND portrait" (see useClassroomViewport.ts), so it flips
-          off automatically — no extra detection logic — the instant either side
-          rotates to landscape. Advisory only: it never blocks joining/controls or
-          touches the video itself. One shared block, text only differs by role,
-          so the teacher and student cases can never drift out of sync. */}
-      {viewport.isPhone && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4"
-          style={{
-            bottom: "calc(var(--sl-bar-h) + env(safe-area-inset-bottom) + 0.5rem)",
-          }}
-        >
-          <div className="pointer-events-none flex max-w-[92vw] items-center gap-2 rounded-full border border-[#1E293B] bg-[#0F172A]/95 px-4 py-2 text-xs font-medium text-[#F8FAFC] shadow-lg backdrop-blur">
-            <RotateCcw
-              className="h-3.5 w-3.5 shrink-0 text-[#3B82F6]"
-              aria-hidden="true"
-            />
-            <span>
-              {role === "teacher"
-                ? "For the best classroom video, rotate your phone to landscape."
-                : "For the best classroom experience, rotate your phone to landscape."}
-            </span>
-          </div>
         </div>
       )}
 

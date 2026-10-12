@@ -1,4 +1,5 @@
 import { getYouTubeAccessToken } from "@/lib/youtube-auth";
+import { YouTubeApiError, youtubeFetch } from "@/lib/youtube-request";
 
 type YouTubeLiveStream = {
     id: string;
@@ -53,7 +54,7 @@ export async function createYouTubeLiveStream(
             encryptedRefreshToken
         );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         "https://www.googleapis.com/youtube/v3/liveStreams?part=snippet,cdn,contentDetails,status",
         {
             method: "POST",
@@ -88,8 +89,10 @@ export async function createYouTubeLiveStream(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to create YouTube live stream."
+        throw new YouTubeApiError(
+            "Failed to create YouTube live stream.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -119,7 +122,7 @@ export async function getYouTubeLiveStream(
         streamId
     );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         url.toString(),
         {
             method: "GET",
@@ -140,8 +143,10 @@ export async function getYouTubeLiveStream(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to retrieve YouTube live stream."
+        throw new YouTubeApiError(
+            "Failed to retrieve YouTube live stream.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -177,7 +182,7 @@ export async function createYouTubeLiveBroadcast(
     const enableAutoStart =
         options.enableAutoStart ?? true;
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status,contentDetails",
         {
             method: "POST",
@@ -261,8 +266,10 @@ export async function createYouTubeLiveBroadcast(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to create YouTube live broadcast."
+        throw new YouTubeApiError(
+            "Failed to create YouTube live broadcast.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -321,7 +328,7 @@ export async function bindYouTubeLiveBroadcast(
     url.searchParams.set("id", broadcastId);
     url.searchParams.set("streamId", streamId);
 
-    const response = await fetch(url.toString(), {
+    const response = await youtubeFetch(url.toString(), {
         method: "POST",
 
         headers: {
@@ -338,8 +345,10 @@ export async function bindYouTubeLiveBroadcast(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to bind YouTube live broadcast to stream."
+        throw new YouTubeApiError(
+            "Failed to bind YouTube live broadcast to stream.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -372,7 +381,7 @@ export async function getYouTubeLiveBroadcast(
         broadcastId
     );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         url.toString(),
         {
             method: "GET",
@@ -393,8 +402,10 @@ export async function getYouTubeLiveBroadcast(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to retrieve YouTube live broadcast."
+        throw new YouTubeApiError(
+            "Failed to retrieve YouTube live broadcast.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -424,7 +435,7 @@ export async function updateYouTubeLiveBroadcastPrivacy(
             encryptedRefreshToken
         );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=status",
         {
             method: "PUT",
@@ -453,8 +464,10 @@ export async function updateYouTubeLiveBroadcastPrivacy(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to update YouTube broadcast privacy."
+        throw new YouTubeApiError(
+            "Failed to update YouTube broadcast privacy.",
+            response.status,
+            errorDetails
         );
     }
 
@@ -492,7 +505,7 @@ export async function transitionYouTubeLiveBroadcast(
         "id,snippet,status,contentDetails"
     );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         url.toString(),
         {
             method: "POST",
@@ -512,8 +525,10 @@ export async function transitionYouTubeLiveBroadcast(
             errorDetails
         );
 
-        throw new Error(
-            "Failed to transition YouTube broadcast."
+        throw new YouTubeApiError(
+            "Failed to transition YouTube broadcast.",
+            response.status,
+            errorDetails
         );
     }
 

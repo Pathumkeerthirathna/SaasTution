@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { sendEmailConfirmationCode } from "@/services/auth-service";
 import { emitStudentDataChange } from "@/lib/session-events";
+import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
 import { nowInSriLanka } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
@@ -1133,9 +1134,14 @@ export async function getStudentClassAttendance(
 
       sessions: {
         select: {
+          startedAt: true,
+          endedAt: true,
           attendance: {
             where: {
               studentId,
+            },
+            orderBy: {
+              joinedAt: "asc",
             },
             select: {
               id: true,
@@ -1149,8 +1155,22 @@ export async function getStudentClassAttendance(
   });
 
   return lectures.map((lecture) => {
-    const attendanceRecord = lecture.sessions.flatMap(
-      (session) => session.attendance
+    // Every visit of this lecture's sessions, oldest first.
+    const visits = sortVisitsChronologically(
+      lecture.sessions.flatMap((session) => session.attendance)
+    );
+    const stillOpen = visits.some((visit) => visit.leftAt === null);
+
+    // Time present: the visits summed per session (overlaps merged), open
+    // visits left out until they end.
+    const durationMs = lecture.sessions.reduce(
+      (sum, session) =>
+        sum +
+        attendedMs(session.attendance, {
+          sessionStart: session.startedAt,
+          sessionEnd: session.endedAt,
+        }),
+      0
     );
 
     return {
@@ -1158,17 +1178,22 @@ export async function getStudentClassAttendance(
       title: lecture.title,
       date: lecture.date,
 
-      attended: attendanceRecord.length > 0,
+      attended: visits.length > 0,
 
-      joinedAt:
-        attendanceRecord.length > 0
-          ? attendanceRecord[0].joinedAt
-          : null,
+      // First arrival and last departure (null while a visit is still open).
+      joinedAt: visits.length > 0 ? visits[0].joinedAt : null,
 
       leftAt:
-        attendanceRecord.length > 0
-          ? attendanceRecord[0].leftAt
+        visits.length > 0 && !stillOpen
+          ? visits.reduce<Date | null>(
+              (latest, visit) =>
+                visit.leftAt && (!latest || visit.leftAt > latest) ? visit.leftAt : latest,
+              null
+            )
           : null,
+
+      visitCount: visits.length,
+      durationMs,
     };
   });
 }
@@ -2341,20 +2366,40 @@ export async function getStudentAttendanceAnalytics(
       classSession: { endedAt: { not: null } },
     },
     select: {
+      classSessionId: true,
       joinedAt: true,
       leftAt: true,
       classSession: { select: { startedAt: true, endedAt: true } },
     },
   });
 
+  // Share of each ended session the student was present for: all their
+  // visits in that session summed (overlapping rows merged, never counted
+  // twice), then averaged over sessions, not over individual visits.
+  const visitsBySession = new Map<
+    string,
+    { startedAt: Date; endedAt: Date; visits: { joinedAt: Date; leftAt: Date | null }[] }
+  >();
+
+  for (const rec of attendanceRecords) {
+    const entry = visitsBySession.get(rec.classSessionId) ?? {
+      startedAt: rec.classSession.startedAt,
+      endedAt: rec.classSession.endedAt as Date,
+      visits: [],
+    };
+
+    entry.visits.push({ joinedAt: rec.joinedAt, leftAt: rec.leftAt });
+    visitsBySession.set(rec.classSessionId, entry);
+  }
+
   let durationSum = 0;
   let durationCount = 0;
-  for (const rec of attendanceRecords) {
-    const sessionMs =
-      (rec.classSession.endedAt as Date).getTime() -
-      rec.classSession.startedAt.getTime();
-    const presentMs =
-      (rec.leftAt as Date).getTime() - rec.joinedAt.getTime();
+  for (const session of visitsBySession.values()) {
+    const sessionMs = session.endedAt.getTime() - session.startedAt.getTime();
+    const presentMs = attendedMs(session.visits, {
+      sessionStart: session.startedAt,
+      sessionEnd: session.endedAt,
+    });
     if (sessionMs <= 0 || presentMs <= 0) continue;
     durationSum += Math.min(1, presentMs / sessionMs);
     durationCount += 1;

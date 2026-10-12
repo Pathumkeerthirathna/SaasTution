@@ -199,15 +199,33 @@ async function resolveCandidate(
 
     const now = new Date();
 
+    /*
+     * The candidate was read before YouTube was asked; a Stop / cleanup may
+     * have closed it meanwhile. Every write is conditional on the row still
+     * being open, so a stale answer never reactivates or overrides it (the
+     * affected-row count says whether it still applied).
+     */
     if (lifecycle === "live") {
         const startedAt = candidate.startedAt ?? now;
+
         if (candidate.status !== YouTubeBroadcastStatus.LIVE) {
-            await prisma.youTubeLiveBroadcast.update({
-                where: { id: candidate.id },
+            // A status sync, not a reuse: the row's `version` is not touched.
+            const promoted = await prisma.youTubeLiveBroadcast.updateMany({
+                where: {
+                    id: candidate.id,
+                    endedAt: null,
+                    status: { in: PROMOTABLE_STATUSES },
+                },
                 data: { status: YouTubeBroadcastStatus.LIVE, startedAt },
             });
+
+            if (promoted.count === 1) {
+                return toView(candidate, startedAt);
+            }
         }
-        return toView(candidate, startedAt);
+
+        // Shown only while the row is still an open LIVE row.
+        return (await isOpenLiveRow(candidate.id)) ? toView(candidate, startedAt) : null;
     }
 
     if (lifecycle === "complete" || lifecycle === "revoked") {
@@ -216,23 +234,47 @@ async function resolveCandidate(
                 ? YouTubeBroadcastStatus.COMPLETE
                 : YouTubeBroadcastStatus.REVOKED;
         if (candidate.status !== nextStatus) {
-            await prisma.youTubeLiveBroadcast.update({
-                where: { id: candidate.id },
+            await prisma.youTubeLiveBroadcast.updateMany({
+                where: { id: candidate.id, endedAt: null },
                 data: { status: nextStatus, endedAt: now },
             });
         }
         return null;
     }
 
+    // "testing" is recorded only for a row that is not an active feature
+    // (CREATED). A READY / LIVE row stays as it is: Stop, session cleanup and
+    // reconciliation only manage READY / LIVE rows, so TESTING would make the
+    // feature unmanageable.
     if (
         lifecycle === "testing" &&
-        candidate.status !== YouTubeBroadcastStatus.TESTING
+        candidate.status === YouTubeBroadcastStatus.CREATED
     ) {
-        await prisma.youTubeLiveBroadcast.update({
-            where: { id: candidate.id },
+        await prisma.youTubeLiveBroadcast.updateMany({
+            where: {
+                id: candidate.id,
+                endedAt: null,
+                status: YouTubeBroadcastStatus.CREATED,
+            },
             data: { status: YouTubeBroadcastStatus.TESTING },
         });
     }
 
     return null;
+}
+
+// Rows a "live" answer may promote to LIVE (never a closed one).
+const PROMOTABLE_STATUSES: YouTubeBroadcastStatus[] = [
+    YouTubeBroadcastStatus.CREATED,
+    YouTubeBroadcastStatus.READY,
+    YouTubeBroadcastStatus.TESTING,
+];
+
+async function isOpenLiveRow(id: string) {
+    const row = await prisma.youTubeLiveBroadcast.findFirst({
+        where: { id, endedAt: null, status: YouTubeBroadcastStatus.LIVE },
+        select: { id: true },
+    });
+
+    return Boolean(row);
 }

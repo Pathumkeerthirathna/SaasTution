@@ -6,6 +6,7 @@ import {
 } from "@/lib/youtube-auth";
 
 import { prisma } from "@/lib/prisma";
+import { AppError } from "@/lib/error-handler";
 
 export async function POST(request: NextRequest) {
     try {
@@ -29,6 +30,25 @@ export async function POST(request: NextRequest) {
             );
         }
 
+
+        // The classroom's class session: only its current session may start
+        // anything (a page left open on an ended / replaced session gets 409).
+        const sessionId =
+            typeof body.sessionId === "string"
+                ? body.sessionId.trim()
+                : "";
+
+        if (!sessionId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "sessionId is required.",
+                    code: "VALIDATION_ERROR",
+                },
+                { status: 400 }
+            );
+        }
+
         const isLive =
             body.isLive === true;
 
@@ -38,7 +58,8 @@ export async function POST(request: NextRequest) {
             await startYouTubeRecording(
                 teacherSession.teacherId,
                 lectureId,
-                isLive
+                isLive,
+                sessionId
             );
 
         return NextResponse.json({
@@ -92,6 +113,19 @@ export async function POST(request: NextRequest) {
             );
         }
 
+
+        // A deliberate refusal from the reuse checks, e.g.
+        // YOUTUBE_BROADCAST_CHECK_FAILED (503) or YOUTUBE_BROADCAST_BUSY (409).
+        if (error instanceof AppError) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: error.message,
+                    code: error.code,
+                },
+                { status: error.statusCode }
+            );
+        }
 
         const message =
             error instanceof Error

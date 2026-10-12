@@ -1,4 +1,5 @@
 import { decryptYouTubeToken } from "@/lib/youtube-crypto";
+import { youtubeFetch } from "@/lib/youtube-request";
 
 export class YouTubeReauthorizationRequiredError extends Error {
     constructor() {
@@ -32,7 +33,7 @@ export async function getYouTubeAccessToken(
             encryptedRefreshToken
         );
 
-    const response = await fetch(
+    const response = await youtubeFetch(
         "https://oauth2.googleapis.com/token",
         {
             method: "POST",

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { attendedMs } from "@/lib/attendance-duration";
 import {
   CalendarCheck,
   CalendarClock,
@@ -291,10 +292,10 @@ function StudentAttendancePageInner() {
             </p>
             <div className="space-y-2.5">
               {groups.map((group) => {
-                const totalPresentMs = group.entries.reduce(
-                  (sum, e) => sum + durationMs(e.joinedAt, e.leftAt),
-                  0
-                );
+                // All visits of the session summed; overlapping rows are
+                // merged so no minute is counted twice; open visits are not
+                // counted until they end.
+                const totalPresentMs = attendedMs(group.entries);
                 const multi = group.entries.length > 1;
 
                 return (

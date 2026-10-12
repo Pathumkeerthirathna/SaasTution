@@ -16,6 +16,23 @@ import {
   Maximize2,
 } from "lucide-react";
 
+// Header controls: one compact size (28px, 32px from sm) and shape for every
+// button and chip, so Record / Start Live / End Session line up exactly.
+const HEADER_CONTROL =
+  "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-xs font-semibold leading-none tracking-[-0.005em] sm:h-8 sm:rounded-[10px] sm:px-3 sm:text-[13px]";
+const HEADER_BUTTON = `${HEADER_CONTROL} transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA]/70 disabled:cursor-not-allowed disabled:opacity-55`;
+// Secondary (Record, Connect YouTube, Fullscreen): quiet glass.
+const HEADER_SECONDARY = `${HEADER_BUTTON} bg-white/[0.07] text-[#E2E8F0] ring-1 ring-inset ring-white/10 hover:bg-white/[0.12] hover:text-white`;
+// Primary accent (Start Live): soft red gradient with a faint top highlight.
+const HEADER_PRIMARY = `${HEADER_BUTTON} bg-gradient-to-b from-[#F25555] to-[#DC2626] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(2,6,23,0.35)] hover:from-[#F46666] hover:to-[#E23131]`;
+// Destructive but restrained (End Session, Stop Recording): tinted, not solid.
+const HEADER_DESTRUCTIVE = `${HEADER_BUTTON} bg-[#EF4444]/[0.14] text-[#FCA5A5] ring-1 ring-inset ring-[#EF4444]/35 hover:bg-[#EF4444]/[0.22] hover:text-[#FECACA]`;
+// Stop Live: the solid, darker red of an action in progress.
+const HEADER_STOP_LIVE = `${HEADER_BUTTON} bg-gradient-to-b from-[#C62828] to-[#A51C1C] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_1px_2px_rgba(2,6,23,0.35)] hover:from-[#D03131] hover:to-[#B02020]`;
+// Needs attention (Reconnect YouTube).
+const HEADER_WARNING = `${HEADER_BUTTON} bg-amber-500/[0.14] text-amber-300 ring-1 ring-inset ring-amber-500/30 hover:bg-amber-500/[0.22]`;
+const HEADER_ICON = 14;
+
 type MeetingCardProps = {
   children: ReactNode;
   className: string;
@@ -53,6 +70,12 @@ type MeetingCardProps = {
 
   /** Lets the classroom measure the header (it can wrap onto two rows on narrow screens). */
   headerRef?: Ref<HTMLDivElement>;
+
+  /**
+   * Shown in its own row between the header and the meeting (e.g. the portrait
+   * phone orientation tip), so it never covers the video or its controls.
+   */
+  belowHeader?: ReactNode;
 
   /**
    * True while the teacher is inside a breakout room. Recording and YouTube Live run in
@@ -120,6 +143,7 @@ export default function MeetingCard({
   youtubeLiveUrl,
   showHeader = true,
   headerRef,
+  belowHeader,
   breakoutActive = false,
   immersive,
   startLiveButtonRef,
@@ -292,17 +316,17 @@ export default function MeetingCard({
           </div>
         </div>
 
-        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-5 gap-y-2 lg:shrink-0 lg:flex-nowrap">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-2 lg:shrink-0 lg:flex-nowrap">
 
           {role === "student" && isLive && (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-2.5 py-1 sm:px-3 sm:py-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className={`${HEADER_CONTROL} bg-[#EF4444]/[0.16] text-[#FCA5A5] ring-1 ring-inset ring-[#EF4444]/35`}>
                 <Radio
-                  size={16}
-                  className="animate-pulse text-[#EF4444]"
+                  size={HEADER_ICON}
+                  className="animate-pulse"
                 />
 
-                <span className="text-xs font-semibold text-[#EF4444] sm:text-sm">
+                <span className="tracking-wide">
                   LIVE
                 </span>
               </div>
@@ -312,9 +336,9 @@ export default function MeetingCard({
                   href={youtubeLiveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-[#DC2626] sm:px-3 sm:py-1.5 sm:text-sm"
+                  className={HEADER_PRIMARY}
                 >
-                  <MonitorPlay size={16} />
+                  <MonitorPlay size={HEADER_ICON} />
                   Watch on YouTube
                 </a>
               )}
@@ -322,11 +346,11 @@ export default function MeetingCard({
           )}
 
           {role === "teacher" && (
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:flex-nowrap">
+            <div className="flex flex-wrap items-center gap-1.5 lg:flex-nowrap">
 
              {!isConferenceReady ? (
-                <div className="flex items-center gap-2 rounded-full bg-[#1E293B] px-3 py-1.5 text-xs font-medium text-[#94A3B8] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm">
-                  <Loader2 size={14} className="animate-spin" />
+                <div className={`${HEADER_CONTROL} bg-white/[0.05] font-medium text-[#94A3B8] ring-1 ring-inset ring-white/[0.08]`}>
+                  <Loader2 size={HEADER_ICON} className="animate-spin" />
                   Connecting to session...
                 </div>
              ) : !youtubeStatus && !isLive && !isRecording ? (
@@ -336,18 +360,18 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleReconnectYoutube}
-                  className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  className={HEADER_SECONDARY}
                 >
-                  <Video size={14} />
+                  <Video size={HEADER_ICON} />
                   Connect YouTube
                 </button>
              ) : youtubeReauthRequired && !isLive && !isRecording ? (
                 <button
                   type="button"
                   onClick={handleReconnectYoutube}
-                  className="flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  className={HEADER_WARNING}
                 >
-                  <RotateCcw size={14} />
+                  <RotateCcw size={HEADER_ICON} />
                   Reconnect YouTube
                 </button>
              ) : (
@@ -358,16 +382,16 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartRecording}
                   disabled={isYoutubeActionBusy}
-                  title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  title={breakoutHint ?? "Record this class to YouTube"}
+                  className={HEADER_SECONDARY}
                 >
                   {isStartingRecording ? (
                     <Loader2
-                      size={14}
+                      size={HEADER_ICON}
                       className="animate-spin"
                     />
                   ) : (
-                    <Video size={14} />
+                    <Video size={HEADER_ICON} />
                   )}
 
                   {isStartingRecording
@@ -384,12 +408,12 @@ export default function MeetingCard({
                   onClick={handleStopRecording}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-400 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  className={HEADER_DESTRUCTIVE}
                 >
                   {isStoppingRecording ? (
-                    <Loader2 size={14} className="animate-spin" />
+                    <Loader2 size={HEADER_ICON} className="animate-spin" />
                   ) : (
-                    <CircleStop size={14} />
+                    <CircleStop size={HEADER_ICON} />
                   )}
                   {isStoppingRecording ? "Stopping Recording..." : "Stop Recording"}
                 </button>
@@ -401,16 +425,16 @@ export default function MeetingCard({
                   type="button"
                   onClick={handleStartLive}
                   disabled={isYoutubeActionBusy}
-                  title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#EF4444] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#DC2626] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  title={breakoutHint ?? "Go live on YouTube"}
+                  className={HEADER_PRIMARY}
                 >
                   {isStartingLive ? (
                     <Loader2
-                      size={14}
+                      size={HEADER_ICON}
                       className="animate-spin"
                     />
                   ) : (
-                    <Radio size={14} />
+                    <Radio size={HEADER_ICON} />
                   )}
 
                   {isStartingLive
@@ -425,16 +449,16 @@ export default function MeetingCard({
                   onClick={handleStopLive}
                   disabled={isYoutubeActionBusy}
                   title={breakoutHint}
-                  className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                  className={HEADER_STOP_LIVE}
                 >
                   {isStoppingLive ? (
                     <Loader2
-                      size={14}
+                      size={HEADER_ICON}
                       className="animate-spin"
                     />
                   ) : (
                     <Radio
-                      size={14}
+                      size={HEADER_ICON}
                       className="animate-pulse"
                     />
                   )}
@@ -450,13 +474,13 @@ export default function MeetingCard({
 
               {/* LIVE */}
               {isLive && (
-                <div className="flex items-center gap-2 rounded-full bg-[#EF4444]/20 px-2.5 py-1 sm:px-3 sm:py-1.5">
+                <div className={`${HEADER_CONTROL} bg-[#EF4444]/[0.14] text-[#F87171] ring-1 ring-inset ring-[#EF4444]/30`}>
                   <Radio
-                    size={16}
-                    className="animate-pulse text-[#EF4444]"
+                    size={HEADER_ICON}
+                    className="animate-pulse"
                   />
 
-                  <span className="text-xs font-semibold text-[#EF4444] sm:text-sm">
+                  <span className="tracking-wide">
                     LIVE
                   </span>
                 </div>
@@ -468,7 +492,7 @@ export default function MeetingCard({
                   onClick={() =>
                     setShowYoutubeShare(true)
                   }
-                  className="flex items-center gap-2 rounded-full bg-[#1E293B] px-2.5 py-1 text-xs font-medium text-[#F8FAFC] transition hover:bg-[#334155] sm:px-3 sm:py-1.5 sm:text-sm"
+                  className={HEADER_SECONDARY}
                 >
                   <span>🔗</span>
                   <span>Get Link</span>
@@ -484,9 +508,10 @@ export default function MeetingCard({
                     type="button"
                     onClick={() => setShowEndSessionConfirm((prev) => !prev)}
                     disabled={isEndingSession}
-                    className="flex items-center gap-2 rounded-full bg-[#B91C1C] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#991B1B] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+                    title="End this session for everyone"
+                    className={HEADER_DESTRUCTIVE}
                   >
-                    <PhoneOff size={14} />
+                    <PhoneOff size={HEADER_ICON} />
                     {isEndingSession ? "Ending..." : "End Session"}
                   </button>
 
@@ -537,9 +562,9 @@ export default function MeetingCard({
             <button
               type="button"
               onClick={() => onEnterFullscreen?.()}
-              className="flex items-center gap-2 rounded-full bg-[#334155] px-3 py-1.5 text-xs font-semibold text-[#F8FAFC] transition hover:bg-[#475569] sm:px-3.5 sm:text-[13px] lg:px-4 lg:py-2 lg:text-sm"
+              className={HEADER_SECONDARY}
             >
-              <Maximize2 size={14} />
+              <Maximize2 size={HEADER_ICON} />
               Fullscreen
             </button>
           )}
@@ -701,12 +726,15 @@ export default function MeetingCard({
           )} */}
 
          {role === "teacher" && youtubeChannelTitle && (
-            <div className="flex items-center gap-3 rounded-xl border border-[#1E293B] bg-[#172033] px-2.5 py-1.5 sm:px-3 sm:py-2">
+            <div
+              title={`YouTube channel: ${youtubeChannelTitle}`}
+              className="flex h-7 min-w-0 items-center gap-2 rounded-[9px] bg-white/[0.05] pl-1 pr-2.5 ring-1 ring-inset ring-white/[0.08] sm:h-8 sm:rounded-[10px] sm:pl-1.5"
+            >
               {/* YouTube icon */}
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#FF0033]/10 sm:h-7 sm:w-7">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#FF0033]/[0.12] sm:h-6 sm:w-6 sm:rounded-[7px]">
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-3.5 w-3.5 text-[#FF0033] sm:h-4 sm:w-4"
+                  className="h-3 w-3 text-[#FF0033] sm:h-3.5 sm:w-3.5"
                   fill="currentColor"
                   aria-hidden="true"
                 >
@@ -715,13 +743,11 @@ export default function MeetingCard({
               </div>
 
               {/* Channel information */}
-              <div className="min-w-0">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-[#94A3B8] sm:text-[11px]">
-                  YouTube Channel
-                </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="sr-only">YouTube channel:</span>
 
-                <div className="flex items-center gap-2">
-                  <span className="max-w-[130px] truncate text-xs font-semibold text-[#F8FAFC] max-sm:max-w-[45vw] sm:text-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="max-w-[140px] truncate text-xs font-semibold text-[#F1F5F9] max-sm:max-w-[45vw] sm:text-[13px]">
                     {youtubeChannelTitle}
                   </span>
 
@@ -729,15 +755,18 @@ export default function MeetingCard({
                     <button
                       type="button"
                       onClick={handleReconnectYoutube}
-                      className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30 transition hover:bg-amber-500/25 sm:text-[11px]"
+                      className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/30 transition hover:bg-amber-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70 sm:text-[11px]"
                     >
                       <RotateCcw size={11} />
                       Reconnect
                     </button>
                   ) : (
-                    <span className="flex items-center gap-1 text-[10px] font-medium text-[#22C55E] sm:text-[11px]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
-                      Connected
+                    <span
+                      className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-[#4ADE80] sm:text-[11px]"
+                      title="YouTube connected"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E] shadow-[0_0_0_2px_rgba(34,197,94,0.18)]" />
+                      <span className="max-sm:sr-only">Connected</span>
                     </span>
                   )}
                 </div>
@@ -771,6 +800,8 @@ export default function MeetingCard({
 
       </div>
       )}
+
+      {showHeader && belowHeader}
 
       {/* JITSI CONTENT */}
       <div className="min-h-0 flex-1 overflow-hidden bg-black">

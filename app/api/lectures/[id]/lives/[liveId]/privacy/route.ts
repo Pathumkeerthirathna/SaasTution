@@ -28,10 +28,14 @@ export async function PUT(
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
+    // Checks ownership and that the broadcast belongs to this lecture, then
+    // changes it under the lecture's YouTube operation lock (409 while
+    // another Recording / Live action runs).
     const liveBroadcast = await updateYouTubeLiveBroadcastPrivacyForTeacher(
       session.teacherId,
       liveId,
-      parsed.data.privacy
+      parsed.data.privacy,
+      context.params.id
     );
 
     return apiSuccess(

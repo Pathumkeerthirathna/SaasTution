@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import {
-    getYouTubeLiveBroadcast,
-    transitionYouTubeLiveBroadcast,
-} from "@/lib/youtube-live";
-import { YouTubeBroadcastStatus } from "@prisma/client";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { stopYouTubeFeature } from "@/lib/youtube-feature-lifecycle";
+import { youtubeRouteErrorResponse } from "@/lib/youtube-route-errors";
 
-
+/*
+ * Stop Recording. The rules live in stopYouTubeFeature
+ * (lib/youtube-feature-lifecycle.ts): under the lecture lock; a broadcast the
+ * Live still uses is not completed; a YouTube failure changes nothing (503);
+ * a broadcast YouTube no longer knows is closed; `stopJibri` says whether the
+ * page may stop Jibri.
+ */
 export async function POST(request: Request) {
+    let teacherId: string | null = null;
+
     try {
         const teacherSession =
             await requireTeacherSession();
+
+        teacherId = teacherSession.teacherId;
 
         const body =
             await request.json();
@@ -31,173 +37,9 @@ export async function POST(request: Request) {
             );
         }
 
-        const lecture =
-            await prisma.lecture.findUnique({
-                where: {
-                    id: lectureId,
-                },
-                include: {
-                    class: {
-                        select: {
-                            teacherId: true,
-                        },
-                    },
-                },
-            });
-
-        if (!lecture) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: "Lecture not found.",
-                },
-                { status: 404 }
-            );
-        }
-
-        if (
-            lecture.class.teacherId !==
-            teacherSession.teacherId
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error:
-                        "You are not authorized to stop this recording.",
-                },
-                { status: 403 }
-            );
-        }
-
-        /*
-         * Find the latest active/ready recording
-         * for this lecture.
-         */
-        const recording =
-            await prisma.youTubeRecording.findFirst({
-                where: {
-                    lectureId: lecture.id,
-
-                    status: {
-                        in: [
-                            YouTubeBroadcastStatus.READY,
-                            YouTubeBroadcastStatus.LIVE,
-                        ],
-                    },
-                },
-
-                orderBy: {
-                    createdAt: "desc",
-                },
-            });
-
-        if (!recording) {
-            return NextResponse.json({
-                success: true,
-                message:
-                    "No active YouTube recording exists.",
-            });
-        }
-
-        const connection =
-            await prisma.youTubeConnection.findUnique({
-                where: {
-                    teacherId:
-                        teacherSession.teacherId,
-                },
-            });
-
-        if (!connection) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error:
-                        "YouTube connection not found.",
-                },
-                { status: 404 }
-            );
-        }
-
-        const broadcast =
-            await getYouTubeLiveBroadcast(
-                connection.refreshTokenEncrypted,
-                recording.broadcastId
-            );
-
-        const lifecycleStatus =
-            broadcast.status?.lifeCycleStatus;
-
-        console.log(
-            "⏹ STOPPING YOUTUBE RECORDING:",
-            {
-                recordingId:
-                    recording.id,
-
-                broadcastId:
-                    recording.broadcastId,
-
-                lifecycleStatus,
-            }
+        return NextResponse.json(
+            await stopYouTubeFeature(teacherId, lectureId, "recording")
         );
-
-        let completedBroadcast =
-            broadcast;
-
-        if (
-            lifecycleStatus === "live" ||
-            lifecycleStatus === "ready"
-        ) {
-            completedBroadcast =
-                await transitionYouTubeLiveBroadcast(
-                    connection.refreshTokenEncrypted,
-                    recording.broadcastId,
-                    "complete"
-                );
-
-                console.log(
-                    "⏹ Completing ONLY recording broadcast:",
-                    {
-                        recordingBroadcastId:
-                            recording.broadcastId,
-
-                        reusableStreamId:
-                            connection.liveStreamId,
-
-                        lifecycleStatus,
-                    }
-                );
-        }
-
-        await prisma.youTubeRecording.update({
-            where: {
-                id: recording.id,
-            },
-            data: {
-                status:
-                    YouTubeBroadcastStatus.COMPLETE,
-
-                endedAt:
-                    new Date(),
-            },
-        });
-
-        return NextResponse.json({
-            success: true,
-
-            recordingId:
-                recording.id,
-
-            broadcastId:
-                recording.broadcastId,
-
-            youtubeUrl:
-                recording.youtubeUrl,
-
-            status:
-                completedBroadcast.status
-                    ?.lifeCycleStatus
-                    ?.toUpperCase(),
-        });
 
     } catch (error) {
         console.error(
@@ -205,15 +47,12 @@ export async function POST(request: Request) {
             error
         );
 
-        return NextResponse.json(
-            {
-                success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to stop YouTube recording.",
-            },
-            { status: 500 }
+        return youtubeRouteErrorResponse(
+            error,
+            teacherId,
+            error instanceof Error
+                ? error.message
+                : "Failed to stop YouTube recording."
         );
     }
 }

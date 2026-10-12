@@ -7,23 +7,32 @@ type MicrophoneLevelProps = {
 export default function MicrophoneLevel({
   level,
 }: MicrophoneLevelProps) {
-  return (
-    <div className="mt-4">
+  const value = Math.max(0, Math.min(100, Math.round(level)));
 
-      <div className="mb-1.5 flex items-center justify-between">
+  return (
+    <div className="min-w-0 flex-1">
+
+      <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-slate-400">
-          Microphone
+          Microphone level
         </span>
 
-        <span className="text-xs text-slate-500">
-          {Math.round(level)}%
+        <span className="text-xs tabular-nums text-slate-500">
+          {value}%
         </span>
       </div>
 
-      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+      <div
+        role="meter"
+        aria-label="Microphone level"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+        className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]"
+      >
 
         <div
-          className="h-full rounded-full bg-green-500 transition-all duration-75"
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400 transition-[width] duration-75"
           style={{
             width: `${level}%`,
           }}

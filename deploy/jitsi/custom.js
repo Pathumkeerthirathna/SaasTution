@@ -145,6 +145,234 @@ const SL_TEACHER_CAMERA_ROTATION_SUBTICK_SECONDS = 2;
 // Requested heights: filmstrip tiles; screen shares not on the stage.
 const SL_TEACHER_ROTATION_CAMERA_MAX_HEIGHT = 180;
 const SL_TEACHER_ROTATION_SHARE_MAX_HEIGHT = 360;
+// Tiles view: the student enlarged in the side panel. Requested explicitly,
+// whatever Jitsi's own stage height (its pin, the teacher's video-quality
+// setting) or a screen share on the stage. 360 is a real simulcast layer of
+// a 720p camera (layers ~180 / 360 / 720); it is a REQUESTED maximum, what
+// actually arrives depends on the sender's layers and the bandwidth.
+const SL_TEACHER_ENLARGED_CAMERA_MAX_HEIGHT = 360;
+// Tiles view (nearby groups): how often a few groups pass their live slot
+// on, and how long a camera stays live at least before it is passed on
+// (several times a camera's start-up time, so swaps stay calm).
+const SL_TEACHER_TILES_ROTATION_SUBTICK_SECONDS = 5;
+const SL_TEACHER_TILES_MIN_LIVE_SECONDS = 15;
+
+
+/*
+ * Tiles view: the reading order of the rendered tiles, from their measured
+ * positions (never from participant IDs). Tiles whose centres are within
+ * half a tile height form a row; rows go top to bottom. Each row is walked
+ * in the direction that starts nearest to where the previous row ended
+ * (chosen over all rows at once: smallest largest jump, then smallest total,
+ * then plain alternation starting left to right), so neighbours in the order
+ * are neighbours on screen, also into a short last row. Unmeasured tiles (no
+ * size) keep their given order at the end.
+ *
+ * entries: [{ id, left, top, width, height }] in rendered (DOM) order.
+ * Returns { order: ids, rows: count, columns: widest row,
+ *           positions: { id: { row, x } } } (x in tile widths).
+ */
+function slSpatialOrder(entries) {
+    const measured = [];
+    const unmeasured = [];
+
+    (Array.isArray(entries) ? entries : []).forEach(entry => {
+        if (entry && entry.width > 0 && entry.height > 0) {
+            measured.push({
+                id: entry.id,
+                x: entry.left + entry.width / 2,
+                y: entry.top + entry.height / 2,
+                w: entry.width,
+                h: entry.height
+            });
+        } else if (entry) {
+            unmeasured.push(entry.id);
+        }
+    });
+
+    measured.sort((a, b) => a.y - b.y || a.x - b.x);
+
+    const rows = [];
+
+    measured.forEach(tile => {
+        const row = rows[rows.length - 1];
+
+        if (row && Math.abs(tile.y - row[0].y) < Math.min(tile.h, row[0].h) / 2) {
+            row.push(tile);
+        } else {
+            rows.push([tile]);
+        }
+    });
+
+    rows.forEach((row, index) => {
+        row.sort((a, b) => a.x - b.x);
+        row.forEach(tile => { tile.row = index; });
+    });
+
+    const unit = measured.length
+        ? measured.reduce((sum, tile) => sum + tile.w, 0) / measured.length
+        : 1;
+    const jump = (a, b) => Math.round(Math.max(Math.abs(a.row - b.row), Math.abs(a.x - b.x) / unit) * 1e6) / 1e6;
+    // Direction 0: left to right; 1: right to left.
+    const first = (row, dir) => (dir ? row[row.length - 1] : row[0]);
+    const last = (row, dir) => (dir ? row[0] : row[row.length - 1]);
+    const better = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+    // best[r][dir] = [largest jump, total jump, rows off the plain
+    // alternation] for rows 0..r with row r walked in dir; from[r][dir]:
+    // the previous row's direction.
+    const best = [];
+    const from = [];
+
+    rows.forEach((row, index) => {
+        best[index] = [];
+        from[index] = [];
+
+        [0, 1].forEach(dir => {
+            const off = dir !== index % 2 ? 1 : 0;
+
+            if (index === 0) {
+                best[index][dir] = [0, 0, off];
+                return;
+            }
+
+            [0, 1].forEach(previous => {
+                const before = best[index - 1][previous];
+                const step = jump(last(rows[index - 1], previous), first(row, dir));
+                const cost = [Math.max(before[0], step), before[1] + step, before[2] + off];
+
+                if (!best[index][dir] || better(cost, best[index][dir]) < 0) {
+                    best[index][dir] = cost;
+                    from[index][dir] = previous;
+                }
+            });
+        });
+    });
+
+    const directions = [];
+
+    if (rows.length) {
+        let dir = better(best[rows.length - 1][0], best[rows.length - 1][1]) <= 0 ? 0 : 1;
+
+        for (let index = rows.length - 1; index >= 0; index--) {
+            directions[index] = dir;
+            dir = index > 0 ? from[index][dir] : dir;
+        }
+    }
+
+    const order = [];
+    const positions = {};
+
+    rows.forEach((row, index) => {
+        (directions[index] ? row.slice().reverse() : row).forEach(tile => {
+            order.push(tile.id);
+            positions[tile.id] = { row: tile.row, x: tile.x / unit };
+        });
+    });
+
+    return {
+        order: order.concat(unmeasured),
+        rows: rows.length,
+        columns: rows.reduce((widest, row) => Math.max(widest, row.length), 0),
+        positions
+    };
+}
+
+// Splits an ordered list into `count` contiguous groups whose sizes differ
+// by at most one. count >= ids.length: one each.
+//
+// Without positions: the larger groups first. With positions ({ id: { row,
+// x } } or a Map, from slSpatialOrder): the same sizes, arranged so that the
+// widest group (largest distance between two of its members, in tiles) is
+// as narrow as possible, so group boundaries fall where the order jumps
+// (e.g. into a short last row, or across camera-off tiles). Ties keep the
+// plain arrangement.
+function slPartitionGroups(ids, count, positions) {
+    const list = Array.isArray(ids) ? ids : [];
+    const groups = Math.max(0, Math.min(Math.floor(count) || 0, list.length));
+    const plain = () => {
+        const result = [];
+        let start = 0;
+
+        for (let group = 0; group < groups; group++) {
+            const size = Math.floor(list.length / groups) + (group < list.length % groups ? 1 : 0);
+
+            result.push(list.slice(start, start + size));
+            start += size;
+        }
+
+        return result;
+    };
+
+    if (!positions || !groups) {
+        return plain();
+    }
+
+    const at = id => (positions instanceof Map ? positions.get(id) : positions[id]);
+    const distance = (a, b) => {
+        const p = at(a);
+        const q = at(b);
+
+        return p && q ? Math.round(Math.max(Math.abs(p.row - q.row), Math.abs(p.x - q.x)) * 1e6) / 1e6 : 0;
+    };
+    const width = (from, to) => {
+        let widest = 0;
+
+        for (let i = from; i < to; i++) {
+            for (let j = i + 1; j < to; j++) {
+                widest = Math.max(widest, distance(list[i], list[j]));
+            }
+        }
+
+        return widest;
+    };
+
+    const small = Math.floor(list.length / groups);
+    const sizes = [small, small + 1];
+    // best[g][i]: narrowest possible widest group for the first i ids in g
+    // groups; size[g][i]: the last group's size there (the smaller one wins
+    // ties, so the larger groups end up first, as without positions).
+    const best = [[0]];
+    const size = [[]];
+
+    for (let group = 1; group <= groups; group++) {
+        best[group] = [];
+        size[group] = [];
+
+        for (let end = 1; end <= list.length; end++) {
+            sizes.forEach(length => {
+                const start = end - length;
+
+                if (start < 0 || best[group - 1][start] === undefined) {
+                    return;
+                }
+
+                const cost = Math.max(best[group - 1][start], width(start, end));
+
+                if (best[group][end] === undefined || cost < best[group][end]) {
+                    best[group][end] = cost;
+                    size[group][end] = length;
+                }
+            });
+        }
+    }
+
+    if (best[groups][list.length] === undefined) {
+        return plain();
+    }
+
+    const result = [];
+    let end = list.length;
+
+    for (let group = groups; group > 0; group--) {
+        const length = size[group][end];
+
+        result.unshift(list.slice(end - length, end));
+        end -= length;
+    }
+
+    return result;
+}
 
 
 /*
@@ -154,12 +382,29 @@ const SL_TEACHER_ROTATION_SHARE_MAX_HEIGHT = 360;
  * take part; camera-OFF students use no slot. A selected student (Phase C)
  * is a priority camera and uses one slot; co-teacher cameras are always
  * received and use none. While all fit, all are received and nothing
- * rotates. Otherwise the rest share the remaining slots in a deterministic
- * ROLLING window: the students are spread over G = ceil(N / slots) stable
- * groups by stride (filmstrip index mod G), so consecutive live cameras
- * are spread over the whole filmstrip; every sub-tick the k longest-live
- * cameras are replaced by the next k in that order, so only a few sources
- * (keyframes) change at a time, never a whole group.
+ * rotates. Otherwise the rest share the remaining slots in a ROLLING
+ * window: every sub-tick the k longest-live cameras are replaced by the k
+ * students who have WAITED longest, so only a few sources (keyframes)
+ * change at a time, never a whole group.
+ *
+ * Fairness: each student carries a waiting credit (when they last stopped
+ * being received, or first became eligible). It is never reset by a change
+ * of the CPU budget, the selection or the class size, so nobody can be
+ * starved by such changes: a student only ever moves to the back of the
+ * queue by having just been live. The stride groups (filmstrip index mod
+ * G = ceil(N / slots)) only break ties between equal credit, which spreads
+ * the first live cameras over the whole filmstrip.
+ *
+ * Tiles view (setLayout): only the students on the teacher's current page
+ * take part (the selected student stays a priority camera wherever they
+ * are). When they do not all fit, they are cut, in the grid's measured
+ * reading order (slSpatialOrder), into one contiguous group of nearby
+ * tiles per live slot (slPartitionGroups): exactly one student per group
+ * is live, and every 5 s a few groups (those live longest, at least 15 s)
+ * pass their slot on to the member who has waited longest. A student who
+ * has waited far too long has their group moved first, so changing
+ * budgets, pages or selections cannot starve anyone. Waiting credit is the
+ * same as above and survives page and layout changes.
  *
  * It decides only WHICH cameras; the receive policy turns that into
  * receiver constraints (the one setReceiverConstraints wrapper), and the
@@ -170,8 +415,19 @@ const slTeacherRotation = (function () {
 
     const DWELL_MS = SL_TEACHER_CAMERA_ROTATION_SECONDS * 1000;
     const SUBTICK_MS = SL_TEACHER_CAMERA_ROTATION_SUBTICK_SECONDS * 1000;
+    const TILES_SUBTICK_MS = SL_TEACHER_TILES_ROTATION_SUBTICK_SECONDS * 1000;
+    const TILES_MIN_LIVE_TICKS = Math.max(1,
+        Math.ceil(SL_TEACHER_TILES_MIN_LIVE_SECONDS / SL_TEACHER_TILES_ROTATION_SUBTICK_SECONDS));
 
     let active = false;
+    // Tiles view: the participant enlarged in the side panel (its camera is
+    // requested at SL_TEACHER_ENLARGED_CAMERA_MAX_HEIGHT), or null.
+    let enlargedId = null;
+    // Tiles view: { key, scope: Set of page IDs, index: ID -> reading-order
+    // position }, or null (List view: every camera-ON student).
+    let layout = null;
+    // Tiles view: the current nearby groups (one live slot each).
+    let groups = [];
     let priorityIds = [];
     // Student-camera budget while lib-jitsi-meet limits lastN for CPU; null
     // = not limited.
@@ -183,11 +439,23 @@ const slTeacherRotation = (function () {
     let groupCount = 0;
     const groupOf = new Map();
     let sequence = [];
-    let cursor = 0;
     // Rotating live cameras: participant ID -> sub-tick it went live.
     const live = new Map();
+    // Waiting credit: participant ID -> stamp of when they started waiting
+    // (lower = waiting longer). Kept while a student is selected or has the
+    // camera off, so neither costs them their place.
+    const waitingSince = new Map();
+    // Deadline guard: the sub-tick each student started waiting IN THE
+    // CURRENT POOL (this page / this view). Unlike the waiting credit it
+    // restarts when a student enters the pool (page change, List -> Tiles,
+    // camera on, deselected), so time spent off the page never makes a
+    // group overdue.
+    const waitingTick = new Map();
+    let lastPoolMode = null;
+    let stampClock = 0;
     let tickNo = 0;
     let timer = null;
+    let timerMs = 0;
     // TESTING ONLY switch (via __slTeacherViewTest): sub-ticks by hand.
     let autoTick = true;
     let lastConference = null;
@@ -214,17 +482,27 @@ const slTeacherRotation = (function () {
         return false;
     }
 
-    // Camera-ON students (filmstrip order: join order) and co-teachers.
+    // Camera-ON students (filmstrip order: join order), co-teachers, and every
+    // student present (camera on or off).
     function collect(state) {
         const participants = state?.["features/base/participants"];
         const remote = participants?.remote;
         const students = [];
         const coTeachers = [];
+        const present = new Set();
 
         if (remote && typeof remote.entries === "function") {
             for (const [participantId, participant] of remote.entries()) {
                 if (!participant || participant.fakeParticipant
-                    || participantId === participants.local?.id || !cameraOn(participant)) {
+                    || participantId === participants.local?.id) {
+                    continue;
+                }
+
+                if (participant.role !== "moderator") {
+                    present.add(participantId);
+                }
+
+                if (!cameraOn(participant)) {
                     continue;
                 }
 
@@ -232,7 +510,14 @@ const slTeacherRotation = (function () {
             }
         }
 
-        return { students, coTeachers };
+        return { students, coTeachers, present };
+    }
+
+    // A new stamp: later stamps wait behind earlier ones.
+    function nextStamp() {
+        stampClock += 1;
+
+        return stampClock;
     }
 
     function stopTimer() {
@@ -242,10 +527,32 @@ const slTeacherRotation = (function () {
         }
     }
 
+    // One timer at most, at the current view's pace (List / Tiles).
     function startTimer() {
-        if (!timer && autoTick) {
-            timer = setInterval(subtick, SUBTICK_MS);
+        const ms = layout ? TILES_SUBTICK_MS : SUBTICK_MS;
+
+        if (timer && timerMs !== ms) {
+            stopTimer();
         }
+
+        if (!timer && autoTick) {
+            timer = setInterval(subtick, ms);
+            timerMs = ms;
+        }
+    }
+
+    // The sub-tick a camera started now counts from. In the Tiles view a
+    // camera started between sub-ticks (page / budget / selection change,
+    // camera on) counts from the NEXT sub-tick, so its minimum live time is
+    // never shortened by the part of an interval already gone; one started
+    // by a sub-tick itself counts from that sub-tick. List view: unchanged.
+    function admissionTick() {
+        return layout ? tickNo + 1 : tickNo;
+    }
+
+    function setWaiting(id, stamp) {
+        waitingSince.set(id, stamp);
+        waitingTick.set(id, tickNo);
     }
 
     function notify() {
@@ -256,6 +563,7 @@ const slTeacherRotation = (function () {
 
     // Live -> not live while the camera stays ON: the teacher view pauses
     // these tiles first (their last frame stays), then they are dropped.
+    // They have just been live, so they wait behind everyone already waiting.
     function drop(ids) {
         if (!ids.length) {
             return;
@@ -265,17 +573,25 @@ const slTeacherRotation = (function () {
             onWillDrop(ids.slice());
         }
 
-        ids.forEach(id => live.delete(id));
+        const stamp = nextStamp();
+
+        ids.forEach(id => {
+            live.delete(id);
+            setWaiting(id, stamp);
+        });
     }
 
-    function dropOldest(count, keep) {
+    function sequenceOrder() {
+        return new Map(sequence.map((id, index) => [id, index]));
+    }
+
+    function dropOldest(count) {
         if (count <= 0) {
             return [];
         }
 
-        const order = new Map(sequence.map((id, index) => [id, index]));
+        const order = sequenceOrder();
         const oldest = Array.from(live.entries())
-            .filter(([id]) => !keep || !keep.has(id))
             .sort((a, b) => a[1] - b[1] || (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0))
             .slice(0, count)
             .map(([id]) => id);
@@ -285,23 +601,34 @@ const slTeacherRotation = (function () {
         return oldest;
     }
 
-    // Fills free slots with the next students in the rotation order.
+    // The students not live now, longest waiting first (ties: rotation order).
+    function waitingOrder() {
+        const order = sequenceOrder();
+
+        return pool
+            .filter(id => !live.has(id))
+            .sort((a, b) => (waitingSince.get(a) ?? 0) - (waitingSince.get(b) ?? 0)
+                || (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    }
+
+    // Fills free slots with the students who have waited longest.
     function fill(exclude) {
-        const length = sequence.length;
+        const target = Math.min(slots, pool.length);
 
-        for (let step = 0; step < length && live.size < Math.min(slots, pool.length); step++) {
-            const id = sequence[cursor % length];
+        for (const id of waitingOrder()) {
+            if (live.size >= target) {
+                break;
+            }
 
-            cursor = (cursor + 1) % length;
-
-            if (!live.has(id) && !(exclude && exclude.has(id))) {
+            if (!(exclude && exclude.has(id))) {
                 live.set(id, tickNo);
             }
         }
     }
 
     // Stable groups: re-striped only when the group count changes; a join
-    // goes to the least-loaded group, a leave just disappears.
+    // goes to the least-loaded group, a leave just disappears. They only
+    // order students with equal waiting credit.
     function regroup() {
         const count = Math.ceil(pool.length / slots);
 
@@ -309,7 +636,6 @@ const slTeacherRotation = (function () {
             groupCount = count;
             groupOf.clear();
             pool.forEach((id, index) => groupOf.set(id, index % count));
-            cursor = 0;
         } else {
             // A selected (priority) student keeps its group, so it returns
             // to the same place in the rotation when deselected.
@@ -340,13 +666,130 @@ const slTeacherRotation = (function () {
                 }
             });
         }
+    }
 
-        cursor = sequence.length ? cursor % sequence.length : 0;
+    // ---- Tiles view: nearby groups ---------------------------------------
+
+    // The member of `members` who has waited longest (not live, not
+    // `besideId`); ties: the one nearest to besideId in reading order, then
+    // reading order.
+    function longestWaiting(members, besideId) {
+        const order = sequenceOrder();
+        const near = besideId ? order.get(besideId) : undefined;
+        const distance = id => (near === undefined ? 0 : Math.abs((order.get(id) ?? 0) - near));
+
+        return members
+            .filter(id => id !== besideId && !live.has(id))
+            .sort((a, b) => (waitingSince.get(a) ?? 0) - (waitingSince.get(b) ?? 0)
+                || distance(a) - distance(b)
+                || (order.get(a) ?? 0) - (order.get(b) ?? 0))[0] || null;
+    }
+
+    // Groups passing their slot on per sub-tick: enough for each group to
+    // move about once per minimum live time, never all of them at once.
+    function groupAdvancesPerTick(multiCount) {
+        return Math.max(1, Math.ceil(multiCount / TILES_MIN_LIVE_TICKS));
+    }
+
+    // Sub-ticks a student may wait before their group is moved first: twice
+    // the normal worst case of the largest group.
+    function groupDeadlineTicks(multiCount, largest) {
+        const perGroup = Math.max(TILES_MIN_LIVE_TICKS, Math.ceil(multiCount / groupAdvancesPerTick(multiCount)));
+
+        return 2 * Math.max(1, largest - 1) * perGroup + 1;
+    }
+
+    // The pool (camera-ON page students, reading order) cut into one
+    // contiguous group per live slot; exactly one live member per group.
+    function rebalanceGroups() {
+        sequence = pool.slice();
+        groups = slPartitionGroups(pool, slots, layout ? layout.positions : null);
+        groupCount = groups.length;
+        groupOf.clear();
+        groups.forEach((members, index) => members.forEach(id => groupOf.set(id, index)));
+
+        // A re-cut (page, budget, selection, layout) can leave a group with
+        // two live members: the one live longest goes (frozen first).
+        const extra = [];
+
+        groups.forEach(members => {
+            members
+                .filter(id => live.has(id))
+                .sort((a, b) => live.get(b) - live.get(a))
+                .slice(1)
+                .forEach(id => extra.push(id));
+        });
+
+        drop(extra);
+
+        // A group without a live member gets its longest-waiting one.
+        groups.forEach(members => {
+            if (!members.some(id => live.has(id))) {
+                const next = longestWaiting(members, null);
+
+                if (next) {
+                    live.set(next, admissionTick());
+                }
+            }
+        });
+
+        startTimer();
+    }
+
+    // A few groups pass their live slot on: at most groupAdvancesPerTick
+    // (a hard cap), and only groups whose live camera has had the minimum
+    // live time. Among those: overdue ones first (a member waited past the
+    // deadline on this page), then those live longest. The leaving cameras
+    // are frozen first, in one batch, then the next members go live.
+    function subtickGroups() {
+        tickNo += 1;
+
+        const multi = groups.filter(members => members.length > 1);
+
+        if (!multi.length) {
+            return;
+        }
+
+        const largest = multi.reduce((size, members) => Math.max(size, members.length), 0);
+        const deadline = groupDeadlineTicks(multi.length, largest);
+        const candidates = multi
+            .map(members => {
+                const current = members.find(id => live.has(id)) || null;
+
+                return {
+                    members,
+                    current,
+                    since: current ? live.get(current) : -Infinity,
+                    index: groups.indexOf(members),
+                    urgent: members.some(id => !live.has(id)
+                        && tickNo - (waitingTick.get(id) ?? tickNo) >= deadline)
+                };
+            })
+            .filter(group => !group.current || tickNo - group.since >= TILES_MIN_LIVE_TICKS)
+            .sort((a, b) => (b.urgent - a.urgent) || (a.since - b.since) || (a.index - b.index));
+
+        const chosen = candidates.slice(0, groupAdvancesPerTick(multi.length));
+
+        if (!chosen.length) {
+            return;
+        }
+
+        const next = chosen.map(group => longestWaiting(group.members, group.current));
+
+        drop(chosen.map(group => group.current).filter(Boolean));
+        next.forEach(id => {
+            if (id) {
+                live.set(id, tickNo);
+            }
+        });
+
+        notify();
     }
 
     function rebalance(nextPool, nextSlots) {
         pool = nextPool;
         slots = nextSlots;
+        groups = [];
 
         // Camera off / left / now a priority camera: no longer rotating
         // (no freeze: off and left tiles detach; priority stays live).
@@ -372,13 +815,17 @@ const slTeacherRotation = (function () {
             groupCount = pool.length ? 1 : 0;
             groupOf.clear();
             sequence = pool.slice();
-            cursor = 0;
             pool.forEach(id => {
                 if (!live.has(id)) {
-                    live.set(id, tickNo);
+                    live.set(id, admissionTick());
                 }
             });
             stopTimer();
+            return;
+        }
+
+        if (layout) {
+            rebalanceGroups();
             return;
         }
 
@@ -391,6 +838,11 @@ const slTeacherRotation = (function () {
     function subtick() {
         if (!active || slots <= 0 || pool.length <= slots) {
             stopTimer();
+            return;
+        }
+
+        if (layout) {
+            subtickGroups();
             return;
         }
 
@@ -413,11 +865,30 @@ const slTeacherRotation = (function () {
         poolKey = "";
         groupCount = 0;
         groupOf.clear();
+        groups = [];
         sequence = [];
-        cursor = 0;
         live.clear();
+        waitingSince.clear();
+        waitingTick.clear();
+        lastPoolMode = null;
         coTeacherIds = [];
         priorityLive = [];
+    }
+
+    // Tiles view: page students in reading order (unknown ones last, in
+    // join order); List view: every camera-ON student, join order.
+    function eligibleStudents(students) {
+        if (!layout) {
+            return students;
+        }
+
+        const onPage = students.filter(id => layout.scope.has(id));
+        const position = id => (layout.index.has(id) ? layout.index.get(id) : Infinity);
+
+        return onPage
+            .map((id, joinIndex) => ({ id, joinIndex }))
+            .sort((a, b) => (position(a.id) - position(b.id)) || (a.joinIndex - b.joinIndex))
+            .map(entry => entry.id);
     }
 
     // Recomputes membership from the current store. Cheap when nothing that
@@ -435,13 +906,16 @@ const slTeacherRotation = (function () {
             reset();
         }
 
-        const { students, coTeachers } = collect(state);
+        const { students, coTeachers, present } = collect(state);
         const cameraOnIds = new Set(students);
         const priority = priorityIds.filter(id => cameraOnIds.has(id));
         const budget = Math.max(0, Math.min(SL_TEACHER_MAX_LIVE_CAMERAS, cpuCameraBudget ?? SL_TEACHER_MAX_LIVE_CAMERAS));
         const nextSlots = Math.max(0, budget - priority.length);
-        const nextPool = students.filter(id => !priority.includes(id));
-        const key = [nextPool.join(","), nextSlots, priority.join(","), coTeachers.join(",")].join("|");
+        // The selected student stays a priority camera even off the page.
+        const nextPool = eligibleStudents(students).filter(id => !priority.includes(id));
+        const key = [
+            layout ? "tiles" : "list", nextPool.join(","), nextSlots, priority.join(","), coTeachers.join(",")
+        ].join("|");
 
         if (key === poolKey) {
             return;
@@ -449,6 +923,51 @@ const slTeacherRotation = (function () {
 
         // Planned live before this change (to freeze anyone who loses it).
         const before = new Set(publicReceiveIds());
+        const wasPriority = new Set(priorityLive);
+        const wasLive = new Set(live.keys());
+
+        // Waiting credit. Students who left are forgotten. A rotating
+        // student who stops being live by leaving the pool (camera off,
+        // selected) has just been live: back of the queue. So has a student
+        // who was a priority camera until now (deselected). A student new to
+        // the pool keeps the credit they already had (camera turned back
+        // on), else starts waiting now.
+        // Tiles view: students off the current page keep their credit too.
+        Array.from(waitingSince.keys()).forEach(id => {
+            if (!present.has(id)) {
+                waitingSince.delete(id);
+                waitingTick.delete(id);
+            }
+        });
+
+        const stamp = nextStamp();
+        const inNextPool = new Set(nextPool);
+
+        wasLive.forEach(id => {
+            if (!inNextPool.has(id)) {
+                setWaiting(id, stamp);
+            }
+        });
+
+        nextPool.forEach(id => {
+            if (wasPriority.has(id) || !waitingSince.has(id)) {
+                setWaiting(id, stamp);
+            }
+        });
+
+        // Deadline clock (not the credit): restarts for every student who
+        // enters the pool, and for all of them when the view changes (List
+        // <-> Tiles), so waiting elsewhere never makes a group overdue here.
+        const previousPool = new Set(pool);
+        const poolMode = layout ? "tiles" : "list";
+        const modeChanged = poolMode !== lastPoolMode;
+
+        lastPoolMode = poolMode;
+        nextPool.forEach(id => {
+            if (modeChanged || !previousPool.has(id)) {
+                waitingTick.set(id, tickNo);
+            }
+        });
 
         poolKey = key;
         coTeacherIds = coTeachers;
@@ -478,14 +997,68 @@ const slTeacherRotation = (function () {
             }
 
             active = next;
+            enlargedId = null;
             lastConference = null;
             reset();
             notify();
         },
         isActive: () => active,
+        // Tiles view: who is enlarged (null: nobody). A change re-applies the
+        // receive policy at once (onChange), also when Jitsi's own
+        // constraints do not change (e.g. a screen share keeps the stage).
+        setEnlarged(id) {
+            const next = typeof id === "string" && id ? id : null;
+
+            if (next !== enlargedId) {
+                enlargedId = next;
+                notify();
+            }
+        },
+        getEnlarged: () => enlargedId,
         setPriority(ids) {
             priorityIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
         },
+        // Tiles view: { scope: page participant IDs, order: their reading
+        // order on screen (slSpatialOrder; default: scope order), positions:
+        // slSpatialOrder's measured positions (optional) }. null:
+        // List view. Waiting credit is kept; the plan is redone on the next
+        // update.
+        setLayout(next) {
+            const scope = next && Array.isArray(next.scope) ? next.scope.filter(Boolean) : null;
+
+            if (!scope) {
+                if (layout) {
+                    layout = null;
+                    poolKey = "";
+                }
+
+                return;
+            }
+
+            const order = Array.isArray(next.order) && next.order.length ? next.order : scope;
+            // Measured grid positions ({ id: { row, x } }): groups are cut
+            // where the order jumps. Absent: plain contiguous groups.
+            const positions = next.positions && typeof next.positions === "object" ? next.positions : null;
+            const place = id => {
+                const position = positions ? positions[id] : null;
+
+                return position ? position.row + ":" + Math.round(position.x * 10) : "";
+            };
+            const key = scope.join(",") + "|" + order.map(id => id + "@" + place(id)).join(",");
+
+            if (layout && layout.key === key) {
+                return;
+            }
+
+            layout = {
+                key,
+                scope: new Set(scope),
+                index: new Map(order.map((id, index) => [id, index])),
+                positions
+            };
+            poolKey = "";
+        },
+        getLayoutMode: () => (layout ? "tiles" : "list"),
         // From the receive policy, while lib-jitsi-meet limits lastN.
         setCpuCameraBudget(budget) {
             const next = typeof budget === "number" && budget >= 0 ? Math.floor(budget) : null;
@@ -500,11 +1073,10 @@ const slTeacherRotation = (function () {
                 }, 0);
             }
         },
+        getCpuCameraBudget: () => cpuCameraBudget,
         update,
         // Whether the teacher should be receiving this participant's camera.
         isPlannedLive: id => priorityLive.includes(id) || coTeacherIds.includes(id) || live.has(id),
-        // Rotating camera dropped for now (camera still ON).
-        isRotatingOut: id => pool.includes(id) && !live.has(id),
         // Cameras to receive: priority, co-teachers, then the rotating window.
         receiveIds: () => publicReceiveIds(),
         onWillDrop(callback) { onWillDrop = callback; },
@@ -530,9 +1102,18 @@ const slTeacherRotation = (function () {
             groups: groupCount,
             perSubtick: slots > 0 ? Math.min(Math.ceil(slots * SUBTICK_MS / DWELL_MS), Math.max(pool.length - slots, 0)) : 0,
             live: sequence.filter(id => live.has(id)),
+            // Not live now, longest waiting first.
+            waiting: waitingOrder(),
             cpuCameraBudget,
             timerActive: Boolean(timer),
-            tick: tickNo
+            timerMs: timer ? timerMs : 0,
+            tick: tickNo,
+            // Tiles view.
+            mode: layout ? "tiles" : "list",
+            groupMembers: groups.map(members => members.slice()),
+            groupAdvancesPerTick: layout && groups.length
+                ? groupAdvancesPerTick(groups.filter(members => members.length > 1).length)
+                : 0
         })
     };
 })();
@@ -991,6 +1572,31 @@ document.addEventListener(
     // Camera source of a remote participant, looked up by video type.
     // "-v0" is NOT assumed to be the camera: a student who shares their
     // screen before turning the camera on gets the desktop as "-v0".
+    // Whether a source is a remote STUDENT's camera (not a moderator's, not a
+    // screen share, not a virtual participant), from presence.
+    function isStudentCameraSource(state, sourceName) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+
+        if (!remote || typeof remote.entries !== "function" || typeof sourceName !== "string") {
+            return false;
+        }
+
+        for (const [participantId, participant] of remote.entries()) {
+            if (!participant || participant.fakeParticipant || participantId === participants.local?.id) {
+                continue;
+            }
+
+            const info = participant.sources?.get?.("video")?.get?.(sourceName);
+
+            if (info) {
+                return info.videoType === "camera" && participant.role !== "moderator";
+            }
+        }
+
+        return false;
+    }
+
     function getCameraSourceName(state, participantId) {
         const remote = state?.["features/base/participants"]?.remote;
         const participant = remote?.get?.(participantId);
@@ -1018,15 +1624,17 @@ document.addEventListener(
             return original;
         }
 
+        // Exam Mode (receive set) first and unchanged; then Phase D in
+        // Normal mode while the teacher view runs its rotation.
+        if (rotationPolicyApplies(state)) {
+            return rewriteTeacherRotationConstraints(original, state);
+        }
+
+        // Every other policy (Exam Mode, view off, a teacher demoted to a
+        // student) gets lib-jitsi-meet's own CPU-limiter level back.
+        restoreCpuLimiterCeiling(state);
+
         if (isLocalModerator(state)) {
-            // Exam Mode (receive set) first and unchanged; then Phase D in
-            // Normal mode while the teacher view runs its rotation.
-            if (!receiveSet.enabled && slTeacherRotation.isActive()) {
-                return rewriteTeacherRotationConstraints(original, state);
-            }
-
-            restoreCpuLimiterCeiling(state);
-
             return receiveSet.enabled
                 ? rewriteTeacherConstraints(original, state)
                 : original;
@@ -1120,19 +1728,97 @@ document.addEventListener(
         delete conference[SL_LIMITER_SAVED];
     }
 
+    // Whether Phase D decides this browser's receiver constraints now:
+    // teacher (moderator), Normal mode (no Exam receive set), view showing.
+    function rotationPolicyApplies(state) {
+        return Boolean(state) && isLocalModerator(state)
+            && !receiveSet.enabled && slTeacherRotation.isActive();
+    }
+
+    // How many sources the last Phase D constraints selected that are not
+    // student or co-teacher cameras (stage, screen shares), per conference.
+    const SL_ROTATION_NON_CAMERA = "__slRotationNonCamera";
+
+    // The student-camera budget lib-jitsi-meet's CPU limiter leaves: its
+    // limited lastN minus the stage, shares and co-teachers; null while it
+    // is not limiting (or this build has no limiter API).
+    function readCpuCameraBudget(state, nonCamera) {
+        const controller = getReceiveController(state);
+        const limited = Boolean(controller && typeof controller.isLastNLimitedByCpu === "function"
+            && controller.isLastNLimitedByCpu());
+
+        if (!limited) {
+            return null;
+        }
+
+        const lastN = controller.getLastN();
+
+        if (typeof lastN !== "number" || !Number.isFinite(lastN) || lastN < 0) {
+            return null;
+        }
+
+        return Math.max(0, lastN - nonCamera - slTeacherRotation.stats().coTeachers.length);
+    }
+
+    /*
+     * The limiter changes lastN inside lib-jitsi-meet without going through
+     * setReceiverConstraints, so a change is not seen by the rewrite until
+     * Jitsi next recomputes its constraints. While Phase D applies, its state
+     * is read once a second (no constraints are sent from here: a changed
+     * budget re-plans the rotation, which re-applies only if the selected
+     * cameras change). This covers all cameras fitting (no rotation timer)
+     * and a budget of zero (timer stopped).
+     */
+    const SL_LIMITER_POLL_MS = 1000;
+    let limiterPollTimer = null;
+
+    function pollCpuLimiter() {
+        const state = getState();
+        const conference = getConference(state);
+
+        if (!conference || !rotationPolicyApplies(state)) {
+            syncLimiterPoll(state);
+            return;
+        }
+
+        // Nothing applied on this conference yet: the first rewrite reads it.
+        if (!(SL_ROTATION_NON_CAMERA in conference)) {
+            return;
+        }
+
+        slTeacherRotation.setCpuCameraBudget(readCpuCameraBudget(state, conference[SL_ROTATION_NON_CAMERA]));
+    }
+
+    // One poll at most, only while Phase D applies to an active conference
+    // (meeting left / ended: stopped; it starts again from the store change
+    // that brings the next conference).
+    function syncLimiterPoll(state) {
+        const wanted = Boolean(getConference(state)) && rotationPolicyApplies(state);
+
+        if (wanted && !limiterPollTimer) {
+            limiterPollTimer = setInterval(pollCpuLimiter, SL_LIMITER_POLL_MS);
+        } else if (!wanted && limiterPollTimer) {
+            clearInterval(limiterPollTimer);
+            limiterPollTimer = null;
+        }
+    }
+
     // Phase D: Jitsi's own stage (onStageSources, Phase C pin) and every
     // active screen share stay exactly as Jitsi requests them; the student
     // cameras are the scheduler's: priority (selected) + co-teachers + the
     // rotating window, at tile height. Nothing else is forwarded.
     function rewriteTeacherRotationConstraints(original, state) {
-        // lastN 0 is Jitsi's audio-only / low-bandwidth mode: left as it is.
+        // lastN 0 is Jitsi's audio-only / low-bandwidth mode: left as it is,
+        // with lib-jitsi-meet's own limiter level (Phase D sends no lastN).
         if (!original || original.lastN === 0) {
+            restoreCpuLimiterCeiling(state);
             return original;
         }
 
         slTeacherRotation.update(state);
 
-        const onStage = Array.isArray(original.onStageSources) ? original.onStageSources.slice() : [];
+        // Jitsi's own stage list, as it asked (the 360 hold below reads it).
+        const jitsiOnStage = Array.isArray(original.onStageSources) ? original.onStageSources.slice() : [];
         const shares = getActiveShareSources(state);
         const cameras = [];
 
@@ -1143,6 +1829,15 @@ document.addEventListener(
                 cameras.push(sourceName);
             }
         });
+
+        // A STUDENT camera keeps its stage place only when it is one of the
+        // planned cameras (the selected / staged student is a priority
+        // camera, so it is). An old stage entry (the pin just moved, Jitsi has
+        // not recomputed yet) or any other unplanned student camera is not
+        // received: it can never take the camera count over the budget.
+        // Screen shares, co-teachers and anything else keep Jitsi's stage.
+        const onStage = jitsiOnStage.filter(sourceName =>
+            !isStudentCameraSource(state, sourceName) || cameras.includes(sourceName));
 
         const selectedSources = [];
         const add = sourceName => {
@@ -1169,6 +1864,39 @@ document.addEventListener(
             }
         });
 
+        // Tiles view: the enlarged student's camera at its explicit height,
+        // replacing Jitsi's stage height (its pin; the teacher's video-quality
+        // setting) and the tile height (a screen share on the stage). Only a
+        // camera already selected above (a priority camera, or Jitsi's stage):
+        // a missing or disconnected student gets nothing. Screen shares keep
+        // their own constraints.
+        //
+        // A camera enlarged until just now stays at that height while Jitsi's
+        // latest request still has it on the stage (the pin moved, Jitsi has
+        // not recomputed yet): Jitsi's stage height never reaches it on close
+        // or on a switch to another student.
+        const enlargedSource = getEnlargedCameraSource(state);
+        const heldOn = getConference(state);
+        const held = heldOn
+            ? (heldOn[SL_ENLARGED_HELD] = heldOn[SL_ENLARGED_HELD] || new Set())
+            : new Set();
+
+        Array.from(held).forEach(sourceName => {
+            if (sourceName !== enlargedSource && !jitsiOnStage.includes(sourceName)) {
+                held.delete(sourceName);
+            }
+        });
+
+        if (enlargedSource) {
+            held.add(enlargedSource);
+        }
+
+        held.forEach(sourceName => {
+            if (constraints[sourceName] && !shares.includes(sourceName)) {
+                constraints[sourceName] = { maxHeight: SL_TEACHER_ENLARGED_CAMERA_MAX_HEIGHT };
+            }
+        });
+
         // At least 1: lastN 0 is Jitsi's "audio only" meaning (nothing is
         // forwarded anyway: everything not selected has maxHeight 0).
         const lastN = Math.max(1, selectedSources.length);
@@ -1184,15 +1912,15 @@ document.addEventListener(
 
         // While lib-jitsi-meet limits lastN, the rotation shrinks to what is
         // left of it after the stage, shares and co-teachers (only what will
-        // be forwarded is planned live, so no tile waits for a camera that
-        // will not come). Its own lastN wins meanwhile, whatever we send.
-        const controller = getReceiveController(state);
-        const limited = Boolean(controller && typeof controller.isLastNLimitedByCpu === "function"
-            && controller.isLastNLimitedByCpu());
+        // be forwarded is planned live). Its own lastN wins meanwhile,
+        // whatever we send. Changes between rewrites: pollCpuLimiter.
+        const conference = getConference(state);
 
-        slTeacherRotation.setCpuCameraBudget(limited
-            ? Math.max(0, controller.getLastN() - nonCamera - stats.coTeachers.length)
-            : null);
+        if (conference) {
+            conference[SL_ROTATION_NON_CAMERA] = nonCamera;
+        }
+
+        slTeacherRotation.setCpuCameraBudget(readCpuCameraBudget(state, nonCamera));
 
         return {
             ...original,
@@ -1204,15 +1932,27 @@ document.addEventListener(
         };
     }
 
+    // Per conference object: enlarged cameras whose 360 request is held
+    // while Jitsi's stage list still names them (see the rewrite above).
+    const SL_ENLARGED_HELD = "__slEnlargedHeld";
+
+    // The enlarged participant's camera source (Tiles view), or null.
+    function getEnlargedCameraSource(state) {
+        const enlargedId = slTeacherRotation.getEnlarged();
+
+        return enlargedId ? getCameraSourceName(state, enlargedId) : null;
+    }
+
     // What the Phase D policy currently depends on (a change re-applies it).
     function getRotationSignature(state) {
-        if (!slTeacherRotation.isActive() || receiveSet.enabled || !isLocalModerator(state)) {
+        if (!rotationPolicyApplies(state)) {
             return "";
         }
 
         return JSON.stringify([
             slTeacherRotation.receiveIds().map(id => getCameraSourceName(state, id)),
-            getActiveShareSources(state)
+            getActiveShareSources(state),
+            getEnlargedCameraSource(state)
         ]);
     }
 
@@ -1391,6 +2131,9 @@ document.addEventListener(
             return;
         }
 
+        // Phase D's CPU-limiter poll follows the role / Exam Mode / view.
+        syncLimiterPoll(state);
+
         const conference = getConference(state);
 
         if (!conference || typeof conference.setReceiverConstraints !== "function") {
@@ -1461,11 +2204,15 @@ document.addEventListener(
     // meet also drops identical ones). Skipped inside a rewrite: that rewrite
     // already uses the current selection.
     function reapplyRotationIfChanged() {
+        const state = getState();
+
+        // Rotation started / stopped (also from inside a rewrite).
+        syncLimiterPoll(state);
+
         if (rewriting) {
             return;
         }
 
-        const state = getState();
         const conference = getConference(state);
 
         if (!conference || !conference[SL_WRAP_MARKER]) {
@@ -2850,6 +3597,34 @@ document.addEventListener(
         restoring: "Video interrupted - reconnecting…"
     };
 
+    // Phase D: placeholder status of a rotating student tile, by its mode
+    // (modes with a frame or live video show none).
+    const SL_TV_TILE_PLACEHOLDER_STATUS = {
+        waiting: "Camera on",
+        connecting: "Connecting…",
+        off: "Camera off",
+        disconnected: "Disconnected"
+    };
+
+    // Tiles view (SL_TEACHER_TILES from the parent page): the page's
+    // students in a grid, an enlarged-video panel, page navigation that asks
+    // the parent page (which owns the roster and the paging) to move.
+    const SL_TV_TILES_MODE_CLASS = "sl-tv-tiles-mode";
+    const SL_TV_VAR_GRID_COLS = "--sl-tv-grid-cols";
+    const SL_TV_GRID_GAP = 8;
+    const SL_TV_TILES_MAX_PAGE = 50;
+    const SL_TV_PARTICIPANT_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
+    const SL_TV_CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    // The settings menu's View section (static icons) and the Tiles view's
+    // page sizes. The choice itself belongs to the parent page
+    // (SL_TEACHER_TILES_SETTINGS); this view shows what it sends back.
+    const SL_TV_VIEW_LABELS = { list: "List", tiles: "Tiles" };
+    const SL_TV_VIEW_ICONS = {
+        list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.25"/><rect x="5.5" y="6.5" width="8.5" height="11" rx="1" fill="currentColor" stroke="none" opacity=".35"/><path d="M16.5 8h2M16.5 12h2M16.5 16h2"/></svg>',
+        tiles: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3.5" y="4.5" width="7.5" height="6.5" rx="1.25"/><rect x="13" y="4.5" width="7.5" height="6.5" rx="1.25"/><rect x="3.5" y="13" width="7.5" height="6.5" rx="1.25"/><rect x="13" y="13" width="7.5" height="6.5" rx="1.25"/></svg>'
+    };
+    const SL_TV_TILES_PAGE_SIZES = [10, 20, 30, 40, 50];
+
     // Phase B layout: where the filmstrip sits and how big it is. Display only
     // (CSS on our own elements); nothing here touches Jitsi's own filmstrip,
     // tracks or receiver constraints.
@@ -2936,6 +3711,44 @@ document.addEventListener(
     // ID. Never persisted; cleared when the view goes (Exam Mode, disable).
     let manualSelection = null;
     let lastPinAttempt = { id: null, at: 0 };
+
+    // Tiles view: layout and the current page, as the parent page sent them.
+    let tilesView = {
+        epoch: 0, layout: "list", participantIds: [], page: 0, pageCount: 0, rangeStart: 0, rangeEnd: 0, total: 0,
+        // The selected Tiles page size (0: not sent by this parent page).
+        pageSize: 0
+    };
+    // Names of page students seen, for a tile / panel after they left.
+    const knownNames = new Map();
+    // The enlarged-video panel: { id, name } or null (closed).
+    let enlarged = null;
+    // The grid's measured reading order (slSpatialOrder), for the scheduler's
+    // nearby groups; re-measured when the tiles or the grid size change.
+    let gridOrder = null;
+    // ... and where each tile is ({ id: { row, x } }), for compact groups.
+    let gridPositions = null;
+    let gridOrderKey = "";
+    let gridColumns = 0;
+    let gridObserver = null;
+    let gridViewEl = null;
+    let gridLabelEl = null;
+    let gridPrevEl = null;
+    let gridNextEl = null;
+    let gridEl = null;
+    let gridEmptyEl = null;
+    // Tiles view: the grid bar's settings button (opens the same settings
+    // menu as the filmstrip's button, which is hidden in the Tiles view).
+    let gridSettingsWrapEl = null;
+    let gridSettingsEl = null;
+    let panelEl = null;
+    let panelBodyEl = null;
+    let panelVideo = null;
+    let panelNameEl = null;
+    let panelStateEl = null;
+    let panelPlaceholder = null;
+    let panelTrack = null;
+    // The panel follows its track's streaming status like a tile does.
+    const panelWatch = { statusTrack: null };
     // Stage changes: a short "Loading video…" while the newly staged source
     // starts arriving (instead of "paused to save bandwidth").
     const SL_TV_STAGE_LOADING_MS = 2500;
@@ -2962,6 +3775,9 @@ document.addEventListener(
     let layoutButtonEl = null;
     let layoutMenuEl = null;
     let autoHideSwitchEl = null;
+    // Settings menu: the View items and the Tiles-per-page row.
+    let viewSectionEl = null;
+    let pageSizeSectionEl = null;
     let restoreEl = null;
 
     let stageTrack = null;
@@ -3282,9 +4098,14 @@ document.addEventListener(
 
         root.dataset.pos = position;
         root.classList.toggle(SL_TV_STRIP_HIDDEN_CLASS, stripHidden);
+        root.classList.toggle(SL_TV_TILES_MODE_CLASS, isTilesMode());
 
-        if (document.body.classList.contains(SL_TV_STRIP_HIDDEN_CLASS) !== stripHidden) {
-            document.body.classList.toggle(SL_TV_STRIP_HIDDEN_CLASS, stripHidden);
+        // Tiles view has no filmstrip: Jitsi's toolbar is laid out as for a
+        // hidden one (full width, no bottom-filmstrip offset).
+        const stripGone = stripHidden || isTilesMode();
+
+        if (document.body.classList.contains(SL_TV_STRIP_HIDDEN_CLASS) !== stripGone) {
+            document.body.classList.toggle(SL_TV_STRIP_HIDDEN_CLASS, stripGone);
         }
 
         // Vertical: unset until the teacher drags, so the default is exactly
@@ -3301,7 +4122,7 @@ document.addEventListener(
 
         // The toolbar's restore pill (hidden toolbar) sits above a shown
         // bottom filmstrip, like the toolbar itself.
-        const pillOffset = position === "bottom" && !stripHidden ? stripH : 0;
+        const pillOffset = position === "bottom" && !stripGone ? stripH : 0;
 
         bodyStyle.setProperty(SL_TV_VAR_PILL_OFFSET, pillOffset + "px");
 
@@ -3547,8 +4368,70 @@ document.addEventListener(
         layoutMenuEl = document.createElement("div");
         layoutMenuEl.className = "sl-tv-layout-menu";
         layoutMenuEl.setAttribute("role", "menu");
-        layoutMenuEl.setAttribute("aria-label", "Filmstrip position");
+        layoutMenuEl.setAttribute("aria-label", "View and filmstrip settings");
         layoutMenuEl.hidden = true;
+
+        // View: List / Tiles, and the Tiles view's page size. The parent page
+        // owns both (it pages the roster); a choice is sent there and shown
+        // here once it comes back (SL_TEACHER_TILES).
+        viewSectionEl = document.createElement("div");
+        viewSectionEl.className = "sl-tv-view-section";
+
+        const viewTitle = document.createElement("div");
+        viewTitle.className = "sl-tv-layout-title";
+        viewTitle.textContent = "View";
+        viewSectionEl.appendChild(viewTitle);
+
+        const viewRow = document.createElement("div");
+        viewRow.className = "sl-tv-view-row";
+        viewRow.setAttribute("role", "group");
+        viewRow.setAttribute("aria-label", "View");
+
+        ["list", "tiles"].forEach(layout => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "sl-tv-layout-item sl-tv-view-item";
+            item.dataset.view = layout;
+            item.setAttribute("role", "menuitemradio");
+            item.innerHTML = SL_TV_VIEW_ICONS[layout] + "<span></span>";
+            item.querySelector("span").textContent = SL_TV_VIEW_LABELS[layout];
+            item.addEventListener("click", () => chooseTeacherView(layout));
+            viewRow.appendChild(item);
+        });
+
+        viewSectionEl.appendChild(viewRow);
+
+        pageSizeSectionEl = document.createElement("div");
+        pageSizeSectionEl.className = "sl-tv-pagesize-section";
+
+        const pageSizeTitle = document.createElement("div");
+        pageSizeTitle.className = "sl-tv-pagesize-title";
+        pageSizeTitle.textContent = "Tiles per page";
+        pageSizeSectionEl.appendChild(pageSizeTitle);
+
+        const pageSizeRow = document.createElement("div");
+        pageSizeRow.className = "sl-tv-pagesize-row";
+        pageSizeRow.setAttribute("role", "group");
+        pageSizeRow.setAttribute("aria-label", "Tiles per page");
+
+        SL_TV_TILES_PAGE_SIZES.forEach(size => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "sl-tv-pagesize";
+            option.dataset.pageSize = String(size);
+            option.textContent = String(size);
+            option.setAttribute("aria-label", size + " tiles per page");
+            option.addEventListener("click", () => chooseTilesPageSize(size));
+            pageSizeRow.appendChild(option);
+        });
+
+        pageSizeSectionEl.appendChild(pageSizeRow);
+        viewSectionEl.appendChild(pageSizeSectionEl);
+        layoutMenuEl.appendChild(viewSectionEl);
+
+        const viewDivider = document.createElement("div");
+        viewDivider.className = "sl-tv-layout-divider";
+        layoutMenuEl.appendChild(viewDivider);
 
         const title = document.createElement("div");
         title.className = "sl-tv-layout-title";
@@ -3594,9 +4477,21 @@ document.addEventListener(
             return;
         }
 
-        layoutMenuEl.querySelectorAll(".sl-tv-layout-item").forEach(item => {
+        layoutMenuEl.querySelectorAll(".sl-tv-layout-item[data-position]").forEach(item => {
             item.setAttribute("aria-checked", item.dataset.position === preferredPosition ? "true" : "false");
         });
+
+        // View: what the parent page last sent; page sizes only for Tiles.
+        layoutMenuEl.querySelectorAll(".sl-tv-view-item").forEach(item => {
+            item.setAttribute("aria-checked", item.dataset.view === tilesView.layout ? "true" : "false");
+        });
+
+        if (pageSizeSectionEl) {
+            pageSizeSectionEl.hidden = !isTilesMode();
+            pageSizeSectionEl.querySelectorAll(".sl-tv-pagesize").forEach(option => {
+                option.setAttribute("aria-pressed", Number(option.dataset.pageSize) === tilesView.pageSize ? "true" : "false");
+            });
+        }
 
         const effective = root?.dataset.pos || preferredPosition;
         const note = layoutMenuEl.querySelector(".sl-tv-layout-note");
@@ -3619,7 +4514,7 @@ document.addEventListener(
 
         layoutMenuEl.style.bottom = "";
 
-        if (!isLayoutMenuOpen() || root?.dataset.pos !== "bottom") {
+        if (!isLayoutMenuOpen() || root?.dataset.pos !== "bottom" || isTilesMode()) {
             return;
         }
 
@@ -3648,9 +4543,10 @@ document.addEventListener(
             return;
         }
 
+        placeLayoutMenu();
         updateLayoutMenu();
         layoutMenuEl.hidden = false;
-        layoutButtonEl.setAttribute("aria-expanded", "true");
+        activeLayoutButton()?.setAttribute("aria-expanded", "true");
         liftLayoutMenu();
 
         document.addEventListener("pointerdown", onLayoutOutsidePointerDown, true);
@@ -3670,10 +4566,12 @@ document.addEventListener(
         }
 
         layoutButtonEl?.setAttribute("aria-expanded", "false");
+        gridSettingsEl?.setAttribute("aria-expanded", "false");
     }
 
     function onLayoutOutsidePointerDown(event) {
-        if (layoutMenuEl?.contains(event.target) || layoutButtonEl?.contains(event.target)) {
+        if (layoutMenuEl?.contains(event.target) || layoutButtonEl?.contains(event.target)
+            || gridSettingsEl?.contains(event.target)) {
             return;
         }
 
@@ -3684,7 +4582,48 @@ document.addEventListener(
         if (event.key === "Escape") {
             event.preventDefault();
             closeLayoutMenu();
-            layoutButtonEl?.focus({ preventScroll: true });
+            activeLayoutButton()?.focus({ preventScroll: true });
+        }
+    }
+
+    // The button that opens the settings menu in the current view: the
+    // filmstrip footer button (List) or the grid bar button (Tiles).
+    function activeLayoutButton() {
+        return isTilesMode() ? gridSettingsEl : layoutButtonEl;
+    }
+
+    // The menu lives beside the button that opens it: the filmstrip footer
+    // (List) or the grid bar (Tiles). Switching view with the menu open
+    // moves it (still open) instead of hiding it with the filmstrip.
+    function placeLayoutMenu() {
+        if (!layoutMenuEl) {
+            return;
+        }
+
+        const target = isTilesMode() ? gridSettingsWrapEl : footerEl;
+
+        if (target && layoutMenuEl.parentNode !== target) {
+            target.appendChild(layoutMenuEl);
+            layoutMenuEl.style.bottom = "";
+
+            if (isLayoutMenuOpen()) {
+                layoutButtonEl?.setAttribute("aria-expanded", isTilesMode() ? "false" : "true");
+                gridSettingsEl?.setAttribute("aria-expanded", isTilesMode() ? "true" : "false");
+            }
+        }
+    }
+
+    // View and page size belong to the parent page: ask it; the menu shows
+    // the result when the parent sends the view back. The menu stays open.
+    function chooseTeacherView(layout) {
+        if ((layout === "list" || layout === "tiles") && layout !== tilesView.layout) {
+            slPostToParent({ type: "SL_TEACHER_TILES_SETTINGS", v: 1, layout });
+        }
+    }
+
+    function chooseTilesPageSize(pageSize) {
+        if (SL_TV_TILES_PAGE_SIZES.includes(pageSize) && pageSize !== tilesView.pageSize) {
+            slPostToParent({ type: "SL_TEACHER_TILES_SETTINGS", v: 1, pageSize });
         }
     }
 
@@ -3981,7 +4920,7 @@ document.addEventListener(
             "#" + SL_TV_ID + "[data-pos=left] .sl-tv-layout-menu { right: auto; left: 8px; }",
             "#" + SL_TV_ID + "[data-pos=top] .sl-tv-layout-menu { bottom: auto; top: calc(100% + 6px); right: 4px; }",
             "#" + SL_TV_ID + "[data-pos=bottom] .sl-tv-layout-menu { bottom: calc(100% + 6px); right: 4px; }",
-            "#" + SL_TV_ID + " .sl-tv-layout-menu { position: absolute; z-index: 4; box-sizing: border-box; width: 184px; padding: 6px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-layout-menu { position: absolute; z-index: 4; box-sizing: border-box; width: 200px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
             "#" + SL_TV_ID + " .sl-tv-layout-menu[hidden] { display: none; }",
             "#" + SL_TV_ID + " .sl-tv-layout-title { padding: 4px 8px 6px; color: #94A3B8; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }",
             "#" + SL_TV_ID + " .sl-tv-layout-item { display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; min-height: 34px; padding: 6px 8px; margin: 0; border: 0; border-radius: 8px; background: transparent; color: #CBD5E1; font: 500 13px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-align: left; cursor: pointer; }",
@@ -4108,7 +5047,60 @@ document.addEventListener(
             // Frozen: the last frame, with a small quiet pause marker.
             "#" + SL_TV_ID + " .sl-tv-frozen-chip { position: absolute; right: 6px; bottom: 6px; display: none; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 6px; background: rgba(15, 23, 42, 0.7); color: #94A3B8; }",
             "#" + SL_TV_ID + " .sl-tv-frozen-chip svg { width: 10px; height: 10px; }",
-            "#" + SL_TV_ID + " .sl-tv-tile.sl-frozen .sl-tv-frozen-chip { display: flex; }"
+            "#" + SL_TV_ID + " .sl-tv-tile.sl-frozen .sl-tv-frozen-chip { display: flex; }",
+
+            // ---- Tiles view: the page's students in a grid, and the
+            // enlarged-video panel. List view's stage / filmstrip are hidden
+            // (CSS only); the grid and panel are hidden in List view.
+            "#" + SL_TV_ID + " .sl-tv-gridview, #" + SL_TV_ID + " .sl-tv-panel { display: none; }",
+            "#" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + " .sl-tv-stage, #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + " .sl-tv-filmstrip, #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + " .sl-tv-resizer, #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + " .sl-tv-restore { display: none !important; }",
+            "#" + SL_TV_ID + ".sl-visible." + SL_TV_TILES_MODE_CLASS + " { flex-direction: row; }",
+            "#" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + " .sl-tv-gridview { order: 0; flex: 1 1 auto; min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #0B1220; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; padding: 8px 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.14); color: #E2E8F0; font: 500 12px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-nav { display: flex; flex: 0 0 auto; gap: 6px; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-nav > button { padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(30, 41, 59, 0.9); color: #F8FAFC; font: 500 12px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-nav > button:disabled { opacity: 0.45; cursor: not-allowed; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-nav > button:focus-visible, #" + SL_TV_ID + " .sl-tv-gridbar-settings-btn:focus-visible { outline: 2px solid #93C5FD; outline-offset: 1px; }",
+            // Grid bar settings button + the settings menu dropping below it.
+            "#" + SL_TV_ID + " .sl-tv-gridbar { position: relative; z-index: 5; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-settings { position: relative; flex: 0 0 auto; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-settings-btn { padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(30, 41, 59, 0.9); color: #F8FAFC; font: 500 12px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar .sl-tv-gridbar-settings-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-settings-btn svg { width: 14px; height: 14px; }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar .sl-tv-gridbar-settings-btn[aria-expanded=true] { color: #BFDBFE; border-color: rgba(96, 165, 250, 0.6); background: rgba(30, 58, 138, 0.45); }",
+            "#" + SL_TV_ID + " .sl-tv-gridbar-settings .sl-tv-layout-menu { top: calc(100% + 6px); bottom: auto; right: 0; left: auto; max-height: calc(100vh - 140px); overflow-y: auto; }",
+            "@media (max-width: 480px) { #" + SL_TV_ID + " .sl-tv-gridbar-settings-label { display: none; } #" + SL_TV_ID + " .sl-tv-gridbar .sl-tv-gridbar-settings-btn { padding: 4px 8px; } }",
+
+            // Settings menu: View (two items side by side) and Tiles per page.
+            "#" + SL_TV_ID + " .sl-tv-view-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }",
+            "#" + SL_TV_ID + " .sl-tv-view-row .sl-tv-layout-item { gap: 8px; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize-section { padding: 6px 4px 2px; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize-section[hidden] { display: none; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize-title { padding: 0 4px 6px; color: #94A3B8; font: 600 11px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize { min-width: 0; height: 28px; padding: 0; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.2); background: transparent; color: #CBD5E1; font: 600 12px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }",
+            "@media (hover: hover) and (pointer: fine) { #" + SL_TV_ID + " .sl-tv-pagesize:hover { background: rgba(148, 163, 184, 0.1); color: #F1F5F9; } }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize:focus-visible { outline: 2px solid #93C5FD; outline-offset: -2px; }",
+            "#" + SL_TV_ID + " .sl-tv-pagesize[aria-pressed=true] { border-color: rgba(96, 165, 250, 0.6); background: rgba(59, 130, 246, 0.22); color: #F8FAFC; }",
+            "@media (pointer: coarse) { #" + SL_TV_ID + " .sl-tv-pagesize { height: 34px; } }",
+            // Columns are set by the view (SL_TV_VAR_GRID_COLS) to fit the page.
+            "#" + SL_TV_ID + " .sl-tv-grid { flex: 1 1 auto; min-height: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(var(" + SL_TV_VAR_GRID_COLS + ", 5), minmax(0, 1fr)); align-content: center; gap: 8px; padding: 8px 8px 96px; overflow-y: auto; }",
+            "#" + SL_TV_ID + " .sl-tv-grid .sl-tv-tile { width: 100%; }",
+            "#" + SL_TV_ID + " .sl-tv-grid-empty { grid-column: 1 / -1; padding: 24px; color: #94A3B8; text-align: center; font: 500 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            // Enlarged-video panel (right side; full width on a narrow screen).
+            "#" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { order: 1; flex: 0 0 min(46%, 640px); min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #000000; border-left: 1px solid rgba(148, 163, 184, 0.2); }",
+            "#" + SL_TV_ID + " .sl-tv-panel-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #0B1220; color: #F8FAFC; font: 600 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-state { flex: 0 0 auto; color: #94A3B8; font-weight: 500; font-size: 12px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-close { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(30, 41, 59, 0.9); color: #F8FAFC; cursor: pointer; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-close svg { width: 16px; height: 16px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-close:focus-visible { outline: 2px solid #93C5FD; outline-offset: 1px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-body { position: relative; flex: 1 1 auto; min-height: 0; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-body video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000000; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-body.sl-no-video video { visibility: hidden; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-body.sl-no-video .sl-tv-placeholder { display: flex; gap: 12px; padding: 24px; }",
+            "@media (max-width: 640px) { #" + SL_TV_ID + ".sl-visible." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open { flex-direction: column; } #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { flex: 0 0 45%; width: 100%; border-left: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); } }"
         ].join("\n");
 
         document.head.appendChild(style);
@@ -4185,6 +5177,11 @@ document.addEventListener(
         root.appendChild(filmstripEl);
         root.appendChild(restoreEl);
 
+        // Tiles view (hidden in List view by CSS).
+        createTilesView();
+        root.appendChild(gridViewEl);
+        root.appendChild(panelEl);
+
         // Auto-hide: where the pointer is, relative to the filmstrip area.
         root.addEventListener("pointerover", onRootPointerOver);
         root.addEventListener("pointerleave", onRootPointerLeave);
@@ -4202,6 +5199,124 @@ document.addEventListener(
         }
 
         applyLayout();
+    }
+
+    // ---- Tiles view: DOM ------------------------------------------------------
+
+    function createTilesView() {
+        gridViewEl = document.createElement("div");
+        gridViewEl.className = "sl-tv-gridview";
+
+        const bar = document.createElement("div");
+        bar.className = "sl-tv-gridbar";
+
+        gridLabelEl = document.createElement("div");
+        gridLabelEl.className = "sl-tv-gridbar-label";
+        gridLabelEl.setAttribute("aria-live", "polite");
+
+        const nav = document.createElement("div");
+        nav.className = "sl-tv-gridbar-nav";
+
+        gridPrevEl = document.createElement("button");
+        gridPrevEl.type = "button";
+        gridPrevEl.textContent = "Previous";
+        gridPrevEl.setAttribute("aria-label", "Previous page of students");
+        gridPrevEl.addEventListener("click", () => requestTilesPage("previous"));
+
+        gridNextEl = document.createElement("button");
+        gridNextEl.type = "button";
+        gridNextEl.textContent = "Next";
+        gridNextEl.setAttribute("aria-label", "Next page of students");
+        gridNextEl.addEventListener("click", () => requestTilesPage("next"));
+
+        nav.appendChild(gridPrevEl);
+        nav.appendChild(gridNextEl);
+
+        // The same View / filmstrip settings menu as the filmstrip's button
+        // (that button is hidden with the filmstrip in the Tiles view).
+        gridSettingsWrapEl = document.createElement("div");
+        gridSettingsWrapEl.className = "sl-tv-gridbar-settings";
+
+        gridSettingsEl = document.createElement("button");
+        gridSettingsEl.type = "button";
+        gridSettingsEl.className = "sl-tv-gridbar-settings-btn";
+        gridSettingsEl.title = "View and filmstrip settings";
+        gridSettingsEl.setAttribute("aria-label", "View and filmstrip settings");
+        gridSettingsEl.setAttribute("aria-haspopup", "menu");
+        gridSettingsEl.setAttribute("aria-expanded", "false");
+        gridSettingsEl.innerHTML = SL_TV_VIEW_ICONS.tiles + '<span class="sl-tv-gridbar-settings-label">View</span>';
+        gridSettingsEl.addEventListener("click", () => {
+            if (isLayoutMenuOpen()) {
+                closeLayoutMenu();
+            } else {
+                openLayoutMenu();
+            }
+        });
+        gridSettingsWrapEl.appendChild(gridSettingsEl);
+        nav.appendChild(gridSettingsWrapEl);
+
+        bar.appendChild(gridLabelEl);
+        bar.appendChild(nav);
+
+        gridEl = document.createElement("div");
+        gridEl.className = "sl-tv-grid";
+        gridEl.setAttribute("aria-label", "Students");
+
+        gridEmptyEl = document.createElement("div");
+        gridEmptyEl.className = "sl-tv-grid-empty";
+        gridEmptyEl.textContent = "No students on this page.";
+
+        gridViewEl.appendChild(bar);
+        gridViewEl.appendChild(gridEl);
+
+        panelEl = document.createElement("div");
+        panelEl.className = "sl-tv-panel";
+        panelEl.setAttribute("role", "region");
+        panelEl.setAttribute("aria-label", "Enlarged student video");
+
+        const head = document.createElement("div");
+        head.className = "sl-tv-panel-head";
+
+        panelNameEl = document.createElement("div");
+        panelNameEl.className = "sl-tv-panel-name";
+
+        panelStateEl = document.createElement("div");
+        panelStateEl.className = "sl-tv-panel-state";
+
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "sl-tv-panel-close";
+        close.setAttribute("aria-label", "Close enlarged video");
+        close.title = "Close";
+        close.innerHTML = SL_TV_CLOSE_ICON;
+        close.addEventListener("click", closeEnlarged);
+
+        head.appendChild(panelNameEl);
+        head.appendChild(panelStateEl);
+        head.appendChild(close);
+
+        panelBodyEl = document.createElement("div");
+        panelBodyEl.className = "sl-tv-panel-body";
+        panelVideo = createVideo();
+        panelPlaceholder = createPlaceholder();
+        panelVideo.addEventListener("loadeddata", onTileFrame);
+        panelBodyEl.appendChild(panelVideo);
+        panelBodyEl.appendChild(panelPlaceholder.el);
+
+        panelEl.appendChild(head);
+        panelEl.appendChild(panelBodyEl);
+
+        // The grid's size changes (window, panel, chat): new columns, and
+        // the nearby groups follow what is on screen.
+        if (typeof ResizeObserver === "function") {
+            gridObserver = gridObserver || new ResizeObserver(() => {
+                if (isTilesMode()) {
+                    layoutTilesGrid();
+                }
+            });
+            gridObserver.disconnect();
+            gridObserver.observe(gridEl);
+        }
     }
 
     // Camera-off placeholder: a role icon, the name and, for a teacher,
@@ -4242,7 +5357,9 @@ document.addEventListener(
         placeholder.nameEl.textContent = name;
         placeholder.roleEl.textContent = variant === "teacher" ? "(Teacher)" : "";
         placeholder.statusEl.textContent = status || "";
-        placeholder.el.dataset.status = status === "Camera on" ? "on" : status ? "off" : "";
+        placeholder.el.dataset.status = status === "Camera on" || status === SL_TV_TILE_PLACEHOLDER_STATUS.connecting
+            ? "on"
+            : status ? "off" : "";
     }
 
     function createVideo() {
@@ -4320,10 +5437,22 @@ document.addEventListener(
             return;
         }
 
+        // Tiles view: a tile click selects the student and enlarges them
+        // (the panel's close button deselects).
+        if (isTilesMode()) {
+            openEnlarged(tileId);
+            return;
+        }
+
         const localId = state["features/base/participants"]?.local?.id ?? null;
         const selectedId = manualSelection === "self" ? localId : manualSelection;
 
         manualSelection = tileId === localId || tileId === selectedId ? "self" : tileId;
+
+        // The newly selected student is a planned (priority) camera BEFORE
+        // the pin: Jitsi recomputes its constraints on it, and an unplanned
+        // student camera on the stage is not received.
+        slTeacherRotation.setPriority(getPriorityStudents(state));
 
         applyStagePolicy(state);
 
@@ -4481,9 +5610,16 @@ document.addEventListener(
             }
         });
 
+        // A first frame changes a "connecting" tile's state outside a store
+        // update (builds without streaming status): redraw.
+        video.addEventListener("loadeddata", onTileFrame);
+
         // frozen: paused on its last frame (never played, never detached while
-        // the camera stays ON).
-        const tile = { el, video, nameEl, placeholder, jitsiTrack: null, frozen: false, mode: "" };
+        // the camera stays ON). statusTrack: the track whose streaming status
+        // this tile follows (Phase D), or null.
+        const tile = {
+            el, video, nameEl, placeholder, frozenEl, jitsiTrack: null, frozen: false, mode: "", statusTrack: null
+        };
 
         tiles.set(tileId, tile);
 
@@ -4497,6 +5633,8 @@ document.addEventListener(
             return;
         }
 
+        watchTileStatus(tile, null);
+        tile.video.removeEventListener("loadeddata", onTileFrame);
         detachFrom(tile.jitsiTrack, tile.video);
         tile.jitsiTrack = null;
         tile.frozen = false;
@@ -4576,11 +5714,388 @@ document.addEventListener(
         Promise.resolve().then(render);
     }
 
+    function onTileStatusChanged() {
+        lastSignature = "";
+        render();
+    }
+
+    function onTileFrame() {
+        lastSignature = "";
+        Promise.resolve().then(render);
+    }
+
+    // Follows one track's streaming status for a tile (null: none). Never
+    // more than one listener per tile; removed with the tile. The enlarged
+    // panel uses it too, with its own handler (a tile and the panel can
+    // follow the same track).
+    function watchTileStatus(tile, jitsiTrack, handler = onTileStatusChanged) {
+        if (tile.statusTrack === jitsiTrack) {
+            return;
+        }
+
+        if (tile.statusTrack) {
+            try {
+                if (typeof tile.statusTrack.off === "function") {
+                    tile.statusTrack.off(SL_STREAMING_STATUS_EVENT, tile.statusHandler || handler);
+                }
+            } catch (error) {
+                /* track already disposed */
+            }
+        }
+
+        tile.statusTrack = null;
+        tile.statusHandler = null;
+
+        if (jitsiTrack) {
+            try {
+                if (typeof jitsiTrack.on === "function") {
+                    jitsiTrack.on(SL_STREAMING_STATUS_EVENT, handler);
+                    tile.statusTrack = jitsiTrack;
+                    tile.statusHandler = handler;
+                }
+            } catch (error) {
+                /* status stays unknown */
+            }
+        }
+    }
+
+    // ---- Tiles view ------------------------------------------------------------
+
+    function isTilesMode() {
+        return tilesView.layout === "tiles";
+    }
+
+    // Page navigation belongs to the parent page (it owns the roster and the
+    // paging); it answers with a new SL_TEACHER_TILES.
+    function requestTilesPage(action) {
+        slPostToParent({ type: "SL_TEACHER_TILES_NAV", v: 1, action });
+    }
+
+    // The page's tiles, in the parent page's (roster) order. A student on the
+    // page who is not in the meeting (left / reconnecting) keeps a tile.
+    function collectPageTiles(state) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+        const stageId = state?.["features/large-video"]?.participantId ?? null;
+
+        return tilesView.participantIds.map(id => {
+            const participant = remote?.get?.(id);
+            const present = Boolean(participant && !participant.fakeParticipant);
+
+            if (present && participant.name) {
+                knownNames.set(id, participant.name);
+            }
+
+            const track = present ? findCameraTrack(state, id, false) : null;
+
+            return {
+                id,
+                name: (present && participant.name) || knownNames.get(id) || "Student",
+                kind: "camera",
+                role: present ? roleOf(participant) : "student",
+                local: false,
+                absent: !present,
+                cameraOn: present && isCameraSourceOn(participant),
+                track,
+                muted: track ? Boolean(track.muted) : true,
+                pinned: manualSelection === id,
+                onStage: stageId === id
+            };
+        });
+    }
+
+    // Columns that give the largest 16:9 tiles for this page in the grid.
+    function bestGridColumns(count, width, height) {
+        let best = 1;
+        let bestWidth = 0;
+
+        for (let cols = 1; cols <= Math.max(1, count); cols++) {
+            const rows = Math.ceil(count / cols);
+            const tileWidth = Math.min(
+                (width - SL_TV_GRID_GAP * (cols - 1)) / cols,
+                ((height - SL_TV_GRID_GAP * (rows - 1)) / rows) * 16 / 9
+            );
+
+            if (tileWidth > bestWidth) {
+                bestWidth = tileWidth;
+                best = cols;
+            }
+        }
+
+        return best;
+    }
+
+    // Sets the grid's columns, then measures where the tiles actually are
+    // and gives the scheduler their reading order (nearby groups follow the
+    // screen, whatever the column count). A changed order re-renders once.
+    function layoutTilesGrid() {
+        if (!gridEl) {
+            return;
+        }
+
+        const tileEls = Array.from(gridEl.children).filter(el => el.dataset && el.dataset.tileId);
+        const width = Math.max(0, gridEl.clientWidth - 2 * SL_TV_GRID_GAP);
+        const height = Math.max(0, gridEl.clientHeight - SL_TV_GRID_GAP - 96);
+
+        if (tileEls.length && width > 0 && height > 0) {
+            const cols = String(bestGridColumns(tileEls.length, width, height));
+
+            if (gridEl.style.getPropertyValue
+                ? gridEl.style.getPropertyValue(SL_TV_VAR_GRID_COLS) !== cols
+                : gridEl.style[SL_TV_VAR_GRID_COLS] !== cols) {
+                gridEl.style.setProperty(SL_TV_VAR_GRID_COLS, cols);
+            }
+        }
+
+        const measured = slSpatialOrder(tileEls.map(el => {
+            const rect = el.getBoundingClientRect();
+
+            return { id: el.dataset.tileId, left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        }));
+        // Order and rows / columns: a new column count re-plans the groups
+        // even when the reading order happens to stay the same.
+        const key = measured.order
+            .map(id => {
+                const position = measured.positions[id];
+
+                return id + "@" + (position ? position.row + ":" + Math.round(position.x * 10) : "");
+            })
+            .join(",");
+
+        gridColumns = measured.columns;
+
+        if (key !== gridOrderKey) {
+            gridOrderKey = key;
+            gridOrder = measured.order;
+            gridPositions = measured.positions;
+            lastSignature = "";
+            Promise.resolve().then(render);
+        }
+    }
+
+    // Whether the measured grid covers this page (else: not measured yet).
+    function gridCoversPage() {
+        const ids = tilesView.participantIds;
+
+        return Boolean(gridOrder && ids.length && ids.every(id => gridOrder.includes(id)));
+    }
+
+    // The measured order when it covers this page, else the page order.
+    function getTilesOrder() {
+        const ids = tilesView.participantIds;
+
+        return gridCoversPage() ? gridOrder.filter(id => ids.includes(id)) : ids.slice();
+    }
+
+    function renderGridBar() {
+        const { page, pageCount, rangeStart, rangeEnd, total } = tilesView;
+
+        gridLabelEl.textContent = total > 0
+            ? "Page " + page + " of " + pageCount + " · Students " + rangeStart + "–" + rangeEnd + " of " + total
+            : "No students in the meeting yet";
+        gridPrevEl.disabled = !(page > 1);
+        gridNextEl.disabled = !(page < pageCount);
+    }
+
+    // Opens the enlarged panel for a tile and selects that student (Phase C
+    // pin: Jitsi then asks for their camera at stage quality; the scheduler
+    // makes them a priority camera).
+    function openEnlarged(tileId) {
+        const state = getState();
+
+        if (!state || !isLocalModerator(state) || !teacherView.enabled) {
+            return;
+        }
+
+        const participant = state["features/base/participants"]?.remote?.get?.(tileId);
+        const present = Boolean(participant && !participant.fakeParticipant);
+
+        enlarged = { id: tileId, name: (present && participant.name) || knownNames.get(tileId) || "Student" };
+
+        if (present) {
+            manualSelection = tileId;
+        }
+
+        // A planned (priority) camera before the pin, as in pinTile. (Sent
+        // with the enlarged height by setEnlarged's re-apply just below.)
+        slTeacherRotation.setPriority(getPriorityStudents(state));
+
+        // Before the pin: Jitsi recomputes its constraints on it, and its own
+        // stage height must never reach the bridge for the enlarged camera.
+        slTeacherRotation.setEnlarged(present ? tileId : null);
+        applyStagePolicy(state);
+        lastSignature = "";
+        render();
+    }
+
+    // Closes the panel: only our own element lets go of the track; the
+    // student stays connected and goes back into their group's rotation.
+    function closeEnlarged() {
+        if (!enlarged) {
+            return;
+        }
+
+        if (manualSelection === enlarged.id) {
+            manualSelection = null;
+        }
+
+        enlarged = null;
+
+        const state = getState();
+
+        // The pin moves away first (Jitsi's stage height then no longer
+        // applies to this camera), THEN the 360 request ends: the camera goes
+        // from 360 straight to its tile height (or 0).
+        if (state) {
+            applyStagePolicy(state);
+        }
+
+        slTeacherRotation.setEnlarged(null);
+
+        lastSignature = "";
+        render();
+    }
+
+    // Tiles view: the panel follows the selection made in List view too.
+    function syncEnlarged(state) {
+        if (!isTilesMode()) {
+            enlarged = null;
+            return;
+        }
+
+        if (!enlarged && manualSelection && manualSelection !== "self") {
+            const participant = state?.["features/base/participants"]?.remote?.get?.(manualSelection);
+
+            if (participant && !participant.fakeParticipant) {
+                enlarged = { id: manualSelection, name: participant.name || "Participant" };
+            }
+        }
+    }
+
+    // What the panel shows for the enlarged student, looked up by
+    // participant every time (never a stale stream).
+    function resolvePanel(state) {
+        if (!enlarged || !isTilesMode()) {
+            return null;
+        }
+
+        const participant = state?.["features/base/participants"]?.remote?.get?.(enlarged.id);
+
+        if (!participant || participant.fakeParticipant) {
+            return { id: enlarged.id, name: enlarged.name, role: "student", state: "disconnected", track: null, status: null };
+        }
+
+        enlarged.name = participant.name || enlarged.name;
+
+        const base = { id: enlarged.id, name: enlarged.name, role: roleOf(participant) };
+
+        if (!isCameraSourceOn(participant)) {
+            return { ...base, state: "off", track: null, status: null };
+        }
+
+        const track = findCameraTrack(state, enlarged.id, false);
+        const jitsiTrack = track && !track.muted ? track.jitsiTrack : null;
+
+        if (!jitsiTrack) {
+            return { ...base, state: "connecting", track: null, status: null };
+        }
+
+        const status = getStreamingStatus(jitsiTrack);
+        const planned = base.role !== "student" || slTeacherRotation.isPlannedLive(enlarged.id);
+
+        return {
+            ...base,
+            track: jitsiTrack,
+            status,
+            state: !planned ? "frozen" : status === null ? "unknown" : status === "active" ? "live" : "stalled"
+        };
+    }
+
+    function onPanelStatusChanged() {
+        lastSignature = "";
+        render();
+    }
+
+    // The panel's own <video> shows the student's existing track (attached
+    // to one more element; never a new connection).
+    function setPanelTrack(jitsiTrack) {
+        if (panelTrack !== jitsiTrack) {
+            if (panelTrack) {
+                detachFrom(panelTrack, panelVideo);
+            }
+
+            panelTrack = null;
+
+            if (jitsiTrack && panelVideo && attachTo(jitsiTrack, panelVideo)) {
+                panelTrack = jitsiTrack;
+            }
+        }
+
+        watchTileStatus(panelWatch, panelTrack, onPanelStatusChanged);
+    }
+
+    function renderPanel(panel) {
+        root.classList.toggle("sl-tv-panel-open", Boolean(panel));
+
+        if (!panel) {
+            setPanelTrack(null);
+            panelEl.dataset.state = "";
+            return;
+        }
+
+        panelNameEl.textContent = panel.name;
+        panelNameEl.title = panel.name;
+        setPanelTrack(panel.track);
+
+        let mode = panel.state;
+
+        // No streaming status in this build: live once a frame is here.
+        if (mode === "unknown") {
+            mode = hasFrame(panelVideo) ? "live" : "connecting";
+        }
+
+        // Not arriving / rotated out: hold this student's own frame.
+        if (mode === "stalled" || mode === "frozen") {
+            panelVideo.pause();
+
+            if (!hasFrame(panelVideo)) {
+                mode = "connecting";
+            }
+        }
+
+        const messages = {
+            live: "Live",
+            stalled: SL_STATUS_MESSAGES[panel.status] || "Waiting for live video…",
+            frozen: "Paused",
+            connecting: "Connecting…",
+            off: "Camera off",
+            disconnected: "Disconnected"
+        };
+
+        panelBodyEl.classList.toggle("sl-no-video", mode === "connecting" || mode === "off" || mode === "disconnected");
+        setPlaceholder(panelPlaceholder, panel.name, panel.role || "student", SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "");
+        panelStateEl.textContent = messages[mode] || "";
+        panelEl.dataset.state = mode;
+
+        if (panelTrack && (mode === "live" || (panel.state === "unknown" && mode === "connecting"))) {
+            playVideo(panelVideo);
+        }
+    }
+
     // A remote student's camera tile while Phase D runs. Returns its mode:
-    // "live" (receiving), "frozen" (last frame), "waiting" (camera on, no
-    // frame yet) or "off" (camera off).
+    //   "live"       Jitsi reports the camera as actually arriving ("active")
+    //   "stalled"    planned, but not arriving (not forwarded yet / any more,
+    //                or interrupted): its last frame held, never played
+    //   "connecting" planned, not arriving, no frame yet
+    //   "frozen"     not planned (rotated out): its last frame held
+    //   "waiting"    camera on, not planned, no frame
+    //   "off"        camera off
+    // Being planned by the scheduler never makes a tile "live" on its own.
     function updateRotatingTile(tile, item) {
+        tile.playForFrame = false;
+
         if (!item.cameraOn) {
+            watchTileStatus(tile, null);
             detachFrom(tile.jitsiTrack, tile.video);
             tile.jitsiTrack = null;
             tile.frozen = false;
@@ -4603,9 +6118,34 @@ document.addEventListener(
             }
 
             tile.frozen = false;
+            watchTileStatus(tile, tile.jitsiTrack);
 
-            return tile.jitsiTrack ? "live" : "waiting";
+            if (!tile.jitsiTrack) {
+                return "waiting";
+            }
+
+            const status = getStreamingStatus(tile.jitsiTrack);
+
+            // No streaming status in this build: live once a frame is here
+            // (until then the stream must play to deliver one).
+            if (status === null) {
+                tile.playForFrame = !hasFrame(tile.video);
+
+                return tile.playForFrame ? "connecting" : "live";
+            }
+
+            if (status === "active") {
+                return "live";
+            }
+
+            // Not arriving: hold whatever frame the tile has, so it never
+            // plays what the stream carries next.
+            tile.video.pause();
+
+            return hasFrame(tile.video) ? "stalled" : "connecting";
         }
+
+        watchTileStatus(tile, null);
 
         // Camera ON but not received now (or not owned any more): never let
         // this tile play what its old stream carries next.
@@ -4672,8 +6212,9 @@ document.addEventListener(
         document.body?.classList.toggle(SL_TV_ACTIVE_CLASS, false);
 
         // Phase D stops with the view (Exam Mode, disabled): the receive
-        // policy goes back to Exam's / Jitsi's own at once.
+        // policy goes back to Exam's / Jitsi's own at once (nobody enlarged).
         slTeacherRotation.setActive(false);
+        slTeacherRotation.setEnlarged(null);
 
         if (!root) {
             return;
@@ -4681,6 +6222,19 @@ document.addEventListener(
 
         Array.from(tiles.keys()).forEach(removeTile);
         setStageTrack(null);
+
+        // Tiles view: the panel lets go of its track; the page and layout
+        // (from the parent page) stay, the measured grid order does not.
+        setPanelTrack(null);
+        enlarged = null;
+        gridOrder = null;
+        gridPositions = null;
+        gridOrderKey = "";
+        gridColumns = 0;
+
+        if (gridObserver) {
+            gridObserver.disconnect();
+        }
 
         // Layout: the preference and sizes stay (module state); only what is
         // on the page goes.
@@ -4726,7 +6280,23 @@ document.addEventListener(
         layoutButtonEl = null;
         layoutMenuEl = null;
         autoHideSwitchEl = null;
+        viewSectionEl = null;
+        pageSizeSectionEl = null;
         restoreEl = null;
+        gridViewEl = null;
+        gridLabelEl = null;
+        gridPrevEl = null;
+        gridNextEl = null;
+        gridEl = null;
+        gridEmptyEl = null;
+        gridSettingsWrapEl = null;
+        gridSettingsEl = null;
+        panelEl = null;
+        panelBodyEl = null;
+        panelVideo = null;
+        panelNameEl = null;
+        panelStateEl = null;
+        panelPlaceholder = null;
     }
 
     function render() {
@@ -4756,14 +6326,28 @@ document.addEventListener(
         applyStagePolicy(getState());
 
         const state = getState();
+        const tilesMode = isTilesMode();
+
+        syncEnlarged(state);
 
         // Phase D: the rotation runs while this view shows (teacher, Normal).
         // The selected student (and the staged one) are priority cameras.
+        // Tiles view: only the current page, in nearby groups of the grid.
         slTeacherRotation.setActive(true);
         slTeacherRotation.setPriority(getPriorityStudents(state));
+        slTeacherRotation.setLayout(tilesMode
+            ? { scope: tilesView.participantIds, order: getTilesOrder(), positions: gridCoversPage() ? gridPositions : null }
+            : null);
         slTeacherRotation.update(state);
 
-        const items = collectTiles(state);
+        const items = tilesMode ? collectPageTiles(state) : collectTiles(state);
+        const panel = resolvePanel(state);
+
+        // Tiles view: the enlarged camera gets its explicit height in the
+        // receive policy while that participant is here (disconnected /
+        // panel closed: nobody). With the camera off nothing is sent; the
+        // request stays 360, so it is 360 again the moment it comes back.
+        slTeacherRotation.setEnlarged(panel && panel.state !== "disconnected" ? panel.id : null);
         const stage = resolveStage(state);
         const status = stage.track ? getStreamingStatus(stage.track) : null;
 
@@ -4795,11 +6379,17 @@ document.addEventListener(
                 item.id, item.name, item.kind, item.role, item.local,
                 trackKey(item.track && item.track.jitsiTrack),
                 item.muted, item.pinned, item.onStage,
-                // Phase D: camera ON / planned live change a tile's state.
-                Boolean(item.cameraOn), isRotatingCameraTile(item) && slTeacherRotation.isPlannedLive(item.id)
+                // Phase D: camera ON / planned live / streaming status change
+                // a rotating tile's state.
+                Boolean(item.cameraOn), isRotatingCameraTile(item) && slTeacherRotation.isPlannedLive(item.id),
+                isRotatingCameraTile(item) && item.track ? getStreamingStatus(item.track.jitsiTrack) : null,
+                Boolean(item.absent)
             ]),
             [stage.id, trackKey(stage.track), stage.empty, statusMessage, stage.local,
-                stage.placeholder ? [stage.placeholder.name, stage.placeholder.role] : null]
+                stage.placeholder ? [stage.placeholder.name, stage.placeholder.role] : null],
+            // Tiles view: page, and the enlarged panel's student and state.
+            [tilesMode, tilesView.epoch, tilesView.page, tilesView.pageCount, tilesView.total, tilesView.pageSize,
+                panel ? [panel.id, panel.name, panel.state, panel.status, trackKey(panel.track)] : null]
         ]);
 
         // Unchanged, and still mounted in Jitsi's current page element.
@@ -4811,6 +6401,14 @@ document.addEventListener(
         ensureRoot();
         applyLayout();
 
+        // The settings menu follows the view (filmstrip / grid bar), open or
+        // not, and shows the current View and page size.
+        placeLayoutMenu();
+
+        if (isLayoutMenuOpen()) {
+            updateLayoutMenu();
+        }
+
         // Tiles.
         const wanted = new Set(items.map(item => item.id));
 
@@ -4818,15 +6416,34 @@ document.addEventListener(
             .filter(tileId => !wanted.has(tileId))
             .forEach(removeTile);
 
+        // List view: the filmstrip; Tiles view: the grid (a tile moves
+        // between them with its element, track and frame).
+        const container = tilesMode ? gridEl : tilesEl;
+
+        if (tilesMode && !items.length) {
+            gridEl.appendChild(gridEmptyEl);
+        } else {
+            gridEmptyEl.remove();
+        }
+
         // Walks the tiles in list order; a tile is moved only when it is out
         // of place (no re-append of every tile on every render).
-        let nextInPlace = tilesEl.firstChild;
+        let nextInPlace = container.firstChild;
 
         items.forEach(item => {
             const tile = tiles.get(item.id) || createTile(item.id);
             let mode;
 
-            if (isRotatingCameraTile(item)) {
+            if (item.absent) {
+                // Tiles view: on the page but not in the meeting (left or
+                // reconnecting): nothing is shown from any stream.
+                watchTileStatus(tile, null);
+                detachFrom(tile.jitsiTrack, tile.video);
+                tile.jitsiTrack = null;
+                tile.frozen = false;
+                tile.playForFrame = false;
+                mode = "disconnected";
+            } else if (isRotatingCameraTile(item)) {
                 mode = updateRotatingTile(tile, item);
             } else {
                 const jitsiTrack = item.track && !item.muted ? item.track.jitsiTrack : null;
@@ -4841,6 +6458,8 @@ document.addEventListener(
                 }
 
                 tile.frozen = false;
+                tile.playForFrame = false;
+                watchTileStatus(tile, null);
                 mode = tile.jitsiTrack ? "live" : "off";
             }
 
@@ -4852,26 +6471,52 @@ document.addEventListener(
                 tile.placeholder,
                 item.name,
                 item.kind === "desktop" ? "screen" : item.role,
-                isRotatingCameraTile(item) ? (mode === "waiting" ? "Camera on" : mode === "off" ? "Camera off" : "") : ""
+                isRotatingCameraTile(item) ? (SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "") : ""
             );
-            tile.el.classList.toggle("sl-no-video", mode === "off" || mode === "waiting");
-            tile.el.classList.toggle("sl-frozen", mode === "frozen");
+            tile.el.classList.toggle("sl-no-video",
+                mode === "off" || mode === "waiting" || mode === "connecting" || mode === "disconnected");
+            // Frozen (rotated out) and stalled (not arriving) both show the
+            // held frame with the quiet pause marker; its tooltip says which.
+            // A frozen tile whose student is planned live again but has no
+            // stream of their own yet (e.g. re-mapped away) is connecting.
+            tile.el.classList.toggle("sl-frozen", mode === "frozen" || mode === "stalled");
+            tile.frozenEl.title = mode === "stalled"
+                ? (SL_STATUS_MESSAGES[getStreamingStatus(tile.jitsiTrack)] || "Waiting for live video…")
+                : isRotatingCameraTile(item) && slTeacherRotation.isPlannedLive(item.id)
+                    ? SL_TV_TILE_PLACEHOLDER_STATUS.connecting
+                    : "Live view resumes shortly";
             tile.el.classList.toggle("sl-mirror", item.local && item.kind === "camera");
             tile.el.classList.toggle("sl-desktop", item.kind === "desktop");
             tile.el.classList.toggle("sl-pinned", item.pinned);
             tile.el.classList.toggle("sl-on-stage", item.onStage);
 
-            // Only a live tile plays (a frozen one must keep its frame).
-            if (mode === "live" && tile.jitsiTrack) {
+            // Only a live tile plays (a frozen / stalled one must keep its
+            // frame), and a connecting one in a build without streaming
+            // status, which has no frame to keep yet.
+            if ((mode === "live" || tile.playForFrame) && tile.jitsiTrack) {
                 playVideo(tile.video);
             }
 
             if (tile.el === nextInPlace) {
                 nextInPlace = nextInPlace.nextSibling;
             } else {
-                tilesEl.insertBefore(tile.el, nextInPlace);
+                container.insertBefore(tile.el, nextInPlace);
             }
         });
+
+        if (tilesMode) {
+            // No stage in Tiles view (its element lets go of its track); the
+            // enlarged panel shows the selected student instead.
+            setStageTrack(null);
+            renderGridBar();
+            renderPanel(panel);
+            root.classList.add("sl-visible");
+            document.body.classList.toggle(SL_TV_ACTIVE_CLASS, true);
+            layoutTilesGrid();
+            return;
+        }
+
+        renderPanel(null);
 
         // Stage.
         setStageTrack(stage.track);
@@ -4950,6 +6595,70 @@ document.addEventListener(
         render();
     });
 
+    // Tiles view from the parent page (which owns the roster order and the
+    // paging, and resends it after SL_RECEIVE_READY):
+    //   { type: "SL_TEACHER_TILES", v: 1, epoch, layout: "list" | "tiles",
+    //     participantIds (the page, roster order, at most 50), page,
+    //     pageCount, rangeStart, rangeEnd, total, pageSize? (10-50) }
+    // The settings menu asks the parent page to change View / page size:
+    //   iframe -> parent: { type: "SL_TEACHER_TILES_SETTINGS", v: 1,
+    //                       layout?: "list" | "tiles", pageSize?: 10-50 }
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_TEACHER_TILES") {
+            return;
+        }
+
+        const count = value => typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || (data.layout !== "list" && data.layout !== "tiles")
+            || !Array.isArray(data.participantIds)
+            || data.participantIds.length > SL_TV_TILES_MAX_PAGE
+            || !data.participantIds.every(id => typeof id === "string" && SL_TV_PARTICIPANT_ID_PATTERN.test(id))
+            || new Set(data.participantIds).size !== data.participantIds.length
+            || ![data.page, data.pageCount, data.rangeStart, data.rangeEnd, data.total].every(count)
+            || (data.pageSize !== undefined && !SL_TV_TILES_PAGE_SIZES.includes(data.pageSize))) {
+            console.warn("[SL Classroom] Ignored malformed teacher tiles", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < tilesView.epoch) {
+            return;
+        }
+
+        tilesView = {
+            epoch: data.epoch,
+            layout: data.layout,
+            participantIds: data.participantIds.slice(),
+            page: data.page,
+            pageCount: data.pageCount,
+            rangeStart: data.rangeStart,
+            rangeEnd: data.rangeEnd,
+            total: data.total,
+            pageSize: data.pageSize ?? 0
+        };
+
+        console.log("[SL Classroom] Teacher tiles", tilesView.layout, "page", tilesView.page,
+            "of", tilesView.pageCount, "(" + tilesView.participantIds.length + " students)");
+
+        lastSignature = "";
+        render();
+    });
+
     // ---------------------------------------------------------------------
     // PHASE A TESTING ONLY - lets a tester switch the view on/off from the
     // Jitsi iframe's DevTools console (e.g. with a Local Override of this
@@ -4987,6 +6696,59 @@ document.addEventListener(
 
             return modes;
         },
+        // Tiles view: layout, page, grid and the enlarged panel.
+        tiles: () => ({
+            layout: tilesView.layout,
+            page: tilesView.page,
+            pageCount: tilesView.pageCount,
+            participantIds: tilesView.participantIds.slice(),
+            rendered: gridEl
+                ? Array.from(gridEl.children).filter(el => el.dataset && el.dataset.tileId).map(el => el.dataset.tileId)
+                : [],
+            columns: gridColumns,
+            order: gridOrder ? gridOrder.slice() : null,
+            label: gridLabelEl ? gridLabelEl.textContent : "",
+            previousDisabled: gridPrevEl ? Boolean(gridPrevEl.disabled) : null,
+            nextDisabled: gridNextEl ? Boolean(gridNextEl.disabled) : null,
+            panel: enlarged
+                ? { open: true, id: enlarged.id, name: enlarged.name, state: panelEl ? panelEl.dataset.state : "" }
+                : { open: false }
+        }),
+        // The View / filmstrip settings menu: where it is, what it shows.
+        settingsMenu: () => {
+            const checked = selector => Array.from(layoutMenuEl?.querySelectorAll(selector) || [])
+                .find(el => el.getAttribute("aria-checked") === "true");
+            const pressed = Array.from(pageSizeSectionEl?.querySelectorAll(".sl-tv-pagesize") || [])
+                .find(el => el.getAttribute("aria-pressed") === "true");
+
+            return {
+                open: isLayoutMenuOpen(),
+                place: !layoutMenuEl ? null
+                    : layoutMenuEl.parentNode === gridSettingsWrapEl ? "grid"
+                        : layoutMenuEl.parentNode === footerEl ? "filmstrip" : "other",
+                view: checked(".sl-tv-view-item")?.dataset.view ?? null,
+                pageSizesShown: Boolean(pageSizeSectionEl && !pageSizeSectionEl.hidden),
+                pageSize: pressed ? Number(pressed.dataset.pageSize) : null,
+                position: checked(".sl-tv-layout-item[data-position]")?.dataset.position ?? null,
+                autoHide: autoHideSwitchEl?.getAttribute("aria-checked") === "true",
+                expanded: {
+                    filmstrip: layoutButtonEl?.getAttribute("aria-expanded") ?? null,
+                    grid: gridSettingsEl?.getAttribute("aria-expanded") ?? null
+                }
+            };
+        },
+        openSettings: () => activeLayoutButton()?.dispatchEvent(new MouseEvent("click")),
+        chooseView: layout => Array.from(layoutMenuEl?.querySelectorAll(".sl-tv-view-item") || [])
+            .find(el => el.dataset.view === layout)?.dispatchEvent(new MouseEvent("click")),
+        choosePageSize: size => Array.from(pageSizeSectionEl?.querySelectorAll(".sl-tv-pagesize") || [])
+            .find(el => Number(el.dataset.pageSize) === size)?.dispatchEvent(new MouseEvent("click")),
+        choosePosition: position => Array.from(layoutMenuEl?.querySelectorAll(".sl-tv-layout-item[data-position]") || [])
+            .find(el => el.dataset.position === position)?.dispatchEvent(new MouseEvent("click")),
+        toggleAutoHide: () => autoHideSwitchEl?.dispatchEvent(new MouseEvent("click")),
+        tilesPrevious: () => gridPrevEl && gridPrevEl.dispatchEvent(new MouseEvent("click")),
+        tilesNext: () => gridNextEl && gridNextEl.dispatchEvent(new MouseEvent("click")),
+        tileClick: id => tiles.get(id)?.el.dispatchEvent(new MouseEvent("click")),
+        closePanel: () => closeEnlarged(),
         autoHide: enabled => {
             setAutoHide(enabled);
             updateLayoutMenu();
