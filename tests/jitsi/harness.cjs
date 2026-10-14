@@ -593,6 +593,8 @@ function createHarness(options = {}) {
         requestAnimationFrame: fn => timers.setTimeout(fn, 16),
         cancelAnimationFrame: id => timers.clear(id),
         queueMicrotask,
+        URL,
+        Blob,
         MutationObserver: makeMutationObserverClass(doc),
         ResizeObserver: makeResizeObserverClass(doc),
         MouseEvent: class { constructor(type) { this.type = type; } },

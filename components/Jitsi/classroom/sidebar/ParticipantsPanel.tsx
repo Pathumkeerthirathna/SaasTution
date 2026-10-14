@@ -8,7 +8,6 @@ import {
   CameraOff,
   Mic,
   MicOff,
-  Crown,
   BookOpenCheck,
   UserRoundX,
   Bell,
@@ -18,6 +17,8 @@ import {
 } from "lucide-react";
 
 import type { ClassroomStudent, JitsiParticipant } from "../../types";
+import { splitClassRegister } from "../../class-register.mjs";
+import StudentClassRegister from "./StudentClassRegister";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "@/components/class-management-panel";
 
@@ -35,6 +36,8 @@ type ParticipantsPanelProps = {
    * the one this browser is in. They are in the class, so they must not show as absent.
    */
   breakoutRoomLabels?: Record<string, string>;
+  /** Student register only: the viewing student. */
+  currentStudentId?: string;
 };
 
 export default function ParticipantsPanel({
@@ -45,6 +48,7 @@ export default function ParticipantsPanel({
   onMuteEveryone,
   onMuteParticipant,
   breakoutRoomLabels,
+  currentStudentId,
 }: ParticipantsPanelProps) {
 
   console.log(participants);
@@ -73,27 +77,14 @@ export default function ParticipantsPanel({
     });
   };
 
+// Present / absent (shared with the student's register, class-register.mjs).
 // A student in another room (e.g. a breakout room) is still in the class.
-const elsewhereLabel = (displayName: string) =>
-  participants.some((participant) => participant.displayName === displayName)
-    ? undefined
-    : breakoutRoomLabels?.[displayName];
+const register = splitClassRegister(ClassroomStudents, participants, breakoutRoomLabels);
+const elsewhereLabel = register.elsewhereLabel;
 
-const presentStudents = ClassroomStudents?.filter(
-  (student) =>
-    participants.some(
-      (participant) =>
-        participant.displayName === student.displayName
-    ) || Boolean(elsewhereLabel(student.displayName))
-);
+const presentStudents = ClassroomStudents ? register.present : undefined;
 
-const absentStudents = ClassroomStudents?.filter(
-  (student) =>
-    !participants.some(
-      (participant) =>
-        participant.displayName === student.displayName
-    ) && !elsewhereLabel(student.displayName)
-);
+const absentStudents = ClassroomStudents ? register.absent : undefined;
 
 console.log(presentStudents);
 console.log(absentStudents);
@@ -161,32 +152,15 @@ console.log(absentStudents);
   // STUDENT VIEW
   // =====================================================
 
+  // Read-only Class Register: no notify / mute / camera / attendance controls.
   if (role === "student") {
     return (
-      <div className="flex h-full min-h-0 flex-col text-slate-900">
-
-        {participants.length === 0 ? (
-
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-400">
-            Waiting for participants...
-          </div>
-
-        ) : (
-
-          <div className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-
-            {participants.map((participant) => (
-              <ParticipantRow
-                key={participant.participantId}
-                participant={participant}
-              />
-            ))}
-
-          </div>
-
-        )}
-
-      </div>
+      <StudentClassRegister
+        participants={participants}
+        students={ClassroomStudents}
+        currentStudentId={currentStudentId}
+        breakoutRoomLabels={breakoutRoomLabels}
+      />
     );
   }
 
@@ -477,73 +451,4 @@ console.log(absentStudents);
     </div>
   );
 
-}
-
-function ParticipantRow({
-  participant,
-}: {
-  participant: JitsiParticipant;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-
-      <div className="flex items-center gap-2.5">
-
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
-
-          {participant.displayName?.charAt(0) ?? "?"}
-
-        </div>
-
-        <div className="min-w-0">
-
-          <div className="flex items-center gap-1.5">
-
-            <span className="truncate text-sm font-medium text-slate-900">
-              {participant.displayName ?? "Unknown User"}
-            </span>
-
-            {participant.role === "moderator" && (
-              <Crown
-                size={14}
-                className="shrink-0 text-amber-500"
-              />
-            )}
-
-          </div>
-
-        </div>
-
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1.5">
-
-        {participant.status?.audioMuted ?? false ? (
-          <MicOff
-            size={15}
-            className="text-red-500"
-          />
-        ) : (
-          <Mic
-            size={15}
-            className="text-emerald-600"
-          />
-        )}
-
-        {participant.status?.videoMuted ?? false ? (
-          <CameraOff
-            size={15}
-            className="text-red-500"
-          />
-        ) : (
-          <Camera
-            size={15}
-            className="text-emerald-600"
-          />
-        )}
-
-      </div>
-
-    </div>
-  );
 }

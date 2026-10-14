@@ -268,7 +268,8 @@ export default function MeetingCard({
   return (
     <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#0B1120]">
 
-      {/* HEADER — navy/blue for the teacher, green for the student. */}
+      {/* HEADER — the teacher workspace's navy (#112D5C) for both roles; the
+          student keeps its own border and text colours. */}
       {showHeader && (
       <div
         ref={headerRef}
@@ -279,7 +280,7 @@ export default function MeetingCard({
         // --sl-header-min in globals.css).
         className={`sl-header flex min-h-[var(--sl-header-min)] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-3 py-1.5 sm:px-4 sm:py-2 lg:flex-nowrap lg:px-5 ${
           role === "student"
-            ? "border-[#1C332B] bg-[#10231D]"
+            ? "border-[#1C332B] bg-[#112D5C]"
             : "border-[#1E293B] bg-[#112D5C]"
         } ${
           immersive

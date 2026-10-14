@@ -6,7 +6,6 @@ import {
   X,
   ClipboardList,
   ClipboardCheck,
-  Users,
   FileText,
   ListChecks,
   MessageSquare,
@@ -56,6 +55,8 @@ type RightSidebarProps = {
   role : UserRole;
   participants: JitsiParticipant[];
   ClassroomStudents?: ClassroomStudent[];
+  /** Student only: the viewing student (marked in their Class Register). */
+  currentStudentId?: string;
   /** Teacher only: camera monitoring state + actions, shown in the Camera Monitoring panel. */
   cameraMonitoring?: CameraMonitoringController;
   onMuteEveryone?: () => void;
@@ -104,16 +105,16 @@ export default function RightSidebar(props: RightSidebarProps) {
   // lecture tool panels: blue header, light body.
   const isClassRegister =
     props.role === "teacher" && activePanel === "participants";
-  // The student's "Participants" list gets the same light body treatment.
+  // The student's read-only Class Register: same header and light body.
   const isStudentParticipants = isStudent && activePanel === "participants";
 
-  // Session chrome (rail + panel shell + header) is navy/blue for the teacher
-  // and green for the student — the panel bodies underneath keep their own
-  // (already-green) theming regardless.
+  // Session chrome (rail + panel shell + header) has the teacher workspace's
+  // navy background (#112D5C) for both roles; the student keeps its own
+  // borders, text and hover tones, and the panel bodies underneath keep their
+  // own theming regardless.
   const chrome = isStudent
     ? {
-        // Muted, desaturated dark green — less "vivid emerald", more a green-tinted charcoal.
-        panelBg: "bg-[#10231D]",
+        panelBg: "bg-[#112D5C]",
         panelBorder: "border-[#1C332B]",
         iconAccent: "text-white/80",
         title: "text-white",
@@ -255,7 +256,7 @@ export default function RightSidebar(props: RightSidebarProps) {
               ? "sl-panel--xwide sl-panel--tall"
               : isLectureToolPanel
                 ? "sl-panel--wide sl-panel--tall"
-                : isClassRegister || isAttendancePanel || isBreakoutPanel
+                : isClassRegister || isStudentParticipants || isAttendancePanel || isBreakoutPanel
                   ? "sl-panel--wide"
                   : ""
           }
@@ -282,12 +283,9 @@ export default function RightSidebar(props: RightSidebarProps) {
           {/* min-w-0 lets the title / subtitle shrink instead of pushing the close button off-screen */}
           <div className="flex min-w-0 items-center gap-2">
 
-            {activePanel === "participants" &&
-              (props.role === "teacher" ? (
-                <ClipboardList size={18} className={chrome.iconAccent} />
-              ) : (
-                <Users size={18} className={chrome.iconAccent} />
-              ))}
+            {activePanel === "participants" && (
+              <ClipboardList size={18} className={chrome.iconAccent} />
+            )}
 
             {activePanel === "attendance" && (
               <ClipboardCheck size={18} className={chrome.iconAccent} />
@@ -316,8 +314,7 @@ export default function RightSidebar(props: RightSidebarProps) {
 
             <div className="min-w-0">
               <h2 className={`text-base font-semibold ${chrome.title}`}>
-                {activePanel === "participants" &&
-                  (props.role === "teacher" ? "Class Register" : "Participants")}
+                {activePanel === "participants" && "Class Register"}
 
                 {activePanel === "attendance" && "Attendance"}
 
@@ -340,7 +337,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                 <p className={`max-w-[300px] truncate text-[11px] ${chrome.subtitle}`}>
                   {props.lectureTitle}
                 </p>
-              ) : (isClassRegister || isAttendancePanel || isMonitoringPanel) && props.className ? (
+              ) : (isClassRegister || isStudentParticipants || isAttendancePanel || isMonitoringPanel) && props.className ? (
                 <p className={`max-w-[300px] truncate text-[11px] ${chrome.subtitle}`}>
                   {props.className}
                 </p>
@@ -389,6 +386,7 @@ export default function RightSidebar(props: RightSidebarProps) {
               onMuteEveryone={props.onMuteEveryone}
               onMuteParticipant={props.onMuteParticipant}
               breakoutRoomLabels={props.breakoutRoomLabels}
+              currentStudentId={props.currentStudentId}
             />
           )}
 

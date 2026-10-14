@@ -922,8 +922,34 @@ const [classStudents, setClassStudents] =
         console.log(data);
     };
 
+    // Students: the read-only Class Register's roster (names only), for
+    // a student enrolled in this live session's class.
+    const loadStudentRegister = async () => {
+        const response = await fetch(
+            `/api/sessions/${joinInfo.session.id}/register`
+        );
+
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok || !payload?.success) {
+            throw new Error(
+                payload?.error?.message ?? "Failed to load the class register"
+            );
+        }
+
+        setClassStudents(
+            (payload.data.students as { studentId: string; displayName: string }[]).map(
+                (student) => ({ ...student, email: null })
+            )
+        );
+    };
+
     if(role=="teacher")
       void loadClassStudents();
+    else
+      loadStudentRegister().catch((error) =>
+        console.error("❌ Class register:", error)
+      );
 
 }, [joinInfo]);
 
@@ -1573,9 +1599,19 @@ const [classStudents, setClassStudents] =
           participants={participants}
           ClassroomStudents={classStudents}
           cameraMonitoring={role === "teacher" ? cameraMonitoring : undefined}
-          onMuteEveryone={() => jitsiMeetingRef.current?.muteEveryone()}
-          onMuteParticipant={(participantId, muted) =>
-            jitsiMeetingRef.current?.setParticipantAudioMuted(participantId, muted)
+          currentStudentId={role === "student" ? joinInfo.student?.id : undefined}
+          // Teacher-only controls: students never get them (Jitsi itself also
+          // refuses remote mutes from a non-moderator).
+          onMuteEveryone={
+            role === "teacher"
+              ? () => jitsiMeetingRef.current?.muteEveryone()
+              : undefined
+          }
+          onMuteParticipant={
+            role === "teacher"
+              ? (participantId, muted) =>
+                  jitsiMeetingRef.current?.setParticipantAudioMuted(participantId, muted)
+              : undefined
           }
           chatMessages={chatMessages}
           onSendChat={sendChat}

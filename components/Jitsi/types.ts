@@ -24,6 +24,18 @@ export type JoinInfo = {
   /** e.g. "Mr. Pathum Kumara (Teacher)" — same value for teacher and students. */
   teacherDisplayName?: string;
 
+  /**
+   * Student join info only: the class teacher's public profile, for the
+   * stage placeholder shown while the teacher's camera is off.
+   */
+  teacherProfile?: {
+    /** e.g. "Mr. Pathum Kumara" (no "(Teacher)" suffix). */
+    name: string;
+    designation: string | null;
+    /** As stored, e.g. "/uploads/teachers/<file>.jpg"; null when none. */
+    photoUrl: string | null;
+  };
+
   youtube?: {
     channelTitle: string | null;
     status: "CONNECTED" | "REAUTH_REQUIRED" | null;

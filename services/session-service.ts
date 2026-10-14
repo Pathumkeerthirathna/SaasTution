@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
 import { StudentSession } from "@/lib/auth-session";
-import { formatTeacherClassroomName } from "@/lib/teacher-title";
+import { formatTeacherClassroomName, formatTeacherFullName } from "@/lib/teacher-title";
 import { attendedMs } from "@/lib/attendance-duration";
 import {
   endYouTubeFeaturesForLecture,
@@ -600,6 +600,8 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
                 select: {
                   title: true,
                   displayName: true,
+                  designation: true,
+                  profileImageUrl: true,
                 },
               },
             },
@@ -661,6 +663,12 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
         schedule: session.class.schedule,
       },
       teacherDisplayName: formatTeacherClassroomName(session.class.teacher),
+      // Shown on the student's stage while the teacher's camera is off.
+      teacherProfile: {
+        name: formatTeacherFullName(session.class.teacher),
+        designation: session.class.teacher.profile?.designation?.trim() || null,
+        photoUrl: session.class.teacher.profile?.profileImageUrl || null,
+      },
       student: {
           id: student.id,
           name: student.name,
@@ -668,6 +676,81 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
       },
       token: jitsiToken || undefined,
   }
+}
+
+// ---- Student Class Register ----------------------------------------------
+
+/**
+ * The active session, for a student enrolled (active, status 0) in its
+ * class. 404 for an unknown / ended session, 403 for another class's.
+ */
+async function getActiveSessionForEnrolledStudent(sessionId: string, studentId: string) {
+  const session = await prisma.classSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      id: true,
+      classId: true,
+      isActive: true,
+      lecture: { select: { title: true } },
+      class: { select: { id: true, name: true } },
+    },
+  });
+
+  if (!session || !session.isActive) {
+    throw new AppError("Class session is not active.", 404, "SESSION_NOT_ACTIVE");
+  }
+
+  const student = await prisma.student.findFirst({
+    where: {
+      id: studentId,
+      status: 0,
+      classes: {
+        some: {
+          classId: session.classId,
+          isActive: true,
+        },
+      },
+    },
+    select: { id: true, name: true },
+  });
+
+  if (!student) {
+    throw new AppError("Student is not enrolled in this class.", 403, "STUDENT_NOT_IN_CLASS");
+  }
+
+  return { session, student };
+}
+
+/**
+ * The class register a student sees in the live classroom: the class's
+ * active students by name only (never emails or contacts), in the same order
+ * as the teacher's register. Present / absent is worked out in the browser
+ * from the live meeting, exactly like the teacher's register.
+ */
+export async function getClassRegisterForStudent(params: { sessionId: string; studentId: string }) {
+  const { session } = await getActiveSessionForEnrolledStudent(params.sessionId, params.studentId);
+
+  const classStudents = await prisma.classStudent.findMany({
+    where: {
+      classId: session.classId,
+      isActive: true,
+      student: { status: 0 },
+    },
+    orderBy: { assignedAt: "asc" },
+    select: {
+      student: { select: { id: true, name: true } },
+    },
+  });
+
+  return {
+    classId: session.classId,
+    className: session.class.name,
+    lectureTitle: session.lecture?.title ?? null,
+    students: classStudents.map(({ student }) => ({
+      studentId: student.id,
+      displayName: student.name,
+    })),
+  };
 }
 
 export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?: string) {

@@ -1,4 +1,6 @@
-console.log("======== CUSTOM JS VERSION 1000 ========");
+const SL_CUSTOM_JS_VERSION = 1004;
+
+console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
 
 /*
@@ -3075,9 +3077,22 @@ document.addEventListener(
    the receiver constraints (Phase 3 onStageSources = this same
    source, and the Stage Lock's stage selection underneath).
 
+   While the teacher's camera is off (muted, or the teacher is in
+   the room without any camera source yet) the stage shows the
+   teacher's profile instead: photo (or initials), name and
+   designation on a blue gradient, with a camera-off status. So it
+   does while no teacher is in the room at all (not joined yet:
+   "Your class will begin shortly"; left after joining: "stepped
+   away"), from the profile the parent page sent, with no Jitsi
+   participant or track needed. A screen share always wins over the
+   camera (slPickStudentStage), so it is never shown while the
+   teacher shares.
+
    Runs ONLY when the local participant is not a moderator, and
    only while the parent page enables it:
-     { type: "SL_STAGE_VIEW", v: 1, epoch, enabled }
+     { type: "SL_STAGE_VIEW", v: 1, epoch, enabled, teacher? }
+     teacher: { name, designation, photoUrl, jitsiName } (optional;
+     shown only on the participant whose display name is jitsiName)
    (resent by the parent after SL_RECEIVE_READY). Off by default.
 ========================================================== */
 
@@ -3085,6 +3100,51 @@ document.addEventListener(
 
     const SL_STAGE_ID = "sl-custom-stage";
     const SL_STREAMING_STATUS_EVENT = "track.streaming_status_changed";
+
+    // Where the stage is mounted: the element that holds Jitsi's toolbar
+    // (#new-toolbox, normally #videoconference_page), so the stage and the
+    // toolbar are compared in the SAME stacking context: z-index 199 under
+    // the toolbar's 252. #videoconference_page has a transform (its own
+    // stacking context); a <body>-level stage is compared with the whole page
+    // instead and covers the toolbar and the toolbar polish's hide/show
+    // control (the bug in the original version). Falls back to the page
+    // element, then <body>. The teacher view (SL_TV_MOUNT_ID) is not changed.
+    const SL_STAGE_MOUNT_ID = "videoconference_page";
+    const SL_STAGE_TOOLBAR_ID = "new-toolbox";
+    // On <body> while this (student-only) stage shows; see the toolbar rule.
+    const SL_STAGE_ACTIVE_CLASS = "sl-student-stage-active";
+    // A card already showing waits this long at most for the camera's first
+    // frame before uncovering the video (no black flash in between).
+    const SL_STAGE_FIRST_FRAME_WAIT_MS = 2000;
+
+    const SL_STAGE_TEXT_MAX = 200;
+    // Largest posted teacher photo accepted (same cap as the parent page).
+    const SL_STAGE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+    const SL_STAGE_CAMERA_OFF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.5 5.5H14a2 2 0 0 1 2 2v3.5l4.2-2.6a.5.5 0 0 1 .8.4v6.4"/><path d="M16 16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1"/></svg>';
+    // Avatar fallback when there is no photo and no usable name: a teacher.
+    const SL_STAGE_TEACHER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.75"/><path d="M4.75 20v-.5a6 6 0 0 1 6-6h2.5a6 6 0 0 1 6 6v.5"/></svg>';
+
+    // What the card says (see cardCopy).
+    const SL_STAGE_COPY = {
+        waiting: {
+            title: "Your class will begin shortly",
+            text: "Please wait while your teacher gets ready."
+        },
+        voiceOnly: {
+            title: "Your teacher's camera is off",
+            text: "You can still hear your teacher. The video will appear here when the camera is turned on."
+        },
+        paused: {
+            title: "Your teacher's camera is off",
+            text: "The video will return here automatically when the camera is turned back on."
+        },
+        // The teacher was in the room this session and is not any more
+        // (left or disconnected): not "begin shortly", the class has begun.
+        away: {
+            title: "Your teacher has stepped away",
+            text: "The class will continue here as soon as your teacher is back."
+        }
+    };
 
     // Jitsi track streaming status (lib-jitsi-meet TrackStreamingStatus)
     // -> what the stage tells the viewer. "active" (or not tracked yet) shows
@@ -3095,12 +3155,30 @@ document.addEventListener(
         restoring: "Video interrupted - reconnecting…"
     };
 
-    let stageView = { epoch: 0, enabled: false };
+    let stageView = { epoch: 0, enabled: false, teacher: null };
 
     let root = null;
     let video = null;
     let messageEl = null;
     let statusEl = null;
+    // Camera-off placeholder: { el, photoEl, initialsEl, nameEl, roleEl,
+    // titleEl, textEl }.
+    let teacherEl = null;
+    // Photo URLs that failed to load (initials are shown instead).
+    const failedPhotos = new Set();
+    // The object URL made for the photo the parent page posted, and its key.
+    let photoObject = { key: "", url: "" };
+    // Teachers (by Jitsi display name) whose camera this student has seen
+    // on: their camera being off now is a pause, not "class not started".
+    const camerasSeenOn = new Set();
+    // Whether a teacher (moderator) has been in the room since this page
+    // loaded: with none there now, the card says "stepped away", not
+    // "begin shortly".
+    let teacherHasJoined = false;
+    // Whether the card should show (the latest render's answer), and the
+    // first-frame wait while it still covers a camera that just came on.
+    let cardWanted = false;
+    let firstFrameTimer = null;
 
     // The JitsiTrack attached to OUR <video>, and the one we listen to for
     // streaming status changes (always the same track, or none).
@@ -3191,7 +3269,55 @@ document.addEventListener(
             "#" + SL_STAGE_ID + ".sl-stage-empty .sl-stage-message { display: flex; }",
             "#" + SL_STAGE_ID + " .sl-stage-status { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: none; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 999px; background: rgba(15, 23, 42, 0.85); color: #F8FAFC; font: 500 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
             "#" + SL_STAGE_ID + ".sl-stage-weak .sl-stage-status { display: block; }",
-            "@media (max-width: 640px) { #" + SL_STAGE_ID + " .sl-stage-message { font-size: 14px; } #" + SL_STAGE_ID + " .sl-stage-status { top: 8px; font-size: 12px; } }"
+            "@media (max-width: 640px) { #" + SL_STAGE_ID + " .sl-stage-message { font-size: 14px; } #" + SL_STAGE_ID + " .sl-stage-status { top: 8px; font-size: 12px; } }",
+
+            // ---- Toolbar above the stage (students only: this class is set
+            // only while this student stage shows). The stage shares the
+            // toolbar's parent (see getMountParent), so this comparison is
+            // local; it is restated here so a server stylesheet lowering the
+            // toolbar cannot put it under the stage. Jitsi's own value. ----
+            "body." + SL_STAGE_ACTIVE_CLASS + " #new-toolbox.new-toolbox { z-index: 252; }",
+
+            // ---- Teacher camera off: profile card on a deep-blue gradient.
+            // Sized from the viewport (vmin) so it scales from phones to
+            // fullscreen; text wraps, never cut. The bottom padding keeps the
+            // card clear of Jitsi's toolbar. Only a short fade, no animation. ----
+            "#" + SL_STAGE_ID + " .sl-stage-teacher { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 20px 16px 76px; overflow: hidden; opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; background: radial-gradient(60% 50% at 50% 32%, rgba(59, 130, 246, 0.24), rgba(59, 130, 246, 0) 70%), radial-gradient(45% 40% at 88% 92%, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0) 70%), linear-gradient(155deg, #12336B 0%, #0C2350 45%, #061430 100%); color: #F8FAFC; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-align: center; }",
+            // Subtle dot grid, fading out towards the edges.
+            "#" + SL_STAGE_ID + " .sl-stage-teacher::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(191, 219, 254, 0.16) 1px, transparent 1.4px); background-size: 26px 26px; -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 80%); mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 80%); }",
+            "#" + SL_STAGE_ID + ".sl-stage-teacher-off .sl-stage-teacher { opacity: 1; visibility: visible; transition: opacity .3s ease; }",
+            "#" + SL_STAGE_ID + ".sl-stage-teacher-off .sl-stage-message { display: none; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-card { position: relative; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; width: min(440px, 100%); padding: clamp(20px, 4.5vmin, 40px) clamp(18px, 4.5vmin, 44px); border-radius: clamp(18px, 3vmin, 28px); border: 1px solid rgba(191, 219, 254, 0.14); background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)); box-shadow: 0 24px 64px rgba(2, 6, 23, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07); }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-info { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }",
+            "#" + SL_STAGE_ID + " .sl-stage-avatar { position: relative; flex: 0 0 auto; box-sizing: border-box; width: clamp(80px, 20vmin, 148px); height: clamp(80px, 20vmin, 148px); padding: 3px; border-radius: 50%; background: linear-gradient(145deg, rgba(147, 197, 253, 0.85), rgba(37, 99, 235, 0.25)); box-shadow: 0 14px 36px rgba(2, 6, 23, 0.5), 0 0 0 8px rgba(147, 197, 253, 0.06); }",
+            "#" + SL_STAGE_ID + " .sl-stage-avatar-inner { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; overflow: hidden; border-radius: 50%; background: linear-gradient(145deg, #2563EB, #1E3A8A); }",
+            "#" + SL_STAGE_ID + " .sl-stage-initials { font-size: clamp(26px, 7vmin, 52px); font-weight: 600; letter-spacing: 0.03em; color: #EFF6FF; }",
+            "#" + SL_STAGE_ID + " .sl-stage-avatar-icon { display: none; width: 46%; height: 46%; color: #DBEAFE; }",
+            "#" + SL_STAGE_ID + " .sl-stage-avatar-icon svg { display: block; width: 100%; height: 100%; }",
+            "#" + SL_STAGE_ID + " .sl-stage-initials:empty { display: none; }",
+            "#" + SL_STAGE_ID + " .sl-stage-initials:empty + .sl-stage-avatar-icon { display: block; }",
+            // The photo shows only once it has loaded: never a broken image.
+            "#" + SL_STAGE_ID + " .sl-stage-photo { position: absolute; inset: 0; display: none; width: 100%; height: 100%; object-fit: cover; }",
+            "#" + SL_STAGE_ID + " .sl-stage-photo[data-loaded=\"true\"][src] { display: block; }",
+            "#" + SL_STAGE_ID + " .sl-stage-cam-badge { position: absolute; right: 2%; bottom: 2%; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: clamp(24px, 5.5vmin, 36px); height: clamp(24px, 5.5vmin, 36px); border-radius: 50%; background: #0B1F45; color: #FCA5A5; box-shadow: 0 0 0 3px #0E2758, 0 4px 12px rgba(2, 6, 23, 0.4); }",
+            "#" + SL_STAGE_ID + " .sl-stage-cam-badge svg { width: 52%; height: 52%; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-name { margin-top: clamp(14px, 2.6vmin, 22px); max-width: 100%; font-size: clamp(18px, 3.4vmin, 28px); font-weight: 650; line-height: 1.25; letter-spacing: -0.01em; color: #F8FAFC; overflow-wrap: anywhere; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-role { margin-top: 4px; max-width: 100%; font-size: clamp(13px, 2vmin, 16px); font-weight: 500; line-height: 1.4; color: #93C5FD; overflow-wrap: anywhere; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-role:empty { display: none; }",
+            "#" + SL_STAGE_ID + " .sl-stage-divider { width: 40px; height: 1px; margin: clamp(14px, 2.6vmin, 22px) 0 clamp(12px, 2.2vmin, 18px); background: rgba(191, 219, 254, 0.22); }",
+            "#" + SL_STAGE_ID + " .sl-stage-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px; border: 1px solid rgba(248, 113, 113, 0.28); background: rgba(248, 113, 113, 0.1); color: #FECACA; font-size: 12px; font-weight: 600; line-height: 1.4; letter-spacing: 0.02em; }",
+            "#" + SL_STAGE_ID + " .sl-stage-chip svg { flex: 0 0 auto; width: 14px; height: 14px; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-title { margin-top: clamp(10px, 1.8vmin, 14px); font-size: clamp(15px, 2.4vmin, 19px); font-weight: 600; line-height: 1.35; color: #E2E8F0; text-wrap: balance; }",
+            "#" + SL_STAGE_ID + " .sl-stage-teacher-text { margin-top: 4px; max-width: 36ch; font-size: clamp(12px, 1.8vmin, 14px); line-height: 1.5; color: #AFC2DE; text-wrap: balance; }",
+            "@media (prefers-reduced-motion: reduce) { #" + SL_STAGE_ID + " .sl-stage-teacher, #" + SL_STAGE_ID + ".sl-stage-teacher-off .sl-stage-teacher { transition: none; } }",
+            // Short landscape screens (phones, small tablets): avatar beside
+            // the text, everything still shown.
+            "@media (max-height: 460px) and (min-width: 520px) { "
+                + "#" + SL_STAGE_ID + " .sl-stage-teacher { padding: 12px 20px 64px; } "
+                + "#" + SL_STAGE_ID + " .sl-stage-teacher-card { flex-direction: row; align-items: center; gap: 20px; width: min(560px, 100%); padding: 16px 22px; text-align: left; } "
+                + "#" + SL_STAGE_ID + " .sl-stage-teacher-info { align-items: flex-start; } "
+                + "#" + SL_STAGE_ID + " .sl-stage-teacher-name { margin-top: 0; } "
+                + "#" + SL_STAGE_ID + " .sl-stage-divider { margin: 10px 0; } }"
         ].join("\n");
 
         document.head.appendChild(style);
@@ -3207,9 +3333,18 @@ document.addEventListener(
         const container = document.getElementById("largeVideoContainer");
         const rect = container ? container.getBoundingClientRect() : null;
 
+        // Inside the (transformed) conference page, position: fixed is
+        // relative to the page, not the viewport: measure from the page.
+        const mount = root.parentNode;
+        const origin = mount && mount !== document.body && typeof mount.getBoundingClientRect === "function"
+            ? mount.getBoundingClientRect()
+            : null;
+        const offsetTop = origin ? origin.top : 0;
+        const offsetLeft = origin ? origin.left : 0;
+
         if (rect && rect.width > 0 && rect.height > 0) {
-            root.style.top = Math.round(rect.top) + "px";
-            root.style.left = Math.round(rect.left) + "px";
+            root.style.top = Math.round(rect.top - offsetTop) + "px";
+            root.style.left = Math.round(rect.left - offsetLeft) + "px";
             root.style.width = Math.round(rect.width) + "px";
             root.style.height = Math.round(rect.height) + "px";
         } else {
@@ -3232,8 +3367,147 @@ document.addEventListener(
         }
     }
 
+    // The element holding Jitsi's toolbar (same stacking context as the
+    // toolbar), else Jitsi's conference page, else <body>.
+    function getMountParent() {
+        const toolbar = document.getElementById(SL_STAGE_TOOLBAR_ID);
+
+        return (toolbar && toolbar.parentNode)
+            || document.getElementById(SL_STAGE_MOUNT_ID)
+            || document.body;
+    }
+
+    // Into the mount parent, just BEFORE the toolbar when it is there: even
+    // at an equal z-index the toolbar then paints above the stage.
+    function mountRoot() {
+        const parent = getMountParent();
+        const toolbar = document.getElementById(SL_STAGE_TOOLBAR_ID);
+        const before = toolbar && toolbar.parentNode === parent ? toolbar : null;
+
+        if (root.parentNode !== parent || (before && root.nextSibling !== before)) {
+            parent.insertBefore(root, before);
+        }
+    }
+
+    function createTeacherPlaceholder() {
+        const el = document.createElement("div");
+        el.className = "sl-stage-teacher";
+
+        const card = document.createElement("div");
+        card.className = "sl-stage-teacher-card";
+
+        const avatarEl = document.createElement("div");
+        avatarEl.className = "sl-stage-avatar";
+
+        const avatarInner = document.createElement("div");
+        avatarInner.className = "sl-stage-avatar-inner";
+
+        // Initials (or the icon, without a usable name) underneath; the
+        // photo covers them only once it has actually loaded.
+        const initialsEl = document.createElement("span");
+        initialsEl.className = "sl-stage-initials";
+        initialsEl.setAttribute("aria-hidden", "true");
+
+        const iconEl = document.createElement("span");
+        iconEl.className = "sl-stage-avatar-icon";
+        iconEl.innerHTML = SL_STAGE_TEACHER_ICON;
+
+        const photoEl = document.createElement("img");
+        photoEl.className = "sl-stage-photo";
+        photoEl.alt = "";
+        photoEl.decoding = "async";
+        photoEl.addEventListener("load", () => {
+            photoEl.dataset.loaded = "true";
+        });
+        photoEl.addEventListener("error", () => {
+            const failed = photoEl.getAttribute("src");
+
+            photoEl.dataset.loaded = "false";
+
+            if (failed) {
+                failedPhotos.add(failed);
+                photoEl.removeAttribute("src");
+                console.warn("[SL Classroom] Teacher photo could not be loaded ("
+                    + (/^blob:/.test(failed) ? "posted photo" : "photo URL") + "); showing initials.");
+            }
+        });
+
+        const badgeEl = document.createElement("span");
+        badgeEl.className = "sl-stage-cam-badge";
+        badgeEl.innerHTML = SL_STAGE_CAMERA_OFF_ICON;
+
+        avatarInner.appendChild(initialsEl);
+        avatarInner.appendChild(iconEl);
+        avatarInner.appendChild(photoEl);
+        avatarEl.appendChild(avatarInner);
+        avatarEl.appendChild(badgeEl);
+
+        const infoEl = document.createElement("div");
+        infoEl.className = "sl-stage-teacher-info";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "sl-stage-teacher-name";
+
+        const roleEl = document.createElement("div");
+        roleEl.className = "sl-stage-teacher-role";
+
+        const dividerEl = document.createElement("div");
+        dividerEl.className = "sl-stage-divider";
+        dividerEl.setAttribute("aria-hidden", "true");
+
+        const chipEl = document.createElement("div");
+        chipEl.className = "sl-stage-chip";
+        chipEl.innerHTML = SL_STAGE_CAMERA_OFF_ICON;
+
+        const chipTextEl = document.createElement("span");
+        chipTextEl.textContent = "Camera off";
+        chipEl.appendChild(chipTextEl);
+
+        const titleEl = document.createElement("div");
+        titleEl.className = "sl-stage-teacher-title";
+        titleEl.setAttribute("role", "status");
+
+        const textEl = document.createElement("div");
+        textEl.className = "sl-stage-teacher-text";
+
+        infoEl.appendChild(nameEl);
+        infoEl.appendChild(roleEl);
+        infoEl.appendChild(dividerEl);
+        infoEl.appendChild(chipEl);
+        infoEl.appendChild(titleEl);
+        infoEl.appendChild(textEl);
+
+        card.appendChild(avatarEl);
+        card.appendChild(infoEl);
+        el.appendChild(card);
+
+        return { el, photoEl, initialsEl, nameEl, roleEl, titleEl, textEl };
+    }
+
+    function clearFirstFrameWait() {
+        if (firstFrameTimer) {
+            clearTimeout(firstFrameTimer);
+            firstFrameTimer = null;
+        }
+    }
+
+    // The camera's first frame arrived (or the wait ran out): uncover the
+    // video, unless the card is wanted again by now.
+    function releaseCard() {
+        clearFirstFrameWait();
+
+        if (root && !cardWanted) {
+            root.classList.remove("sl-stage-teacher-off");
+        }
+    }
+
     function ensureRoot() {
         if (root) {
+            // Jitsi (React) can replace its page element, e.g. after a
+            // reconnect: move the stage into the current one. Moving keeps
+            // the attached track; playback is resumed by the render.
+            mountRoot();
+
             return;
         }
 
@@ -3255,10 +3529,247 @@ document.addEventListener(
         statusEl = document.createElement("div");
         statusEl.className = "sl-stage-status";
 
+        teacherEl = createTeacherPlaceholder();
+
+        video.addEventListener("loadeddata", releaseCard);
+        video.addEventListener("playing", releaseCard);
+
         root.appendChild(video);
         root.appendChild(messageEl);
         root.appendChild(statusEl);
-        document.body.appendChild(root);
+        root.appendChild(teacherEl.el);
+        mountRoot();
+    }
+
+    // "Mr. Pathum Kumara (Teacher)" -> "Mr. Pathum Kumara".
+    function stripTeacherSuffix(name) {
+        return String(name || "").replace(/\s*\(teacher\)\s*$/i, "").trim();
+    }
+
+    // "Mr. Pathum Kumara" -> "PK" (the title is skipped).
+    function teacherInitials(name) {
+        const words = stripTeacherSuffix(name)
+            .split(/\s+/)
+            .filter(word => word && !/^(mr|mrs|ms|miss|dr|prof|rev)\.?$/i.test(word));
+
+        if (words.length === 0) {
+            return "";
+        }
+
+        const first = Array.from(words[0])[0] || "";
+        const last = words.length > 1 ? Array.from(words[words.length - 1])[0] || "" : "";
+
+        return (first + last).toUpperCase();
+    }
+
+    // The teacher participant to describe: the staged camera's owner, or
+    // (no camera source yet) the first remote moderator in the room. null
+    // when no teacher is in the room.
+    function findTeacherParticipant(state, participantId) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+
+        if (!remote || typeof remote.get !== "function") {
+            return participantId ? { id: participantId, name: "" } : null;
+        }
+
+        if (participantId) {
+            const participant = remote.get(participantId);
+
+            return { id: participantId, name: participant?.name || "" };
+        }
+
+        const localId = participants?.local?.id;
+
+        for (const [id, participant] of remote.entries()) {
+            if (participant && !participant.fakeParticipant && id !== localId
+                && participant.role === "moderator") {
+                return { id, name: participant.name || "" };
+            }
+        }
+
+        return null;
+    }
+
+    // What the camera-off placeholder shows for this participant: the class
+    // teacher's profile from the parent page ONLY when it is that teacher
+    // (exactly the same Jitsi display name), otherwise just the
+    // participant's own name, so a co-teacher never gets another teacher's
+    // photo or designation.
+    function describeTeacher(participant) {
+        const profile = stageView.teacher;
+
+        if (profile && profile.jitsiName && profile.jitsiName === participant.name) {
+            return {
+                name: profile.name,
+                initialsOf: profile.name,
+                designation: profile.designation || "Teacher",
+                photoUrl: profile.photoSrc
+            };
+        }
+
+        const ownName = stripTeacherSuffix(participant.name);
+
+        // No usable name: "Teacher" is shown, with the icon (no "T").
+        return {
+            name: ownName || "Teacher",
+            initialsOf: ownName,
+            designation: "Teacher",
+            photoUrl: null
+        };
+    }
+
+    // No teacher in the room (not joined yet, or left): the class teacher's
+    // profile from the parent page, needing no Jitsi participant or track.
+    // Without a profile (an older parent page): a generic teacher card with
+    // the teacher icon.
+    function describeAbsentTeacher() {
+        const profile = stageView.teacher;
+
+        if (profile) {
+            return {
+                name: profile.name,
+                initialsOf: profile.name,
+                designation: profile.designation || "Teacher",
+                photoUrl: profile.photoSrc
+            };
+        }
+
+        return { name: "Your teacher", initialsOf: "", designation: "Teacher", photoUrl: null };
+    }
+
+    // Stable per teacher across reconnects (participant IDs change).
+    function teacherKey(participant) {
+        return participant.name || participant.id;
+    }
+
+    function isTeacherMicOn(state, participantId) {
+        const tracks = state?.["features/base/tracks"];
+
+        return Array.isArray(tracks) && tracks.some(track =>
+            track && !track.local && track.participantId === participantId
+            && track.mediaType === "audio" && !track.muted);
+    }
+
+    // The card's wording, from the real state: the teacher's mic is live
+    // (class going on by voice), the camera was on earlier (a pause), or
+    // neither yet (class about to begin).
+    function cardCopy(state, participant) {
+        if (isTeacherMicOn(state, participant.id)) {
+            return "voiceOnly";
+        }
+
+        return camerasSeenOn.has(teacherKey(participant)) ? "paused" : "waiting";
+    }
+
+    function renderTeacherPlaceholder(info, copyKey) {
+        const photo = info.photoUrl && !failedPhotos.has(info.photoUrl) ? info.photoUrl : "";
+        const copy = SL_STAGE_COPY[copyKey] || SL_STAGE_COPY.paused;
+
+        teacherEl.nameEl.textContent = info.name;
+        teacherEl.roleEl.textContent = info.designation;
+        // Empty without a usable name: the teacher icon shows instead (CSS).
+        teacherEl.initialsEl.textContent = teacherInitials(info.initialsOf);
+        teacherEl.titleEl.textContent = copy.title;
+        teacherEl.textEl.textContent = copy.text;
+
+        if ((teacherEl.photoEl.getAttribute("src") || "") !== photo) {
+            // Shown only after this photo's own load event (CSS).
+            teacherEl.photoEl.dataset.loaded = "false";
+
+            if (photo) {
+                teacherEl.photoEl.setAttribute("src", photo);
+            } else {
+                teacherEl.photoEl.removeAttribute("src");
+            }
+        }
+    }
+
+    // The parent page's optional teacher profile. Text only (shown with
+    // textContent); the photo must come from an SL Classroom origin.
+    function readStageTeacher(value) {
+        if (!value || typeof value !== "object") {
+            return null;
+        }
+
+        const text = field => typeof field === "string" ? field.trim().slice(0, SL_STAGE_TEXT_MAX) : "";
+        const name = text(value.name);
+
+        if (!name) {
+            return null;
+        }
+
+        let photoUrl = null;
+
+        if (typeof value.photoUrl === "string" && typeof URL === "function") {
+            try {
+                const url = new URL(value.photoUrl);
+
+                if (SL_ALLOWED_PARENT_ORIGINS.includes(url.origin)) {
+                    photoUrl = url.href;
+                }
+            } catch (error) {
+                /* not a URL: initials are shown */
+            }
+        }
+
+        // What the <img> shows: the photo the parent page fetched and posted
+        // (an object URL here, no cross-origin load at all), else the URL.
+        const photoBlob = readPhotoBlob(value.photo);
+        const photoSrc = photoBlob
+            ? photoObjectUrl(photoBlob, (photoUrl || "") + "|" + photoBlob.type + "|" + photoBlob.size)
+            : photoUrl;
+
+        return {
+            name,
+            designation: text(value.designation),
+            photoUrl,
+            photoSrc,
+            photoSource: photoBlob ? "blob" : photoUrl ? "url" : "none",
+            jitsiName: text(value.jitsiName)
+        };
+    }
+
+    // The posted photo: an image Blob of a sane size, else null.
+    function readPhotoBlob(value) {
+        return typeof Blob === "function" && value instanceof Blob
+            && /^image\//i.test(value.type) && value.size > 0 && value.size <= SL_STAGE_PHOTO_MAX_BYTES
+            ? value
+            : null;
+    }
+
+    // One object URL per photo: the parent resends the same photo after every
+    // SL_RECEIVE_READY, which reuses it (same key) instead of making another.
+    function photoObjectUrl(blob, key) {
+        if (photoObject.url && photoObject.key === key) {
+            return photoObject.url;
+        }
+
+        if (typeof URL !== "function" || typeof URL.createObjectURL !== "function") {
+            return null;
+        }
+
+        revokePhotoObject();
+
+        try {
+            photoObject = { key, url: URL.createObjectURL(blob) };
+        } catch (error) {
+            return null;
+        }
+
+        return photoObject.url;
+    }
+
+    function revokePhotoObject() {
+        if (photoObject.url) {
+            try {
+                URL.revokeObjectURL(photoObject.url);
+            } catch (error) {
+                /* already gone */
+            }
+        }
+
+        photoObject = { key: "", url: "" };
     }
 
     function onStreamingStatusChanged() {
@@ -3320,17 +3831,21 @@ document.addEventListener(
     // Jitsi's own large video underneath is then visible again.
     function hide() {
         lastSignature = "";
+        cardWanted = false;
+        clearFirstFrameWait();
 
         if (!root) {
             return;
         }
 
+        document.body?.classList.remove(SL_STAGE_ACTIVE_CLASS);
         detachTrack();
         root.remove();
         root = null;
         video = null;
         messageEl = null;
         statusEl = null;
+        teacherEl = null;
 
         if (resizeObserver) {
             resizeObserver.disconnect();
@@ -3352,25 +3867,53 @@ document.addEventListener(
 
         let jitsiTrack = null;
         let emptyMessage = "";
+        // The teacher whose camera is off (the profile placeholder), or null.
+        let cameraOffTeacher = null;
+        // No teacher in the room at all: the card from the profile alone.
+        let teacherAbsent = false;
+
+        // Any teacher in the room now (also behind a share or a camera).
+        if (findTeacherParticipant(state, null)) {
+            teacherHasJoined = true;
+        }
 
         if (!stage) {
-            emptyMessage = "Waiting for the teacher's video…";
+            // In the room without any camera source yet (joined with the
+            // camera off) is "camera off" too.
+            cameraOffTeacher = findTeacherParticipant(state, null);
+
+            // Nobody there: not joined yet (or left). The teacher's profile
+            // card still shows; it never depends on a participant or track.
+            teacherAbsent = !cameraOffTeacher;
         } else if (stage.videoType === "camera" && stage.muted) {
-            emptyMessage = "The teacher's camera is off";
+            cameraOffTeacher = findTeacherParticipant(state, stage.participantId);
         } else {
             const track = findStageTrack(state, stage);
 
             if (!track) {
                 emptyMessage = "Connecting video…";
             } else if (track.muted) {
-                emptyMessage = stage.videoType === "camera"
-                    ? "The teacher's camera is off"
-                    : "Screen share paused";
+                if (stage.videoType === "camera") {
+                    cameraOffTeacher = findTeacherParticipant(state, stage.participantId);
+                } else {
+                    emptyMessage = "Screen share paused";
+                }
             } else {
                 jitsiTrack = track.jitsiTrack;
+
+                // This teacher's camera has been live: off later is a pause.
+                if (stage.videoType === "camera") {
+                    camerasSeenOn.add(teacherKey(findTeacherParticipant(state, stage.participantId)));
+                }
             }
         }
 
+        const teacherInfo = cameraOffTeacher
+            ? describeTeacher(cameraOffTeacher)
+            : teacherAbsent ? describeAbsentTeacher() : null;
+        const copyKey = cameraOffTeacher
+            ? cardCopy(state, cameraOffTeacher)
+            : teacherAbsent ? (teacherHasJoined ? "away" : "waiting") : "";
         const status = jitsiTrack ? getStreamingStatus(jitsiTrack) : null;
         const statusMessage = (status && SL_STATUS_MESSAGES[status]) || "";
 
@@ -3380,15 +3923,28 @@ document.addEventListener(
             stage ? stage.sourceName : null,
             trackKey(jitsiTrack),
             emptyMessage,
-            statusMessage
+            statusMessage,
+            teacherInfo,
+            copyKey
         ]);
 
         if (signature === lastSignature && root) {
+            // Jitsi may have replaced its page element or re-rendered its
+            // toolbar elsewhere: follow it.
+            const parentBefore = root.parentNode;
+
+            mountRoot();
+
+            if (root.parentNode !== parentBefore) {
+                position();
+            }
+
             return;
         }
 
         lastSignature = signature;
         ensureRoot();
+        document.body.classList.add(SL_STAGE_ACTIVE_CLASS);
 
         if (attachedTrack !== jitsiTrack) {
             detachTrack();
@@ -3398,7 +3954,28 @@ document.addEventListener(
             }
         }
 
-        root.classList.toggle("sl-stage-empty", Boolean(emptyMessage));
+        if (teacherInfo) {
+            renderTeacherPlaceholder(teacherInfo, copyKey);
+        }
+
+        // The card: shown at once; when the camera comes back on it stays
+        // over the video until the first frame is there (or the wait runs
+        // out), so the change is card -> live video without a black frame.
+        cardWanted = Boolean(teacherInfo);
+
+        if (cardWanted) {
+            clearFirstFrameWait();
+            root.classList.add("sl-stage-teacher-off");
+        } else if (root.classList.contains("sl-stage-teacher-off") && jitsiTrack
+            && stage.videoType === "camera" && !(video.readyState >= 2)) {
+            if (!firstFrameTimer) {
+                firstFrameTimer = setTimeout(releaseCard, SL_STAGE_FIRST_FRAME_WAIT_MS);
+            }
+        } else {
+            releaseCard();
+        }
+
+        root.classList.toggle("sl-stage-empty", Boolean(emptyMessage) || Boolean(teacherInfo));
         messageEl.textContent = emptyMessage;
 
         root.classList.toggle("sl-stage-weak", Boolean(statusMessage));
@@ -3446,10 +4023,13 @@ document.addEventListener(
         }
 
         // Kept even before the local role is known: the stage itself only
-        // ever shows while the local participant is not a moderator.
+        // ever shows while the local participant is not a moderator. A
+        // malformed teacher profile is dropped on its own (the placeholder
+        // then uses the Jitsi display name); it never blocks the stage.
         stageView = {
             epoch: data.epoch,
-            enabled: data.enabled
+            enabled: data.enabled,
+            teacher: readStageTeacher(data.teacher)
         };
 
         console.log("[SL Classroom] Stage view", stageView);
@@ -3463,25 +4043,76 @@ document.addEventListener(
     // Jitsi iframe's DevTools console (e.g. with a Local Override of this
     // file against a page that does not send SL_STAGE_VIEW):
     //   __slStageViewTest.on()   __slStageViewTest.off()
+    //   __slStageViewTest.layers()   which custom.js runs, and whether the
+    //                                toolbar paints above the stage
     // Affects only this browser's own display. The next SL_STAGE_VIEW from
     // the parent page replaces it.
     // ---------------------------------------------------------------------
+    function describeNode(node) {
+        if (!node) {
+            return null;
+        }
+
+        return node.id ? "#" + node.id : String(node.tagName || "").toLowerCase();
+    }
+
+    function zIndexOf(node) {
+        try {
+            const value = parseInt(window.getComputedStyle(node).zIndex, 10);
+
+            return Number.isFinite(value) ? value : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
     window.__slStageViewTest = {
         on: () => {
-            stageView = { epoch: stageView.epoch, enabled: true };
+            stageView = { ...stageView, enabled: true };
             lastSignature = "";
             render();
         },
         off: () => {
-            stageView = { epoch: stageView.epoch, enabled: false };
+            stageView = { ...stageView, enabled: false };
             render();
+        },
+        layers: () => {
+            const toolbar = document.getElementById(SL_STAGE_TOOLBAR_ID);
+            const toggle = document.getElementById("sl-toolbar-toggle");
+            const sameParent = Boolean(root && toolbar && root.parentNode === toolbar.parentNode);
+            const siblings = sameParent ? Array.from(root.parentNode.children) : [];
+            const stageZ = root ? zIndexOf(root) : null;
+            const toolbarZ = toolbar ? zIndexOf(toolbar) : null;
+            const stageBeforeToolbar = sameParent && siblings.indexOf(root) < siblings.indexOf(toolbar);
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                stageShown: Boolean(root),
+                stageParent: describeNode(root && root.parentNode),
+                toolbarParent: describeNode(toolbar && toolbar.parentNode),
+                toggleParent: describeNode(toggle && toggle.parentNode),
+                sameParent,
+                stageBeforeToolbar,
+                stageZ,
+                toolbarZ,
+                cardShown: Boolean(root && root.classList.contains("sl-stage-teacher-off")),
+                // The teacher photo: where it came from ("blob" = posted by
+                // the page, "url" = loaded directly, "none") and its state.
+                photoSource: stageView.teacher ? stageView.teacher.photoSource : "none",
+                photoState: !teacherEl ? null
+                    : !teacherEl.photoEl.getAttribute("src") ? "none"
+                        : teacherEl.photoEl.dataset.loaded === "true" ? "loaded" : "loading",
+                toolbarAboveStage: sameParent && stageZ !== null && toolbarZ !== null
+                    && (toolbarZ > stageZ || (toolbarZ === stageZ && stageBeforeToolbar))
+            };
         }
     };
 
     window.addEventListener("resize", position);
 
-    // Page teardown: detach the stage's own element.
+    // Page teardown: detach the stage's own element and free the photo.
     window.addEventListener("pagehide", hide);
+    window.addEventListener("pagehide", revokePhotoObject);
 
     // Follow every store change: shares starting/stopping, cameras muting or
     // being replaced, tracks re-created after a reconnect, participants
@@ -4845,6 +5476,7 @@ document.addEventListener(
         // while this view shows, exactly like the Phase 2 grid does it.
         style.textContent = [
             "body." + SL_TV_ACTIVE_CLASS + " .filmstrip, body." + SL_TV_ACTIVE_CLASS + " .filmstrip * { visibility: hidden !important; }",
+             "body." + SL_TV_ACTIVE_CLASS + " #largeVideo { visibility: hidden !important; }",
             "#" + SL_TV_ID + " { position: fixed; inset: 0; z-index: 199; display: none; box-sizing: border-box; overflow: hidden; background: #000000; }",
             "#" + SL_TV_ID + ".sl-visible { display: flex; flex-direction: row; }",
             "#" + SL_TV_ID + " .sl-tv-stage { position: relative; order: 0; flex: 1 1 auto; min-width: 0; height: 100%; overflow: hidden; background: #000000; pointer-events: none; }",

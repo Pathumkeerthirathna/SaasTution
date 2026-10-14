@@ -30,6 +30,7 @@ import {
 
 import type { TeacherTilesState } from "./useTeacherTiles";
 import { toYouTubeStreamStatus } from "../youtube-jibri";
+import { fetchStagePhoto, toStageTeacher } from "../stage-teacher.mjs";
 
 // A breakout-room switch fires `videoConferenceLeft` and then `videoConferenceJoined`
 // (typically 1-3 s apart). A "left" is only treated as really leaving the class if no
@@ -276,6 +277,21 @@ type StageViewMessage = {
   /** Own counter; the same message is resent as-is, so it never needs to grow. */
   epoch: number;
   enabled: boolean;
+  /**
+   * The class teacher's profile for the camera-off placeholder (name,
+   * designation, absolute photo URL, Jitsi display name). Absent when the
+   * join info has none; an older custom.js ignores it.
+   */
+  teacher?: StageTeacher | null;
+};
+
+type StageTeacher = NonNullable<ReturnType<typeof toStageTeacher>> & {
+  /**
+   * The photo itself, fetched on this page's origin (fetchStagePhoto), so the
+   * iframe shows it without loading it across origins. Absent until fetched
+   * or when there is none; custom.js then tries photoUrl, then initials.
+   */
+  photo?: Blob;
 };
 
 /**
@@ -506,6 +522,9 @@ export default function useJitsi({
   const roleRef = useRef(role);
   roleRef.current = role;
 
+  const joinInfoRef = useRef(joinInfo);
+  joinInfoRef.current = joinInfo;
+
   // Teacher receive set: the latest one is kept so it can be sent again when
   // custom.js reports it is ready (iframe loaded late / conference replaced).
   const receiveSetEpochRef = useRef(0);
@@ -595,8 +614,47 @@ export default function useJitsi({
       return;
     }
 
-    frameWindow.postMessage(stageViewRef.current, SL_JITSI_ORIGIN);
+    // The teacher profile is added here (client only: it needs the page's
+    // origin to make the stored photo path absolute for the iframe).
+    stageViewRef.current.teacher ??= toStageTeacher(joinInfoRef.current, window.location.origin);
+
+    const teacher = stageViewRef.current.teacher;
+    const photo = stagePhotoRef.current;
+
+    frameWindow.postMessage(
+      teacher && photo ? { ...stageViewRef.current, teacher: { ...teacher, photo } } : stageViewRef.current,
+      SL_JITSI_ORIGIN
+    );
   };
+
+  // The teacher's photo for the camera-off card, fetched once on this page's
+  // own origin and resent with the stage view when it arrives (students with
+  // the custom stage only). Fails quietly: the card then shows initials.
+  const stagePhotoRef = useRef<Blob | null>(null);
+  const stagePhotoUrl = role === "student" && SL_CUSTOM_STAGE_ENABLED
+    ? joinInfo.teacherProfile?.photoUrl ?? null
+    : null;
+
+  useEffect(() => {
+    if (!stagePhotoUrl) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void fetchStagePhoto(stagePhotoUrl, { signal: controller.signal }).then(photo => {
+      if (!photo || controller.signal.aborted) {
+        return;
+      }
+
+      stagePhotoRef.current = photo;
+      postStageView();
+    });
+
+    return () => controller.abort();
+    // postStageView reads refs only, so the effect only follows the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stagePhotoUrl]);
 
   // Toolbar polish: every role. Sent (also when off, so custom.js is told
   // explicitly) after every conference join and again on SL_RECEIVE_READY.
