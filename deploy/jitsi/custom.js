@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1004;
+const SL_CUSTOM_JS_VERSION = 1010;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -2764,6 +2764,25 @@ document.addEventListener(
 
 
 
+/*
+ * Student device status (camera / microphone indicator, further below):
+ * what it shares with the teacher-camera PiP and the custom stage, which
+ * make room for it. Declared here, before both, because they use these as
+ * they load. All of it exists only while the indicator shows (students).
+ */
+// On <body> while the indicator shows.
+const SL_DEVICE_STATUS_ACTIVE_CLASS = "sl-device-status-active";
+// On <body>: the indicator's height, and the room it takes from the right of
+// the large video (its width, its right inset and a gap).
+const SL_DEVICE_STATUS_VAR_H = "--sl-ds-h";
+const SL_DEVICE_STATUS_VAR_RESERVE = "--sl-ds-reserve";
+// Fired on window when its size or place changes (the PiP follows it).
+const SL_DEVICE_STATUS_LAYOUT_EVENT = "sl-device-status-layout";
+// Space kept between the indicator and anything stacked under it.
+const SL_DEVICE_STATUS_GAP = 8;
+
+
+
 /* ==========================================================
    SL Classroom - Student Teacher-Camera PiP
 
@@ -2887,6 +2906,20 @@ document.addEventListener(
         document.head.appendChild(style);
     }
 
+    // How far the tile moves down for the student device status indicator,
+    // which keeps the very corner (its height and a gap; 0 while it is off).
+    function deviceStatusOffset() {
+        const body = document.body;
+
+        if (!body || !body.classList.contains(SL_DEVICE_STATUS_ACTIVE_CLASS)) {
+            return 0;
+        }
+
+        const height = parseFloat(body.style.getPropertyValue(SL_DEVICE_STATUS_VAR_H));
+
+        return height > 0 ? height + SL_DEVICE_STATUS_GAP : 0;
+    }
+
     // Top-right corner of the large video. Jitsi resizes that area itself
     // (chat, filmstrip, window), so it is measured, not assumed.
     function position() {
@@ -2896,12 +2929,13 @@ document.addEventListener(
 
         const container = document.getElementById("largeVideoContainer");
         const rect = container ? container.getBoundingClientRect() : null;
+        const below = deviceStatusOffset();
 
         if (rect && rect.width > 0 && rect.height > 0) {
-            root.style.top = Math.round(rect.top + SL_PIP_MARGIN) + "px";
+            root.style.top = Math.round(rect.top + SL_PIP_MARGIN + below) + "px";
             root.style.right = Math.round(window.innerWidth - rect.right + SL_PIP_MARGIN) + "px";
         } else {
-            root.style.top = SL_PIP_MARGIN + "px";
+            root.style.top = (SL_PIP_MARGIN + below) + "px";
             root.style.right = SL_PIP_MARGIN + "px";
         }
 
@@ -3032,6 +3066,9 @@ document.addEventListener(
     }
 
     window.addEventListener("resize", position);
+
+    // The device status indicator appeared, went or changed size.
+    window.addEventListener(SL_DEVICE_STATUS_LAYOUT_EVENT, position);
 
     // Page teardown: detach the tile's own element.
     window.addEventListener("pagehide", hide);
@@ -3269,6 +3306,9 @@ document.addEventListener(
             "#" + SL_STAGE_ID + ".sl-stage-empty .sl-stage-message { display: flex; }",
             "#" + SL_STAGE_ID + " .sl-stage-status { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: none; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 999px; background: rgba(15, 23, 42, 0.85); color: #F8FAFC; font: 500 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
             "#" + SL_STAGE_ID + ".sl-stage-weak .sl-stage-status { display: block; }",
+            // While the device status indicator holds the top-right corner,
+            // the centred status chip keeps clear of it on both sides.
+            "body." + SL_DEVICE_STATUS_ACTIVE_CLASS + " #" + SL_STAGE_ID + " .sl-stage-status { max-width: calc(100% - 2 * var(" + SL_DEVICE_STATUS_VAR_RESERVE + ", 16px)); }",
             "@media (max-width: 640px) { #" + SL_STAGE_ID + " .sl-stage-message { font-size: 14px; } #" + SL_STAGE_ID + " .sl-stage-status { top: 8px; font-size: 12px; } }",
 
             // ---- Toolbar above the stage (students only: this class is set
@@ -3286,6 +3326,8 @@ document.addEventListener(
             // Subtle dot grid, fading out towards the edges.
             "#" + SL_STAGE_ID + " .sl-stage-teacher::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(191, 219, 254, 0.16) 1px, transparent 1.4px); background-size: 26px 26px; -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 80%); mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 80%); }",
             "#" + SL_STAGE_ID + ".sl-stage-teacher-off .sl-stage-teacher { opacity: 1; visibility: visible; transition: opacity .3s ease; }",
+            // ... and the profile card starts below it (all screen sizes).
+            "body." + SL_DEVICE_STATUS_ACTIVE_CLASS + " #" + SL_STAGE_ID + " .sl-stage-teacher { padding-top: calc(var(" + SL_DEVICE_STATUS_VAR_H + ", 0px) + 24px); }",
             "#" + SL_STAGE_ID + ".sl-stage-teacher-off .sl-stage-message { display: none; }",
             "#" + SL_STAGE_ID + " .sl-stage-teacher-card { position: relative; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; width: min(440px, 100%); padding: clamp(20px, 4.5vmin, 40px) clamp(18px, 4.5vmin, 44px); border-radius: clamp(18px, 3vmin, 28px); border: 1px solid rgba(191, 219, 254, 0.14); background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)); box-shadow: 0 24px 64px rgba(2, 6, 23, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07); }",
             "#" + SL_STAGE_ID + " .sl-stage-teacher-info { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }",
@@ -4137,6 +4179,610 @@ document.addEventListener(
 
 
 /* ==========================================================
+   SL Classroom - Student Filmstrip Hide
+
+   Display only. Jitsi's own filmstrip is hidden completely for
+   students. The page creates a student's iframe with
+   config.filmstrip.disabled = true (a teacher's with false), but
+   Jitsi still renders the filmstrip then: it only adds its
+   "hidden" class and moves it off-screen with an inline "right".
+   ".hidden { display: none }" (0,1,0) loses to Jitsi's
+   ".vertical-filmstrip span:not(.tile-view) .filmstrip
+   { display: flex }" (0,3,1), hence !important below.
+
+   A body class is set only while the config says the filmstrip
+   is disabled AND the local participant is not a moderator, so a
+   teacher never gets it, before or after the role arrives. Jitsi's
+   own class, inline styles and React state are never touched;
+   what is received is unchanged (receive policy above).
+========================================================== */
+
+(function () {
+
+    const SL_SF_CLASS = "sl-student-no-filmstrip";
+    const SL_SF_STYLE_ID = "sl-student-filmstrip-style";
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    // The iframe was created for a student (filmstrip disabled by the page)
+    // and the local participant is not a moderator.
+    function shouldHide(state) {
+        const filmstrip = state?.["features/base/config"]?.filmstrip;
+        const local = state?.["features/base/participants"]?.local;
+
+        return filmstrip?.disabled === true && local?.role !== "moderator";
+    }
+
+    function injectStyles() {
+        if (document.getElementById(SL_SF_STYLE_ID) || !document.head) {
+            return;
+        }
+
+        const style = document.createElement("style");
+
+        style.id = SL_SF_STYLE_ID;
+        style.textContent = "body." + SL_SF_CLASS + " .filmstrip { display: none !important; }";
+
+        document.head.appendChild(style);
+    }
+
+    // Touches <body> only when the answer changes: other blocks observe its
+    // class attribute.
+    function render() {
+        const body = document.body;
+
+        if (!body) {
+            return;
+        }
+
+        const hide = shouldHide(getState());
+
+        if (hide) {
+            injectStyles();
+        }
+
+        if (body.classList.contains(SL_SF_CLASS) !== hide) {
+            body.classList.toggle(SL_SF_CLASS, hide);
+        }
+    }
+
+    // Follow every store change: the local role arriving or changing, and
+    // the config (Jitsi can overwrite it).
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function" || !document.body) {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(render);
+        render();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Student Device Status (camera / microphone)
+
+   Display only. A small indicator in the top-right corner of the
+   large video showing the STUDENT's OWN camera and microphone
+   state, each on its own. It only reads Jitsi's store: nothing is
+   muted, unmuted, created, sent or received here.
+
+   The state is the local track's, never a claim that media
+   reaches anyone: "Camera is on" means the local camera track
+   exists and is not muted. From Jitsi's store (checked against
+   jitsi-meet tag jitsi-meet_9268):
+     features/base/tracks  local entries by mediaType ("video" with
+       videoType "camera" - a screen share is never the camera -
+       or "audio"): with a jitsiTrack it is the real track (muted,
+       isReceivingData); without one it is the stub Jitsi adds
+       while the device is starting (removed again if that fails).
+     features/base/media.{video,audio}  muted (video: a bitmask,
+       0 = not muted; audio: boolean) and available, for when
+       there is no track at all.
+   States: on, off (muted), starting, nodata (on, but the browser
+   reports no data from the device), unavailable (available is
+   false), notStarted (wanted on, no track and none starting, e.g.
+   the device could not be started). Unknown (no conference yet,
+   reconnecting, or a build without these slices): nothing shown.
+
+   Runs ONLY when the local participant is not a moderator, and
+   only while the parent page enables it:
+     { type: "SL_DEVICE_STATUS_VIEW", v: 1, epoch, enabled, fullscreen }
+     fullscreen: the page's own "Exit fullscreen" button covers
+     the iframe's top-right corner, so the indicator moves left
+   (resent by the parent after SL_RECEIVE_READY). Off by default.
+========================================================== */
+
+(function () {
+
+    const SL_DS_ID = "sl-device-status";
+    const SL_DS_STYLE_ID = "sl-device-status-style";
+    // Mounted like the custom stage: in the element that holds Jitsi's
+    // toolbar, just before it (same stacking context: z-index 200 above the
+    // stage's 199, below the toolbar's 252).
+    const SL_DS_MOUNT_ID = "videoconference_page";
+    const SL_DS_TOOLBAR_ID = "new-toolbox";
+    const SL_DS_MARGIN = 12;
+    // The parent page's "Exit fullscreen" button (JitsiMeeting.tsx): 36px,
+    // 12px from the top and right. Kept clear of it with a gap.
+    const SL_DS_FULLSCREEN_RIGHT = 12 + 36 + SL_DEVICE_STATUS_GAP;
+
+    // Static inline icons (Lucide shapes, ISC licence, as on the device setup
+    // screen): camera, camera off, microphone, microphone off.
+    const SL_DS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+    const SL_DS_ICONS = {
+        video: SL_DS_SVG + '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
+        videoOff: SL_DS_SVG + '<path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"/><path d="m2 2 20 20"/></svg>',
+        audio: SL_DS_SVG + '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>',
+        audioOff: SL_DS_SVG + '<path d="m2 2 20 20"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M12 19v3"/></svg>'
+    };
+
+    // Per device and state: [full label, short label, tone, icon shape].
+    // Tones: on (green), off (red), warn (amber, with a dot), pending (grey).
+    const SL_DS_COPY = {
+        video: {
+            on: ["Camera is on", "Camera on", "on", "on"],
+            off: ["Camera is off", "Camera off", "off", "off"],
+            starting: ["Starting camera…", "Cam starting…", "pending", "on"],
+            nodata: ["Camera on, no picture", "No picture", "warn", "on"],
+            unavailable: ["Camera unavailable", "Cam unavailable", "warn", "off"],
+            notStarted: ["Camera not started", "Cam not started", "warn", "off"]
+        },
+        audio: {
+            on: ["Microphone is on", "Mic on", "on", "on"],
+            off: ["Microphone is muted", "Mic muted", "off", "off"],
+            starting: ["Starting microphone…", "Mic starting…", "pending", "on"],
+            nodata: ["Microphone on, no input", "No mic input", "warn", "on"],
+            unavailable: ["Microphone unavailable", "Mic unavailable", "warn", "off"],
+            notStarted: ["Microphone not started", "Mic not started", "warn", "off"]
+        }
+    };
+
+    let view = { epoch: 0, enabled: false, fullscreen: false };
+
+    let root = null;
+    // device ("video" | "audio") -> { el, iconEl, longEl, shortEl, srEl }
+    const chips = {};
+    let lastSignature = "";
+    let lastLayout = "";
+    let resizeObserver = null;
+    // undefined: nothing observed yet (the first position() observes, even
+    // when Jitsi has no large video container at that moment).
+    let observedContainer;
+    let renderQueued = false;
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(state) {
+        return state?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    // One device's state from the store (see the header), never another
+    // participant's: only local entries are read.
+    function readDevice(state, mediaType) {
+        const tracks = state?.["features/base/tracks"];
+        const own = (Array.isArray(tracks) ? tracks : []).filter(track =>
+            track && track.local && track.mediaType === mediaType
+            && !(mediaType === "video" && track.videoType === "desktop"));
+        const track = own.find(entry => entry.jitsiTrack);
+
+        if (track) {
+            if (track.muted) {
+                return "off";
+            }
+
+            return track.isReceivingData === false ? "nodata" : "on";
+        }
+
+        // Jitsi's stub while the device starts (no jitsiTrack yet).
+        if (own.length) {
+            return "starting";
+        }
+
+        const media = state?.["features/base/media"]?.[mediaType];
+
+        if (media.available === false) {
+            return "unavailable";
+        }
+
+        return media.muted ? "off" : "notStarted";
+    }
+
+    // Both devices, or null when nothing should show (not enabled, a
+    // moderator, no conference yet / reconnecting, or a build without the
+    // media slice: unknown is never shown as a state).
+    function readStatus(state) {
+        if (!state || !view.enabled || isLocalModerator(state)
+            || !state["features/base/conference"]?.conference) {
+            return null;
+        }
+
+        const media = state["features/base/media"];
+
+        if (!media || typeof media !== "object" || !media.video || !media.audio) {
+            return null;
+        }
+
+        return { video: readDevice(state, "video"), audio: readDevice(state, "audio") };
+    }
+
+    function injectStyles() {
+        if (document.getElementById(SL_DS_STYLE_ID)) {
+            return;
+        }
+
+        const style = document.createElement("style");
+        const R = "#" + SL_DS_ID;
+
+        style.id = SL_DS_STYLE_ID;
+
+        // Sizes follow the iframe (= the classroom area; the student's large
+        // video fills it with the filmstrip hidden), so CSS pixels also follow
+        // browser zoom:
+        //   >= 860px  full labels (the centred stage chip, up to ~260px, stays
+        //             clear of a ~280px indicator from 845px)
+        //   700-859px short labels (~200px; clear from 685px)
+        //   < 700px, or height <= 460px (phones, short landscape, narrow
+        //             windows; the stage / PiP / toolbar switch at 640px and
+        //             460px): icons only, the full label kept for screen
+        //             readers. Clicks always pass through.
+        style.textContent = [
+            R + " { position: fixed; z-index: 200; display: none; align-items: center; gap: 6px; box-sizing: border-box; max-width: calc(100% - " + (2 * SL_DS_MARGIN) + "px); padding: 4px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.16); background: rgba(17, 24, 39, 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 6px 16px rgba(2, 6, 23, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04); color: #F1F5F9; font: 500 12px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; white-space: nowrap; pointer-events: none; }",
+            R + ".sl-visible { display: inline-flex; }",
+            R + " .sl-ds-chip { display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; min-width: 0; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); transition: background-color .15s ease, box-shadow .15s ease, color .15s ease; }",
+            R + " .sl-ds-icon { position: relative; display: inline-flex; flex: 0 0 auto; width: 14px; height: 14px; color: #94A3B8; }",
+            R + " .sl-ds-icon svg { display: block; width: 100%; height: 100%; }",
+            R + " .sl-ds-long, " + R + " .sl-ds-short { overflow: hidden; text-overflow: ellipsis; }",
+            R + " .sl-ds-short { display: none; }",
+            // Visually hidden, read by screen readers in every size.
+            R + " .sl-ds-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }",
+
+            // Tones (Tailwind 300 tones on the dark pill, as on the device
+            // setup screen; contrast above 4.5:1).
+            R + " .sl-ds-chip[data-tone=on] { background: rgba(16, 185, 129, 0.12); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.28); }",
+            R + " .sl-ds-chip[data-tone=on] .sl-ds-icon { color: #6EE7B7; }",
+            R + " .sl-ds-chip[data-tone=off] { background: rgba(239, 68, 68, 0.15); box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35); color: #FECACA; }",
+            R + " .sl-ds-chip[data-tone=off] .sl-ds-icon { color: #FCA5A5; }",
+            R + " .sl-ds-chip[data-tone=warn] { background: rgba(245, 158, 11, 0.14); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35); color: #FDE68A; }",
+            R + " .sl-ds-chip[data-tone=warn] .sl-ds-icon { color: #FCD34D; }",
+            // A warning is never told by colour alone: a small dot on the icon.
+            R + " .sl-ds-chip[data-tone=warn] .sl-ds-icon::after { content: ''; position: absolute; top: -2px; right: -3px; width: 6px; height: 6px; border-radius: 50%; background: #FBBF24; box-shadow: 0 0 0 1.5px #111827; }",
+            R + " .sl-ds-chip[data-tone=pending] { color: #CBD5E1; }",
+
+            "@media (max-width: 859px) { " + R + " .sl-ds-long { display: none; } " + R + " .sl-ds-short { display: inline; } }",
+            "@media (max-width: 699px), (max-height: 460px) { "
+                + R + " { gap: 4px; padding: 3px; } "
+                + R + " .sl-ds-chip { justify-content: center; width: 28px; height: 28px; padding: 0; } "
+                + R + " .sl-ds-long, " + R + " .sl-ds-short { display: none; } }",
+            "@media (prefers-reduced-motion: reduce) { " + R + " .sl-ds-chip { transition: none; } }"
+        ].join("\n");
+
+        document.head.appendChild(style);
+    }
+
+    function getMountParent() {
+        const toolbar = document.getElementById(SL_DS_TOOLBAR_ID);
+
+        return (toolbar && toolbar.parentNode)
+            || document.getElementById(SL_DS_MOUNT_ID)
+            || document.body;
+    }
+
+    function mountRoot() {
+        const parent = getMountParent();
+        const toolbar = document.getElementById(SL_DS_TOOLBAR_ID);
+        const before = toolbar && toolbar.parentNode === parent ? toolbar : null;
+
+        if (root.parentNode !== parent || (before && root.nextSibling !== before)) {
+            parent.insertBefore(root, before);
+        }
+    }
+
+    function createChip(device) {
+        const el = document.createElement("span");
+        el.className = "sl-ds-chip";
+        el.dataset.device = device;
+
+        const iconEl = document.createElement("span");
+        iconEl.className = "sl-ds-icon";
+
+        // The visible labels are for sight only; the hidden one is read out.
+        const longEl = document.createElement("span");
+        longEl.className = "sl-ds-long";
+        longEl.setAttribute("aria-hidden", "true");
+
+        const shortEl = document.createElement("span");
+        shortEl.className = "sl-ds-short";
+        shortEl.setAttribute("aria-hidden", "true");
+
+        const srEl = document.createElement("span");
+        srEl.className = "sl-ds-sr";
+
+        el.appendChild(iconEl);
+        el.appendChild(longEl);
+        el.appendChild(shortEl);
+        el.appendChild(srEl);
+
+        return { el, iconEl, longEl, shortEl, srEl };
+    }
+
+    function ensureRoot() {
+        if (root) {
+            mountRoot();
+
+            return;
+        }
+
+        injectStyles();
+
+        root = document.createElement("div");
+        root.id = SL_DS_ID;
+        // Announces a change once, politely; the same state is never re-read.
+        root.setAttribute("role", "status");
+        root.setAttribute("aria-label", "Your camera and microphone");
+
+        ["video", "audio"].forEach(device => {
+            chips[device] = createChip(device);
+            root.appendChild(chips[device].el);
+        });
+
+        mountRoot();
+    }
+
+    function renderChip(device, state) {
+        const chip = chips[device];
+        const [full, short, tone, shape] = SL_DS_COPY[device][state];
+        const icon = shape === "off" ? device + "Off" : device;
+
+        chip.el.dataset.state = state;
+        chip.el.dataset.tone = tone;
+
+        if (chip.iconEl.dataset.icon !== icon) {
+            chip.iconEl.dataset.icon = icon;
+            chip.iconEl.innerHTML = SL_DS_ICONS[icon];
+        }
+
+        chip.longEl.textContent = full;
+        chip.shortEl.textContent = short;
+        chip.srEl.textContent = full;
+    }
+
+    // Top-right corner of the large video (Jitsi resizes it: window, chat,
+    // rotation), measured like the custom stage does. In the page's
+    // fullscreen it moves left of the page's "Exit fullscreen" button. Then
+    // the room it takes is published for the PiP and the stage chip.
+    function position() {
+        if (!root) {
+            return;
+        }
+
+        const container = document.getElementById("largeVideoContainer");
+        const rect = container ? container.getBoundingClientRect() : null;
+
+        // Inside the (transformed) conference page, position: fixed is
+        // relative to the page, not the viewport: measure from the page.
+        const mount = root.parentNode;
+        const origin = mount && mount !== document.body && typeof mount.getBoundingClientRect === "function"
+            ? mount.getBoundingClientRect()
+            : null;
+        const originTop = origin ? origin.top : 0;
+        const originRight = origin ? origin.right : (window.innerWidth || 0);
+        const hasRect = Boolean(rect && rect.width > 0 && rect.height > 0);
+        // From the large video's right edge to the iframe's.
+        const fromEdge = hasRect ? Math.max(0, originRight - rect.right) : 0;
+        const inset = Math.max(SL_DS_MARGIN, view.fullscreen ? SL_DS_FULLSCREEN_RIGHT - fromEdge : 0);
+
+        root.style.top = Math.round((hasRect ? rect.top - originTop : 0) + SL_DS_MARGIN) + "px";
+        root.style.right = Math.round(fromEdge + inset) + "px";
+
+        // Follow the large video's size and the indicator's own (its labels
+        // change with the width).
+        if (container !== observedContainer && typeof ResizeObserver === "function") {
+            resizeObserver = resizeObserver || new ResizeObserver(position);
+            resizeObserver.disconnect();
+            resizeObserver.observe(root);
+
+            if (container) {
+                resizeObserver.observe(container);
+            }
+
+            observedContainer = container;
+        }
+
+        const own = root.getBoundingClientRect();
+        const height = Math.round(own.height || 0);
+        const reserve = Math.round((own.width || 0) + inset + SL_DEVICE_STATUS_GAP);
+        const layout = height + ":" + reserve;
+
+        if (layout !== lastLayout && document.body) {
+            lastLayout = layout;
+            document.body.style.setProperty(SL_DEVICE_STATUS_VAR_H, height + "px");
+            document.body.style.setProperty(SL_DEVICE_STATUS_VAR_RESERVE, reserve + "px");
+            window.dispatchEvent(new CustomEvent(SL_DEVICE_STATUS_LAYOUT_EVENT));
+        }
+    }
+
+    // Removes the indicator completely: out of the DOM, not observed, and
+    // nothing of it left on <body> (the PiP and stage chip move back).
+    function hide() {
+        lastSignature = "";
+
+        if (!root) {
+            return;
+        }
+
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+        }
+
+        observedContainer = undefined;
+        root.remove();
+        root = null;
+        lastLayout = "";
+
+        if (document.body) {
+            document.body.classList.remove(SL_DEVICE_STATUS_ACTIVE_CLASS);
+            document.body.style.removeProperty(SL_DEVICE_STATUS_VAR_H);
+            document.body.style.removeProperty(SL_DEVICE_STATUS_VAR_RESERVE);
+        }
+
+        window.dispatchEvent(new CustomEvent(SL_DEVICE_STATUS_LAYOUT_EVENT));
+    }
+
+    function renderNow() {
+        const status = readStatus(getState());
+
+        if (!status || !document.body) {
+            hide();
+            return;
+        }
+
+        const signature = status.video + "|" + status.audio + "|" + view.fullscreen;
+
+        if (signature === lastSignature && root) {
+            // Jitsi may have replaced its page element: follow it.
+            const parentBefore = root.parentNode;
+
+            mountRoot();
+
+            if (root.parentNode !== parentBefore) {
+                position();
+            }
+
+            return;
+        }
+
+        lastSignature = signature;
+        ensureRoot();
+        renderChip("video", status.video);
+        renderChip("audio", status.audio);
+        root.classList.add("sl-visible");
+
+        if (!document.body.classList.contains(SL_DEVICE_STATUS_ACTIVE_CLASS)) {
+            document.body.classList.add(SL_DEVICE_STATUS_ACTIVE_CLASS);
+        }
+
+        position();
+    }
+
+    // Once per task: Jitsi changes a device in several dispatches (e.g. the
+    // unmute request, then the starting stub), and an in-between state must
+    // never be shown.
+    function render() {
+        if (renderQueued) {
+            return;
+        }
+
+        renderQueued = true;
+        Promise.resolve().then(() => {
+            renderQueued = false;
+            renderNow();
+        });
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_DEVICE_STATUS_VIEW") {
+            return;
+        }
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || typeof data.enabled !== "boolean"
+            || typeof data.fullscreen !== "boolean") {
+            console.warn("[SL Classroom] Ignored malformed device status view", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < view.epoch) {
+            return;
+        }
+
+        // Kept even before the local role is known: the indicator itself
+        // only ever shows while the local participant is not a moderator.
+        view = { epoch: data.epoch, enabled: data.enabled, fullscreen: data.fullscreen };
+
+        console.log("[SL Classroom] Device status view", view);
+
+        lastSignature = "";
+        render();
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slDeviceStatusTest.on()   __slDeviceStatusTest.off()
+    //   __slDeviceStatusTest.state()   what is read and shown
+    // Affects only this browser's own display. The next
+    // SL_DEVICE_STATUS_VIEW from the parent page replaces it.
+    // ---------------------------------------------------------------------
+    window.__slDeviceStatusTest = {
+        on: () => {
+            view = { ...view, enabled: true };
+            lastSignature = "";
+            render();
+        },
+        off: () => {
+            view = { ...view, enabled: false };
+            render();
+        },
+        state: () => {
+            const status = readStatus(getState());
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                enabled: view.enabled,
+                fullscreen: view.fullscreen,
+                shown: Boolean(root),
+                camera: status ? status.video : null,
+                microphone: status ? status.audio : null,
+                parent: root && root.parentNode ? (root.parentNode.id ? "#" + root.parentNode.id : root.parentNode.tagName) : null
+            };
+        }
+    };
+
+    window.addEventListener("resize", position);
+
+    // Page teardown: our element and everything on <body> goes.
+    window.addEventListener("pagehide", hide);
+
+    // Follow every store change: the local tracks, mute state, the
+    // conference (reconnect) and the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function" || !document.body) {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(render);
+        render();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
    SL Classroom - Teacher Normal View (custom filmstrip, Phase A)
 
    Display only. For the TEACHER in NORMAL mode: SL Classroom's
@@ -4242,6 +4888,8 @@ document.addEventListener(
     // the parent page (which owns the roster and the paging) to move.
     const SL_TV_TILES_MODE_CLASS = "sl-tv-tiles-mode";
     const SL_TV_VAR_GRID_COLS = "--sl-tv-grid-cols";
+    // The tile width the columns were chosen for (layoutTilesGrid).
+    const SL_TV_VAR_TILE_W = "--sl-tv-tile-w";
     const SL_TV_GRID_GAP = 8;
     const SL_TV_TILES_MAX_PAGE = 50;
     const SL_TV_PARTICIPANT_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
@@ -4433,6 +5081,326 @@ document.addEventListener(
 
     function isExamGridShowing() {
         return Boolean(document.body?.classList.contains(SL_MONITOR_ACTIVE_CLASS));
+    }
+
+    // ---- Jitsi's own large video while this view shows ----------------------
+    //
+    // #largeVideo is covered (CSS visibility: hidden, above) while this view
+    // shows, yet Jitsi keeps it PLAYING the same stream our stage shows. Only
+    // that element is paused here: never its stream or tracks (our stage and
+    // tiles keep playing them), never detached, never display: none (Jitsi
+    // sizes its stage request from the large video area). Nothing Jitsi-side
+    // (pin, receiver constraints) changes, so the bridge forwards exactly the
+    // same.
+    //
+    // Lifecycle: suppressLargeVideo() on every render while the view shows
+    // (Normal and Tiles), releaseLargeVideo() from hide() (Exam Mode, view
+    // disabled, not a moderator, page teardown).
+    //
+    // Jitsi can restart the element (autoplay on a new stream, its own play())
+    // or replace it (React remount: rejoin, breakout room). Covered by:
+    //   - a "play" listener on the current element, re-pausing it while
+    //     suppressed (a "play" event queued before the release and handled
+    //     after it is ignored: it checks the flag when it runs);
+    //   - the check on every render (store changes come with stream / large
+    //     video changes): catches playback that started before the listener
+    //     was attached, and moves the listener to a replaced element.
+    // Release resumes only elements this code paused and that are still in
+    // the page with a stream (Jitsi's own intent for that element: autoplay).
+    // An element this code never paused is left alone.
+    const SL_TV_LARGE_VIDEO_ID = "largeVideo";
+
+    let largeVideoSuppressed = false;
+    // The element carrying our "play" listener (at most one).
+    let guardedLargeVideo = null;
+    // Elements this code paused (resumed on release, then forgotten).
+    const pausedLargeVideos = new WeakSet();
+
+    function getLargeVideo() {
+        const el = document.getElementById(SL_TV_LARGE_VIDEO_ID);
+
+        return el && typeof el.pause === "function" && typeof el.play === "function" ? el : null;
+    }
+
+    function pauseLargeVideo(el) {
+        if (!el.paused) {
+            el.pause();
+            pausedLargeVideos.add(el);
+        }
+    }
+
+    function onLargeVideoPlay() {
+        if (largeVideoSuppressed && guardedLargeVideo && !guardedLargeVideo.paused) {
+            pauseLargeVideo(guardedLargeVideo);
+        }
+    }
+
+    function guardLargeVideo(el) {
+        if (guardedLargeVideo === el) {
+            return;
+        }
+
+        if (guardedLargeVideo) {
+            guardedLargeVideo.removeEventListener("play", onLargeVideoPlay);
+        }
+
+        guardedLargeVideo = el;
+
+        if (el) {
+            el.addEventListener("play", onLargeVideoPlay);
+        }
+    }
+
+    function suppressLargeVideo() {
+        largeVideoSuppressed = true;
+
+        const el = getLargeVideo();
+
+        guardLargeVideo(el);
+
+        if (el) {
+            pauseLargeVideo(el);
+        }
+    }
+
+    function releaseLargeVideo() {
+        if (!largeVideoSuppressed && !guardedLargeVideo) {
+            return;
+        }
+
+        largeVideoSuppressed = false;
+        guardLargeVideo(null);
+
+        // The current element (the paused one may have been replaced since).
+        const el = getLargeVideo();
+
+        if (!el || !pausedLargeVideos.has(el)) {
+            return;
+        }
+
+        pausedLargeVideos.delete(el);
+
+        if (el.paused && el.srcObject && el.isConnected !== false) {
+            resumeJitsiVideo(el);
+        }
+    }
+
+    // Gives a Jitsi element this code paused back to playback.
+    function resumeJitsiVideo(el) {
+        try {
+            const playing = el.play();
+
+            // Rejected when Jitsi swaps the stream or the view comes back
+            // (AbortError), or autoplay is refused: Jitsi's own autoplay
+            // still applies, nothing to report.
+            if (playing && typeof playing.catch === "function") {
+                playing.catch(() => {});
+            }
+        } catch (error) {
+            /* element gone */
+        }
+    }
+
+    // ---- Jitsi's own filmstrip videos while this view shows -----------------
+    //
+    // Jitsi's filmstrip is hidden (CSS visibility, above) while this view
+    // shows, yet each of its <video> elements keeps PLAYING (the same remote
+    // streams our tiles play). Same approach as #largeVideo above: only the
+    // elements are paused, never a stream or track, nothing detached, nothing
+    // Jitsi-side changed. #largeVideo is left to the code above (one owner),
+    // and nothing inside this view (#sl-teacher-view) is ever touched.
+    //
+    // Lifecycle: suppressFilmstripVideos() beside suppressLargeVideo() on
+    // every render while the view shows (Normal and Tiles: a List <-> Tiles
+    // switch keeps it), releaseFilmstripVideos() from hide().
+    //
+    // While suppressed:
+    //   - each filmstrip <video> has a "play" listener re-pausing it (Jitsi's
+    //     play(), autoplay on a newly attached stream);
+    //   - one MutationObserver (childList) notices videos Jitsi adds, removes
+    //     or replaces after the view showed; disconnected on release;
+    //   - every render re-checks too (store changes come with track changes).
+    // A pause records the stream the element had. Release resumes only
+    // elements this code paused that still sit in Jitsi's filmstrip, paused,
+    // with that same stream; a removed, moved or rebound element is left to
+    // Jitsi. If Jitsi restarts an element over and over (it fights the
+    // pause), that element is left playing until the release.
+    const SL_TV_FILMSTRIP_VIDEO_SELECTOR = ".filmstrip video";
+    const SL_TV_FILMSTRIP_CLASS = "filmstrip";
+    const SL_TV_REPAUSE_LIMIT = 5;
+    const SL_TV_REPAUSE_WINDOW_MS = 2000;
+
+    let filmstripSuppressed = false;
+    let filmstripObserver = null;
+    // element -> { onPlay, paused (by this code), stream (when paused),
+    // pausedAt (recent pause times), yielded (left playing) }
+    const guardedFilmstripVideos = new Map();
+    // element -> the stream it had when this code paused it. Outlives the
+    // element's guard, so an element Jitsi takes out of the filmstrip and
+    // puts back later (another tick) is still known as paused by this code.
+    // A new map on every release: no record reaches the next activation.
+    let filmstripPauseRecords = new WeakMap();
+
+    // A <video> in the page, inside Jitsi's filmstrip, outside this view.
+    function isJitsiFilmstripVideo(el) {
+        if (!el || el.id === SL_TV_LARGE_VIDEO_ID || typeof el.pause !== "function" || typeof el.play !== "function") {
+            return false;
+        }
+
+        let inFilmstrip = false;
+
+        for (let node = el.parentNode; node; node = node.parentNode) {
+            if (node.id === SL_TV_ID) {
+                return false;
+            }
+
+            if (node.classList && node.classList.contains(SL_TV_FILMSTRIP_CLASS)) {
+                inFilmstrip = true;
+            }
+
+            if (node === document.documentElement) {
+                return inFilmstrip;
+            }
+        }
+
+        // Not in the page (removed by Jitsi).
+        return false;
+    }
+
+    function pauseFilmstripVideo(el, entry) {
+        if (entry.yielded || el.paused) {
+            return;
+        }
+
+        const now = Date.now();
+
+        entry.pausedAt = entry.pausedAt.filter(at => now - at < SL_TV_REPAUSE_WINDOW_MS);
+
+        if (entry.pausedAt.length >= SL_TV_REPAUSE_LIMIT) {
+            // Jitsi keeps restarting it: no play/pause fight, it plays.
+            entry.yielded = true;
+            entry.paused = false;
+            filmstripPauseRecords.delete(el);
+            el.removeEventListener("play", entry.onPlay);
+            return;
+        }
+
+        entry.pausedAt.push(now);
+        el.pause();
+        entry.paused = true;
+        entry.stream = el.srcObject || null;
+        filmstripPauseRecords.set(el, entry.stream);
+    }
+
+    function guardFilmstripVideo(el) {
+        let entry = guardedFilmstripVideos.get(el);
+
+        if (!entry) {
+            entry = { onPlay: null, paused: false, stream: null, pausedAt: [], yielded: false };
+
+            // Back in the filmstrip after a removal: still paused by this
+            // code, with the stream it had then (release compares it).
+            if (filmstripPauseRecords.has(el)) {
+                entry.paused = true;
+                entry.stream = filmstripPauseRecords.get(el);
+            }
+
+            entry.onPlay = () => {
+                // A "play" queued before the release and handled after it,
+                // or an element moved out of the filmstrip: left alone.
+                if (filmstripSuppressed && guardedFilmstripVideos.get(el) === entry && isJitsiFilmstripVideo(el)) {
+                    pauseFilmstripVideo(el, entry);
+                }
+            };
+            guardedFilmstripVideos.set(el, entry);
+            el.addEventListener("play", entry.onPlay);
+        }
+
+        return entry;
+    }
+
+    function unguardFilmstripVideo(el, entry) {
+        el.removeEventListener("play", entry.onPlay);
+        guardedFilmstripVideos.delete(el);
+    }
+
+    function sweepFilmstripVideos() {
+        // Elements Jitsi removed or moved: unguarded, never resumed from
+        // outside the filmstrip (their pause record stays, see above).
+        guardedFilmstripVideos.forEach((entry, el) => {
+            if (!isJitsiFilmstripVideo(el)) {
+                unguardFilmstripVideo(el, entry);
+            }
+        });
+
+        Array.from(document.querySelectorAll(SL_TV_FILMSTRIP_VIDEO_SELECTOR)).forEach(el => {
+            if (isJitsiFilmstripVideo(el)) {
+                pauseFilmstripVideo(el, guardFilmstripVideo(el));
+            }
+        });
+    }
+
+    // Is (or contains) a <video> - text nodes and our own view excluded.
+    function hasVideo(node) {
+        return Boolean(node && node.id !== SL_TV_ID && (node.tagName === "VIDEO"
+            || (typeof node.querySelectorAll === "function" && node.querySelectorAll("video").length)));
+    }
+
+    function onFilmstripMutations(records) {
+        if (!filmstripSuppressed) {
+            return;
+        }
+
+        // Only additions / removals of videos outside this view matter (this
+        // view's own tiles move on every render). Pausing is not a childList
+        // change, so the sweep never re-triggers this observer.
+        const relevant = (records || []).some(record =>
+            !(root && root.contains(record.target))
+            && (Array.from(record.addedNodes || []).some(hasVideo)
+                || Array.from(record.removedNodes || []).some(hasVideo)));
+
+        if (relevant) {
+            sweepFilmstripVideos();
+        }
+    }
+
+    function suppressFilmstripVideos() {
+        filmstripSuppressed = true;
+
+        // One observer however often this runs.
+        if (!filmstripObserver && typeof MutationObserver === "function" && document.body) {
+            filmstripObserver = new MutationObserver(onFilmstripMutations);
+            filmstripObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
+        sweepFilmstripVideos();
+    }
+
+    function releaseFilmstripVideos() {
+        if (!filmstripSuppressed && !filmstripObserver && !guardedFilmstripVideos.size) {
+            return;
+        }
+
+        filmstripSuppressed = false;
+
+        if (filmstripObserver) {
+            filmstripObserver.disconnect();
+            filmstripObserver = null;
+        }
+
+        const entries = Array.from(guardedFilmstripVideos);
+
+        guardedFilmstripVideos.clear();
+        filmstripPauseRecords = new WeakMap();
+
+        entries.forEach(([el, entry]) => {
+            el.removeEventListener("play", entry.onPlay);
+
+            if (entry.paused && el.paused && el.srcObject && el.srcObject === entry.stream
+                && isJitsiFilmstripVideo(el)) {
+                resumeJitsiVideo(el);
+            }
+        });
     }
 
     function trackKey(jitsiTrack) {
@@ -5716,9 +6684,14 @@ document.addEventListener(
             "#" + SL_TV_ID + " .sl-tv-pagesize:focus-visible { outline: 2px solid #93C5FD; outline-offset: -2px; }",
             "#" + SL_TV_ID + " .sl-tv-pagesize[aria-pressed=true] { border-color: rgba(96, 165, 250, 0.6); background: rgba(59, 130, 246, 0.22); color: #F8FAFC; }",
             "@media (pointer: coarse) { #" + SL_TV_ID + " .sl-tv-pagesize { height: 34px; } }",
-            // Columns are set by the view (SL_TV_VAR_GRID_COLS) to fit the page.
-            "#" + SL_TV_ID + " .sl-tv-grid { flex: 1 1 auto; min-height: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(var(" + SL_TV_VAR_GRID_COLS + ", 5), minmax(0, 1fr)); align-content: center; gap: 8px; padding: 8px 8px 96px; overflow-y: auto; }",
-            "#" + SL_TV_ID + " .sl-tv-grid .sl-tv-tile { width: 100%; }",
+            // Columns and the tile width are set by the view
+            // (SL_TV_VAR_GRID_COLS, SL_TV_VAR_TILE_W) to fit the page: each
+            // tile is capped at that width and centred in its column, so the
+            // rows fit the grid's height. "safe center": should content still
+            // overflow, it is never cut off at the top (unsupported browsers
+            // keep the plain "center" before it).
+            "#" + SL_TV_ID + " .sl-tv-grid { flex: 1 1 auto; min-height: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(var(" + SL_TV_VAR_GRID_COLS + ", 5), minmax(0, 1fr)); align-content: center; align-content: safe center; gap: 8px; padding: 8px 8px 96px; overflow-y: auto; }",
+            "#" + SL_TV_ID + " .sl-tv-grid .sl-tv-tile { width: 100%; max-width: var(" + SL_TV_VAR_TILE_W + ", none); justify-self: center; }",
             "#" + SL_TV_ID + " .sl-tv-grid-empty { grid-column: 1 / -1; padding: 24px; color: #94A3B8; text-align: center; font: 500 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
             // Enlarged-video panel (right side; full width on a narrow screen).
             "#" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { order: 1; flex: 0 0 min(46%, 640px); min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #000000; border-left: 1px solid rgba(148, 163, 184, 0.2); }",
@@ -6436,10 +7409,12 @@ document.addEventListener(
         });
     }
 
-    // Columns that give the largest 16:9 tiles for this page in the grid.
-    function bestGridColumns(count, width, height) {
-        let best = 1;
-        let bestWidth = 0;
+    // The columns that give the largest 16:9 tiles for this page in the
+    // grid's content box, and that tile width (px, whole pixels): limited by
+    // the column width or, when rows run out of height first, by the row
+    // height. So cols * width and rows * height (with the gaps) always fit.
+    function bestGridLayout(count, width, height) {
+        let best = { cols: 1, tileWidth: 0 };
 
         for (let cols = 1; cols <= Math.max(1, count); cols++) {
             const rows = Math.ceil(count / cols);
@@ -6448,18 +7423,31 @@ document.addEventListener(
                 ((height - SL_TV_GRID_GAP * (rows - 1)) / rows) * 16 / 9
             );
 
-            if (tileWidth > bestWidth) {
-                bestWidth = tileWidth;
-                best = cols;
+            if (tileWidth > best.tileWidth) {
+                best = { cols, tileWidth };
             }
         }
 
-        return best;
+        return { cols: best.cols, tileWidth: Math.max(1, Math.floor(best.tileWidth)) };
     }
 
-    // Sets the grid's columns, then measures where the tiles actually are
-    // and gives the scheduler their reading order (nearby groups follow the
-    // screen, whatever the column count). A changed order re-renders once.
+    function setGridStyle(name, value) {
+        const current = gridEl.style.getPropertyValue
+            ? gridEl.style.getPropertyValue(name)
+            : gridEl.style[name];
+
+        if (current !== value) {
+            gridEl.style.setProperty(name, value);
+        }
+    }
+
+    // Sets the grid's columns AND the tile width they were chosen for (the
+    // CSS caps each tile at it, centred in its column): a height-limited
+    // layout (e.g. one student on a wide screen) then fits the grid instead
+    // of a column-wide 16:9 tile overflowing it. Then measures where the
+    // tiles actually are and gives the scheduler their reading order (nearby
+    // groups follow the screen, whatever the column count). A changed order
+    // re-renders once.
     function layoutTilesGrid() {
         if (!gridEl) {
             return;
@@ -6470,13 +7458,10 @@ document.addEventListener(
         const height = Math.max(0, gridEl.clientHeight - SL_TV_GRID_GAP - 96);
 
         if (tileEls.length && width > 0 && height > 0) {
-            const cols = String(bestGridColumns(tileEls.length, width, height));
+            const layout = bestGridLayout(tileEls.length, width, height);
 
-            if (gridEl.style.getPropertyValue
-                ? gridEl.style.getPropertyValue(SL_TV_VAR_GRID_COLS) !== cols
-                : gridEl.style[SL_TV_VAR_GRID_COLS] !== cols) {
-                gridEl.style.setProperty(SL_TV_VAR_GRID_COLS, cols);
-            }
+            setGridStyle(SL_TV_VAR_GRID_COLS, String(layout.cols));
+            setGridStyle(SL_TV_VAR_TILE_W, layout.tileWidth + "px");
         }
 
         const measured = slSpatialOrder(tileEls.map(el => {
@@ -6841,6 +7826,11 @@ document.addEventListener(
     function hide() {
         lastSignature = "";
 
+        // Jitsi's own large video and filmstrip videos play again (only those
+        // this view paused).
+        releaseLargeVideo();
+        releaseFilmstripVideos();
+
         document.body?.classList.toggle(SL_TV_ACTIVE_CLASS, false);
 
         // Phase D stops with the view (Exam Mode, disabled): the receive
@@ -6952,6 +7942,13 @@ document.addEventListener(
             hide();
             return;
         }
+
+        // The view shows (Normal or Tiles): Jitsi's covered large video is
+        // paused. On every render, before the unchanged-view early return
+        // below, so a restarted or replaced element is caught. The same for
+        // Jitsi's hidden filmstrip videos.
+        suppressLargeVideo();
+        suppressFilmstripVideos();
 
         // Phase C: steer Jitsi's pin first (it may dispatch), then render
         // from the store as it is afterwards.
@@ -7321,6 +8318,25 @@ document.addEventListener(
         rotation: () => slTeacherRotation.stats(),
         rotationTick: () => slTeacherRotation.subtick(),
         rotationAutoTick: on => slTeacherRotation.setAutoTick(on),
+        // Jitsi's hidden filmstrip videos: what this view holds paused.
+        defaultVideos: () => {
+            let paused = 0;
+            let yielded = 0;
+
+            guardedFilmstripVideos.forEach(entry => {
+                paused += entry.paused ? 1 : 0;
+                yielded += entry.yielded ? 1 : 0;
+            });
+
+            return {
+                suppressed: filmstripSuppressed,
+                observing: Boolean(filmstripObserver),
+                guarded: guardedFilmstripVideos.size,
+                paused,
+                yielded,
+                largeVideoSuppressed
+            };
+        },
         tileModes: () => {
             const modes = {};
 
@@ -7338,6 +8354,13 @@ document.addEventListener(
                 ? Array.from(gridEl.children).filter(el => el.dataset && el.dataset.tileId).map(el => el.dataset.tileId)
                 : [],
             columns: gridColumns,
+            // The tile width applied with the columns ("" before the first
+            // measurement).
+            tileWidth: gridEl
+                ? (gridEl.style.getPropertyValue
+                    ? gridEl.style.getPropertyValue(SL_TV_VAR_TILE_W)
+                    : gridEl.style[SL_TV_VAR_TILE_W]) || ""
+                : null,
             order: gridOrder ? gridOrder.slice() : null,
             label: gridLabelEl ? gridLabelEl.textContent : "",
             previousDisabled: gridPrevEl ? Boolean(gridPrevEl.disabled) : null,

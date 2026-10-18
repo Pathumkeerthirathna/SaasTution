@@ -346,6 +346,32 @@ const SL_TOOLBAR_AUTOHIDE_ENABLED =
   process.env.NEXT_PUBLIC_SL_TOOLBAR_AUTOHIDE === "true";
 
 /**
+ * Student page -> its own Jitsi iframe (handled by custom.js): the student's
+ * own camera / microphone status indicator, top-right of the classroom.
+ * Display only (custom.js reads the local tracks; nothing is muted or sent).
+ */
+type DeviceStatusViewMessage = {
+  type: "SL_DEVICE_STATUS_VIEW";
+  v: 1;
+  /** Own counter; increases when `fullscreen` changes. */
+  epoch: number;
+  enabled: boolean;
+  /**
+   * The page's fullscreen: its "Exit fullscreen" button then covers the
+   * iframe's top-right corner, so the indicator moves left of it.
+   */
+  fullscreen: boolean;
+};
+
+/**
+ * Student device status indicator. Off unless the app is built with
+ * NEXT_PUBLIC_SL_DEVICE_STATUS=true; while off, the student's iframe is told
+ * `enabled: false`, so nothing is shown.
+ */
+const SL_DEVICE_STATUS_ENABLED =
+  process.env.NEXT_PUBLIC_SL_DEVICE_STATUS === "true";
+
+/**
  * The SL Classroom Jitsi server. The only origin the receive set is posted to,
  * and the only origin messages from the Jitsi iframe (custom.js) are accepted from.
  */
@@ -424,6 +450,9 @@ type UseJitsiProps = {
   /** Teacher only: View / Tiles page size chosen in the iframe's settings menu. */
   onTeacherTilesSettings?: (change: TeacherTilesSettingsChange) => void;
 
+  /** Whether the page shows the meeting fullscreen (students: device status placement). */
+  isFullscreen?: boolean;
+
 };
 
 export default function useJitsi({
@@ -448,6 +477,7 @@ export default function useJitsi({
   onBreakoutSupportChanged,
   onTeacherTilesNav,
   onTeacherTilesSettings,
+  isFullscreen = false,
 
 }: UseJitsiProps) {
 
@@ -676,6 +706,50 @@ export default function useJitsi({
 
     frameWindow.postMessage(toolbarViewRef.current, SL_JITSI_ORIGIN);
   };
+
+  // Student device status indicator: students only, on/off by
+  // SL_DEVICE_STATUS_ENABLED. Sent (also when off, so custom.js is told
+  // explicitly) after every conference join, again on SL_RECEIVE_READY, and
+  // whenever the page's fullscreen changes (a new epoch then).
+  const deviceStatusViewRef = useRef<DeviceStatusViewMessage>({
+    type: "SL_DEVICE_STATUS_VIEW",
+    v: 1,
+    epoch: 1,
+    enabled: SL_DEVICE_STATUS_ENABLED,
+    fullscreen: isFullscreen,
+  });
+
+  const postDeviceStatusView = () => {
+    if (roleRef.current !== "student") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(deviceStatusViewRef.current, SL_JITSI_ORIGIN);
+  };
+
+  useEffect(() => {
+    const current = deviceStatusViewRef.current;
+
+    if (current.fullscreen === isFullscreen) {
+      return;
+    }
+
+    deviceStatusViewRef.current = {
+      ...current,
+      epoch: current.epoch + 1,
+      fullscreen: isFullscreen,
+    };
+    postDeviceStatusView();
+    // postDeviceStatusView reads refs only, so the effect only follows the flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen]);
 
   // Teacher normal mode view: kept and resent on SL_RECEIVE_READY, like the
   // receive set and the monitoring grid.
@@ -1031,14 +1105,15 @@ export default function useJitsi({
       // since anything sent earlier may have been missed. Teacher: receive set,
       // then the monitoring-grid view, then the normal mode teacher view and
       // its Tiles view page.
-      // Student: the student view, then the custom stage view. Each post
-      // checks the role itself, so only the matching ones are sent. Both: the
-      // toolbar view.
+      // Student: the student view, then the custom stage view and the device
+      // status view. Each post checks the role itself, so only the matching
+      // ones are sent. Both: the toolbar view.
       if (event.data?.type === "SL_RECEIVE_READY") {
         postReceiveSet();
         postMonitorView();
         postStudentView();
         postStageView();
+        postDeviceStatusView();
         postTeacherView();
         postTeacherTiles();
         postToolbarView();
@@ -1509,10 +1584,11 @@ export default function useJitsi({
         }
       }
 
-      // Student view, custom stage view and toolbar view on every join (first
-      // join, reconnect, breakout switch).
+      // Student view, custom stage view, device status view and toolbar view
+      // on every join (first join, reconnect, breakout switch).
       postStudentView();
       postStageView();
+      postDeviceStatusView();
       postToolbarView();
 
       const enteringBreakout = data?.breakoutRoom === true;

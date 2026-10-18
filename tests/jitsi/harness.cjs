@@ -193,6 +193,7 @@ class FakeElement {
 
         this.children.push(child);
         child.parentNode = this;
+        this.ownerDocument._notifyChildList(this, [child], []);
 
         return child;
     }
@@ -208,6 +209,7 @@ class FakeElement {
 
         this.children.splice(this.children.indexOf(ref), 0, child);
         child.parentNode = this;
+        this.ownerDocument._notifyChildList(this, [child], []);
 
         return child;
     }
@@ -218,6 +220,7 @@ class FakeElement {
         if (index >= 0) {
             this.children.splice(index, 1);
             child.parentNode = null;
+            this.ownerDocument._notifyChildList(this, [], [child]);
         }
 
         return child;
@@ -285,17 +288,19 @@ class FakeElement {
     get offsetWidth() { return 1280; }
     get offsetHeight() { return 800; }
 
-    // One compound selector (".a.b", "[x]", "[x=y]", '[x="y"]', combined),
-    // matched against real descendants built with createElement.
+    // One compound selector ("video", ".a.b", "[x]", "[x=y]", '[x="y"]',
+    // combined), matched against real descendants built with createElement.
     _matches(selector) {
+        const tag = (selector.match(/^[a-z][\w-]*/i) || [null])[0];
         const classes = selector.match(/\.[\w-]+/g) || [];
         const attributes = [...selector.matchAll(/\[([\w-]+)(?:=("?)([^"\]]*)\2)?\]/g)];
 
-        if (!classes.length && !attributes.length) {
+        if (!tag && !classes.length && !attributes.length) {
             return false;
         }
 
-        return classes.every(name => this.classList.contains(name.slice(1)))
+        return (!tag || this.tagName === tag.toUpperCase())
+            && classes.every(name => this.classList.contains(name.slice(1)))
             && attributes.every(([, name, , value]) => {
                 const actual = name.startsWith("data-")
                     ? this.dataset[name.slice(5).replace(/-([a-z])/g, (all, c) => c.toUpperCase())]
@@ -429,7 +434,35 @@ class FakeDocument {
     }
 
     querySelector() { return null; }
-    querySelectorAll() { return []; }
+
+    // Compound selectors joined by descendant combinators (".filmstrip video").
+    querySelectorAll(selector) {
+        const parts = String(selector).trim().split(/\s+/);
+        const last = parts.pop();
+
+        return [...this.documentElement.walk()].filter(el => {
+            if (!el._matches(last)) {
+                return false;
+            }
+
+            let pending = parts.length - 1;
+
+            for (let node = el.parentNode; node && pending >= 0; node = node.parentNode) {
+                if (node._matches(parts[pending])) {
+                    pending -= 1;
+                }
+            }
+
+            return pending < 0;
+        });
+    }
+
+    // childList records, for observers with { childList } (and subtree).
+    _notifyChildList(target, addedNodes, removedNodes) {
+        this._observers.forEach(observer => observer._maybeQueueChildList({
+            type: "childList", target, addedNodes, removedNodes
+        }));
+    }
 
     addEventListener(type, fn) {
         (this.listeners[type] = this.listeners[type] || []).push(fn);
@@ -468,23 +501,57 @@ function makeMutationObserverClass(doc) {
         }
 
         observe(target, options) {
-            this.targets.push({ target, filter: options?.attributeFilter || null });
+            this.targets.push({
+                target,
+                filter: options?.attributeFilter || null,
+                attributes: Boolean(options?.attributes || options?.attributeFilter),
+                childList: Boolean(options?.childList),
+                subtree: Boolean(options?.subtree)
+            });
         }
 
         disconnect() {
             this.targets = [];
+            this.records = [];
+        }
+
+        // Observed with childList (not disconnected).
+        get watchesChildList() {
+            return this.targets.some(entry => entry.childList);
+        }
+
+        _queue(record) {
+            if (record) {
+                (this.records = this.records || []).push(record);
+            }
+
+            if (!this.queued) {
+                this.queued = true;
+                queueMicrotask(() => {
+                    const records = this.records || [];
+
+                    this.queued = false;
+                    this.records = [];
+                    this.callback(records);
+                });
+            }
         }
 
         _maybeQueue(target, attribute) {
-            const hit = this.targets.some(entry =>
-                entry.target === target && (!entry.filter || entry.filter.includes(attribute)));
+            const hit = this.targets.some(entry => entry.attributes
+                && entry.target === target && (!entry.filter || entry.filter.includes(attribute)));
 
-            if (hit && !this.queued) {
-                this.queued = true;
-                queueMicrotask(() => {
-                    this.queued = false;
-                    this.callback([]);
-                });
+            if (hit) {
+                this._queue(null);
+            }
+        }
+
+        _maybeQueueChildList(record) {
+            const hit = this.targets.some(entry => entry.childList
+                && (entry.target === record.target || (entry.subtree && entry.target.contains(record.target))));
+
+            if (hit) {
+                this._queue(record);
             }
         }
     };

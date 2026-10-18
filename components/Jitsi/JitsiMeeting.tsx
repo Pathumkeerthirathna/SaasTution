@@ -318,6 +318,7 @@ const JitsiMeeting = forwardRef<
     onBreakoutSupportChanged,
     onTeacherTilesNav,
     onTeacherTilesSettings,
+    isFullscreen,
   });
 
   return (
