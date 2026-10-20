@@ -21,6 +21,7 @@ import type {
 
 import useAttendance from "./hooks/useAttendance";
 import useJitsiScript from "./hooks/useJitsiScript";
+import { useSelectedDevices } from "./PermissionGate";
 
 import useJitsi, {
   JitsiControls,
@@ -161,6 +162,9 @@ const JitsiMeeting = forwardRef<
   } = useJitsiScript(
     joinInfo.session.jitsiDomain
   );
+
+  // Camera / microphone chosen on the Device Setup screen (by label).
+  const selectedDevices = useSelectedDevices();
 
   const handleParticipantStatusChanged = (
     participantId: string,
@@ -319,6 +323,7 @@ const JitsiMeeting = forwardRef<
     onTeacherTilesNav,
     onTeacherTilesSettings,
     isFullscreen,
+    devices: selectedDevices,
   });
 
   return (

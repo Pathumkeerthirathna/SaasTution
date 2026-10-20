@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type DeviceOption = {
   deviceId: string;
   label: string;
+  /** The browser's own label ("" when withheld): never the numbered placeholder. */
+  deviceLabel: string;
 };
 
 // How long we wait for a single browser media call (getUserMedia /
@@ -89,6 +91,7 @@ function toDeviceOptions(
       // fall back to a numbered placeholder instead of inventing hardware
       // names like "Front Camera" / "Back Camera".
       label: d.label || `${fallbackPrefix} ${index + 1}`,
+      deviceLabel: d.label,
     }));
 }
 
@@ -394,6 +397,24 @@ export default function useMediaDevices() {
     [permissionGranted, switchMicrophone]
   );
 
+  /**
+   * Joining: stops the preview's own tracks (only this hook's stream; the
+   * meeting's tracks live in Jitsi's iframe and are never touched) and
+   * discards any device switch still in flight. With no stream left, later
+   * switches (e.g. from a devicechange) are no-ops.
+   */
+  const stopPreview = useCallback(() => {
+    pendingCameraIdRef.current = null;
+    pendingMicIdRef.current = null;
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
   function toggleCamera() {
     if (!streamRef.current) return;
 
@@ -495,6 +516,13 @@ export default function useMediaDevices() {
     };
   }, []);
 
+  // The selected devices' real labels ("" when unknown: not in the list any
+  // more, or the browser withheld the label). Jitsi picks devices by label.
+  const selectedCameraLabel =
+    cameras.find((c) => c.deviceId === selectedCamera)?.deviceLabel ?? "";
+  const selectedMicrophoneLabel =
+    microphones.find((m) => m.deviceId === selectedMicrophone)?.deviceLabel ?? "";
+
   return {
     stream: streamRef.current,
     videoRef,
@@ -507,6 +535,9 @@ export default function useMediaDevices() {
     selectedMicrophone,
     selectedSpeaker,
 
+    selectedCameraLabel,
+    selectedMicrophoneLabel,
+
     setSelectedCamera,
     setSelectedMicrophone,
     setSelectedSpeaker,
@@ -516,6 +547,7 @@ export default function useMediaDevices() {
     error,
 
     requestPermission,
+    stopPreview,
 
     cameraEnabled,
     microphoneEnabled,

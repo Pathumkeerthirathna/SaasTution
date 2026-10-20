@@ -382,6 +382,16 @@ type YouTubeStreamPurpose =
   | "recording"
   | "live";
 
+/**
+ * The Device Setup screen's camera / microphone, by LABEL (External API
+ * `devices` option). Device IDs are per origin, so this page's IDs mean
+ * nothing inside Jitsi's iframe; labels match there. Absent: Jitsi's own choice.
+ */
+export type JitsiInitialDevices = {
+  videoInput?: string;
+  audioInput?: string;
+};
+
 type UseJitsiProps = {
   
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -453,6 +463,9 @@ type UseJitsiProps = {
   /** Whether the page shows the meeting fullscreen (students: device status placement). */
   isFullscreen?: boolean;
 
+  /** Devices chosen on the Device Setup screen (used when Jitsi is created). */
+  devices?: JitsiInitialDevices | null;
+
 };
 
 export default function useJitsi({
@@ -478,10 +491,16 @@ export default function useJitsi({
   onTeacherTilesNav,
   onTeacherTilesSettings,
   isFullscreen = false,
+  devices = null,
 
 }: UseJitsiProps) {
 
   const apiRef = useRef<any>(null);
+
+  // Read when Jitsi is created; not an effect dependency, so it never
+  // recreates the meeting.
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
 
   // Latest callback for the (long-lived) Jitsi listener.
   const onYouTubeStreamStatusChangedRef = useRef(onYouTubeStreamStatusChanged);
@@ -1233,6 +1252,12 @@ export default function useJitsi({
         ? teacherToolbar
         : studentToolbar;
 
+    // Only labels that are known; none at all: the option is left out.
+    const initialDevices: JitsiInitialDevices = {
+      ...(devicesRef.current?.videoInput ? { videoInput: devicesRef.current.videoInput } : {}),
+      ...(devicesRef.current?.audioInput ? { audioInput: devicesRef.current.audioInput } : {}),
+    };
+
 
     /*
      * ------------------------------------------------------------
@@ -1260,6 +1285,10 @@ export default function useJitsi({
           ...(joinInfo.token && {
             jwt: joinInfo.token,
           }),
+
+          ...(Object.keys(initialDevices).length > 0
+            ? { devices: initialDevices }
+            : {}),
 
           configOverwrite: {
 

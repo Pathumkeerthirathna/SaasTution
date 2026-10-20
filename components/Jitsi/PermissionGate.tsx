@@ -1,16 +1,25 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 import DevicePreview from "./DevicePreview";
 import DeviceSelector from "./DeviceSelector";
 
 import useMediaDevices from "./hooks/useMediaDevices";
+import type { JitsiInitialDevices } from "./hooks/useJitsi";
 
 import MediaControls from "./MediaControls";
 import useMicrophoneLevel from "./hooks/useMicrophoneLevel";
 import MicrophoneLevel from "../MicrophoneLevel";
+
+// The devices chosen here, by label, for the meeting rendered inside the gate.
+const SelectedDevicesContext = createContext<JitsiInitialDevices | null>(null);
+
+/** The camera / microphone chosen on the Device Setup screen (null: none known). */
+export function useSelectedDevices() {
+  return useContext(SelectedDevicesContext);
+}
 
 type PermissionGateProps = {
   children: ReactNode;
@@ -33,6 +42,9 @@ export default function PermissionGate({
   selectedMicrophone,
   selectedSpeaker,
 
+  selectedCameraLabel,
+  selectedMicrophoneLabel,
+
   setSelectedCamera,
   setSelectedMicrophone,
   setSelectedSpeaker,
@@ -42,6 +54,7 @@ export default function PermissionGate({
   error,
 
   requestPermission,
+  stopPreview,
 
   cameraEnabled,
   microphoneEnabled,
@@ -51,6 +64,18 @@ export default function PermissionGate({
 } = useMediaDevices();
 
 const [joinMeeting, setJoinMeeting] = useState(false);
+const [selectedDevices, setSelectedDevices] = useState<JitsiInitialDevices | null>(null);
+
+// Keeps the chosen labels for the meeting (unknown ones left out), then
+// releases the preview's camera and microphone before Jitsi opens its own.
+const handleJoin = () => {
+  setSelectedDevices({
+    ...(selectedCameraLabel ? { videoInput: selectedCameraLabel } : {}),
+    ...(selectedMicrophoneLabel ? { audioInput: selectedMicrophoneLabel } : {}),
+  });
+  stopPreview();
+  setJoinMeeting(true);
+};
 
 const level = useMicrophoneLevel(stream);
 
@@ -61,7 +86,11 @@ const level = useMicrophoneLevel(stream);
   }, [ready]);
 
   if (ready) {
-    return <>{children}</>;
+    return (
+      <SelectedDevicesContext.Provider value={selectedDevices}>
+        {children}
+      </SelectedDevicesContext.Provider>
+    );
 }
 
   return (
@@ -140,7 +169,7 @@ const level = useMicrophoneLevel(stream);
                   <>
                     <button
                       type="button"
-                      onClick={() => setJoinMeeting(true)}
+                      onClick={handleJoin}
                       className="h-11 w-full rounded-[10px] bg-gradient-to-b from-[#22C55E] to-[#16A34A] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(2,6,23,0.4)] transition hover:from-[#2BD267] hover:to-[#18B04F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ADE80]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]"
                     >
                       Join Classroom
