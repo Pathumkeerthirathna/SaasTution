@@ -15,6 +15,17 @@ import {
   ScanEye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
+import VideoDiagnosticsSection from "./VideoDiagnosticsSection";
+import {
+  DEFAULT_TEACHING_FRAME_RATE,
+  parseStoredVideoQuality,
+  readStorage,
+  TEACHER_VIDEO_QUALITY_HEIGHTS,
+  TEACHING_FRAME_RATES,
+  VIDEO_QUALITY_STORAGE_KEY,
+  writeStorage,
+} from "../../teacher-camera-preferences.mjs";
 
 type SidebarNavProps = {
   activePanel: string | null;
@@ -31,10 +42,33 @@ type SidebarNavProps = {
   variant?: "teacher" | "student";
   /** Show the Settings tool — video quality / audio picker (teacher only). */
   showSettings?: boolean;
-  /** Applies the chosen frame height (px) as the send/receive video quality. */
+  /**
+   * The chosen maximum frame height (px) for the video the teacher sends
+   * (Jitsi still lowers it for the network). useJitsi keeps it and applies
+   * it on every conference join.
+   */
   onSetVideoQuality?: (heightPx: number) => void;
   /** Enables/disables noise suppression on the teacher's own microphone. */
   onSetNoiseSuppression?: (enabled: boolean) => void;
+  /** Teaching Mode (teacher's camera tuned for handwriting): on / off. */
+  teachingMode?: boolean;
+  /** What Teaching Mode applied to the camera, as last reported. */
+  teachingModeStatus?: TeachingModeStatus | null;
+  /** Shows the Teaching Mode toggle (teacher only). */
+  onSetTeachingMode?: (enabled: boolean) => void;
+  /** Teaching Mode's frame-rate cap (15 / 24 / 30; saved preference). */
+  teachingFps?: number;
+  onSetTeachingFps?: (maxFps: number) => void;
+  /** Teaching Mode's contentHint "detail" (saved preference). */
+  teachingDetailHint?: boolean;
+  onSetTeachingDetailHint?: (enabled: boolean) => void;
+  /** Video diagnostics (read-only WebRTC stats): on / off and the latest snapshot. */
+  videoDiagnostics?: boolean;
+  videoTelemetry?: VideoTelemetryStatus | null;
+  videoTelemetryLabel?: (participantId: string) => string;
+  /** Shows the video diagnostics section (teacher only). */
+  onSetVideoDiagnostics?: (enabled: boolean) => void;
+  onCopyVideoDiagnostics?: () => Promise<boolean>;
 };
 
 const VARIANTS = {
@@ -52,24 +86,60 @@ const VARIANTS = {
   },
 } as const;
 
-const VIDEO_QUALITY_OPTIONS: { label: string; height: number }[] = [
-  { label: "1080p", height: 1080 },
-  { label: "720p", height: 720 },
-  { label: "480p", height: 480 },
-  { label: "320p", height: 320 },
-  { label: "180p", height: 180 },
-];
-
-const VIDEO_QUALITY_STORAGE_KEY = "sl-classroom-teacher-video-quality";
+const VIDEO_QUALITY_OPTIONS: { label: string; height: number }[] =
+  TEACHER_VIDEO_QUALITY_HEIGHTS.map((height) => ({ label: `${height}p`, height }));
 
 function readStoredVideoQuality(): number | null {
-  try {
-    const raw = localStorage.getItem(VIDEO_QUALITY_STORAGE_KEY);
-    const value = raw ? Number(raw) : null;
-    return value && VIDEO_QUALITY_OPTIONS.some((o) => o.height === value) ? value : null;
-  } catch {
-    return null;
+  return parseStoredVideoQuality(readStorage(VIDEO_QUALITY_STORAGE_KEY));
+}
+
+/** One line under the Teaching Mode toggle: what is applied right now. */
+function describeTeachingMode(status: TeachingModeStatus | null | undefined): string {
+  if (!status || !status.enabled) {
+    return "Turning on…";
   }
+
+  if (!status.active) {
+    return "Waiting for your teacher permissions…";
+  }
+
+  if (!status.camera) {
+    return "Applies when your camera is on.";
+  }
+
+  if (status.frameRate === "pending" || status.frameRate === null || status.contentHint === null) {
+    return "Applying…";
+  }
+
+  // An older custom.js reports no maxFps: it always applies 15, whatever
+  // was requested.
+  const cap = status.maxFps ?? 15;
+  const hintOk = status.contentHint === "applied";
+  const hintOff = status.contentHint === "disabled";
+  const frameRateOk = status.frameRate === "applied" || status.frameRate === "kept";
+  const fps = status.fps !== null ? `${Math.round(status.fps)} fps` : `up to ${cap} fps`;
+
+  if (frameRateOk && hintOff) {
+    return `On: ${fps} (detail hint off).`;
+  }
+
+  if (hintOk && frameRateOk) {
+    return `On: fine detail first, ${fps}.`;
+  }
+
+  if (frameRateOk) {
+    return `On: ${fps} (detail hint not supported in this browser).`;
+  }
+
+  if (hintOk) {
+    return `On: fine detail first (${cap} fps cap not supported by this camera).`;
+  }
+
+  if (hintOff) {
+    return `${cap} fps cap not supported by this camera (detail hint off).`;
+  }
+
+  return "Not supported by this browser or camera.";
 }
 
 const NOISE_SUPPRESSION_STORAGE_KEY = "sl-classroom-teacher-noise-suppression";
@@ -95,6 +165,18 @@ export default function SidebarNav({
   showSettings = false,
   onSetVideoQuality,
   onSetNoiseSuppression,
+  teachingMode = false,
+  teachingModeStatus = null,
+  onSetTeachingMode,
+  teachingFps = DEFAULT_TEACHING_FRAME_RATE,
+  onSetTeachingFps,
+  teachingDetailHint = true,
+  onSetTeachingDetailHint,
+  videoDiagnostics = false,
+  videoTelemetry = null,
+  videoTelemetryLabel,
+  onSetVideoDiagnostics,
+  onCopyVideoDiagnostics,
 }: SidebarNavProps) {
   const theme = VARIANTS[variant];
 
@@ -114,8 +196,8 @@ export default function SidebarNav({
     if (appliedStoredQualityRef.current) return;
     if (!onSetVideoQuality || selectedQuality === null) return;
     appliedStoredQualityRef.current = true;
-    // Best-effort: the underlying Jitsi call may still be connecting at this
-    // point (a harmless no-op if so — the teacher can just re-pick).
+    // Handed over once: useJitsi keeps it and sends it on every conference
+    // join (also when Jitsi is not ready yet at this point).
     onSetVideoQuality(selectedQuality);
   }, [onSetVideoQuality, selectedQuality]);
 
@@ -270,7 +352,7 @@ export default function SidebarNav({
             }}
           >
             <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
-              Video Quality
+              Maximum send quality (adapts to network)
             </p>
             <div className="space-y-1">
               {VIDEO_QUALITY_OPTIONS.map((option) => (
@@ -280,14 +362,7 @@ export default function SidebarNav({
                   onClick={() => {
                     setSelectedQuality(option.height);
                     onSetVideoQuality?.(option.height);
-                    try {
-                      localStorage.setItem(
-                        VIDEO_QUALITY_STORAGE_KEY,
-                        String(option.height)
-                      );
-                    } catch {
-                      /* private mode — selection just won't persist */
-                    }
+                    writeStorage(VIDEO_QUALITY_STORAGE_KEY, String(option.height));
                   }}
                   className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
                     selectedQuality === option.height
@@ -303,8 +378,112 @@ export default function SidebarNav({
               ))}
             </div>
             <p className="mt-2 px-1 text-[10px] leading-snug text-[#64748B]">
-              Sets the quality students receive your video at.
+              The highest quality your video is sent at; Jitsi lowers it when
+              the network or the students&apos; screens need less. It also
+              limits the video you receive.
             </p>
+
+            {onSetTeachingMode ? (
+              <>
+                <div className="my-3 h-px bg-[#1E293B]" />
+
+                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+                  Camera
+                </p>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={teachingMode}
+                  onClick={() => onSetTeachingMode(!teachingMode)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
+                >
+                  <span className="text-left">
+                    <span className="block text-[#F8FAFC]">Teaching Mode</span>
+                    <span className="block text-[10px] text-[#64748B]">
+                      Sharper handwriting and whiteboards
+                    </span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                      teachingMode ? "bg-[#3B82F6]" : "bg-[#334155]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        teachingMode ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
+                {teachingMode ? (
+                  <p
+                    role="status"
+                    className="mt-1 px-3 text-[10px] leading-snug text-[#94A3B8]"
+                  >
+                    {describeTeachingMode(teachingModeStatus)}
+                    {selectedQuality !== null && selectedQuality < 720
+                      ? " Choose 720p above for the clearest writing."
+                      : ""}
+                  </p>
+                ) : null}
+
+                {onSetTeachingFps ? (
+                  <div className="mt-2 px-3">
+                    <p className="pb-1 text-[10px] text-[#94A3B8]">Teaching Mode frame rate</p>
+                    <div className="grid grid-cols-3 gap-1" role="group" aria-label="Teaching Mode frame rate">
+                      {TEACHING_FRAME_RATES.map((fps) => (
+                        <button
+                          key={fps}
+                          type="button"
+                          aria-pressed={teachingFps === fps}
+                          onClick={() => onSetTeachingFps(fps)}
+                          className={`rounded-lg px-2 py-1.5 text-xs transition ${
+                            teachingFps === fps
+                              ? "bg-[#3B82F6]/15 text-[#F8FAFC] ring-1 ring-[#3B82F6]/60"
+                              : "text-[#CBD5E1] hover:bg-[#1E293B]"
+                          }`}
+                        >
+                          {fps} fps
+                        </button>
+                      ))}
+                    </div>
+                    <p className="pt-1 text-[10px] leading-snug text-[#64748B]">
+                      Lower = sharper still writing; higher = smoother motion.
+                    </p>
+                  </div>
+                ) : null}
+
+                {onSetTeachingDetailHint ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={teachingDetailHint}
+                    onClick={() => onSetTeachingDetailHint(!teachingDetailHint)}
+                    className="mt-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
+                  >
+                    <span className="text-left">
+                      <span className="block text-xs text-[#F8FAFC]">Detail hint</span>
+                      <span className="block text-[10px] text-[#64748B]">
+                        Tells the browser to favour fine detail; may have little effect
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                        teachingDetailHint ? "bg-[#3B82F6]" : "bg-[#334155]"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          teachingDetailHint ? "translate-x-4" : "translate-x-0.5"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                ) : null}
+              </>
+            ) : null}
 
             <div className="my-3 h-px bg-[#1E293B]" />
 
@@ -347,6 +526,16 @@ export default function SidebarNav({
                 />
               </span>
             </button>
+
+            {onSetVideoDiagnostics ? (
+              <VideoDiagnosticsSection
+                enabled={videoDiagnostics}
+                status={videoTelemetry}
+                labelOf={videoTelemetryLabel ?? ((participantId) => `Participant ${participantId}`)}
+                onToggle={onSetVideoDiagnostics}
+                onCopy={onCopyVideoDiagnostics}
+              />
+            ) : null}
           </div>
         </>
       ) : null}

@@ -19,6 +19,7 @@ import WhiteboardPanel from "./WhiteboardPanel";
 import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
 import type { CameraMonitoringController } from "../../hooks/useCameraMonitoring";
+import type { TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
 import ParticipantsPanel from "./ParticipantsPanel";
 import AttendancePanel from "./AttendancePanel";
 import CameraMonitoringPanel from "./CameraMonitoringPanel";
@@ -65,6 +66,21 @@ type RightSidebarProps = {
   onSendChat?: (message: string) => void;
   onSetVideoQuality?: (heightPx: number) => void;
   onSetNoiseSuppression?: (enabled: boolean) => void;
+  /** Teacher only: Teaching Mode (camera tuned for handwriting) and what it applied. */
+  teachingMode?: boolean;
+  teachingModeStatus?: TeachingModeStatus | null;
+  onSetTeachingMode?: (enabled: boolean) => void;
+  /** Teaching Mode frame-rate cap (15 / 24 / 30) and detail hint preferences. */
+  teachingFps?: number;
+  onSetTeachingFps?: (maxFps: number) => void;
+  teachingDetailHint?: boolean;
+  onSetTeachingDetailHint?: (enabled: boolean) => void;
+  /** Teacher only: video diagnostics (read-only WebRTC stats) and its controls. */
+  videoDiagnostics?: boolean;
+  videoTelemetry?: VideoTelemetryStatus | null;
+  videoTelemetryLabel?: (participantId: string) => string;
+  onSetVideoDiagnostics?: (enabled: boolean) => void;
+  onCopyVideoDiagnostics?: () => Promise<boolean>;
 };
 
 export default function RightSidebar(props: RightSidebarProps) {
@@ -501,6 +517,18 @@ export default function RightSidebar(props: RightSidebarProps) {
           showSettings={isTeacher}
           onSetVideoQuality={props.onSetVideoQuality}
           onSetNoiseSuppression={props.onSetNoiseSuppression}
+          teachingMode={props.teachingMode}
+          teachingModeStatus={props.teachingModeStatus}
+          onSetTeachingMode={isTeacher ? props.onSetTeachingMode : undefined}
+          teachingFps={props.teachingFps}
+          onSetTeachingFps={isTeacher ? props.onSetTeachingFps : undefined}
+          teachingDetailHint={props.teachingDetailHint}
+          onSetTeachingDetailHint={isTeacher ? props.onSetTeachingDetailHint : undefined}
+          videoDiagnostics={props.videoDiagnostics}
+          videoTelemetry={props.videoTelemetry}
+          videoTelemetryLabel={props.videoTelemetryLabel}
+          onSetVideoDiagnostics={isTeacher ? props.onSetVideoDiagnostics : undefined}
+          onCopyVideoDiagnostics={isTeacher ? props.onCopyVideoDiagnostics : undefined}
         />
 
       </div>

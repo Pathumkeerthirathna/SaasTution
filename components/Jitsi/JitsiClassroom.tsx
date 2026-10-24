@@ -12,7 +12,21 @@ import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
 import useCameraMonitoring from "./hooks/useCameraMonitoring";
 import useTeacherTiles from "./hooks/useTeacherTiles";
-import type { TeacherTilesNavAction, TeacherTilesSettingsChange } from "./hooks/useJitsi";
+import type { TeacherTilesNavAction, TeacherTilesSettingsChange, TeachingModeSettings, TeachingModeStatus, VideoTelemetryStatus } from "./hooks/useJitsi";
+import {
+  buildDiagnosticsExport,
+  createTelemetryHistory,
+  resolveStudentLabel,
+} from "./video-telemetry.mjs";
+import {
+  isTeachingFrameRate,
+  parseStoredBoolean,
+  parseStoredFrameRate,
+  readStorage,
+  TEACHING_DETAIL_HINT_STORAGE_KEY,
+  TEACHING_FRAME_RATE_STORAGE_KEY,
+  writeStorage,
+} from "./teacher-camera-preferences.mjs";
 import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
@@ -832,6 +846,110 @@ const [classStudents, setClassStudents] =
     }
   }, []);
 
+  // Teacher only: Teaching Mode (camera tuned for handwriting). On / off is
+  // off on every join and never persisted; its frame rate and detail hint
+  // are the teacher's saved preferences (like the video quality). custom.js
+  // reports what it applied.
+  const [teachingMode, setTeachingMode] = useState(false);
+  const [teachingFps, setTeachingFps] = useState<number>(() =>
+    parseStoredFrameRate(readStorage(TEACHING_FRAME_RATE_STORAGE_KEY))
+  );
+  const [teachingDetailHint, setTeachingDetailHint] = useState<boolean>(() =>
+    parseStoredBoolean(readStorage(TEACHING_DETAIL_HINT_STORAGE_KEY), true)
+  );
+  const [teachingModeStatus, setTeachingModeStatus] = useState<TeachingModeStatus | null>(null);
+  // The latest settings, for the (stable) callbacks and the rejoin resend.
+  const teachingSettingsRef = useRef<TeachingModeSettings>({
+    enabled: false,
+    maxFps: teachingFps,
+    detailHint: teachingDetailHint,
+  });
+
+  const applyTeachingSettings = useCallback((change: Partial<TeachingModeSettings>) => {
+    const next = { ...teachingSettingsRef.current, ...change };
+
+    teachingSettingsRef.current = next;
+    setTeachingMode(next.enabled);
+    setTeachingFps(next.maxFps);
+    setTeachingDetailHint(next.detailHint);
+    jitsiMeetingRef.current?.setTeachingMode(next);
+  }, []);
+
+  const handleSetTeachingMode = useCallback((enabled: boolean) => {
+    applyTeachingSettings({ enabled });
+  }, [applyTeachingSettings]);
+
+  const handleSetTeachingFps = useCallback((maxFps: number) => {
+    if (!isTeachingFrameRate(maxFps)) {
+      return;
+    }
+
+    writeStorage(TEACHING_FRAME_RATE_STORAGE_KEY, String(maxFps));
+    applyTeachingSettings({ maxFps });
+  }, [applyTeachingSettings]);
+
+  const handleSetTeachingDetailHint = useCallback((detailHint: boolean) => {
+    writeStorage(TEACHING_DETAIL_HINT_STORAGE_KEY, String(detailHint));
+    applyTeachingSettings({ detailHint });
+  }, [applyTeachingSettings]);
+
+  // Teacher only: video diagnostics (WebRTC stats measured by custom.js).
+  // Off on every join and never persisted; read-only, it changes no video
+  // setting. The last snapshots are kept (bounded) for "Copy diagnostics".
+  const [videoDiagnostics, setVideoDiagnostics] = useState(false);
+  const videoDiagnosticsRef = useRef(false);
+  const [videoTelemetry, setVideoTelemetry] = useState<VideoTelemetryStatus | null>(null);
+  const videoTelemetryHistoryRef = useRef<ReturnType<typeof createTelemetryHistory> | null>(null);
+
+  const getVideoTelemetryHistory = () => {
+    if (!videoTelemetryHistoryRef.current) {
+      videoTelemetryHistoryRef.current = createTelemetryHistory();
+    }
+
+    return videoTelemetryHistoryRef.current;
+  };
+
+  const handleSetVideoDiagnostics = useCallback((enabled: boolean) => {
+    videoDiagnosticsRef.current = enabled;
+    setVideoDiagnostics(enabled);
+    setVideoTelemetry(null);
+    jitsiMeetingRef.current?.setVideoTelemetry(enabled);
+  }, []);
+
+  const handleVideoTelemetry = useCallback((status: VideoTelemetryStatus) => {
+    // A late snapshot after the teacher turned it off is dropped.
+    if (!videoDiagnosticsRef.current) {
+      return;
+    }
+
+    if (status.active) {
+      getVideoTelemetryHistory().push(status);
+    }
+
+    setVideoTelemetry(status);
+  }, []);
+
+  // A reporting participant's name: only through the authenticated
+  // studentId -> participantId map, never from a Jitsi display name.
+  const videoTelemetryLabel = useCallback(
+    (participantId: string) => resolveStudentLabel(participantId, participantMap, classStudents).label,
+    [participantMap, classStudents]
+  );
+
+  const copyVideoDiagnostics = useCallback(async () => {
+    const json = buildDiagnosticsExport(getVideoTelemetryHistory().entries(), videoTelemetryLabel, {
+      userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
+    });
+
+    try {
+      await navigator.clipboard.writeText(json);
+
+      return true;
+    } catch {
+      return false;
+    }
+  }, [videoTelemetryLabel]);
+
   const [meetingReady, setMeetingReady] =
     useState(false);
 
@@ -1353,6 +1471,16 @@ const [classStudents, setClassStudents] =
               // A (re)joined conference: Jibri's state is unknown until its
               // next status event.
               youtubeStreamRef.current?.conferenceChanged();
+              // Teaching Mode stays as the teacher left it, even if the
+              // meeting component was recreated (useJitsi also resends it
+              // whenever custom.js reports ready).
+              if (role === "teacher" && teachingSettingsRef.current.enabled) {
+                jitsiMeetingRef.current?.setTeachingMode(teachingSettingsRef.current);
+              }
+              // Video diagnostics too (read-only).
+              if (role === "teacher" && videoDiagnosticsRef.current) {
+                jitsiMeetingRef.current?.setVideoTelemetry(true);
+              }
               setIsConferenceJoined(true);
               setConferenceGeneration((generation) => generation + 1);
             }}
@@ -1360,6 +1488,8 @@ const [classStudents, setClassStudents] =
             onModeratorStatusChanged={setIsModerator}
             onTeacherTilesNav={role === "teacher" ? handleTeacherTilesNav : undefined}
             onTeacherTilesSettings={role === "teacher" ? handleTeacherTilesSettings : undefined}
+            onTeachingModeStatus={role === "teacher" ? setTeachingModeStatus : undefined}
+            onVideoTelemetry={role === "teacher" ? handleVideoTelemetry : undefined}
             joinInfo={joinInfo}
             role={role}
             teacherName={teacherName}
@@ -1621,6 +1751,18 @@ const [classStudents, setClassStudents] =
           onSetNoiseSuppression={(enabled) =>
             jitsiMeetingRef.current?.setNoiseSuppression(enabled)
           }
+          teachingMode={teachingMode}
+          teachingModeStatus={teachingModeStatus}
+          onSetTeachingMode={role === "teacher" ? handleSetTeachingMode : undefined}
+          teachingFps={teachingFps}
+          onSetTeachingFps={role === "teacher" ? handleSetTeachingFps : undefined}
+          teachingDetailHint={teachingDetailHint}
+          onSetTeachingDetailHint={role === "teacher" ? handleSetTeachingDetailHint : undefined}
+          videoDiagnostics={videoDiagnostics}
+          videoTelemetry={videoTelemetry}
+          videoTelemetryLabel={videoTelemetryLabel}
+          onSetVideoDiagnostics={role === "teacher" ? handleSetVideoDiagnostics : undefined}
+          onCopyVideoDiagnostics={role === "teacher" ? copyVideoDiagnostics : undefined}
         />
         </div>
       )}

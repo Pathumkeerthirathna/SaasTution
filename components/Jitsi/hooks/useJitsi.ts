@@ -28,6 +28,16 @@ import {
   type BreakoutControls,
 } from "../breakout-utils";
 
+import {
+  buildTeachingModeMessage,
+  createVideoQualityController,
+  isTeachingFrameRate,
+} from "../teacher-camera-preferences.mjs";
+import {
+  buildVideoTelemetryMessage,
+  parseVideoTelemetryStatus,
+} from "../video-telemetry.mjs";
+
 import type { TeacherTilesState } from "./useTeacherTiles";
 import { toYouTubeStreamStatus } from "../youtube-jibri";
 import { fetchStagePhoto, toStageTeacher } from "../stage-teacher.mjs";
@@ -108,6 +118,35 @@ export type JitsiControls = BreakoutControls & {
    * only. Display and receive policy only: nothing is changed for students.
    */
   setTeacherTiles: (state: TeacherTilesState) => void;
+
+  /**
+   * Teacher only: Teaching Mode in the teacher's own Jitsi iframe
+   * (custom.js): the teacher's camera capped at `maxFps` (15 / 24 / 30),
+   * optionally with contentHint "detail". Off, or a changed setting,
+   * restores the camera's original settings first. What was applied comes
+   * back through `onTeachingModeStatus`.
+   */
+  setTeachingMode: (settings: TeachingModeSettings) => void;
+
+  /**
+   * Teacher only: video diagnostics in the teacher's own Jitsi iframe
+   * (custom.js): what the teacher's camera is really sent at and what each
+   * student really receives, from WebRTC stats. Read-only; the results come
+   * back through `onVideoTelemetry`.
+   */
+  setVideoTelemetry: (enabled: boolean) => void;
+};
+
+/** custom.js's video diagnostics snapshot (SL_VIDEO_TELEMETRY_STATUS). */
+export type VideoTelemetryStatus = NonNullable<ReturnType<typeof parseVideoTelemetryStatus>>;
+
+/** Teaching Mode as the teacher chose it. */
+export type TeachingModeSettings = {
+  enabled: boolean;
+  /** 15 | 24 | 30 (TEACHING_FRAME_RATES). */
+  maxFps: number;
+  /** Set contentHint "detail" on the camera track. */
+  detailHint: boolean;
 };
 
 /** Teacher page -> its own Jitsi iframe (handled by custom.js): Tiles view. */
@@ -372,6 +411,76 @@ const SL_DEVICE_STATUS_ENABLED =
   process.env.NEXT_PUBLIC_SL_DEVICE_STATUS === "true";
 
 /**
+ * Teacher page -> its own Jitsi iframe (handled by custom.js): Teaching Mode,
+ * the teacher's own camera tuned for handwriting (a 15 / 24 / 30 fps cap
+ * merged into the camera's constraints, optionally contentHint "detail";
+ * both restored when off). Send side, teacher only: simulcast and Jitsi's
+ * adaptive quality stay on. Built by buildTeachingModeMessage; an older
+ * custom.js ignores maxFps / detailHint (15 fps + "detail").
+ */
+type TeachingModeMessage = ReturnType<typeof buildTeachingModeMessage>;
+
+const TEACHING_MODE_HINT_STATES = ["applied", "disabled", "unsupported", "failed"] as const;
+const TEACHING_MODE_FRAME_RATE_STATES = ["applied", "kept", "pending", "unsupported", "failed"] as const;
+
+/**
+ * Teacher's Jitsi iframe (custom.js) -> page: what Teaching Mode applied to
+ * the live camera track (SL_TEACHING_MODE_STATUS). `null` parts: nothing
+ * tried yet (mode off, no camera, not a moderator yet).
+ */
+export type TeachingModeStatus = {
+  enabled: boolean;
+  /** On for this participant (enabled and the local Jitsi moderator). */
+  active: boolean;
+  /** A live local camera track exists. */
+  camera: boolean;
+  contentHint: (typeof TEACHING_MODE_HINT_STATES)[number] | null;
+  /** "kept": the camera was already capped at or below the chosen cap. */
+  frameRate: (typeof TEACHING_MODE_FRAME_RATE_STATES)[number] | null;
+  /** The camera's reported frame rate, when known. */
+  fps: number | null;
+  /** The cap and hint custom.js is applying (null: an older custom.js). */
+  maxFps: number | null;
+  detailHint: boolean | null;
+};
+
+function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+  return values.some((candidate) => candidate === value);
+}
+
+function toTeachingModeStatus(data: unknown): TeachingModeStatus | null {
+  const message = data as Record<string, unknown> | null;
+
+  if (
+    !message ||
+    message.type !== "SL_TEACHING_MODE_STATUS" ||
+    message.v !== 1 ||
+    typeof message.enabled !== "boolean" ||
+    typeof message.active !== "boolean" ||
+    typeof message.camera !== "boolean" ||
+    (message.contentHint !== null && !oneOf(TEACHING_MODE_HINT_STATES, message.contentHint)) ||
+    (message.frameRate !== null && !oneOf(TEACHING_MODE_FRAME_RATE_STATES, message.frameRate)) ||
+    (message.fps !== null && (typeof message.fps !== "number" || !Number.isFinite(message.fps))) ||
+    // Absent from an older custom.js.
+    (message.maxFps !== undefined && !isTeachingFrameRate(message.maxFps)) ||
+    (message.detailHint !== undefined && typeof message.detailHint !== "boolean")
+  ) {
+    return null;
+  }
+
+  return {
+    enabled: message.enabled,
+    active: message.active,
+    camera: message.camera,
+    contentHint: message.contentHint as TeachingModeStatus["contentHint"],
+    frameRate: message.frameRate as TeachingModeStatus["frameRate"],
+    fps: message.fps as number | null,
+    maxFps: typeof message.maxFps === "number" ? message.maxFps : null,
+    detailHint: typeof message.detailHint === "boolean" ? message.detailHint : null,
+  };
+}
+
+/**
  * The SL Classroom Jitsi server. The only origin the receive set is posted to,
  * and the only origin messages from the Jitsi iframe (custom.js) are accepted from.
  */
@@ -460,6 +569,12 @@ type UseJitsiProps = {
   /** Teacher only: View / Tiles page size chosen in the iframe's settings menu. */
   onTeacherTilesSettings?: (change: TeacherTilesSettingsChange) => void;
 
+  /** Teacher only: what Teaching Mode applied to the camera (from custom.js). */
+  onTeachingModeStatus?: (status: TeachingModeStatus) => void;
+
+  /** Teacher only: video diagnostics snapshots (from custom.js, every ~5 s while on). */
+  onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
+
   /** Whether the page shows the meeting fullscreen (students: device status placement). */
   isFullscreen?: boolean;
 
@@ -490,6 +605,8 @@ export default function useJitsi({
   onBreakoutSupportChanged,
   onTeacherTilesNav,
   onTeacherTilesSettings,
+  onTeachingModeStatus,
+  onVideoTelemetry,
   isFullscreen = false,
   devices = null,
 
@@ -529,6 +646,12 @@ export default function useJitsi({
 
   const onTeacherTilesSettingsRef = useRef(onTeacherTilesSettings);
   onTeacherTilesSettingsRef.current = onTeacherTilesSettings;
+
+  const onTeachingModeStatusRef = useRef(onTeachingModeStatus);
+  onTeachingModeStatusRef.current = onTeachingModeStatus;
+
+  const onVideoTelemetryRef = useRef(onVideoTelemetry);
+  onVideoTelemetryRef.current = onVideoTelemetry;
 
   const onBreakoutRoomsUpdatedRef = useRef(onBreakoutRoomsUpdated);
   onBreakoutRoomsUpdatedRef.current = onBreakoutRoomsUpdated;
@@ -829,6 +952,71 @@ export default function useJitsi({
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
+  // The teacher's maximum send quality: kept, and sent to Jitsi once per
+  // conference join (handleJoined), so neither a choice made before Jitsi
+  // is ready nor a reconnect loses it. One controller for the hook's life.
+  const videoQualityControllerRef = useRef<ReturnType<typeof createVideoQualityController> | null>(null);
+
+  const getVideoQualityController = () => {
+    if (!videoQualityControllerRef.current) {
+      videoQualityControllerRef.current = createVideoQualityController((height) => {
+        if (!apiRef.current) {
+          return false;
+        }
+
+        apiRef.current.executeCommand("setVideoQuality", height);
+
+        return true;
+      });
+    }
+
+    return videoQualityControllerRef.current;
+  };
+
+  // Teaching Mode: kept and resent on SL_RECEIVE_READY, like the teacher
+  // view. Nothing is sent until the teacher turns it on (off by default).
+  const teachingModeEpochRef = useRef(0);
+  const teachingModeRef = useRef<TeachingModeMessage | null>(null);
+
+  const postTeachingMode = () => {
+    const message = teachingModeRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
+  // Video diagnostics: kept and resent on SL_RECEIVE_READY, like Teaching
+  // Mode. Nothing is sent until the teacher turns it on (off by default).
+  const videoTelemetryEpochRef = useRef(0);
+  const videoTelemetryRef = useRef<ReturnType<typeof buildVideoTelemetryMessage> | null>(null);
+
+  const postVideoTelemetry = () => {
+    const message = videoTelemetryRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
   useImperativeHandle(
     controlsRef,
     () => ({
@@ -986,14 +1174,14 @@ export default function useJitsi({
       },
 
       setVideoQuality: (heightPx) => {
-        if (!apiRef.current) {
-          console.warn("Jitsi API is not ready");
-          return;
-        }
+        // Kept and sent on every conference join (first join, reconnect,
+        // breakout switch): a choice made before Jitsi is ready is not lost.
+        const sent = getVideoQualityController().setDesired(heightPx);
 
-        console.log("🎚️ Setting video quality:", heightPx);
-
-        apiRef.current.executeCommand("setVideoQuality", heightPx);
+        console.log(
+          sent ? "🎚️ Setting video quality:" : "🎚️ Video quality kept for the next conference join:",
+          heightPx
+        );
       },
 
       setNoiseSuppression: (enabled) => {
@@ -1092,6 +1280,28 @@ export default function useJitsi({
 
         postTeacherTiles();
       },
+
+      setTeachingMode: (settings) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        teachingModeEpochRef.current += 1;
+        teachingModeRef.current = buildTeachingModeMessage(teachingModeEpochRef.current, settings);
+
+        postTeachingMode();
+      },
+
+      setVideoTelemetry: (enabled) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        videoTelemetryEpochRef.current += 1;
+        videoTelemetryRef.current = buildVideoTelemetryMessage(videoTelemetryEpochRef.current, enabled);
+
+        postVideoTelemetry();
+      },
     }),
     []
   );
@@ -1123,7 +1333,7 @@ export default function useJitsi({
       // custom.js is (re)ready inside the iframe: send the current state again,
       // since anything sent earlier may have been missed. Teacher: receive set,
       // then the monitoring-grid view, then the normal mode teacher view and
-      // its Tiles view page.
+      // its Tiles view page, then Teaching Mode.
       // Student: the student view, then the custom stage view and the device
       // status view. Each post checks the role itself, so only the matching
       // ones are sent. Both: the toolbar view.
@@ -1135,7 +1345,31 @@ export default function useJitsi({
         postDeviceStatusView();
         postTeacherView();
         postTeacherTiles();
+        postTeachingMode();
+        postVideoTelemetry();
         postToolbarView();
+        return;
+      }
+
+      // Video diagnostics: what custom.js measured (teacher only).
+      const videoTelemetry = parseVideoTelemetryStatus(event.data);
+
+      if (videoTelemetry) {
+        if (roleRef.current === "teacher") {
+          onVideoTelemetryRef.current?.(videoTelemetry);
+        }
+
+        return;
+      }
+
+      // Teaching Mode: what custom.js applied to the teacher's camera.
+      const teachingModeStatus = toTeachingModeStatus(event.data);
+
+      if (teachingModeStatus) {
+        if (roleRef.current === "teacher") {
+          onTeachingModeStatusRef.current?.(teachingModeStatus);
+        }
+
         return;
       }
 
@@ -1613,6 +1847,10 @@ export default function useJitsi({
         }
       }
 
+      // The teacher's maximum send quality, once per join (first join,
+      // reconnect, breakout switch); nothing is sent if none was chosen.
+      getVideoQualityController().conferenceJoined();
+
       // Student view, custom stage view, device status view and toolbar view
       // on every join (first join, reconnect, breakout switch).
       postStudentView();
@@ -1679,6 +1917,9 @@ export default function useJitsi({
       // Breakout switches also fire "left". Wait briefly for the matching "joined"
       // before recording that the student left the class.
       cancelPendingLeave();
+
+      // The next "joined" (a reconnect or room switch) sends the quality again.
+      getVideoQualityController().conferenceLeft();
 
       pendingLeaveTimer = setTimeout(() => {
         pendingLeaveTimer = null;
@@ -2032,6 +2273,8 @@ export default function useJitsi({
 
       cancelPendingLeave();
       inBreakoutRef.current = false;
+      // A recreated meeting gets the quality again on its first join.
+      getVideoQualityController().conferenceLeft();
 
       api.dispose();
 

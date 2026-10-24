@@ -280,6 +280,23 @@ class FakeElement {
             return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top };
         }
 
+        // Responsive tests: the teacher view / Jitsi's page fills the
+        // window's size; an element may be given its own rect (by id or by
+        // its first class) as a browser would lay it out.
+        const doc = this.ownerDocument;
+        const override = (this.id && doc._rects[this.id])
+            || [...this.classList.set].map(name => doc._rects[name]).find(Boolean);
+
+        if (override) {
+            return typeof override === "function" ? override(this) : override;
+        }
+
+        if (this.id === "sl-teacher-view" || this.id === "videoconference_page") {
+            const { width, height } = doc._rootSize;
+
+            return { top: 0, left: 0, right: width, bottom: height, width, height, x: 0, y: 0 };
+        }
+
         return { top: 0, left: 0, right: 1280, bottom: 800, width: 1280, height: 800, x: 0, y: 0 };
     }
 
@@ -408,6 +425,10 @@ class FakeDocument {
         this._resizeObservers = [];
         // The Tiles grid's size (clientWidth / clientHeight).
         this._gridSize = { width: 1280, height: 800 };
+        // The window's size, which the teacher view (and Jitsi's page) fills.
+        this._rootSize = { width: 1280, height: 800 };
+        // Per-element rects (by id or class), for layout-dependent code.
+        this._rects = {};
         this.listeners = {};
         this.documentElement = new FakeElement(this, "html");
         this.head = new FakeElement(this, "head");
@@ -677,6 +698,16 @@ function createHarness(options = {}) {
             return true;
         }
     };
+
+    // A touch screen or not, for responsive tests (options.matchMedia: true).
+    // Without the option there is no matchMedia, as before.
+    harness.coarsePointer = false;
+
+    if (options.matchMedia) {
+        ctx.matchMedia = query => ({
+            matches: query === "(pointer: coarse)" ? harness.coarsePointer : false
+        });
+    }
 
     ctx.window = ctx;
     ctx.self = ctx;
@@ -1000,6 +1031,28 @@ function createHarness(options = {}) {
             doc._resizeObservers.forEach(observer => {
                 observer.targets.forEach(target => {
                     if (target.classList && target.classList.contains("sl-tv-grid")) {
+                        observer.callback([]);
+                    }
+                });
+            });
+            await harness.flush();
+            await harness.flush();
+        },
+
+        // The window changes size (rotation, browser bars, the page's own
+        // header): the view and the Tiles grid get new sizes and their
+        // ResizeObservers fire, as in a browser.
+        async resizeRoot(width, height, grid = null) {
+            doc._rootSize = { width, height };
+
+            if (grid) {
+                doc._gridSize = { width: grid.width, height: grid.height };
+            }
+
+            doc._resizeObservers.forEach(observer => {
+                observer.targets.forEach(target => {
+                    if (target.id === "sl-teacher-view"
+                        || (target.classList && target.classList.contains("sl-tv-grid"))) {
                         observer.callback([]);
                     }
                 });

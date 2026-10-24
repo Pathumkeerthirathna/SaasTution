@@ -27,6 +27,9 @@ import useJitsi, {
   JitsiControls,
   type TeacherTilesNavAction,
   type TeacherTilesSettingsChange,
+  type TeachingModeSettings,
+  type TeachingModeStatus,
+  type VideoTelemetryStatus,
 } from "./hooks/useJitsi";
 import type { TeacherTilesState } from "./hooks/useTeacherTiles";
 
@@ -105,6 +108,12 @@ type JitsiMeetingProps = {
   /** Teacher only: View / Tiles page size chosen in the iframe's settings menu. */
   onTeacherTilesSettings?: (change: TeacherTilesSettingsChange) => void;
 
+  /** Teacher only: what Teaching Mode applied to the camera (see useJitsi). */
+  onTeachingModeStatus?: (status: TeachingModeStatus) => void;
+
+  /** Teacher only: video diagnostics snapshots (see useJitsi). */
+  onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
+
 };
 
 const JitsiMeeting = forwardRef<
@@ -130,6 +139,8 @@ const JitsiMeeting = forwardRef<
     onBreakoutSupportChanged,
     onTeacherTilesNav,
     onTeacherTilesSettings,
+    onTeachingModeStatus,
+    onVideoTelemetry,
   },
   ref
 ) {
@@ -254,6 +265,14 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setTeacherTiles(state);
       },
 
+      setTeachingMode: (settings: TeachingModeSettings) => {
+        controlsRef.current?.setTeachingMode(settings);
+      },
+
+      setVideoTelemetry: (enabled: boolean) => {
+        controlsRef.current?.setVideoTelemetry(enabled);
+      },
+
       requestFullscreen: () => {
         const element = fullscreenWrapperRef.current;
 
@@ -322,6 +341,8 @@ const JitsiMeeting = forwardRef<
     onBreakoutSupportChanged,
     onTeacherTilesNav,
     onTeacherTilesSettings,
+    onTeachingModeStatus,
+    onVideoTelemetry,
     isFullscreen,
     devices: selectedDevices,
   });

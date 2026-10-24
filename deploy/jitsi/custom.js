@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1010;
+const SL_CUSTOM_JS_VERSION = 1014;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -1153,14 +1153,14 @@ window.addEventListener("load", () => {
 
 
 
-setInterval(() => {
+// setInterval(() => {
 
-    if (!window.APP || !APP.conference)
-        return;
+//     if (!window.APP || !APP.conference)
+//         return;
 
-    console.log(APP);
+//     console.log(APP);
 
-}, 3000);
+// }, 3000);
 
 
 // STEP 1 - Find Jitsi menu items
@@ -4812,8 +4812,9 @@ const SL_DEVICE_STATUS_GAP = 8;
 
    Phase B: the filmstrip sits right (default), left, top or bottom,
    vertical at the sides and horizontal at the top/bottom; a narrow
-   portrait screen always gets it at the bottom (the choice itself is
-   kept). The teacher picks the position with a small layout button
+   screen or an upright touch tablet gets it at the bottom (the choice
+   itself is kept), unless the teacher picks a position there that fits
+   (kept for the page session; positions that do not fit are disabled). The teacher picks the position with a small layout button
    on the filmstrip; the choice applies at once and is reported to
    the parent page, which remembers it (localStorage) and sends it
    back with SL_TEACHER_VIEW on the next join:
@@ -4891,6 +4892,22 @@ const SL_DEVICE_STATUS_GAP = 8;
     // The tile width the columns were chosen for (layoutTilesGrid).
     const SL_TV_VAR_TILE_W = "--sl-tv-tile-w";
     const SL_TV_GRID_GAP = 8;
+    // Narrowest grid tile: a page that fits only with smaller tiles keeps
+    // this width and the grid scrolls (phones). Larger screens always fit.
+    const SL_TV_MIN_TILE_W = 96;
+    // Below this tile width the placeholder shows only a small icon + name.
+    const SL_TV_COMPACT_TILE_W = 112;
+    const SL_TV_GRID_COMPACT_CLASS = "sl-tv-grid-compact";
+    // Space kept free under the grid for Jitsi's toolbar (CSS padding-bottom):
+    // the default, a short screen's, and none when the toolbar floats over a
+    // stacked enlarged panel instead.
+    const SL_TV_VAR_GRID_PAD_B = "--sl-tv-grid-pad-b";
+    const SL_TV_GRID_RESERVE = 96;
+    const SL_TV_GRID_RESERVE_SHORT = 64;
+    const SL_TV_GRID_RESERVE_STACKED = 8;
+    const SL_TV_SHORT_HEIGHT = 500;
+    // The enlarged panel stacks under the grid at this width and below (CSS).
+    const SL_TV_PANEL_STACK_WIDTH = 640;
     const SL_TV_TILES_MAX_PAGE = 50;
     const SL_TV_PARTICIPANT_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
     const SL_TV_CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -4930,15 +4947,25 @@ const SL_DEVICE_STATUS_GAP = 8;
     const SL_TV_DEFAULT_STRIP_H = 140;
     // Auto-hide: this long after the pointer leaves the filmstrip.
     const SL_TV_AUTO_HIDE_MS = 4000;
-    // Portrait screens narrower than this show the filmstrip at the bottom
-    // (the teacher's chosen position is kept and comes back when wider).
+    // Screens narrower than this show the filmstrip at the bottom, whatever
+    // their shape (a phone's page chrome can leave a portrait phone's view
+    // wider than tall); so do upright touch screens narrower than the tablet
+    // width. The teacher's chosen position is kept and comes back when the
+    // screen allows it.
     const SL_TV_NARROW_WIDTH = 600;
+    const SL_TV_TABLET_MAX_WIDTH = 1100;
+    // Settings menu on a short screen: kept this far from the view's edge,
+    // and lifted over the toolbar only if at least this much height is left.
+    const SL_TV_MENU_EDGE = 8;
+    const SL_TV_MENU_MIN_HEIGHT = 120;
     const SL_TV_KEY_STEP = 16;
 
     // Filmstrip layout control: the teacher picks the position on the
     // filmstrip itself. The choice is reported to the parent page, which
     // remembers it (localStorage) and sends it back with SL_TEACHER_VIEW.
     const SL_TV_POSITION_LABELS = { right: "Right", left: "Left", top: "Top", bottom: "Bottom" };
+    // The menu's note (also describes positions that do not fit the screen).
+    const SL_TV_LAYOUT_NOTE_ID = "sl-tv-layout-note";
     // Static inline icons: a frame with the filmstrip's side filled in.
     const SL_TV_LAYOUT_ICONS = {
         button: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.25"/><path d="M14.5 4.5v15"/><path d="M16.75 8.25h1.5M16.75 11.25h1.5"/></svg>',
@@ -4969,6 +4996,10 @@ const SL_DEVICE_STATUS_GAP = 8;
     // Kept outside the view's DOM: the view is removed and rebuilt (Exam Mode,
     // disable), and the layout must survive that.
     let preferredPosition = "right";
+    // The teacher chose a position while the screen was placing the filmstrip
+    // at the bottom by itself: that choice then wins wherever it fits. This
+    // page session only (never persisted or reported); survives Exam Mode.
+    let positionChosenHere = false;
     // The teacher's dragged sizes in px, one per orientation; null = default
     // (vertical: Phase A's min(240px, 38vw)).
     const stripSizes = { vertical: null, horizontal: null };
@@ -5644,12 +5675,53 @@ const SL_DEVICE_STATUS_GAP = 8;
         return { width: box.width || window.innerWidth || 0, height: box.height || window.innerHeight || 0 };
     }
 
-    // The teacher's position, except on a narrow portrait screen, which gets
-    // the filmstrip at the bottom. The preference itself is never changed.
+    // A touch screen (no fine pointer): tablets and phones.
+    function isCoarsePointer() {
+        try {
+            return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    // Whether the screen places the filmstrip at the bottom by itself: a
+    // narrow screen (any shape), or an upright touch screen up to tablet
+    // width. Only when the height still fits the smallest stage above the
+    // smallest strip.
+    function isAutoBottom(box) {
+        if (box.width <= 0 || box.height < SL_TV_MIN_STAGE_HEIGHT + SL_TV_MIN_STRIP_H) {
+            return false;
+        }
+
+        const narrow = box.width < SL_TV_NARROW_WIDTH;
+        const uprightTablet = box.height > box.width && box.width < SL_TV_TABLET_MAX_WIDTH && isCoarsePointer();
+
+        return narrow || uprightTablet;
+    }
+
+    // The smallest strip beside / above the smallest stage fits.
+    function positionFits(position, box) {
+        return isVerticalPosition(position)
+            ? box.width >= SL_TV_MIN_STRIP_V + SL_TV_MIN_STAGE_WIDTH
+            : box.height >= SL_TV_MIN_STAGE_HEIGHT + SL_TV_MIN_STRIP_H;
+    }
+
+    // Whether the teacher can choose this position now: always, except
+    // while the screen places the filmstrip itself, where it must fit.
+    function isPositionAvailable(position, box) {
+        return !isAutoBottom(box) || positionFits(position, box);
+    }
+
+    // The teacher's position, except where the screen places the filmstrip
+    // at the bottom by itself; there a position the teacher chose there
+    // (positionChosenHere) still wins while it fits. The preference itself
+    // is never changed and nothing is reported to the parent page.
     function getEffectivePosition(box) {
-        return box.width > 0 && box.width < SL_TV_NARROW_WIDTH && box.height > box.width
-            ? "bottom"
-            : preferredPosition;
+        if (!isAutoBottom(box)) {
+            return preferredPosition;
+        }
+
+        return positionChosenHere && positionFits(preferredPosition, box) ? preferredPosition : "bottom";
     }
 
     function clamp(value, bounds) {
@@ -6052,6 +6124,7 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         const note = document.createElement("div");
         note.className = "sl-tv-layout-note";
+        note.id = SL_TV_LAYOUT_NOTE_ID;
         layoutMenuEl.appendChild(note);
 
         const divider = document.createElement("div");
@@ -6070,14 +6143,31 @@ const SL_DEVICE_STATUS_GAP = 8;
     }
 
     // Checked = the teacher's choice. A note explains when the screen shows
-    // it elsewhere (narrow portrait screen: bottom).
+    // it elsewhere (bottom), and which positions do not fit this screen
+    // (marked aria-disabled; choosing one changes nothing).
     function updateLayoutMenu() {
         if (!layoutMenuEl) {
             return;
         }
 
+        const box = getLayoutBox();
+        const unavailable = [];
+
         layoutMenuEl.querySelectorAll(".sl-tv-layout-item[data-position]").forEach(item => {
-            item.setAttribute("aria-checked", item.dataset.position === preferredPosition ? "true" : "false");
+            const position = item.dataset.position;
+
+            item.setAttribute("aria-checked", position === preferredPosition ? "true" : "false");
+
+            if (isPositionAvailable(position, box)) {
+                item.removeAttribute("aria-disabled");
+                item.removeAttribute("aria-describedby");
+                item.removeAttribute("title");
+            } else {
+                unavailable.push(SL_TV_POSITION_LABELS[position]);
+                item.setAttribute("aria-disabled", "true");
+                item.setAttribute("aria-describedby", SL_TV_LAYOUT_NOTE_ID);
+                item.setAttribute("title", "Needs a wider screen");
+            }
         });
 
         // View: what the parent page last sent; page sizes only for Tiles.
@@ -6095,9 +6185,12 @@ const SL_DEVICE_STATUS_GAP = 8;
         const effective = root?.dataset.pos || preferredPosition;
         const note = layoutMenuEl.querySelector(".sl-tv-layout-note");
 
-        note.textContent = effective !== preferredPosition
-            ? "Shown at the bottom while the screen is narrow and upright."
-            : "";
+        note.textContent = [
+            effective !== preferredPosition ? "Shown at the bottom on this screen size." : "",
+            unavailable.length
+                ? unavailable.join(" and ") + (unavailable.length > 1 ? " need" : " needs") + " a wider screen."
+                : ""
+        ].filter(Boolean).join(" ");
 
         autoHideSwitchEl?.setAttribute("aria-checked", autoHideEnabled ? "true" : "false");
     }
@@ -6105,14 +6198,21 @@ const SL_DEVICE_STATUS_GAP = 8;
     // Bottom filmstrip: the menu opens upward, where Jitsi's toolbar floats
     // (it is drawn above our whole view, and on narrow screens spans the
     // width). If they overlap, the menu is lifted just above the toolbar and
-    // its hide/show control. Otherwise CSS alone places the menu.
+    // its hide/show control. Otherwise CSS alone places the menu. Then the
+    // menu's height is fitted to the view (fitLayoutMenu).
     function liftLayoutMenu() {
         if (!layoutMenuEl) {
             return;
         }
 
         layoutMenuEl.style.bottom = "";
+        layoutMenuEl.style.maxHeight = "";
 
+        raiseLayoutMenu();
+        fitLayoutMenu();
+    }
+
+    function raiseLayoutMenu() {
         if (!isLayoutMenuOpen() || root?.dataset.pos !== "bottom" || isTilesMode()) {
             return;
         }
@@ -6131,10 +6231,38 @@ const SL_DEVICE_STATUS_GAP = 8;
         }
 
         const clearTop = Math.min(...covers.map(r => r.top)) - 6;
-        const lift = Math.min(menu.bottom - clearTop, Math.max(menu.top - 4, 0));
+        // A menu taller than the room above it (short screens) is still
+        // lifted clear of the toolbar when enough room is left there for
+        // fitLayoutMenu to make it a usable scrolling menu; otherwise it is
+        // lifted only as far as the view's top allows, as before.
+        const viewTop = root.getBoundingClientRect().top;
+        const roomAbove = clearTop - viewTop - SL_TV_MENU_EDGE;
+        const lift = menu.top - 4 < menu.bottom - clearTop && roomAbove >= SL_TV_MENU_MIN_HEIGHT
+            ? menu.bottom - clearTop
+            : Math.min(menu.bottom - clearTop, Math.max(menu.top - 4, 0));
         const current = parseFloat(getComputedStyle(layoutMenuEl).bottom) || 0;
 
         layoutMenuEl.style.bottom = Math.round(current + lift) + "px";
+    }
+
+    // List view: a menu taller than the room between its anchor and the
+    // view's far edge (landscape phones) is capped there and scrolls inside
+    // (CSS overflow-y), so every option stays reachable. A menu that fits is
+    // left as it is. The Tiles view's grid-bar menu has its own CSS cap.
+    function fitLayoutMenu() {
+        if (!isLayoutMenuOpen() || !root || isTilesMode()) {
+            return;
+        }
+
+        const view = root.getBoundingClientRect();
+        const menu = layoutMenuEl.getBoundingClientRect();
+        const room = root.dataset.pos === "top"
+            ? view.bottom - menu.top - SL_TV_MENU_EDGE
+            : menu.bottom - view.top - SL_TV_MENU_EDGE;
+
+        if (room > 0 && room < menu.height) {
+            layoutMenuEl.style.maxHeight = Math.floor(room) + "px";
+        }
     }
 
     function openLayoutMenu() {
@@ -6204,10 +6332,13 @@ const SL_DEVICE_STATUS_GAP = 8;
         if (target && layoutMenuEl.parentNode !== target) {
             target.appendChild(layoutMenuEl);
             layoutMenuEl.style.bottom = "";
+            layoutMenuEl.style.maxHeight = "";
 
             if (isLayoutMenuOpen()) {
                 layoutButtonEl?.setAttribute("aria-expanded", isTilesMode() ? "false" : "true");
                 gridSettingsEl?.setAttribute("aria-expanded", isTilesMode() ? "true" : "false");
+                // Fitted again where it now opens.
+                liftLayoutMenu();
             }
         }
     }
@@ -6227,13 +6358,34 @@ const SL_DEVICE_STATUS_GAP = 8;
     }
 
     // The teacher's choice: applied here at once, and reported to the parent
-    // page, which remembers it for the next reload / join.
+    // page, which remembers it for the next reload / join. While the screen
+    // places the filmstrip itself, the choice wins over it (wherever it
+    // fits); a position that does not fit cannot be chosen: the menu stays
+    // open and its note says why.
     function chooseLayoutPosition(position) {
         if (!SL_TV_POSITIONS.includes(position)) {
             return;
         }
 
-        setPreferredPosition(position);
+        const box = getLayoutBox();
+
+        if (!isPositionAvailable(position, box)) {
+            updateLayoutMenu();
+            return;
+        }
+
+        if (isAutoBottom(box)) {
+            positionChosenHere = true;
+        }
+
+        // The same position again still applies (it may now win over the
+        // screen's own position).
+        if (position === preferredPosition) {
+            applyLayout();
+        } else {
+            setPreferredPosition(position);
+        }
+
         closeLayoutMenu();
         layoutButtonEl?.focus({ preventScroll: true });
 
@@ -6520,7 +6672,7 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + "[data-pos=left] .sl-tv-layout-menu { right: auto; left: 8px; }",
             "#" + SL_TV_ID + "[data-pos=top] .sl-tv-layout-menu { bottom: auto; top: calc(100% + 6px); right: 4px; }",
             "#" + SL_TV_ID + "[data-pos=bottom] .sl-tv-layout-menu { bottom: calc(100% + 6px); right: 4px; }",
-            "#" + SL_TV_ID + " .sl-tv-layout-menu { position: absolute; z-index: 4; box-sizing: border-box; width: 200px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-layout-menu { position: absolute; z-index: 4; box-sizing: border-box; width: 200px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 12px 32px rgba(2, 6, 23, 0.55); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; overflow-y: auto; overscroll-behavior: contain; }",
             "#" + SL_TV_ID + " .sl-tv-layout-menu[hidden] { display: none; }",
             "#" + SL_TV_ID + " .sl-tv-layout-title { padding: 4px 8px 6px; color: #94A3B8; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }",
             "#" + SL_TV_ID + " .sl-tv-layout-item { display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; min-height: 34px; padding: 6px 8px; margin: 0; border: 0; border-radius: 8px; background: transparent; color: #CBD5E1; font: 500 13px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-align: left; cursor: pointer; }",
@@ -6529,6 +6681,8 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-layout-item:focus-visible { outline: 2px solid #93C5FD; outline-offset: -2px; }",
             "#" + SL_TV_ID + " .sl-tv-layout-item[aria-checked=true] { background: rgba(59, 130, 246, 0.16); color: #F8FAFC; }",
             "#" + SL_TV_ID + " .sl-tv-layout-item[aria-checked=true] svg { color: #60A5FA; }",
+            // A position that does not fit this screen (see updateLayoutMenu).
+            "#" + SL_TV_ID + " .sl-tv-layout-item[aria-disabled=true] { opacity: 0.45; cursor: not-allowed; }",
             "@media (pointer: coarse) { #" + SL_TV_ID + " .sl-tv-layout-item { min-height: 40px; } }",
             "#" + SL_TV_ID + " .sl-tv-layout-note { padding: 6px 8px 2px; color: #64748B; font-size: 11px; line-height: 1.35; }",
             "#" + SL_TV_ID + " .sl-tv-layout-note:empty { display: none; }",
@@ -6690,8 +6844,15 @@ const SL_DEVICE_STATUS_GAP = 8;
             // rows fit the grid's height. "safe center": should content still
             // overflow, it is never cut off at the top (unsupported browsers
             // keep the plain "center" before it).
-            "#" + SL_TV_ID + " .sl-tv-grid { flex: 1 1 auto; min-height: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(var(" + SL_TV_VAR_GRID_COLS + ", 5), minmax(0, 1fr)); align-content: center; align-content: safe center; gap: 8px; padding: 8px 8px 96px; overflow-y: auto; }",
+            "#" + SL_TV_ID + " .sl-tv-grid { flex: 1 1 auto; min-height: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(var(" + SL_TV_VAR_GRID_COLS + ", 5), minmax(0, 1fr)); align-content: center; align-content: safe center; gap: 8px; padding: 8px 8px var(" + SL_TV_VAR_GRID_PAD_B + ", 96px); overflow-y: auto; overscroll-behavior: contain; }",
             "#" + SL_TV_ID + " .sl-tv-grid .sl-tv-tile { width: 100%; max-width: var(" + SL_TV_VAR_TILE_W + ", none); justify-self: center; }",
+            // Small tiles (phones, see SL_TV_COMPACT_TILE_W): a smaller icon and
+            // the name only, so neither is cut off.
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-placeholder { gap: 3px; padding: 4px; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-icon { width: 26px; height: 26px; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-name { font-size: 10px; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-role, #" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-status { display: none; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-name { left: 4px; bottom: 4px; max-width: calc(100% - 8px); padding: 1px 4px; font-size: 10px; }",
             "#" + SL_TV_ID + " .sl-tv-grid-empty { grid-column: 1 / -1; padding: 24px; color: #94A3B8; text-align: center; font: 500 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
             // Enlarged-video panel (right side; full width on a narrow screen).
             "#" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { order: 1; flex: 0 0 min(46%, 640px); min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #000000; border-left: 1px solid rgba(148, 163, 184, 0.2); }",
@@ -6705,7 +6866,7 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-panel-body video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000000; }",
             "#" + SL_TV_ID + " .sl-tv-panel-body.sl-no-video video { visibility: hidden; }",
             "#" + SL_TV_ID + " .sl-tv-panel-body.sl-no-video .sl-tv-placeholder { display: flex; gap: 12px; padding: 24px; }",
-            "@media (max-width: 640px) { #" + SL_TV_ID + ".sl-visible." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open { flex-direction: column; } #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { flex: 0 0 45%; width: 100%; border-left: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); } }"
+            "@media (max-width: 640px) { #" + SL_TV_ID + ".sl-visible." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open { flex-direction: column; } #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel { flex: 0 0 45%; width: 100%; border-left: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); } #" + SL_TV_ID + "." + SL_TV_TILES_MODE_CLASS + ".sl-tv-panel-open .sl-tv-panel-body { margin-bottom: " + SL_TV_GRID_RESERVE_SHORT + "px; } }"
         ].join("\n");
 
         document.head.appendChild(style);
@@ -7428,7 +7589,33 @@ const SL_DEVICE_STATUS_GAP = 8;
             }
         }
 
-        return { cols: best.cols, tileWidth: Math.max(1, Math.floor(best.tileWidth)) };
+        if (best.tileWidth >= SL_TV_MIN_TILE_W) {
+            return { cols: best.cols, tileWidth: Math.max(1, Math.floor(best.tileWidth)) };
+        }
+
+        // Too small to use (phones): as many columns of at least the minimum
+        // width as fit, each tile the full column; the rows that do not fit
+        // scroll (the grid's overflow-y).
+        const cols = Math.max(1, Math.min(Math.max(1, count),
+            Math.floor((width + SL_TV_GRID_GAP) / (SL_TV_MIN_TILE_W + SL_TV_GRID_GAP))));
+
+        return { cols, tileWidth: Math.max(1, Math.floor((width - SL_TV_GRID_GAP * (cols - 1)) / cols)) };
+    }
+
+    // Space under the grid kept free for Jitsi's toolbar, which floats over
+    // the bottom of the view: less on a short screen, and none to speak of
+    // while the enlarged panel is stacked under the grid (the toolbar is over
+    // the panel then).
+    function gridBottomReserve() {
+        const box = getLayoutBox();
+
+        if (root?.classList.contains("sl-tv-panel-open") && box.width > 0 && box.width <= SL_TV_PANEL_STACK_WIDTH) {
+            return SL_TV_GRID_RESERVE_STACKED;
+        }
+
+        return box.height > 0 && box.height <= SL_TV_SHORT_HEIGHT
+            ? SL_TV_GRID_RESERVE_SHORT
+            : SL_TV_GRID_RESERVE;
     }
 
     function setGridStyle(name, value) {
@@ -7454,14 +7641,20 @@ const SL_DEVICE_STATUS_GAP = 8;
         }
 
         const tileEls = Array.from(gridEl.children).filter(el => el.dataset && el.dataset.tileId);
+        const reserve = gridBottomReserve();
+
+        // The same value is the grid's CSS padding-bottom.
+        setGridStyle(SL_TV_VAR_GRID_PAD_B, reserve + "px");
+
         const width = Math.max(0, gridEl.clientWidth - 2 * SL_TV_GRID_GAP);
-        const height = Math.max(0, gridEl.clientHeight - SL_TV_GRID_GAP - 96);
+        const height = Math.max(0, gridEl.clientHeight - SL_TV_GRID_GAP - reserve);
 
         if (tileEls.length && width > 0 && height > 0) {
             const layout = bestGridLayout(tileEls.length, width, height);
 
             setGridStyle(SL_TV_VAR_GRID_COLS, String(layout.cols));
             setGridStyle(SL_TV_VAR_TILE_W, layout.tileWidth + "px");
+            gridEl.classList.toggle(SL_TV_GRID_COMPACT_CLASS, layout.tileWidth < SL_TV_COMPACT_TILE_W);
         }
 
         const measured = slSpatialOrder(tileEls.map(el => {
@@ -8413,6 +8606,8 @@ const SL_DEVICE_STATUS_GAP = 8;
         layout: () => ({
             preferred: preferredPosition,
             effective: root ? root.dataset.pos : null,
+            // A choice made while the screen placed the filmstrip itself.
+            chosenHere: positionChosenHere,
             sizes: { ...stripSizes },
             rendered: root ? Math.round(getStripSize(root.dataset.pos)) : null
         }),
@@ -9158,4 +9353,1802 @@ const SL_DEVICE_STATUS_GAP = 8;
     }, 500);
 
 })();
+
+
+
+/* ==========================================================
+   SL Classroom - Teaching Mode (the teacher's own camera, send side)
+
+   Optional, teacher only, off by default. While on, the teacher's
+   OWN camera track is tuned for handwriting and whiteboards:
+     - MediaStreamTrack.contentHint = "detail" (when the browser
+       supports it): the encoder keeps fine detail and, under
+       pressure, lowers the frame rate before the resolution;
+     - frameRate { max: 15 } MERGED into the track's existing
+       constraints (the resolution, the device and every other
+       constraint Jitsi asked for are kept), so each frame gets
+       more of the bitrate.
+   Nothing else changes: simulcast, Jitsi's and the bridge's adaptive
+   quality, the receive policy and every student's view stay as they
+   are. The resolution is never raised (no 1080p / 4K).
+
+   Turning it off puts back, on the same track, the original hint and
+   the original frame-rate constraint (only where ours is still in
+   place; the other constraints are left as they are). A track this
+   section never changed is never touched.
+
+   The camera track belongs to Jitsi and is often replaced: camera
+   off / on (Jitsi may stop the camera and open a new one, sometimes
+   inside the same JitsiLocalTrack), a camera switch, a reconnect.
+   The live track is looked up again on every store change and,
+   while the mode is on, every SL_TM_POLL_MS (a replacement is not
+   always a store change); a new track gets the settings again.
+   Stopped tracks are forgotten (nothing to restore on them). With a
+   background effect (blur / virtual background) Jitsi sends a
+   generated track: the hint still applies, the frame-rate cap may
+   be refused there.
+
+   Every step is best effort: an unsupported hint, a refused or
+   unsupported constraint (OverconstrainedError, TypeError) or a
+   call that never settles is reported and skipped, never thrown.
+   Meeting teardown (pagehide) ends the tracks themselves.
+
+   Runs ONLY for the local moderator (teacher), only while the parent
+   page enables it:
+     { type: "SL_TEACHING_MODE", v: 1, epoch, enabled, maxFps?, detailHint? }
+     maxFps      15 | 24 | 30, the frame-rate cap (absent: 15)
+     detailHint  boolean, whether contentHint "detail" is set (absent:
+                 true). Optional because Jitsi sets the sender's
+                 degradationPreference to "maintain-framerate", which can
+                 override what the hint would change.
+   An older parent page sends neither field and gets exactly the earlier
+   behaviour (15 fps + "detail"). Any other value makes the message
+   malformed: it is ignored and the current mode stays.
+   Changing maxFps or detailHint while on first restores the track's
+   ORIGINAL settings, then applies the new ones (never stacking caps).
+   (Resent by the parent after SL_RECEIVE_READY.) Reports back, once
+   the parent has sent one, whenever it changes:
+     { type: "SL_TEACHING_MODE_STATUS", v: 1, enabled, active, camera,
+       contentHint, frameRate, fps, maxFps, detailHint }
+     active       the mode is on here (enabled, local moderator)
+     camera       a live local camera track exists
+     contentHint  "applied" | "disabled" | "unsupported" | "failed" | null
+     frameRate    "applied" | "kept" (already at or below the cap) |
+                  "pending" | "unsupported" | "failed" | null
+     fps          the track's reported frame rate (getSettings) or null
+     maxFps, detailHint  the requested settings
+========================================================== */
+
+(function () {
+
+    const SL_TM_CONTENT_HINT = "detail";
+    // The frame-rate caps the parent page may ask for, and the default
+    // (also an older parent page's, which sends none).
+    const SL_TM_FRAME_RATES = [15, 24, 30];
+    const SL_TM_DEFAULT_FRAME_RATE = 15;
+    // Safety net while on: a replaced camera track is not always a store
+    // change (a new stream inside the same JitsiLocalTrack).
+    const SL_TM_POLL_MS = 2000;
+    // A constraint change that has not settled by then is reported as
+    // failed, so later changes are not held up behind it.
+    const SL_TM_APPLY_TIMEOUT_MS = 5000;
+    // Constraint errors that mean "not possible here" rather than a fault.
+    const SL_TM_UNSUPPORTED_ERRORS = ["OverconstrainedError", "NotSupportedError", "TypeError"];
+
+    let mode = { epoch: 0, enabled: false, maxFps: SL_TM_DEFAULT_FRAME_RATE, detailHint: true };
+    // A status is only ever posted once the parent page has sent the mode
+    // (a teacher's page): students' pages never hear about it.
+    let heard = false;
+
+    // MediaStreamTrack -> what this section changed on it and the original
+    // values (newRecord). Normally one entry; stopped tracks are dropped.
+    const changed = new Map();
+
+    // Track changes (apply / restore) run one at a time, in order.
+    let queue = Promise.resolve();
+    let pollTimer = null;
+    let lastStatus = "";
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(state) {
+        return state?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    function isActive(state) {
+        return Boolean(state && mode.enabled && isLocalModerator(state));
+    }
+
+    function errorName(error) {
+        return (error && (error.name || error.message)) || String(error);
+    }
+
+    // The local camera's MediaStreamTrack (never a screen share, never a
+    // remote track), or null while there is none or it has stopped.
+    function getLocalCameraTrack(state) {
+        const tracks = state?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track && track.local && track.videoType === "camera" && track.jitsiTrack);
+
+        if (!entry || typeof entry.jitsiTrack.getTrack !== "function") {
+            return null;
+        }
+
+        let mediaTrack = null;
+
+        try {
+            mediaTrack = entry.jitsiTrack.getTrack();
+        } catch (error) {
+            return null;
+        }
+
+        return mediaTrack && mediaTrack.readyState !== "ended" ? mediaTrack : null;
+    }
+
+    // The requested settings a record was applied with.
+    function profileKey(settings) {
+        return settings.maxFps + ":" + settings.detailHint;
+    }
+
+    function newRecord() {
+        return {
+            // The settings this record applies (fixed for its lifetime: a
+            // change gets a new record after this one is restored).
+            maxFps: mode.maxFps,
+            detailHint: mode.detailHint,
+            profile: profileKey(mode),
+            // contentHint before the change; changedHint: ours is set.
+            hint: "",
+            changedHint: false,
+            hintStatus: null,
+            // The frameRate constraint before the change (hadFrameRate:
+            // there was one); changedFrameRate: our cap is in place.
+            frameRate: undefined,
+            hadFrameRate: false,
+            changedFrameRate: false,
+            frameRateStatus: null
+        };
+    }
+
+    // The track's current constraints (a copy), or null when they cannot be
+    // read: then nothing is applied, since a constraint set without them
+    // could drop the resolution or the chosen device.
+    function readConstraints(track) {
+        if (typeof track.getConstraints !== "function") {
+            return null;
+        }
+
+        try {
+            const current = track.getConstraints();
+
+            return current && typeof current === "object" ? { ...current } : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function readSettings(track) {
+        try {
+            const settings = typeof track.getSettings === "function" ? track.getSettings() : null;
+
+            return settings && typeof settings === "object" ? settings : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    // The upper frame-rate limit a constraint value already sets, or null.
+    function frameRateLimit(value) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+            return value;
+        }
+
+        if (value && typeof value === "object") {
+            for (const key of ["exact", "max"]) {
+                if (typeof value[key] === "number" && Number.isFinite(value[key])) {
+                    return value[key];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // applyConstraints that fails after SL_TM_APPLY_TIMEOUT_MS, so the queue
+    // moves on. onLate(succeeded) runs if it settles after that.
+    function applyWithTimeout(track, constraints, onLate) {
+        return new Promise((resolve, reject) => {
+            let timedOut = false;
+
+            const timer = setTimeout(() => {
+                timedOut = true;
+                reject(Object.assign(new Error("applyConstraints timed out"), { name: "TimeoutError" }));
+            }, SL_TM_APPLY_TIMEOUT_MS);
+
+            Promise.resolve()
+                .then(() => track.applyConstraints(constraints))
+                .then(() => {
+                    clearTimeout(timer);
+
+                    if (timedOut) {
+                        onLate(true);
+                    } else {
+                        resolve();
+                    }
+                }, error => {
+                    clearTimeout(timer);
+
+                    if (timedOut) {
+                        onLate(false);
+                    } else {
+                        reject(error);
+                    }
+                });
+        });
+    }
+
+    function enqueue(task) {
+        queue = queue
+            .then(task)
+            .catch(error => {
+                console.warn("[SL Classroom] Teaching mode step failed:", errorName(error));
+            })
+            .then(reportStatus);
+    }
+
+    async function apply(track, record) {
+        // Turned off, or the track replaced, before this step ran.
+        if (changed.get(track) !== record || track.readyState === "ended") {
+            return;
+        }
+
+        // 1. The content hint (only when asked for).
+        if (!record.detailHint) {
+            record.hintStatus = "disabled";
+        } else if ("contentHint" in track) {
+            try {
+                record.hint = track.contentHint || "";
+                track.contentHint = SL_TM_CONTENT_HINT;
+                record.changedHint = track.contentHint === SL_TM_CONTENT_HINT;
+                record.hintStatus = record.changedHint ? "applied" : "unsupported";
+            } catch (error) {
+                record.hintStatus = "failed";
+                console.warn("[SL Classroom] Teaching mode: contentHint not applied:", errorName(error));
+            }
+        } else {
+            record.hintStatus = "unsupported";
+        }
+
+        // 2. The frame-rate cap, merged into the existing constraints.
+        const current = typeof track.applyConstraints === "function" ? readConstraints(track) : null;
+
+        if (!current) {
+            record.frameRateStatus = "unsupported";
+
+            return;
+        }
+
+        const limit = frameRateLimit(current.frameRate);
+
+        // Already capped at or below the requested cap: left exactly as it
+        // is (a cap is never raised).
+        if (limit !== null && limit <= record.maxFps) {
+            record.frameRateStatus = "kept";
+
+            return;
+        }
+
+        const next = { ...current, frameRate: { max: record.maxFps } };
+
+        // No size constraint at all (Jitsi always sets one): the current size
+        // is kept as the ideal, since a set without any may fall back to the
+        // camera's default size.
+        if (!("width" in current) && !("height" in current)) {
+            const settings = readSettings(track);
+
+            if (settings.width > 0) {
+                next.width = { ideal: settings.width };
+            }
+
+            if (settings.height > 0) {
+                next.height = { ideal: settings.height };
+            }
+        }
+
+        record.hadFrameRate = Object.prototype.hasOwnProperty.call(current, "frameRate");
+        record.frameRate = current.frameRate;
+        record.frameRateStatus = "pending";
+        reportStatus();
+
+        try {
+            await applyWithTimeout(track, next, succeeded => {
+                if (!succeeded) {
+                    return;
+                }
+
+                // Settled after the timeout: the cap is in place after all.
+                record.changedFrameRate = true;
+                record.frameRateStatus = "applied";
+
+                if (changed.get(track) !== record) {
+                    enqueue(() => restore(track, record));
+                } else {
+                    reportStatus();
+                }
+            });
+
+            record.changedFrameRate = true;
+            record.frameRateStatus = "applied";
+        } catch (error) {
+            const name = errorName(error);
+
+            record.frameRateStatus = SL_TM_UNSUPPORTED_ERRORS.includes(name) ? "unsupported" : "failed";
+            console.warn("[SL Classroom] Teaching mode: frame-rate cap not applied:", name);
+        }
+    }
+
+    // Puts back what apply() changed on this track, part by part (safe to
+    // run again: each part is undone once).
+    async function restore(track, record) {
+        if (track.readyState === "ended") {
+            return;
+        }
+
+        if (record.changedHint) {
+            record.changedHint = false;
+
+            try {
+                // Only our own value is replaced, never a later change by others.
+                if (track.contentHint === SL_TM_CONTENT_HINT) {
+                    track.contentHint = record.hint;
+                }
+            } catch (error) {
+                console.warn("[SL Classroom] Teaching mode: contentHint not restored:", errorName(error));
+            }
+        }
+
+        if (record.changedFrameRate) {
+            record.changedFrameRate = false;
+
+            const current = readConstraints(track);
+
+            // Our cap is no longer there (Jitsi set new constraints): nothing
+            // of ours is left to undo.
+            if (!current || frameRateLimit(current.frameRate) !== record.maxFps) {
+                return;
+            }
+
+            delete current.frameRate;
+
+            if (record.hadFrameRate) {
+                current.frameRate = record.frameRate;
+            }
+
+            try {
+                await applyWithTimeout(track, current, () => {});
+            } catch (error) {
+                console.warn("[SL Classroom] Teaching mode: frame rate not restored:", errorName(error));
+            }
+        }
+    }
+
+    function currentStatus() {
+        const state = getState();
+        const active = isActive(state);
+        const track = active ? getLocalCameraTrack(state) : null;
+        const record = track ? changed.get(track) : null;
+        const fps = track ? readSettings(track).frameRate : null;
+
+        return {
+            type: "SL_TEACHING_MODE_STATUS",
+            v: 1,
+            enabled: mode.enabled,
+            active,
+            camera: Boolean(track),
+            contentHint: record ? record.hintStatus : null,
+            frameRate: record ? record.frameRateStatus : null,
+            fps: typeof fps === "number" && Number.isFinite(fps) ? Math.round(fps * 10) / 10 : null,
+            maxFps: mode.maxFps,
+            detailHint: mode.detailHint
+        };
+    }
+
+    function reportStatus() {
+        if (!heard) {
+            return;
+        }
+
+        const status = currentStatus();
+        const signature = JSON.stringify(status);
+
+        if (signature === lastStatus) {
+            return;
+        }
+
+        lastStatus = signature;
+        slPostToParent(status);
+    }
+
+    function pollTeachingMode() {
+        sync();
+    }
+
+    function syncPoll(active) {
+        if (active && !pollTimer) {
+            pollTimer = setInterval(pollTeachingMode, SL_TM_POLL_MS);
+        } else if (!active && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    // Cheap; runs on every store change. Restores every changed track that
+    // is no longer the one to change (mode off, role lost, track replaced,
+    // or the requested settings changed) and applies the settings to the
+    // current camera track once. A settings change restores the ORIGINAL
+    // values first (the queue runs that before the new apply).
+    function sync() {
+        const state = getState();
+        const active = isActive(state);
+        const wanted = active ? getLocalCameraTrack(state) : null;
+        const profile = profileKey(mode);
+
+        changed.forEach((record, track) => {
+            if (track.readyState === "ended") {
+                changed.delete(track);
+            } else if (track !== wanted || record.profile !== profile) {
+                changed.delete(track);
+                enqueue(() => restore(track, record));
+            }
+        });
+
+        if (wanted && !changed.has(wanted)) {
+            const record = newRecord();
+
+            changed.set(wanted, record);
+            enqueue(() => apply(wanted, record));
+        }
+
+        syncPoll(active);
+        reportStatus();
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_TEACHING_MODE") {
+            return;
+        }
+
+        // maxFps / detailHint are optional (an older parent page sends
+        // neither); present, they must be one of the allowed values.
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || typeof data.enabled !== "boolean"
+            || (data.maxFps !== undefined && !SL_TM_FRAME_RATES.includes(data.maxFps))
+            || (data.detailHint !== undefined && typeof data.detailHint !== "boolean")) {
+            console.warn("[SL Classroom] Ignored malformed teaching mode", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < mode.epoch) {
+            return;
+        }
+
+        // Kept even before the local role is known: it only ever applies
+        // while the local participant is a moderator.
+        mode = {
+            epoch: data.epoch,
+            enabled: data.enabled,
+            maxFps: data.maxFps === undefined ? SL_TM_DEFAULT_FRAME_RATE : data.maxFps,
+            detailHint: data.detailHint === undefined ? true : data.detailHint
+        };
+        heard = true;
+        // The parent gets the current status for every message it sends.
+        lastStatus = "";
+
+        console.log("[SL Classroom] Teaching mode", mode);
+
+        sync();
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slTeachingModeTest.on()   __slTeachingModeTest.off()
+    //   __slTeachingModeTest.state()   what is applied
+    // Affects only this browser's own camera. The next SL_TEACHING_MODE
+    // from the parent page replaces it.
+    // ---------------------------------------------------------------------
+    window.__slTeachingModeTest = {
+        on: () => {
+            mode = { ...mode, enabled: true };
+            sync();
+        },
+        off: () => {
+            mode = { ...mode, enabled: false };
+            sync();
+        },
+        state: () => {
+            const status = currentStatus();
+            const track = getLocalCameraTrack(getState());
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                ...status,
+                trackContentHint: track && "contentHint" in track ? track.contentHint : null,
+                trackConstraints: track ? readConstraints(track) : null,
+                trackSettings: track ? readSettings(track) : null,
+                polling: Boolean(pollTimer)
+            };
+        }
+    };
+
+    // Page teardown: the tracks end with the page; only the poll is stopped.
+    window.addEventListener("pagehide", () => syncPoll(false));
+
+    // Follow every store change: the local tracks (camera on / off, switch,
+    // reconnect) and the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
+    }, 500);
+
+})();
  
+
+
+
+/* ==========================================================
+   SL Classroom - Video Quality Telemetry (diagnosis only)
+
+   Read-only. Measures what the teacher's camera is really sent at
+   and what each student really receives, from WebRTC getStats() on
+   the bridge connection, so quality drops can be told apart:
+   bandwidth, CPU / encoder, the camera itself, or Jitsi / the bridge
+   choosing a lower layer. Nothing here changes a codec, bitrate,
+   sender parameter, constraint, receiver constraint or track.
+
+   Rates (fps, kbps, loss) are DELTAS between two getStats() samples
+   of the same stat object (SL_VT_POLL_MS apart), never one cumulative
+   value, and never MediaStreamTrack.getSettings().frameRate (that is
+   only what the camera was configured for; it is reported apart, as
+   "configured"). A first sample, a new stat object (track replaced,
+   reconnect: a new peer connection) or a counter that went back gives
+   null ("N/A"), never a guess.
+
+   Teacher (local moderator), only while the parent page enables it:
+     parent -> iframe: { type: "SL_VIDEO_TELEMETRY", v: 1, epoch, enabled }
+     iframe -> parent, every SL_VT_POLL_MS while enabled (and once
+     when it stops):
+       { type: "SL_VIDEO_TELEMETRY_STATUS", v: 1, intervalMs, enabled,
+         active, error, send, students }
+   Students: no parent message. While a moderator asks (a small
+   request over Jitsi's bridge data channel, repeated every
+   SL_VT_REQUEST_TICKS polls), a student measures what it receives
+   and sends a compact report to the asking moderator(s) only. With
+   no request for SL_VT_STUDENT_TTL_TICKS polls it stops by itself:
+   nothing runs while no teacher looks. Reports carry no names; the
+   teacher's page maps the sender's Jitsi participant ID to a student
+   through its own authenticated participant map.
+========================================================== */
+
+(function () {
+
+    const SL_VT_POLL_MS = 5000;
+    // Teacher: a request every 3 polls (15 s): late joiners and
+    // reconnected students start reporting within one cycle.
+    const SL_VT_REQUEST_TICKS = 3;
+    // Student: reports for 8 polls (40 s) after the last request.
+    const SL_VT_STUDENT_TTL_TICKS = 8;
+    // Teacher: a report older than 3 polls is stale, older than 12 dropped.
+    const SL_VT_STALE_TICKS = 3;
+    const SL_VT_DROP_TICKS = 12;
+    const SL_VT_MAX_STUDENTS = 200;
+    const SL_VT_MAX_SOURCES = 6;
+    const SL_VT_REQUEST = "sl-video-telemetry-request";
+    const SL_VT_REPORT = "sl-video-telemetry-report";
+    // lib-jitsi-meet JitsiConferenceEvents.ENDPOINT_MESSAGE_RECEIVED.
+    const SL_VT_ENDPOINT_EVENT = "conference.endpoint_message_received";
+    // A delta over less than this (ms) is too short to be a rate.
+    const SL_VT_MIN_DELTA_MS = 500;
+    const SL_VT_TEXT_PATTERN = /^[A-Za-z0-9 ._:/+()-]{1,64}$/;
+    const SL_VT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+    const SL_VT_LIMITATIONS = ["none", "cpu", "bandwidth", "other"];
+
+    let view = { epoch: 0, enabled: false };
+    // A status is only posted once the parent page has asked (teachers).
+    let heard = false;
+
+    let teacherTimer = null;
+    let studentTimer = null;
+    let tickNo = 0;
+    let studentTicksLeft = 0;
+    // One getStats() at a time.
+    let sampling = false;
+    let lastError = null;
+
+    // The conference whose endpoint messages are followed.
+    let listenedConference = null;
+    // The peer connection the previous sample came from (deltas restart
+    // when it changes), and that sample's stats by id.
+    let sampledConnection = null;
+    let previous = new Map();
+    let reportSeq = 0;
+
+    // Teacher: participant ID -> { report, tick }.
+    const studentReports = new Map();
+    // Student: moderator ID -> tick of their last request.
+    const requesters = new Map();
+
+    // Bridge-channel messaging, counted on both sides (reset with the
+    // conference): what reached whom, and what was turned away and why.
+    function newMessaging() {
+        return {
+            requestsSent: 0,
+            requestErrors: 0,
+            reportsAccepted: 0,
+            reportsIgnoredNotInMeeting: 0,
+            reportsIgnoredFromModerator: 0,
+            requestsReceived: 0,
+            requestsIgnoredNotModerator: 0,
+            reportsSent: 0,
+            reportErrors: 0,
+            lastSendError: null
+        };
+    }
+
+    let messaging = newMessaging();
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(state) {
+        return state?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    function getConference(state) {
+        return state?.["features/base/conference"]?.conference ?? null;
+    }
+
+    function teacherActive(state) {
+        return Boolean(state && view.enabled && isLocalModerator(state) && getConference(state));
+    }
+
+    // ---- Stats parsing (pure; exposed for tests) ---------------------------
+
+    function isNumber(value) {
+        return typeof value === "number" && Number.isFinite(value);
+    }
+
+    function round(value, digits) {
+        if (!isNumber(value)) {
+            return null;
+        }
+
+        const scale = Math.pow(10, digits || 0);
+
+        return Math.round(value * scale) / scale;
+    }
+
+    function text(value) {
+        return typeof value === "string" && value ? value.slice(0, 64) : null;
+    }
+
+    // RTCStatsReport (or a Map / array of stats) -> Map id -> stat.
+    function indexStats(report) {
+        const index = new Map();
+
+        const add = stat => {
+            if (stat && typeof stat === "object" && typeof stat.id === "string" && typeof stat.type === "string") {
+                index.set(stat.id, stat);
+            }
+        };
+
+        if (report && typeof report.forEach === "function") {
+            report.forEach(add);
+        }
+
+        return index;
+    }
+
+    function statsOfType(index, type) {
+        return Array.from(index.values()).filter(stat => stat.type === type);
+    }
+
+    function isVideo(stat) {
+        return (stat.kind || stat.mediaType) === "video";
+    }
+
+    // Seconds between two samples of the same stat object, or null.
+    function deltaSeconds(current, before) {
+        if (!before || !isNumber(current.timestamp) || !isNumber(before.timestamp)) {
+            return null;
+        }
+
+        const ms = current.timestamp - before.timestamp;
+
+        return ms >= SL_VT_MIN_DELTA_MS ? ms / 1000 : null;
+    }
+
+    // A counter's increase between two samples, or null (missing, or it
+    // went back: a reset is never a rate).
+    function counterDelta(current, before, field) {
+        if (!current || !before || !isNumber(current[field]) || !isNumber(before[field])) {
+            return null;
+        }
+
+        const delta = current[field] - before[field];
+
+        return delta >= 0 ? delta : null;
+    }
+
+    function perSecond(current, before, field) {
+        const seconds = deltaSeconds(current, before);
+        const delta = counterDelta(current, before, field);
+
+        return seconds !== null && delta !== null ? delta / seconds : null;
+    }
+
+    function kbps(current, before, field) {
+        const bytes = perSecond(current, before, field);
+
+        return bytes === null ? null : round(bytes * 8 / 1000, 0);
+    }
+
+    function codecOf(index, stat) {
+        const codec = stat && stat.codecId ? index.get(stat.codecId) : null;
+        const mimeType = codec && typeof codec.mimeType === "string" ? codec.mimeType : null;
+
+        return mimeType ? mimeType.replace(/^video\//i, "") : null;
+    }
+
+    // The active ICE candidate pair: the transport's selected one, else a
+    // nominated succeeded one (Firefox: "selected").
+    function selectedPair(index) {
+        const transport = statsOfType(index, "transport").find(stat => stat.selectedCandidatePairId);
+        const byTransport = transport ? index.get(transport.selectedCandidatePairId) : null;
+
+        return byTransport || statsOfType(index, "candidate-pair").find(pair =>
+            pair.selected === true || (pair.nominated && pair.state === "succeeded")) || null;
+    }
+
+    // Connection-wide: RTT, the available bitrate estimate, all bytes
+    // (audio and video, both ways: what a data budget counts).
+    function networkSample(index, before) {
+        const pair = selectedPair(index);
+
+        if (!pair) {
+            return null;
+        }
+
+        const prior = before ? before.get(pair.id) : null;
+
+        return {
+            rttMs: isNumber(pair.currentRoundTripTime) ? round(pair.currentRoundTripTime * 1000, 0) : null,
+            availableOutgoingKbps: isNumber(pair.availableOutgoingBitrate) ? round(pair.availableOutgoingBitrate / 1000, 0) : null,
+            availableIncomingKbps: isNumber(pair.availableIncomingBitrate) ? round(pair.availableIncomingBitrate / 1000, 0) : null,
+            receiveKbps: kbps(pair, prior, "bytesReceived"),
+            sendKbps: kbps(pair, prior, "bytesSent"),
+            bytesReceived: isNumber(pair.bytesReceived) ? pair.bytesReceived : null,
+            bytesSent: isNumber(pair.bytesSent) ? pair.bytesSent : null
+        };
+    }
+
+    // Share (0-100) of the interval spent in each limitation reason, from
+    // qualityLimitationDurations deltas (seconds).
+    function limitationShares(current, before) {
+        const now = current.qualityLimitationDurations;
+        const then = before && before.qualityLimitationDurations;
+
+        if (!now || !then || typeof now !== "object" || typeof then !== "object") {
+            return null;
+        }
+
+        const deltas = {};
+        let total = 0;
+
+        SL_VT_LIMITATIONS.forEach(reason => {
+            const delta = counterDelta(now, then, reason);
+
+            deltas[reason] = delta === null ? 0 : delta;
+            total += deltas[reason];
+        });
+
+        if (!(total > 0)) {
+            return null;
+        }
+
+        const shares = {};
+
+        SL_VT_LIMITATIONS.forEach(reason => {
+            shares[reason] = round(deltas[reason] / total * 100, 0);
+        });
+
+        return shares;
+    }
+
+    // "L3T3_KEY" -> { spatial: 3, temporal: 3 }; null when not an SVC mode.
+    function scalabilityLayers(mode) {
+        const match = typeof mode === "string" ? /^[LS](\d)T(\d)/.exec(mode) : null;
+
+        return match ? { spatial: Number(match[1]), temporal: Number(match[2]) } : null;
+    }
+
+    function outboundStream(index, before, stat) {
+        const prior = before ? before.get(stat.id) : null;
+        const frames = counterDelta(stat, prior, "framesEncoded");
+        const encodeSeconds = counterDelta(stat, prior, "totalEncodeTime");
+        const remote = statsOfType(index, "remote-inbound-rtp").find(entry => entry.localId === stat.id) || null;
+        const remotePrior = remote && before ? before.get(remote.id) : null;
+        const sent = counterDelta(stat, prior, "packetsSent");
+        const lost = counterDelta(remote, remotePrior, "packetsLost");
+        // With spatial SVC (AV1 / VP9 "L3T3..."), Chrome counts every spatial
+        // layer's frame in framesEncoded: 720p with 3 layers is 3 per picture
+        // (seen as ~60/s at ~20 fps). That delta is kept as the LAYER frame
+        // rate; the picture rate is then the browser's own framesPerSecond,
+        // and their ratio is how many spatial layers are being encoded.
+        const layerFrameRate = perSecond(stat, prior, "framesEncoded");
+        const browserFps = isNumber(stat.framesPerSecond) ? stat.framesPerSecond : null;
+        const layers = scalabilityLayers(stat.scalabilityMode);
+        const spatialSvc = Boolean(layers && layers.spatial > 1);
+        const activeSpatialLayers = spatialSvc && layerFrameRate !== null && browserFps > 0
+            ? Math.min(layers.spatial, Math.max(1, Math.round(layerFrameRate / browserFps)))
+            : spatialSvc ? null : 1;
+
+        return {
+            id: stat.id,
+            rid: text(stat.rid),
+            ssrc: isNumber(stat.ssrc) ? stat.ssrc : null,
+            active: typeof stat.active === "boolean" ? stat.active : null,
+            width: isNumber(stat.frameWidth) ? stat.frameWidth : null,
+            height: isNumber(stat.frameHeight) ? stat.frameHeight : null,
+            // Pictures per second: the framesEncoded delta, except with
+            // spatial SVC (see above), where only the browser's own value is.
+            encodedFps: round(spatialSvc ? browserFps : layerFrameRate, 1),
+            encodedFpsSource: spatialSvc ? (browserFps !== null ? "browser" : null) : "delta",
+            layerFrameRate: round(layerFrameRate, 1),
+            activeSpatialLayers,
+            sentFrameRate: round(perSecond(stat, prior, "framesSent"), 1),
+            // The browser's own estimate, kept apart from the delta above.
+            browserFps: round(browserFps, 1),
+            kbps: kbps(stat, prior, "bytesSent"),
+            retransmitKbps: kbps(stat, prior, "retransmittedBytesSent"),
+            targetKbps: isNumber(stat.targetBitrate) ? round(stat.targetBitrate / 1000, 0) : null,
+            // Per frame as framesEncoded counts it: per LAYER frame with
+            // spatial SVC (how layer times add up is not specified).
+            encodeMsPerFrame: frames && encodeSeconds !== null ? round(encodeSeconds / frames * 1000, 1) : null,
+            framesEncoded: isNumber(stat.framesEncoded) ? stat.framesEncoded : null,
+            keyFramesEncoded: isNumber(stat.keyFramesEncoded) ? stat.keyFramesEncoded : null,
+            limitation: SL_VT_LIMITATIONS.includes(stat.qualityLimitationReason) ? stat.qualityLimitationReason : null,
+            limitationShares: limitationShares(stat, prior),
+            resolutionChanges: isNumber(stat.qualityLimitationResolutionChanges) ? stat.qualityLimitationResolutionChanges : null,
+            codec: codecOf(index, stat),
+            encoder: text(stat.encoderImplementation),
+            powerEfficientEncoder: typeof stat.powerEfficientEncoder === "boolean" ? stat.powerEfficientEncoder : null,
+            scalabilityMode: text(stat.scalabilityMode),
+            nacks: counterDelta(stat, prior, "nackCount"),
+            plis: counterDelta(stat, prior, "pliCount"),
+            // As the bridge reports it back (RTCP) for this stream.
+            lossPct: sent !== null && lost !== null && sent + lost > 0 ? round(lost / (sent + lost) * 100, 1)
+                : remote && isNumber(remote.fractionLost) ? round(remote.fractionLost * 100, 1) : null,
+            packetsLost: remote && isNumber(remote.packetsLost) ? remote.packetsLost : null,
+            rttMs: remote && isNumber(remote.roundTripTime) ? round(remote.roundTripTime * 1000, 0) : null
+        };
+    }
+
+    /*
+     * The camera track before WebRTC, to tell the camera apart from
+     * Chrome's capture pipeline: MediaStreamTrack.stats (Chrome 120+)
+     * counts frames the camera PRODUCED (totalFrames) and those the track
+     * delivered or discarded (e.g. frame-rate decimation); with the
+     * camera's capabilities and the frame-rate constraint in force.
+     * camera.stats / camera.statsBefore: { at (ms), deliveredFrames,
+     * discardedFrames, totalFrames } or null.
+     */
+    function trackSample(camera) {
+        const now = camera.stats || null;
+        const then = camera.statsBefore || null;
+        const seconds = now && then && isNumber(now.at) && isNumber(then.at) && now.at - then.at >= SL_VT_MIN_DELTA_MS
+            ? (now.at - then.at) / 1000
+            : null;
+        const rate = field => {
+            const delta = seconds !== null ? counterDelta(now, then, field) : null;
+
+            return delta === null ? null : round(delta / seconds, 1);
+        };
+        const capabilities = camera.capabilities || {};
+        const constraint = camera.constraints ? camera.constraints.frameRate : undefined;
+
+        return {
+            label: text(camera.label),
+            producedFps: rate("totalFrames"),
+            deliveredFps: rate("deliveredFrames"),
+            discardedFps: rate("discardedFrames"),
+            statsSupported: Boolean(now),
+            capabilityMaxFps: isNumber(capabilities.frameRate?.max) ? round(capabilities.frameRate.max, 1) : null,
+            capabilityMaxHeight: isNumber(capabilities.height?.max) ? capabilities.height.max : null,
+            // The frame-rate constraint as set on the track (e.g. Teaching
+            // Mode's cap), as JSON text; null when there is none.
+            frameRateConstraint: constraint === undefined ? null : text(JSON.stringify(constraint))
+        };
+    }
+
+    /*
+     * The teacher's camera as sent. camera: { trackId, settings, ... } of
+     * the live local camera track (see trackSample), or null (camera off).
+     * desktopTrackId: the local screen share's track, never counted as the
+     * camera.
+     */
+    function sendSample(index, before, camera, desktopTrackId) {
+        if (!camera) {
+            return { camera: false, network: networkSample(index, before) };
+        }
+
+        const sources = statsOfType(index, "media-source").filter(isVideo);
+        const isDesktop = source => Boolean(desktopTrackId) && source.trackIdentifier === desktopTrackId;
+        const others = sources.filter(source => !isDesktop(source));
+        const cameraSource = sources.find(source => source.trackIdentifier === camera.trackId)
+            || (others.length === 1 ? others[0] : null);
+        const desktopIds = new Set(sources.filter(isDesktop).map(source => source.id));
+        const outbound = statsOfType(index, "outbound-rtp").filter(isVideo).filter(stat =>
+            cameraSource && stat.mediaSourceId ? stat.mediaSourceId === cameraSource.id : !desktopIds.has(stat.mediaSourceId));
+        const streams = outbound.map(stat => outboundStream(index, before, stat));
+        // The best layer receivers can get: the highest active one.
+        const top = streams
+            .filter(stream => stream.active !== false && stream.height !== null)
+            .sort((a, b) => b.height - a.height || (b.kbps || 0) - (a.kbps || 0))[0] || null;
+        const rates = streams.map(stream => stream.kbps).filter(isNumber);
+        const targets = streams.map(stream => stream.targetKbps).filter(isNumber);
+        const sourceBefore = cameraSource && before ? before.get(cameraSource.id) : null;
+        const settings = camera.settings || {};
+        const deliveredFps = cameraSource ? perSecond(cameraSource, sourceBefore, "frames") : null;
+
+        return {
+            camera: true,
+            // What the camera delivered (media-source).
+            capture: cameraSource ? {
+                width: isNumber(cameraSource.width) ? cameraSource.width : null,
+                height: isNumber(cameraSource.height) ? cameraSource.height : null,
+                fps: round(deliveredFps !== null ? deliveredFps : cameraSource.framesPerSecond, 1)
+            } : null,
+            // What the camera was configured for (getSettings): not a rate.
+            configured: {
+                width: isNumber(settings.width) ? settings.width : null,
+                height: isNumber(settings.height) ? settings.height : null,
+                frameRate: round(settings.frameRate, 1),
+                resizeMode: text(settings.resizeMode)
+            },
+            // The camera track itself, before WebRTC (see trackSample).
+            track: trackSample(camera),
+            encoded: top ? {
+                width: top.width,
+                height: top.height,
+                fps: top.encodedFps,
+                fpsSource: top.encodedFpsSource,
+                browserFps: top.browserFps,
+                layerFrameRate: top.layerFrameRate,
+                activeSpatialLayers: top.activeSpatialLayers,
+                encodeMsPerFrame: top.encodeMsPerFrame
+            } : null,
+            kbps: rates.length ? rates.reduce((sum, rate) => sum + rate, 0) : null,
+            // One layer's target with SVC (Chrome spreads the layer targets
+            // over the encodings, active or not); the sum is the encoder's.
+            targetKbps: top ? top.targetKbps : null,
+            targetKbpsTotal: targets.length ? targets.reduce((sum, rate) => sum + rate, 0) : null,
+            limitation: top ? top.limitation : null,
+            limitationShares: top ? top.limitationShares : null,
+            codec: top ? top.codec : null,
+            encoder: top ? top.encoder : null,
+            powerEfficientEncoder: top ? top.powerEfficientEncoder : null,
+            scalabilityMode: top ? top.scalabilityMode : null,
+            lossPct: top ? top.lossPct : null,
+            rttMs: top ? top.rttMs : null,
+            streams: streams.slice(0, SL_VT_MAX_SOURCES),
+            network: networkSample(index, before)
+        };
+    }
+
+    /*
+     * What this browser receives, per remote video source. ownerOf maps an
+     * inbound stat to { participantId, role, videoType, requestedHeight,
+     * streamingStatus } from Jitsi's store at the time of the sample, or
+     * null: unmapped sources are left out.
+     */
+    function receiveSample(index, before, ownerOf) {
+        const sources = [];
+
+        statsOfType(index, "inbound-rtp").filter(isVideo).forEach(stat => {
+            const owner = ownerOf(stat);
+
+            if (!owner || !(stat.bytesReceived > 0)) {
+                return;
+            }
+
+            const prior = before ? before.get(stat.id) : null;
+            const received = counterDelta(stat, prior, "packetsReceived");
+            const lost = counterDelta(stat, prior, "packetsLost");
+            const emitted = counterDelta(stat, prior, "jitterBufferEmittedCount");
+            const buffered = counterDelta(stat, prior, "jitterBufferDelay");
+
+            sources.push({
+                participantId: owner.participantId,
+                role: owner.role,
+                videoType: owner.videoType,
+                width: isNumber(stat.frameWidth) ? stat.frameWidth : null,
+                height: isNumber(stat.frameHeight) ? stat.frameHeight : null,
+                fps: round(perSecond(stat, prior, "framesDecoded"), 1),
+                browserFps: round(stat.framesPerSecond, 1),
+                kbps: kbps(stat, prior, "bytesReceived"),
+                lossPct: received !== null && lost !== null && received + lost > 0
+                    ? round(lost / (received + lost) * 100, 1) : null,
+                packetsLost: isNumber(stat.packetsLost) ? stat.packetsLost : null,
+                framesDecoded: isNumber(stat.framesDecoded) ? stat.framesDecoded : null,
+                framesDropped: isNumber(stat.framesDropped) ? stat.framesDropped : null,
+                freezeCount: isNumber(stat.freezeCount) ? stat.freezeCount : null,
+                bytesReceived: stat.bytesReceived,
+                jitterMs: isNumber(stat.jitter) ? round(stat.jitter * 1000, 0) : null,
+                jitterBufferMs: emitted && buffered !== null ? round(buffered / emitted * 1000, 0) : null,
+                codec: codecOf(index, stat),
+                decoder: text(stat.decoderImplementation),
+                // What this browser asked the bridge for (receive policy),
+                // and whether Jitsi sees it as forwarded.
+                requestedHeight: isNumber(owner.requestedHeight) ? owner.requestedHeight : null,
+                streamingStatus: text(owner.streamingStatus)
+            });
+        });
+
+        const rank = source => (source.role === "moderator" ? 0 : 2) + (source.videoType === "camera" ? 0 : 1);
+
+        return {
+            sources: sources.sort((a, b) => rank(a) - rank(b)).slice(0, SL_VT_MAX_SOURCES),
+            network: networkSample(index, before)
+        };
+    }
+
+    // ---- Jitsi access ------------------------------------------------------
+
+    // The bridge connection's RTCPeerConnection (P2P is off).
+    function getPeerConnection(conference) {
+        let active = null;
+
+        try {
+            active = typeof conference?.getActivePeerConnection === "function"
+                ? conference.getActivePeerConnection()
+                : null;
+        } catch (error) {
+            active = null;
+        }
+
+        for (const tpc of [conference?.jvbJingleSession?.peerconnection, active]) {
+            const pc = tpc?.peerconnection || null;
+
+            if (pc && typeof pc.getStats === "function") {
+                return pc;
+            }
+        }
+
+        return null;
+    }
+
+    function mediaTrackOf(entry) {
+        try {
+            return typeof entry?.jitsiTrack?.getTrack === "function" ? entry.jitsiTrack.getTrack() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // The live, unmuted local track of this video type, or null.
+    function localVideo(state, videoType) {
+        const tracks = state?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track && track.local && track.videoType === videoType && track.jitsiTrack);
+        const mediaTrack = mediaTrackOf(entry);
+
+        return mediaTrack && mediaTrack.readyState !== "ended" && !entry.muted ? mediaTrack : null;
+    }
+
+    function readSettings(track) {
+        try {
+            return typeof track.getSettings === "function" ? track.getSettings() || {} : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function readTrackCall(track, name) {
+        try {
+            return typeof track[name] === "function" ? track[name]() || null : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // The camera track's frame counters now (MediaStreamTrack.stats, a live
+    // object in Chrome 120+), copied with the time; null without support.
+    function readTrackStats(track) {
+        let stats = null;
+
+        try {
+            stats = track.stats || null;
+        } catch (error) {
+            stats = null;
+        }
+
+        if (!stats || !isNumber(stats.totalFrames)) {
+            return null;
+        }
+
+        const clock = typeof performance === "object" && typeof performance.now === "function"
+            ? performance.now()
+            : Date.now();
+
+        return {
+            at: clock,
+            deliveredFrames: stats.deliveredFrames,
+            discardedFrames: stats.discardedFrames,
+            totalFrames: stats.totalFrames
+        };
+    }
+
+    // The previous frame counters, for the same camera track only.
+    let previousTrackStats = { track: null, stats: null };
+
+    // Everything sendSample needs about the live camera track.
+    function describeCamera(track) {
+        const stats = readTrackStats(track);
+        const statsBefore = previousTrackStats.track === track ? previousTrackStats.stats : null;
+
+        previousTrackStats = { track, stats };
+
+        return {
+            trackId: track.id,
+            label: track.label,
+            settings: readSettings(track),
+            capabilities: readTrackCall(track, "getCapabilities"),
+            constraints: readTrackCall(track, "getConstraints"),
+            stats,
+            statsBefore
+        };
+    }
+
+    // Maps an inbound stat to the remote track Jitsi's store has for it now
+    // (by receiver track id, else SSRC). With SSRC rewriting a stream can
+    // move to another sender; the store's current owner is what counts.
+    function makeOwnerLookup(state, conference) {
+        const participants = state?.["features/base/participants"];
+        const tracks = state?.["features/base/tracks"];
+        const byTrack = new Map();
+        const bySsrc = new Map();
+        const applied = conference ? conference.__slLastApplied : null;
+
+        (Array.isArray(tracks) ? tracks : []).forEach(entry => {
+            if (!entry || entry.local || entry.mediaType === "audio" || !entry.jitsiTrack) {
+                return;
+            }
+
+            const mediaTrack = mediaTrackOf(entry);
+            let ssrc = null;
+
+            try {
+                ssrc = typeof entry.jitsiTrack.getSSRC === "function" ? entry.jitsiTrack.getSSRC() : null;
+            } catch (error) {
+                ssrc = null;
+            }
+
+            if (mediaTrack && mediaTrack.id) {
+                byTrack.set(mediaTrack.id, entry);
+            }
+
+            if (isNumber(ssrc)) {
+                bySsrc.set(ssrc, entry);
+            }
+        });
+
+        return stat => {
+            const entry = (stat.trackIdentifier && byTrack.get(stat.trackIdentifier)) || bySsrc.get(stat.ssrc);
+
+            if (!entry || !entry.participantId) {
+                return null;
+            }
+
+            const participant = participants?.remote?.get?.(entry.participantId);
+            let sourceName = null;
+            let streamingStatus = null;
+
+            try {
+                sourceName = typeof entry.jitsiTrack.getSourceName === "function" ? entry.jitsiTrack.getSourceName() : null;
+                streamingStatus = typeof entry.jitsiTrack.getTrackStreamingStatus === "function"
+                    ? entry.jitsiTrack.getTrackStreamingStatus()
+                    : null;
+            } catch (error) {
+                /* left unknown */
+            }
+
+            const constraint = sourceName ? applied?.constraints?.[sourceName] : null;
+            const fallback = applied?.defaultConstraints?.maxHeight;
+
+            return {
+                participantId: entry.participantId,
+                role: participant?.role === "moderator" ? "moderator" : "participant",
+                videoType: entry.videoType === "desktop" ? "desktop" : "camera",
+                requestedHeight: constraint && isNumber(constraint.maxHeight)
+                    ? constraint.maxHeight
+                    : isNumber(fallback) ? fallback : null,
+                streamingStatus
+            };
+        };
+    }
+
+    // One getStats() at a time (null while one runs, or none possible);
+    // deltas are against the previous sample of the same peer connection.
+    async function measure(conference) {
+        if (sampling) {
+            return null;
+        }
+
+        const pc = getPeerConnection(conference);
+
+        if (!pc) {
+            lastError = "no-peer-connection";
+            previous = new Map();
+            sampledConnection = null;
+
+            return null;
+        }
+
+        if (pc !== sampledConnection) {
+            previous = new Map();
+            sampledConnection = pc;
+        }
+
+        sampling = true;
+
+        let index;
+
+        try {
+            index = indexStats(await pc.getStats());
+        } catch (error) {
+            lastError = "getstats-failed";
+
+            return null;
+        } finally {
+            sampling = false;
+        }
+
+        // A reset (conference change, stop) while getStats ran.
+        if (sampledConnection !== pc) {
+            return null;
+        }
+
+        lastError = null;
+
+        const before = previous;
+
+        previous = index;
+
+        return { index, before };
+    }
+
+    function resetSamples() {
+        previous = new Map();
+        sampledConnection = null;
+        previousTrackStats = { track: null, stats: null };
+    }
+
+    // ---- Endpoint messages ---------------------------------------------------
+
+    // false (and the reason kept) when it could not be sent, e.g. the
+    // bridge channel is not open yet: the next cycle tries again.
+    function sendEndpoint(conference, to, payload) {
+        try {
+            if (conference && typeof conference.sendEndpointMessage === "function") {
+                conference.sendEndpointMessage(to, payload);
+
+                return true;
+            }
+
+            messaging.lastSendError = "no-sendEndpointMessage";
+        } catch (error) {
+            messaging.lastSendError = text(String((error && (error.message || error.name)) || error));
+        }
+
+        return false;
+    }
+
+    // Students in the meeting now (non-moderators, no virtual participants).
+    function presentStudents(state) {
+        const participants = state?.["features/base/participants"];
+        const remote = participants?.remote;
+        const ids = [];
+
+        if (remote && typeof remote.entries === "function") {
+            for (const [participantId, participant] of remote.entries()) {
+                if (participant && !participant.fakeParticipant && participant.role !== "moderator"
+                    && participantId !== participants.local?.id) {
+                    ids.push(participantId);
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    function participantIdOf(participant) {
+        try {
+            return typeof participant?.getId === "function" ? participant.getId() : participant?.id ?? null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function onEndpointMessage(participant, payload) {
+        if (!payload || typeof payload !== "object" || payload.v !== 1) {
+            return;
+        }
+
+        const state = getState();
+        const fromId = participantIdOf(participant);
+        const sender = fromId ? state?.["features/base/participants"]?.remote?.get?.(fromId) : null;
+
+        if (!sender || sender.fakeParticipant) {
+            onUnknownSender(payload);
+
+            return;
+        }
+
+        if (payload.type === SL_VT_REQUEST) {
+            // Only a moderator may ask, and only a student answers.
+            if (sender.role === "moderator" && !isLocalModerator(state)) {
+                messaging.requestsReceived += 1;
+                onStudentRequested(fromId);
+            } else {
+                messaging.requestsIgnoredNotModerator += 1;
+            }
+
+            return;
+        }
+
+        // Only students report, and only to a teacher who is listening.
+        if (payload.type === SL_VT_REPORT && teacherActive(state)) {
+            if (sender.role === "moderator") {
+                messaging.reportsIgnoredFromModerator += 1;
+
+                return;
+            }
+
+            const report = readStudentReport(payload);
+
+            if (studentReports.has(fromId) || studentReports.size < SL_VT_MAX_STUDENTS) {
+                studentReports.set(fromId, { report, tick: tickNo });
+                messaging.reportsAccepted += 1;
+            }
+        }
+    }
+
+    // A report from someone not (or no longer) in this meeting.
+    function onUnknownSender(payload) {
+        if (payload && payload.type === SL_VT_REPORT && payload.v === 1) {
+            messaging.reportsIgnoredNotInMeeting += 1;
+        }
+    }
+
+    // Follows the current conference's endpoint messages (every role: a
+    // student must hear requests). Returns true when the conference changed;
+    // nothing carries over to another one.
+    function syncListener(state) {
+        const conference = getConference(state);
+
+        if (conference === listenedConference) {
+            return false;
+        }
+
+        if (listenedConference) {
+            try {
+                const off = listenedConference.off || listenedConference.removeEventListener;
+
+                if (typeof off === "function") {
+                    off.call(listenedConference, SL_VT_ENDPOINT_EVENT, onEndpointMessage);
+                }
+            } catch (error) {
+                /* old conference gone */
+            }
+        }
+
+        listenedConference = null;
+
+        const on = conference && (conference.on || conference.addEventListener);
+
+        if (typeof on === "function") {
+            try {
+                on.call(conference, SL_VT_ENDPOINT_EVENT, onEndpointMessage);
+                listenedConference = conference;
+            } catch (error) {
+                listenedConference = null;
+            }
+        }
+
+        studentReports.clear();
+        requesters.clear();
+        resetSamples();
+        messaging = newMessaging();
+
+        return true;
+    }
+
+    // ---- Student side --------------------------------------------------------
+
+    // A sanitised copy of a student's report: anything unexpected is null.
+    function readStudentReport(payload) {
+        const num = (value, min, max, digits) =>
+            isNumber(value) && value >= min && value <= max ? round(value, digits || 0) : null;
+        const label = value => (typeof value === "string" && SL_VT_TEXT_PATTERN.test(value) ? value : null);
+        const sources = Array.isArray(payload.sources) ? payload.sources.slice(0, SL_VT_MAX_SOURCES) : [];
+        const network = payload.network && typeof payload.network === "object" ? payload.network : null;
+
+        return {
+            seq: num(payload.seq, 0, 1e9),
+            // The student iframe's SL_CUSTOM_JS_VERSION (null: not sent).
+            customJsVersion: num(payload.customJsVersion, 0, 1e6),
+            sources: sources.filter(source => source && typeof source === "object").map(source => ({
+                participantId: typeof source.participantId === "string" && SL_VT_ID_PATTERN.test(source.participantId)
+                    ? source.participantId
+                    : null,
+                role: source.role === "moderator" ? "moderator" : "participant",
+                videoType: source.videoType === "desktop" ? "desktop" : "camera",
+                width: num(source.width, 0, 8192),
+                height: num(source.height, 0, 8192),
+                fps: num(source.fps, 0, 240, 1),
+                browserFps: num(source.browserFps, 0, 240, 1),
+                kbps: num(source.kbps, 0, 1e6),
+                lossPct: num(source.lossPct, 0, 100, 1),
+                packetsLost: num(source.packetsLost, -1e9, 1e12),
+                framesDecoded: num(source.framesDecoded, 0, 1e12),
+                framesDropped: num(source.framesDropped, 0, 1e12),
+                freezeCount: num(source.freezeCount, 0, 1e9),
+                bytesReceived: num(source.bytesReceived, 0, 1e15),
+                jitterMs: num(source.jitterMs, 0, 1e6),
+                jitterBufferMs: num(source.jitterBufferMs, 0, 1e6),
+                codec: label(source.codec),
+                decoder: label(source.decoder),
+                requestedHeight: num(source.requestedHeight, 0, 8192),
+                streamingStatus: label(source.streamingStatus)
+            })),
+            network: network ? {
+                rttMs: num(network.rttMs, 0, 1e6),
+                availableOutgoingKbps: num(network.availableOutgoingKbps, 0, 1e7),
+                availableIncomingKbps: num(network.availableIncomingKbps, 0, 1e7),
+                receiveKbps: num(network.receiveKbps, 0, 1e7),
+                sendKbps: num(network.sendKbps, 0, 1e7),
+                bytesReceived: num(network.bytesReceived, 0, 1e15),
+                bytesSent: num(network.bytesSent, 0, 1e15)
+            } : null
+        };
+    }
+
+    function onStudentRequested(moderatorId) {
+        requesters.set(moderatorId, tickNo);
+        studentTicksLeft = SL_VT_STUDENT_TTL_TICKS;
+
+        if (!studentTimer) {
+            studentTimer = setInterval(studentTick, SL_VT_POLL_MS);
+            // A baseline now, so the first report already has rates.
+            measure(getConference(getState()));
+        }
+    }
+
+    function stopStudent() {
+        if (studentTimer) {
+            clearInterval(studentTimer);
+            studentTimer = null;
+        }
+
+        studentTicksLeft = 0;
+        requesters.clear();
+        resetSamples();
+    }
+
+    async function studentReport(conference) {
+        const measured = await measure(conference);
+        const state = getState();
+
+        if (!measured || !studentTimer || getConference(state) !== conference) {
+            return;
+        }
+
+        const result = receiveSample(measured.index, measured.before, makeOwnerLookup(state, conference));
+
+        reportSeq += 1;
+
+        const payload = {
+            type: SL_VT_REPORT,
+            v: 1,
+            seq: reportSeq,
+            customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+            sources: result.sources,
+            network: result.network
+        };
+
+        requesters.forEach((tick, moderatorId) => {
+            if (sendEndpoint(conference, moderatorId, payload)) {
+                messaging.reportsSent += 1;
+            } else {
+                messaging.reportErrors += 1;
+            }
+        });
+    }
+
+    function studentTick() {
+        tickNo += 1;
+        studentTicksLeft -= 1;
+
+        const state = getState();
+        const remote = state?.["features/base/participants"]?.remote;
+
+        // Requesters who left, or stopped asking, are forgotten.
+        requesters.forEach((tick, moderatorId) => {
+            if (!remote?.get?.(moderatorId) || tickNo - tick > SL_VT_STUDENT_TTL_TICKS) {
+                requesters.delete(moderatorId);
+            }
+        });
+
+        if (studentTicksLeft <= 0 || !requesters.size || !getConference(state) || isLocalModerator(state)) {
+            stopStudent();
+
+            return;
+        }
+
+        studentReport(getConference(state));
+    }
+
+    // ---- Teacher side --------------------------------------------------------
+
+    function broadcastRequest(conference) {
+        if (sendEndpoint(conference, "", { type: SL_VT_REQUEST, v: 1 })) {
+            messaging.requestsSent += 1;
+        } else {
+            messaging.requestErrors += 1;
+        }
+    }
+
+    function studentRows(state) {
+        const remote = state?.["features/base/participants"]?.remote;
+        const rows = [];
+
+        Array.from(studentReports.entries()).forEach(([participantId, entry]) => {
+            const participant = remote?.get?.(participantId);
+            const age = tickNo - entry.tick;
+
+            // Left, now a moderator, or silent for too long: dropped.
+            if (!participant || participant.role === "moderator" || age > SL_VT_DROP_TICKS) {
+                studentReports.delete(participantId);
+
+                return;
+            }
+
+            rows.push({
+                participantId,
+                ageSeconds: age * SL_VT_POLL_MS / 1000,
+                stale: age > SL_VT_STALE_TICKS,
+                ...entry.report
+            });
+        });
+
+        return rows;
+    }
+
+    function postStatus(payload) {
+        if (heard) {
+            slPostToParent({ type: "SL_VIDEO_TELEMETRY_STATUS", v: 1, intervalMs: SL_VT_POLL_MS, ...payload });
+        }
+    }
+
+    function postStopped() {
+        postStatus({ enabled: view.enabled, active: false, error: null, send: null, students: [] });
+    }
+
+    async function teacherTick() {
+        const state = getState();
+
+        if (!teacherActive(state)) {
+            syncTeacher();
+
+            return;
+        }
+
+        tickNo += 1;
+
+        const conference = getConference(state);
+
+        if (tickNo % SL_VT_REQUEST_TICKS === 0) {
+            broadcastRequest(conference);
+        }
+
+        const measured = await measure(conference);
+        const now = getState();
+
+        // Turned off, or the conference changed, while getStats ran.
+        if (!teacherTimer || !teacherActive(now) || getConference(now) !== conference) {
+            return;
+        }
+
+        let send = null;
+
+        if (measured) {
+            const camera = localVideo(now, "camera");
+            const desktop = localVideo(now, "desktop");
+
+            send = sendSample(measured.index, measured.before,
+                camera ? describeCamera(camera) : null,
+                desktop ? desktop.id : null);
+        }
+
+        const students = studentRows(now);
+        const reporting = new Set(students.map(row => row.participantId));
+        // Students in the meeting who sent no report (an older custom.js in
+        // their iframe, or the bridge channel not delivering).
+        const silent = presentStudents(now).filter(id => !reporting.has(id)).slice(0, SL_VT_MAX_STUDENTS);
+
+        postStatus({
+            enabled: true,
+            active: true,
+            error: lastError,
+            send,
+            students,
+            silent,
+            messaging: { ...messaging, studentsPresent: reporting.size + silent.length }
+        });
+    }
+
+    function stopTeacher() {
+        if (teacherTimer) {
+            clearInterval(teacherTimer);
+            teacherTimer = null;
+        }
+
+        studentReports.clear();
+        resetSamples();
+    }
+
+    // Starts / stops the teacher's single poll with the mode, the role and
+    // the conference. Cheap: runs on every store change.
+    function syncTeacher() {
+        const state = getState();
+        const changed = syncListener(state);
+        const active = teacherActive(state);
+
+        if (active && !teacherTimer) {
+            teacherTimer = setInterval(teacherTick, SL_VT_POLL_MS);
+            broadcastRequest(getConference(state));
+            // A baseline now, so the first status already has rates.
+            measure(getConference(state));
+        } else if (active && changed) {
+            // Reconnect: the new conference's students are asked at once.
+            broadcastRequest(getConference(state));
+            measure(getConference(state));
+        } else if (!active && teacherTimer) {
+            stopTeacher();
+            postStopped();
+        }
+
+        // A student promoted to moderator stops answering.
+        if (studentTimer && isLocalModerator(state)) {
+            stopStudent();
+        }
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_VIDEO_TELEMETRY") {
+            return;
+        }
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || typeof data.enabled !== "boolean") {
+            console.warn("[SL Classroom] Ignored malformed video telemetry", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < view.epoch) {
+            return;
+        }
+
+        view = { epoch: data.epoch, enabled: data.enabled };
+        heard = true;
+
+        console.log("[SL Classroom] Video telemetry", view);
+
+        const wasPolling = Boolean(teacherTimer);
+
+        syncTeacher();
+
+        // Off (or not a moderator yet): the parent hears it at once.
+        if (!teacherTimer && !wasPolling) {
+            postStopped();
+        }
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slVideoTelemetryTest.on()   __slVideoTelemetryTest.off()
+    //   __slVideoTelemetryTest.state()
+    // Read-only measurements; the parsers are exposed for unit tests.
+    // ---------------------------------------------------------------------
+    window.__slVideoTelemetryTest = {
+        on: () => {
+            view = { ...view, enabled: true };
+            syncTeacher();
+        },
+        off: () => {
+            view = { ...view, enabled: false };
+            syncTeacher();
+        },
+        state: () => ({
+            customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+            enabled: view.enabled,
+            teacherPolling: Boolean(teacherTimer),
+            studentPolling: Boolean(studentTimer),
+            studentTicksLeft,
+            requesters: Array.from(requesters.keys()),
+            reports: studentReports.size,
+            listening: Boolean(listenedConference),
+            lastError,
+            messaging: { ...messaging }
+        }),
+        indexStats,
+        sendSample,
+        receiveSample
+    };
+
+    // Page teardown: both polls stop.
+    window.addEventListener("pagehide", () => {
+        stopTeacher();
+        stopStudent();
+    });
+
+    // Follow every store change: the conference (reconnect), the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(syncTeacher);
+        syncTeacher();
+    }, 500);
+
+})();
