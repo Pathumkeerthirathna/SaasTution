@@ -985,3 +985,21 @@ test("summary lines for the new fields", async () => {
         type: "SL_VIDEO_TELEMETRY_STATUS", v: 1, enabled: true, active: true, send: null, students: [], silent: ["p", 5]
     }).silent, ["p"]);
 });
+
+test("turned off (e.g. settings closed): no further student requests are sent; students then stop on their own", async () => {
+    const { h, conference } = await teacherWithTelemetry();
+    const requests = () => conference.endpointMessages.filter(message => message.payload.type === REQUEST.type).length;
+
+    await tick(h, 15000);
+    const before = requests();
+
+    assert.ok(before >= 2, "asked at once and again every 15 s while on");
+
+    h.postFromParent({ type: "SL_VIDEO_TELEMETRY", v: 1, epoch: 2, enabled: false });
+    await settle(h);
+    await tick(h, 60000);
+
+    assert.equal(requests(), before, "no request after off");
+    assert.deepEqual(h.intervals("teacherTick"), []);
+    // Students: with no request for 40 s they stop by themselves (see "student: stops by itself").
+});

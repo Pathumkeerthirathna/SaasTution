@@ -635,7 +635,7 @@ test("screen shares and remote cameras are never touched", async () => {
 // ---- Selectable frame rate (maxFps) and optional detail hint ---------------------------
 
 for (const maxFps of [15, 24, 30]) {
-    test(`maxFps ${maxFps}: that cap merged in, reported, and the original restored when off`, async () => {
+    test(`maxFps ${maxFps}: that cap merged in and reported; off removes only the hint, the cap stays`, async () => {
         const h = await setup();
         const camera = fakeCamera();
 
@@ -651,8 +651,11 @@ for (const maxFps of [15, 24, 30]) {
 
         await sendProfile(h, false, { maxFps });
 
-        assert.deepEqual(camera.constraints, JITSI_CONSTRAINTS);
+        assert.equal(camera.calls.length, 1, "turning off does not touch the frame rate");
+        assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: maxFps } });
         assert.equal(camera.contentHint, "");
+        assert.equal(lastStatus(h).frameRate, "applied");
+        assert.equal(lastStatus(h).contentHint, null);
     });
 }
 
@@ -672,14 +675,15 @@ test("changing maxFps while on restores the original first, then applies the new
     ]);
     assert.equal(lastStatus(h).maxFps, 30);
     assert.equal(lastStatus(h).fps, 30);
+    assert.equal(camera.contentHint, "detail", "a frame-rate change leaves the hint alone");
 
     await sendProfile(h, false, { maxFps: 30 });
 
-    assert.deepEqual(camera.constraints, JITSI_CONSTRAINTS);
+    assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: 30 } });
     assert.equal(camera.contentHint, "");
 });
 
-test("an original frameRate constraint survives cap changes and comes back when off", async () => {
+test("an original frameRate constraint survives cap changes and comes back when the cap is released", async () => {
     const h = await setup();
     const camera = fakeCamera({ constraints: { ...JITSI_CONSTRAINTS, frameRate: { ideal: 30 } } });
 
@@ -693,10 +697,15 @@ test("an original frameRate constraint survives cap changes and comes back when 
 
     await sendProfile(h, false, { maxFps: 24 });
 
+    assert.deepEqual(camera.constraints.frameRate, { max: 24 }, "Teaching Mode off keeps the frame rate");
+
+    // An older parent page's "off" (no maxFps) releases the cap.
+    await sendMode(h, false);
+
     assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { ideal: 30 } });
 });
 
-test("a cap is never raised: an existing max 24 is kept for 30, replaced for 15, restored when off", async () => {
+test("a cap is never raised: an existing max 24 is kept for 30, replaced for 15, restored when released", async () => {
     const h = await setup();
     const camera = fakeCamera({ constraints: { ...JITSI_CONSTRAINTS, frameRate: { max: 24 } } });
 
@@ -712,6 +721,10 @@ test("a cap is never raised: an existing max 24 is kept for 30, replaced for 15,
     assert.deepEqual(camera.constraints.frameRate, { max: 15 });
 
     await sendProfile(h, false, { maxFps: 15 });
+
+    assert.deepEqual(camera.constraints.frameRate, { max: 15 });
+
+    await sendMode(h, false);
 
     assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: 24 } });
 });
@@ -730,16 +743,20 @@ test("detailHint false: the hint is left alone (reported 'disabled'), the frame-
     assert.equal(lastStatus(h).contentHint, "disabled");
     assert.equal(lastStatus(h).detailHint, false);
 
-    // Switching the hint on while on: applied, the cap re-applied once.
+    // Switching the hint on while on: applied; the cap is not touched.
+    const callsBefore = camera.calls.length;
+
     await sendProfile(h, true, { maxFps: 24, detailHint: true });
 
     assert.equal(camera.contentHint, "detail");
     assert.deepEqual(camera.constraints.frameRate, { max: 24 });
+    assert.equal(camera.calls.length, callsBefore);
 
     await sendProfile(h, false, { maxFps: 24, detailHint: true });
 
     assert.equal(camera.contentHint, "motion");
-    assert.deepEqual(camera.constraints, JITSI_CONSTRAINTS);
+    assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: 24 } });
+    assert.equal(camera.calls.length, callsBefore);
 });
 
 test("invalid maxFps / detailHint values make the message malformed: ignored, current mode kept", async () => {
@@ -797,7 +814,7 @@ test("track replacement at 24 fps: the new track gets 24; the old stopped one is
     assert.equal(first.calls.length, 1);
 });
 
-test("a settings change while off changes nothing on the camera; it applies when turned on", async () => {
+test("a frame rate sent while off applies at once (hint untouched); turning on adds only the hint", async () => {
     const h = await setup();
     const camera = fakeCamera();
 
@@ -805,10 +822,124 @@ test("a settings change while off changes nothing on the camera; it applies when
     await changed(h);
     await sendProfile(h, false, { maxFps: 30 });
 
-    assert.equal(camera.calls.length, 0);
-    assert.equal(lastStatus(h).maxFps, 30);
+    assert.deepEqual(camera.calls, [{ ...JITSI_CONSTRAINTS, frameRate: { max: 30 } }]);
+    assert.equal(camera.contentHint, "");
+    assert.deepEqual(lastStatus(h), {
+        ...OFF_STATUS,
+        camera: true,
+        frameRate: "applied",
+        fps: 30,
+        maxFps: 30
+    });
 
     await sendProfile(h, true, { maxFps: 30 });
 
-    assert.deepEqual(camera.calls, [{ ...JITSI_CONSTRAINTS, frameRate: { max: 30 } }]);
+    assert.equal(camera.calls.length, 1, "turning on does not touch the frame rate");
+    assert.equal(camera.contentHint, "detail");
+});
+
+// ---- Frame rate independent of Teaching Mode -------------------------------------------
+
+test("toggling Teaching Mode on / off repeatedly never re-applies or resets the frame rate", async () => {
+    const h = await setup();
+    const camera = fakeCamera();
+
+    addLocalCamera(h, camera);
+    await changed(h);
+    await sendProfile(h, false, { maxFps: 24 });
+
+    for (const enabled of [true, false, true, false]) {
+        await sendProfile(h, enabled, { maxFps: 24 });
+
+        assert.equal(camera.contentHint, enabled ? "detail" : "");
+        assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: 24 } });
+        assert.equal(lastStatus(h).frameRate, "applied");
+        assert.equal(lastStatus(h).fps, 24);
+    }
+
+    assert.equal(camera.calls.length, 1);
+});
+
+for (const enabled of [false, true]) {
+    test(`choosing 15 / 24 / 30 with Teaching Mode ${enabled ? "on" : "off"}: each cap applied, never stacked, hint untouched`, async () => {
+        const h = await setup();
+        const camera = fakeCamera();
+
+        addLocalCamera(h, camera);
+        await changed(h);
+
+        for (const maxFps of [15, 24, 30]) {
+            await sendProfile(h, enabled, { maxFps });
+
+            assert.deepEqual(camera.constraints, { ...JITSI_CONSTRAINTS, frameRate: { max: maxFps } });
+            assert.equal(lastStatus(h).fps, maxFps);
+            assert.equal(camera.contentHint, enabled ? "detail" : "");
+        }
+
+        assert.deepEqual(camera.calls, [
+            { ...JITSI_CONSTRAINTS, frameRate: { max: 15 } },
+            JITSI_CONSTRAINTS,
+            { ...JITSI_CONSTRAINTS, frameRate: { max: 24 } },
+            JITSI_CONSTRAINTS,
+            { ...JITSI_CONSTRAINTS, frameRate: { max: 30 } }
+        ]);
+    });
+}
+
+test("frame rate while off: re-applied to a replaced camera track by the poll", async () => {
+    const h = await setup();
+    const first = fakeCamera();
+    const entry = addLocalCamera(h, first);
+
+    await changed(h);
+    await sendProfile(h, false, { maxFps: 24 });
+
+    assert.equal(pollIntervals(h).length, 1, "polls while the frame rate applies");
+
+    first.stop();
+
+    const second = fakeCamera();
+
+    entry.jitsiTrack.camera = second;
+    h.timers.advance(2000);
+    await settle(h);
+
+    assert.deepEqual(second.calls, [{ ...JITSI_CONSTRAINTS, frameRate: { max: 24 } }]);
+    assert.equal(second.contentHint, "");
+    assert.equal(first.calls.length, 1);
+});
+
+test("frame rate while off: a student (not a moderator) is never touched", async () => {
+    const h = await setup({ role: "participant" });
+    const camera = fakeCamera();
+
+    addLocalCamera(h, camera);
+    await changed(h);
+    await sendProfile(h, false, { maxFps: 24 });
+
+    assert.equal(camera.calls.length, 0);
+    assert.equal(lastStatus(h).camera, false);
+    assert.equal(lastStatus(h).frameRate, null);
+});
+
+test("end to end with Teaching Mode off: the app's status line reads custom.js's report for the track", async () => {
+    const { buildTeachingModeMessage, describeFrameRateStatus } = await import(require("url").pathToFileURL(
+        require("path").join(__dirname, "..", "..", "components", "Jitsi", "teacher-camera-preferences.mjs")).href);
+    const h = await setup();
+    const camera = fakeCamera();
+
+    addLocalCamera(h, camera);
+    await changed(h);
+
+    h.postFromParent(buildTeachingModeMessage((nextEpoch += 1), { enabled: false, maxFps: 24, detailHint: true }));
+    await settle(h);
+
+    assert.equal(describeFrameRateStatus(lastStatus(h), 24), "Camera capped at 24 fps (camera reports 24 fps).");
+
+    // Turned on: the line is unchanged (the frame rate is not touched).
+    h.postFromParent(buildTeachingModeMessage((nextEpoch += 1), { enabled: true, maxFps: 24, detailHint: true }));
+    await settle(h);
+
+    assert.equal(describeFrameRateStatus(lastStatus(h), 24), "Camera capped at 24 fps (camera reports 24 fps).");
+    assert.equal(camera.calls.length, 1);
 });

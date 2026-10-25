@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { VideoTelemetryStatus } from "../../hooks/useJitsi";
+import { diagnosticsSwitchStep, VIDEO_DIAGNOSTICS_CONFIRM } from "../../video-diagnostics-controls.mjs";
 import {
   formatCaptureLine,
   formatMessagingLine,
@@ -44,6 +45,47 @@ function describeWaiting(status: VideoTelemetryStatus | null): string | null {
 }
 
 /**
+ * The confirmation before diagnostics is turned on (inside the settings
+ * menu, so answering it never counts as a click outside the menu).
+ */
+export function DiagnosticsConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const titleId = useId();
+  const messageId = useId();
+
+  return (
+    <div
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={messageId}
+      className="mx-1 mt-1 rounded-lg border border-[#334155] bg-[#0F172A] p-3"
+    >
+      <p id={titleId} className="text-sm font-semibold text-[#F8FAFC]">
+        {VIDEO_DIAGNOSTICS_CONFIRM.title}
+      </p>
+      <p id={messageId} className="mt-1 text-[11px] leading-snug text-[#CBD5E1]">
+        {VIDEO_DIAGNOSTICS_CONFIRM.message}
+      </p>
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg px-3 py-1.5 text-xs text-[#CBD5E1] ring-1 ring-[#334155] transition hover:bg-[#1E293B]"
+        >
+          {VIDEO_DIAGNOSTICS_CONFIRM.cancelLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-lg bg-[#3B82F6] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#2563EB]"
+        >
+          {VIDEO_DIAGNOSTICS_CONFIRM.confirmLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Teacher settings: read-only video diagnostics. Every number comes from
  * WebRTC stats (custom.js); anything not measured is shown as N/A. Every
  * line wraps, nothing is cut off.
@@ -56,6 +98,20 @@ export default function VideoDiagnosticsSection({
   onCopy,
 }: VideoDiagnosticsSectionProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  // Turning it on asks first (diagnosticsSwitchStep); nothing is sent or
+  // polled until the teacher confirms.
+  const [confirming, setConfirming] = useState(false);
+
+  const step = (action: "switch" | "confirm" | "cancel") => {
+    const next = diagnosticsSwitchStep({ enabled, confirming }, action);
+
+    setConfirming(next.confirming);
+
+    if (next.toggle !== null) {
+      setCopyState("idle");
+      onToggle(next.toggle);
+    }
+  };
 
   const waiting = enabled ? describeWaiting(status) : null;
   const send = status?.active ? status.send : null;
@@ -83,10 +139,7 @@ export default function VideoDiagnosticsSection({
         type="button"
         role="switch"
         aria-checked={enabled}
-        onClick={() => {
-          setCopyState("idle");
-          onToggle(!enabled);
-        }}
+        onClick={() => step("switch")}
         className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
       >
         <span className="text-left">
@@ -108,6 +161,10 @@ export default function VideoDiagnosticsSection({
           />
         </span>
       </button>
+
+      {confirming && !enabled ? (
+        <DiagnosticsConfirm onConfirm={() => step("confirm")} onCancel={() => step("cancel")} />
+      ) : null}
 
       {enabled ? (
         <div role="status" className="mt-1 space-y-2 break-words px-3 text-[10px] leading-snug">

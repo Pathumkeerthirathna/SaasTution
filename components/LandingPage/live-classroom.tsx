@@ -33,7 +33,7 @@ const PINS: Pin[] = [
   { id: "breakout", label: "Breakout rooms", text: "Split the class into smaller rooms.", x: 95.2, y: 36.4, icon: UsersRound },
   { id: "tools", label: "Lecture tools", text: "Notes, assignments and quizzes for this lecture.", x: 95.2, y: 50.9, icon: BookOpen },
   { id: "whiteboard", label: "Whiteboard", text: "Open a live whiteboard for the lecture.", x: 95.2, y: 64, icon: PenTool },
-  { id: "settings", label: "Settings", text: "Choose video quality up to 1080p and turn on noise suppression.", x: 95.2, y: 93.8, icon: Cog },
+  { id: "settings", label: "Settings", text: "Choose video quality up to 720p and turn on noise suppression.", x: 95.2, y: 93.8, icon: Cog },
 ];
 
 const TABS: PanelTab[] = [
@@ -93,7 +93,7 @@ const TABS: PanelTab[] = [
     icon: Cog,
     image: "classroom-settings",
     title: "Video quality you control",
-    text: "Pick a video quality up to 1080p and switch on noise suppression.",
+    text: "Pick a video quality up to 720p and switch on noise suppression.",
   },
   {
     id: "golive",

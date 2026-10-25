@@ -287,3 +287,114 @@ test("start-up window: constraints sent before the wrapper stay in force until J
     assert.deepEqual(selected(h), ["teach001-v0"]);
     assert.equal(h.lastSent().defaultConstraints.maxHeight, 0);
 });
+
+// ---- Teacher camera on the student's stage: at least 720p ----------------------------
+
+// Jitsi's own request for one source (its large-video height for the stage).
+const jitsiAsks = (h, source, maxHeight) => h.jitsiRecompute({ constraints: { [source]: { maxHeight } } });
+const requestedHeight = (h, source) => h.lastSent().constraints[source]?.maxHeight;
+
+function teacherOnStage() {
+    const h = studentHarness();
+
+    h.addParticipant("teach001", { role: "moderator" });
+    h.addParticipant("stud0001");
+    activate(h);
+
+    return h;
+}
+
+test("teacher camera on the stage: Jitsi's 360 (small screen) is raised to 720", () => {
+    const h = teacherOnStage();
+
+    jitsiAsks(h, "teach001-v0", 360);
+
+    assert.deepEqual(Array.from(h.lastSent().onStageSources), ["teach001-v0"]);
+    assert.equal(requestedHeight(h, "teach001-v0"), 720);
+    assert.equal(h.lastSent().defaultConstraints.maxHeight, 0, "student cameras still not forwarded");
+    assert.ok(!("stud0001-v0" in h.lastSent().constraints));
+});
+
+test("teacher camera on the stage: a larger Jitsi request (1080) is kept, never lowered", () => {
+    const h = teacherOnStage();
+
+    jitsiAsks(h, "teach001-v0", 1080);
+
+    assert.equal(requestedHeight(h, "teach001-v0"), 1080);
+});
+
+test("teacher camera on the stage: no Jitsi request still gives 720 (unchanged fallback)", () => {
+    const h = teacherOnStage();
+
+    h.jitsiRecompute({ constraints: {} });
+
+    assert.equal(requestedHeight(h, "teach001-v0"), 720);
+});
+
+test("teacher's screen share on the stage stays adaptive; the teacher camera corner tile stays 180", () => {
+    const h = studentHarness();
+
+    h.addParticipant("teach001", { role: "moderator" });
+    h.addScreenShare("teach001");
+    activate(h);
+    jitsiAsks(h, "teach001-v1", 360);
+
+    assert.deepEqual(Array.from(h.lastSent().onStageSources), ["teach001-v1"]);
+    assert.equal(requestedHeight(h, "teach001-v1"), 360, "share keeps Jitsi's own height");
+    assert.equal(requestedHeight(h, "teach001-v0"), 180, "corner tile not raised");
+});
+
+test("student's screen share on the stage stays adaptive; the teacher camera corner tile stays 180", () => {
+    const h = studentHarness();
+
+    h.addParticipant("teach001", { role: "moderator" });
+    h.addParticipant("stud0001");
+    h.addScreenShare("stud0001");
+    activate(h);
+    jitsiAsks(h, "stud0001-v1", 360);
+
+    assert.deepEqual(Array.from(h.lastSent().onStageSources), ["stud0001-v1"]);
+    assert.equal(requestedHeight(h, "stud0001-v1"), 360);
+    assert.equal(requestedHeight(h, "teach001-v0"), 180);
+});
+
+test("the student's own lower video-quality choice in Jitsi is respected", () => {
+    const h = teacherOnStage();
+
+    h.state["features/video-quality"] = { preferredVideoQuality: 360 };
+    jitsiAsks(h, "teach001-v0", 360);
+    assert.equal(requestedHeight(h, "teach001-v0"), 360);
+
+    h.state["features/video-quality"] = { preferredVideoQuality: 180 };
+    jitsiAsks(h, "teach001-v0", 180);
+    assert.equal(requestedHeight(h, "teach001-v0"), 180);
+
+    // Jitsi's default (no lower choice) and the app's own 720: raised to 720.
+    for (const preferredVideoQuality of [2160, 720]) {
+        h.state["features/video-quality"] = { preferredVideoQuality };
+        jitsiAsks(h, "teach001-v0", 360);
+        assert.equal(requestedHeight(h, "teach001-v0"), 720, String(preferredVideoQuality));
+    }
+});
+
+test("audio-only (lastN 0) with the teacher on the stage: passed through, nothing raised", () => {
+    const h = teacherOnStage();
+
+    h.jitsiRecompute({ lastN: 0, constraints: { "teach001-v0": { maxHeight: 360 } } });
+
+    assert.equal(h.lastSent(), h.conference()[LAST_CONSTRAINTS]);
+    assert.equal(h.lastSent().lastN, 0);
+    assert.equal(requestedHeight(h, "teach001-v0"), 360);
+});
+
+test("a teacher (moderator) iframe is not affected: Jitsi's own request passes through", () => {
+    const h = createHarness();
+
+    h.participants.local = { id: "teach009", role: "moderator", name: "Teacher" };
+    h.addParticipant("teach001", { role: "moderator" });
+    activate(h);
+    jitsiAsks(h, "teach001-v0", 360);
+
+    assert.equal(requestedHeight(h, "teach001-v0"), 360);
+    assert.equal(h.lastSent(), h.conference()[LAST_CONSTRAINTS]);
+});

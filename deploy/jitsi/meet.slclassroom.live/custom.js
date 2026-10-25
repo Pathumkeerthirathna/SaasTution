@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1014;
+const SL_CUSTOM_JS_VERSION = 1016;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -1153,14 +1153,7 @@ window.addEventListener("load", () => {
 
 
 
-setInterval(() => {
 
-    if (!window.APP || !APP.conference)
-        return;
-
-    console.log(APP);
-
-}, 3000);
 
 
 // STEP 1 - Find Jitsi menu items
@@ -1536,6 +1529,13 @@ document.addEventListener(
     // so not shown; kept cheap and ready for a quick stage switch).
     const SL_STUDENT_STAGE_FALLBACK_HEIGHT = 720;
     const SL_STUDENT_SECONDARY_MAX_HEIGHT = 180;
+    // Student view: the teacher's CAMERA on the stage is requested at least at
+    // this height, whatever Jitsi asks for its (small, e.g. phone) stage area:
+    // 720 is the lowest height that gets Jitsi's "high" bitrate budget, so the
+    // teacher's handwriting stays readable. A lower video quality the student
+    // chose in Jitsi still wins. A REQUESTED maximum: the bridge still forwards
+    // a lower layer when the student's network cannot carry it.
+    const SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT = 720;
 
     // Per conference object: the local role the parent was last told about,
     // and the last student-view signature applied.
@@ -2019,6 +2019,17 @@ document.addEventListener(
         return height > 0 ? height : SL_STUDENT_STAGE_FALLBACK_HEIGHT;
     }
 
+    // The least height for the teacher's camera on a student's stage: 720,
+    // or the student's own lower video-quality choice in Jitsi
+    // (features/video-quality preferredVideoQuality), which is kept.
+    function getTeacherCameraMinHeight(state) {
+        const preferred = state?.["features/video-quality"]?.preferredVideoQuality;
+
+        return typeof preferred === "number" && Number.isFinite(preferred) && preferred > 0
+            ? Math.min(SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT, preferred)
+            : SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT;
+    }
+
     // Phase 3: moderator cameras + active screen shares, nothing else.
     function rewriteStudentConstraints(original, state) {
 
@@ -2051,14 +2062,19 @@ document.addEventListener(
         sources.studentDesktops.filter(entry => !entry.muted).forEach(entry => addSource(entry.sourceName));
 
         const stageHeight = getRequestedStageHeight(original);
+        // From Jitsi's own height (not the raised one below): the teacher's
+        // corner tile and other sources off the stage stay small.
         const secondaryHeight = Math.min(SL_STUDENT_SECONDARY_MAX_HEIGHT, stageHeight);
+        // Only the teacher's camera on the stage is raised (never lowered);
+        // a screen share on the stage keeps Jitsi's own height.
+        const cameraStageHeight = Math.max(stageHeight, getTeacherCameraMinHeight(state));
 
         const constraints = {};
 
         selectedSources.forEach(sourceName => {
             constraints[sourceName] = {
                 maxHeight: stage && stage.sourceName === sourceName
-                    ? stageHeight
+                    ? (stage.videoType === "camera" ? cameraStageHeight : stageHeight)
                     : secondaryHeight
             };
         });
@@ -9914,6 +9930,328 @@ const SL_DEVICE_STATUS_GAP = 8;
 
 })();
  
+
+
+
+/* ==========================================================
+   SL Classroom - Teacher Video Bitrate (live cap, send side)
+
+   Teacher only. The teacher's page sets the AV1 / VP8 / VP9 "high"
+   (720p, top layer) bitrate cap when it creates this iframe
+   (configOverwrite videoQuality.<codec>.maxBitratesVideo.high). This
+   section lets the page change that cap DURING the meeting, on the
+   active bridge connection, without a rejoin:
+     - lib-jitsi-meet keeps the per-codec caps it read at connection
+       set-up in its TraceablePeerConnection (tpcUtils.codecSettings)
+       and reads them every time it computes the camera's encodings;
+     - the "high" value is set there for AV1, VP8 and VP9 only (H.264,
+       the other levels, screen sharing's own cap and the codec order
+       are left as they are), then lib-jitsi-meet's own
+       configureVideoSenderEncodings() re-applies the encodings through
+       its own queue, exactly as it does after a codec change.
+   Its later recomputes (receiver requests, codec change, camera track
+   replaced, camera off / on) keep using the new value. A new bridge
+   connection (reconnect) is built from the page's configOverwrite and
+   gets the latest cap again here (store change / poll).
+
+   A MAXIMUM, not a rate: the browser and Jitsi still adapt to the
+   network, the CPU and the size students request (below 720p Jitsi
+   uses its "standard" / "low" caps, which are not changed).
+
+   These are lib-jitsi-meet internals, not the public API: anything
+   missing (no tpcUtils, no codecSettings, no
+   configureVideoSenderEncodings) is reported "unsupported" and nothing
+   is changed; the cap then applies from the next join only.
+
+   Runs ONLY for the local moderator (teacher), only once the page sends:
+     { type: "SL_TEACHER_BITRATE", v: 1, epoch, maxBitrate }
+     maxBitrate  500000 | 1000000 | 1500000 | 2500000
+   (resent by the page after SL_RECEIVE_READY). Reports, whenever it
+   changes:
+     { type: "SL_TEACHER_BITRATE_STATUS", v: 1, maxBitrate, state,
+       topMaxBitrate, codec }
+     state          "applied" | "pending" | "unsupported" | "failed"
+     topMaxBitrate  the camera sender's active top encoding maxBitrate
+                    as the browser holds it, or null
+     codec          the camera sender's codec ("av1", "vp8", ...) or null
+========================================================== */
+
+(function () {
+
+    const SL_TBR_CODECS = ["av1", "vp8", "vp9"];
+    const SL_TBR_ALLOWED = [500000, 1000000, 1500000, 2500000];
+    // Safety net: a replaced bridge connection is not always a store change.
+    const SL_TBR_POLL_MS = 2000;
+
+    let wanted = { epoch: 0, maxBitrate: null };
+    // Nothing is done or posted before the teacher's page has sent a cap.
+    let heard = false;
+    // TraceablePeerConnection -> the cap set on it.
+    const appliedOn = new WeakMap();
+    let state = null;
+    let pollTimer = null;
+    let lastStatus = "";
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(store) {
+        return store?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    // The bridge connection's TraceablePeerConnection (P2P is off).
+    function getBridgeConnection(store) {
+        const conference = store?.["features/base/conference"]?.conference;
+
+        return conference?.jvbJingleSession?.peerconnection || null;
+    }
+
+    function getCodecSettings(tpc) {
+        const settings = tpc?.tpcUtils?.codecSettings;
+
+        return settings && typeof settings === "object" ? settings : null;
+    }
+
+    // The local camera's MediaStreamTrack (never a screen share).
+    function getLocalCameraTrack(store) {
+        const tracks = store?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track && track.local && track.videoType === "camera" && track.jitsiTrack);
+
+        try {
+            return entry && typeof entry.jitsiTrack.getTrack === "function" ? entry.jitsiTrack.getTrack() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // What the browser holds for the camera sender: its codec and the
+    // maxBitrate of its largest active encoding.
+    function readCameraSender(store, tpc) {
+        const result = { codec: null, topMaxBitrate: null };
+        const cameraTrack = getLocalCameraTrack(store);
+        let sender = null;
+
+        try {
+            const senders = tpc?.peerconnection?.getSenders?.() || [];
+
+            sender = senders.find(candidate => candidate.track && candidate.track === cameraTrack) || null;
+        } catch (error) {
+            sender = null;
+        }
+
+        if (!sender || typeof sender.getParameters !== "function") {
+            return result;
+        }
+
+        try {
+            const parameters = sender.getParameters() || {};
+            const mimeType = parameters.codecs?.[0]?.mimeType;
+            const active = (Array.isArray(parameters.encodings) ? parameters.encodings : [])
+                .filter(encoding => encoding && encoding.active !== false)
+                .sort((a, b) => (a.scaleResolutionDownBy || 1) - (b.scaleResolutionDownBy || 1));
+
+            result.codec = typeof mimeType === "string" ? mimeType.replace(/^video\//i, "").toLowerCase() : null;
+            result.topMaxBitrate = active.length && typeof active[0].maxBitrate === "number" ? active[0].maxBitrate : null;
+        } catch (error) {
+            /* left unknown */
+        }
+
+        return result;
+    }
+
+    function currentStatus() {
+        const store = getState();
+        const sender = state === "applied" ? readCameraSender(store, getBridgeConnection(store)) : { codec: null, topMaxBitrate: null };
+
+        return {
+            type: "SL_TEACHER_BITRATE_STATUS",
+            v: 1,
+            maxBitrate: wanted.maxBitrate,
+            state,
+            topMaxBitrate: sender.topMaxBitrate,
+            codec: sender.codec
+        };
+    }
+
+    function reportStatus() {
+        if (!heard || state === null) {
+            return;
+        }
+
+        const status = currentStatus();
+        const signature = JSON.stringify(status);
+
+        if (signature !== lastStatus) {
+            lastStatus = signature;
+            slPostToParent(status);
+        }
+    }
+
+    function syncPoll(active) {
+        if (active && !pollTimer) {
+            pollTimer = setInterval(() => sync(true), SL_TBR_POLL_MS);
+        } else if (!active && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    // Cheap; runs on every store change and on the poll. Sets the wanted cap
+    // on the current bridge connection once (again for a new connection or
+    // a new cap), then reports. Once applied, the sender's current state is
+    // re-read on the poll only (fromPoll), not on every store change.
+    function sync(fromPoll) {
+        const store = getState();
+        const active = Boolean(heard && wanted.maxBitrate !== null && isLocalModerator(store));
+
+        syncPoll(active);
+
+        if (!active) {
+            return;
+        }
+
+        const tpc = getBridgeConnection(store);
+
+        if (!tpc) {
+            state = "pending";
+            reportStatus();
+
+            return;
+        }
+
+        if (appliedOn.get(tpc) === wanted.maxBitrate) {
+            if (fromPoll === true) {
+                reportStatus();
+            }
+
+            return;
+        }
+
+        const settings = getCodecSettings(tpc);
+
+        if (!settings || typeof tpc.configureVideoSenderEncodings !== "function") {
+            state = "unsupported";
+            reportStatus();
+
+            return;
+        }
+
+        const cap = wanted.maxBitrate;
+
+        SL_TBR_CODECS.forEach(codec => {
+            const levels = settings[codec]?.maxBitratesVideo;
+
+            if (levels && typeof levels === "object") {
+                levels.high = cap;
+            }
+        });
+
+        appliedOn.set(tpc, cap);
+        state = "pending";
+        reportStatus();
+
+        Promise.resolve()
+            .then(() => tpc.configureVideoSenderEncodings())
+            .then(() => {
+                if (getBridgeConnection(getState()) === tpc && wanted.maxBitrate === cap) {
+                    state = "applied";
+                    reportStatus();
+                }
+            }, error => {
+                console.warn("[SL Classroom] Teacher bitrate: encodings not re-applied:",
+                    (error && (error.name || error.message)) || String(error));
+
+                if (wanted.maxBitrate === cap) {
+                    // The value stays in codecSettings (used by the next
+                    // recompute); the next sync tries the re-apply again.
+                    appliedOn.delete(tpc);
+                    state = "failed";
+                    reportStatus();
+                }
+            });
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_TEACHER_BITRATE") {
+            return;
+        }
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || !SL_TBR_ALLOWED.includes(data.maxBitrate)) {
+            console.warn("[SL Classroom] Ignored malformed teacher bitrate", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the page resends it after SL_RECEIVE_READY.
+        if (data.epoch < wanted.epoch) {
+            return;
+        }
+
+        wanted = { epoch: data.epoch, maxBitrate: data.maxBitrate };
+        heard = true;
+        // The page gets the current status for every message it sends.
+        lastStatus = "";
+
+        console.log("[SL Classroom] Teacher bitrate", wanted);
+
+        sync(true);
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slTeacherBitrateTest.state()   what is wanted / applied
+    // ---------------------------------------------------------------------
+    window.__slTeacherBitrateTest = {
+        state: () => {
+            const store = getState();
+            const tpc = getBridgeConnection(store);
+            const settings = getCodecSettings(tpc);
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                ...currentStatus(),
+                appliedOnConnection: tpc ? appliedOn.get(tpc) ?? null : null,
+                codecHigh: settings
+                    ? Object.fromEntries(Object.keys(settings)
+                        .filter(codec => settings[codec]?.maxBitratesVideo)
+                        .map(codec => [codec, settings[codec].maxBitratesVideo.high]))
+                    : null,
+                polling: Boolean(pollTimer)
+            };
+        }
+    };
+
+    window.addEventListener("pagehide", () => syncPoll(false));
+
+    // Follow every store change: the conference / bridge connection
+    // (reconnect), the local camera, the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
+    }, 500);
+
+})();
 
 
 

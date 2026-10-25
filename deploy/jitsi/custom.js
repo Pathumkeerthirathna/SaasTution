@@ -1536,6 +1536,13 @@ document.addEventListener(
     // so not shown; kept cheap and ready for a quick stage switch).
     const SL_STUDENT_STAGE_FALLBACK_HEIGHT = 720;
     const SL_STUDENT_SECONDARY_MAX_HEIGHT = 180;
+    // Student view: the teacher's CAMERA on the stage is requested at least at
+    // this height, whatever Jitsi asks for its (small, e.g. phone) stage area:
+    // 720 is the lowest height that gets Jitsi's "high" bitrate budget, so the
+    // teacher's handwriting stays readable. A lower video quality the student
+    // chose in Jitsi still wins. A REQUESTED maximum: the bridge still forwards
+    // a lower layer when the student's network cannot carry it.
+    const SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT = 720;
 
     // Per conference object: the local role the parent was last told about,
     // and the last student-view signature applied.
@@ -2019,6 +2026,17 @@ document.addEventListener(
         return height > 0 ? height : SL_STUDENT_STAGE_FALLBACK_HEIGHT;
     }
 
+    // The least height for the teacher's camera on a student's stage: 720,
+    // or the student's own lower video-quality choice in Jitsi
+    // (features/video-quality preferredVideoQuality), which is kept.
+    function getTeacherCameraMinHeight(state) {
+        const preferred = state?.["features/video-quality"]?.preferredVideoQuality;
+
+        return typeof preferred === "number" && Number.isFinite(preferred) && preferred > 0
+            ? Math.min(SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT, preferred)
+            : SL_STUDENT_TEACHER_CAMERA_MIN_HEIGHT;
+    }
+
     // Phase 3: moderator cameras + active screen shares, nothing else.
     function rewriteStudentConstraints(original, state) {
 
@@ -2051,14 +2069,19 @@ document.addEventListener(
         sources.studentDesktops.filter(entry => !entry.muted).forEach(entry => addSource(entry.sourceName));
 
         const stageHeight = getRequestedStageHeight(original);
+        // From Jitsi's own height (not the raised one below): the teacher's
+        // corner tile and other sources off the stage stay small.
         const secondaryHeight = Math.min(SL_STUDENT_SECONDARY_MAX_HEIGHT, stageHeight);
+        // Only the teacher's camera on the stage is raised (never lowered);
+        // a screen share on the stage keeps Jitsi's own height.
+        const cameraStageHeight = Math.max(stageHeight, getTeacherCameraMinHeight(state));
 
         const constraints = {};
 
         selectedSources.forEach(sourceName => {
             constraints[sourceName] = {
                 maxHeight: stage && stage.sourceName === sourceName
-                    ? stageHeight
+                    ? (stage.videoType === "camera" ? cameraStageHeight : stageHeight)
                     : secondaryHeight
             };
         });
@@ -9368,6 +9391,10 @@ const SL_DEVICE_STATUS_GAP = 8;
        constraints (the resolution, the device and every other
        constraint Jitsi asked for are kept), so each frame gets
        more of the bitrate.
+   The frame-rate cap (maxFps) is also the teacher's camera frame rate
+   setting on its own: when the parent page sends maxFps it applies
+   whether the mode is on or off, and turning the mode on / off only
+   adds / removes the content hint (the frame rate is never touched).
    Nothing else changes: simulcast, Jitsi's and the bridge's adaptive
    quality, the receive policy and every student's view stay as they
    are. The resolution is never raised (no 1080p / 4K).
@@ -9396,7 +9423,8 @@ const SL_DEVICE_STATUS_GAP = 8;
    Runs ONLY for the local moderator (teacher), only while the parent
    page enables it:
      { type: "SL_TEACHING_MODE", v: 1, epoch, enabled, maxFps?, detailHint? }
-     maxFps      15 | 24 | 30, the frame-rate cap (absent: 15)
+     maxFps      15 | 24 | 30, the frame-rate cap, applied on or off
+                 (absent: 15, and only while on)
      detailHint  boolean, whether contentHint "detail" is set (absent:
                  true). Optional because Jitsi sets the sender's
                  degradationPreference to "maintain-framerate", which can
@@ -9404,15 +9432,18 @@ const SL_DEVICE_STATUS_GAP = 8;
    An older parent page sends neither field and gets exactly the earlier
    behaviour (15 fps + "detail"). Any other value makes the message
    malformed: it is ignored and the current mode stays.
-   Changing maxFps or detailHint while on first restores the track's
-   ORIGINAL settings, then applies the new ones (never stacking caps).
+   Changing maxFps (or detailHint while on) first restores that part's
+   ORIGINAL setting on the track, then applies the new one (never
+   stacking caps); the other part is left as it is.
    (Resent by the parent after SL_RECEIVE_READY.) Reports back, once
    the parent has sent one, whenever it changes:
      { type: "SL_TEACHING_MODE_STATUS", v: 1, enabled, active, camera,
        contentHint, frameRate, fps, maxFps, detailHint }
      active       the mode is on here (enabled, local moderator)
-     camera       a live local camera track exists
+     camera       a live local camera track exists (looked up while the
+                  mode is on or the frame rate applies)
      contentHint  "applied" | "disabled" | "unsupported" | "failed" | null
+                  (null while the mode is off)
      frameRate    "applied" | "kept" (already at or below the cap) |
                   "pending" | "unsupported" | "failed" | null
      fps          the track's reported frame rate (getSettings) or null
@@ -9435,13 +9466,15 @@ const SL_DEVICE_STATUS_GAP = 8;
     // Constraint errors that mean "not possible here" rather than a fault.
     const SL_TM_UNSUPPORTED_ERRORS = ["OverconstrainedError", "NotSupportedError", "TypeError"];
 
-    let mode = { epoch: 0, enabled: false, maxFps: SL_TM_DEFAULT_FRAME_RATE, detailHint: true };
+    let mode = { epoch: 0, enabled: false, maxFps: SL_TM_DEFAULT_FRAME_RATE, detailHint: true, frameRateAlways: false };
     // A status is only ever posted once the parent page has sent the mode
     // (a teacher's page): students' pages never hear about it.
     let heard = false;
 
-    // MediaStreamTrack -> what this section changed on it and the original
-    // values (newRecord). Normally one entry; stopped tracks are dropped.
+    // MediaStreamTrack -> { hint, frameRate }: what this section changed on
+    // it and the original values (newHintPart / newFrameRatePart, null when
+    // that part is not applied). Normally one entry; stopped tracks are
+    // dropped.
     const changed = new Map();
 
     // Track changes (apply / restore) run one at a time, in order.
@@ -9487,28 +9520,36 @@ const SL_DEVICE_STATUS_GAP = 8;
         return mediaTrack && mediaTrack.readyState !== "ended" ? mediaTrack : null;
     }
 
-    // The requested settings a record was applied with.
-    function profileKey(settings) {
-        return settings.maxFps + ":" + settings.detailHint;
+    // Whether the frame-rate cap applies now: while the mode is on, and
+    // also while it is off when the parent page sent maxFps (the camera
+    // frame rate is a setting of its own there). Local moderator only.
+    function isFrameRateActive(state) {
+        return Boolean(state && (mode.enabled || mode.frameRateAlways) && isLocalModerator(state));
     }
 
-    function newRecord() {
+    // The two independent parts of what this section changes on a track.
+    // Each keeps its requested setting fixed for its lifetime: a change
+    // gets a new part after the old one is restored. Turning the mode on /
+    // off only adds / removes the hint part; the frame-rate part stays.
+    function newHintPart() {
         return {
-            // The settings this record applies (fixed for its lifetime: a
-            // change gets a new record after this one is restored).
-            maxFps: mode.maxFps,
             detailHint: mode.detailHint,
-            profile: profileKey(mode),
-            // contentHint before the change; changedHint: ours is set.
+            // contentHint before the change; changed: ours is set.
             hint: "",
-            changedHint: false,
-            hintStatus: null,
+            changed: false,
+            status: null
+        };
+    }
+
+    function newFrameRatePart() {
+        return {
+            maxFps: mode.maxFps,
             // The frameRate constraint before the change (hadFrameRate:
-            // there was one); changedFrameRate: our cap is in place.
+            // there was one); changed: our cap is in place.
             frameRate: undefined,
             hadFrameRate: false,
-            changedFrameRate: false,
-            frameRateStatus: null
+            changed: false,
+            status: null
         };
     }
 
@@ -9598,34 +9639,47 @@ const SL_DEVICE_STATUS_GAP = 8;
             .then(reportStatus);
     }
 
-    async function apply(track, record) {
+    // Whether this part is still the one wanted on this track.
+    function isCurrent(track, key, part) {
+        const record = changed.get(track);
+
+        return Boolean(record && record[key] === part);
+    }
+
+    // The content hint (only when asked for).
+    async function applyHint(track, part) {
         // Turned off, or the track replaced, before this step ran.
-        if (changed.get(track) !== record || track.readyState === "ended") {
+        if (!isCurrent(track, "hint", part) || track.readyState === "ended") {
             return;
         }
 
-        // 1. The content hint (only when asked for).
-        if (!record.detailHint) {
-            record.hintStatus = "disabled";
+        if (!part.detailHint) {
+            part.status = "disabled";
         } else if ("contentHint" in track) {
             try {
-                record.hint = track.contentHint || "";
+                part.hint = track.contentHint || "";
                 track.contentHint = SL_TM_CONTENT_HINT;
-                record.changedHint = track.contentHint === SL_TM_CONTENT_HINT;
-                record.hintStatus = record.changedHint ? "applied" : "unsupported";
+                part.changed = track.contentHint === SL_TM_CONTENT_HINT;
+                part.status = part.changed ? "applied" : "unsupported";
             } catch (error) {
-                record.hintStatus = "failed";
+                part.status = "failed";
                 console.warn("[SL Classroom] Teaching mode: contentHint not applied:", errorName(error));
             }
         } else {
-            record.hintStatus = "unsupported";
+            part.status = "unsupported";
+        }
+    }
+
+    // The frame-rate cap, merged into the existing constraints.
+    async function applyFrameRate(track, part) {
+        if (!isCurrent(track, "frameRate", part) || track.readyState === "ended") {
+            return;
         }
 
-        // 2. The frame-rate cap, merged into the existing constraints.
         const current = typeof track.applyConstraints === "function" ? readConstraints(track) : null;
 
         if (!current) {
-            record.frameRateStatus = "unsupported";
+            part.status = "unsupported";
 
             return;
         }
@@ -9634,13 +9688,13 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         // Already capped at or below the requested cap: left exactly as it
         // is (a cap is never raised).
-        if (limit !== null && limit <= record.maxFps) {
-            record.frameRateStatus = "kept";
+        if (limit !== null && limit <= part.maxFps) {
+            part.status = "kept";
 
             return;
         }
 
-        const next = { ...current, frameRate: { max: record.maxFps } };
+        const next = { ...current, frameRate: { max: part.maxFps } };
 
         // No size constraint at all (Jitsi always sets one): the current size
         // is kept as the ideal, since a set without any may fall back to the
@@ -9657,9 +9711,9 @@ const SL_DEVICE_STATUS_GAP = 8;
             }
         }
 
-        record.hadFrameRate = Object.prototype.hasOwnProperty.call(current, "frameRate");
-        record.frameRate = current.frameRate;
-        record.frameRateStatus = "pending";
+        part.hadFrameRate = Object.prototype.hasOwnProperty.call(current, "frameRate");
+        part.frameRate = current.frameRate;
+        part.status = "pending";
         reportStatus();
 
         try {
@@ -9669,75 +9723,77 @@ const SL_DEVICE_STATUS_GAP = 8;
                 }
 
                 // Settled after the timeout: the cap is in place after all.
-                record.changedFrameRate = true;
-                record.frameRateStatus = "applied";
+                part.changed = true;
+                part.status = "applied";
 
-                if (changed.get(track) !== record) {
-                    enqueue(() => restore(track, record));
+                if (!isCurrent(track, "frameRate", part)) {
+                    enqueue(() => restoreFrameRate(track, part));
                 } else {
                     reportStatus();
                 }
             });
 
-            record.changedFrameRate = true;
-            record.frameRateStatus = "applied";
+            part.changed = true;
+            part.status = "applied";
         } catch (error) {
             const name = errorName(error);
 
-            record.frameRateStatus = SL_TM_UNSUPPORTED_ERRORS.includes(name) ? "unsupported" : "failed";
+            part.status = SL_TM_UNSUPPORTED_ERRORS.includes(name) ? "unsupported" : "failed";
             console.warn("[SL Classroom] Teaching mode: frame-rate cap not applied:", name);
         }
     }
 
-    // Puts back what apply() changed on this track, part by part (safe to
-    // run again: each part is undone once).
-    async function restore(track, record) {
-        if (track.readyState === "ended") {
+    // Put back what applyHint / applyFrameRate changed on this track (safe
+    // to run again: each part is undone once).
+    async function restoreHint(track, part) {
+        if (track.readyState === "ended" || !part.changed) {
             return;
         }
 
-        if (record.changedHint) {
-            record.changedHint = false;
+        part.changed = false;
 
-            try {
-                // Only our own value is replaced, never a later change by others.
-                if (track.contentHint === SL_TM_CONTENT_HINT) {
-                    track.contentHint = record.hint;
-                }
-            } catch (error) {
-                console.warn("[SL Classroom] Teaching mode: contentHint not restored:", errorName(error));
+        try {
+            // Only our own value is replaced, never a later change by others.
+            if (track.contentHint === SL_TM_CONTENT_HINT) {
+                track.contentHint = part.hint;
             }
+        } catch (error) {
+            console.warn("[SL Classroom] Teaching mode: contentHint not restored:", errorName(error));
+        }
+    }
+
+    async function restoreFrameRate(track, part) {
+        if (track.readyState === "ended" || !part.changed) {
+            return;
         }
 
-        if (record.changedFrameRate) {
-            record.changedFrameRate = false;
+        part.changed = false;
 
-            const current = readConstraints(track);
+        const current = readConstraints(track);
 
-            // Our cap is no longer there (Jitsi set new constraints): nothing
-            // of ours is left to undo.
-            if (!current || frameRateLimit(current.frameRate) !== record.maxFps) {
-                return;
-            }
+        // Our cap is no longer there (Jitsi set new constraints): nothing
+        // of ours is left to undo.
+        if (!current || frameRateLimit(current.frameRate) !== part.maxFps) {
+            return;
+        }
 
-            delete current.frameRate;
+        delete current.frameRate;
 
-            if (record.hadFrameRate) {
-                current.frameRate = record.frameRate;
-            }
+        if (part.hadFrameRate) {
+            current.frameRate = part.frameRate;
+        }
 
-            try {
-                await applyWithTimeout(track, current, () => {});
-            } catch (error) {
-                console.warn("[SL Classroom] Teaching mode: frame rate not restored:", errorName(error));
-            }
+        try {
+            await applyWithTimeout(track, current, () => {});
+        } catch (error) {
+            console.warn("[SL Classroom] Teaching mode: frame rate not restored:", errorName(error));
         }
     }
 
     function currentStatus() {
         const state = getState();
         const active = isActive(state);
-        const track = active ? getLocalCameraTrack(state) : null;
+        const track = active || isFrameRateActive(state) ? getLocalCameraTrack(state) : null;
         const record = track ? changed.get(track) : null;
         const fps = track ? readSettings(track).frameRate : null;
 
@@ -9747,8 +9803,8 @@ const SL_DEVICE_STATUS_GAP = 8;
             enabled: mode.enabled,
             active,
             camera: Boolean(track),
-            contentHint: record ? record.hintStatus : null,
-            frameRate: record ? record.frameRateStatus : null,
+            contentHint: record && record.hint ? record.hint.status : null,
+            frameRate: record && record.frameRate ? record.frameRate.status : null,
             fps: typeof fps === "number" && Number.isFinite(fps) ? Math.round(fps * 10) / 10 : null,
             maxFps: mode.maxFps,
             detailHint: mode.detailHint
@@ -9785,33 +9841,74 @@ const SL_DEVICE_STATUS_GAP = 8;
     }
 
     // Cheap; runs on every store change. Restores every changed track that
-    // is no longer the one to change (mode off, role lost, track replaced,
-    // or the requested settings changed) and applies the settings to the
-    // current camera track once. A settings change restores the ORIGINAL
-    // values first (the queue runs that before the new apply).
+    // is no longer the one to change (mode off and no frame-rate setting,
+    // role lost, track replaced). On the current camera track the hint and
+    // the frame-rate cap are kept in step separately: a part whose setting
+    // changed (or is no longer wanted) is restored to the ORIGINAL value
+    // first (the queue runs that before the new apply), and the other part
+    // is left alone. So turning the mode on / off never touches the frame
+    // rate, and a new frame rate never touches the hint.
     function sync() {
         const state = getState();
-        const active = isActive(state);
-        const wanted = active ? getLocalCameraTrack(state) : null;
-        const profile = profileKey(mode);
+        const hintActive = isActive(state);
+        const frameRateActive = isFrameRateActive(state);
+        const wanted = hintActive || frameRateActive ? getLocalCameraTrack(state) : null;
 
         changed.forEach((record, track) => {
             if (track.readyState === "ended") {
                 changed.delete(track);
-            } else if (track !== wanted || record.profile !== profile) {
+            } else if (track !== wanted) {
                 changed.delete(track);
-                enqueue(() => restore(track, record));
+
+                if (record.hint) {
+                    const part = record.hint;
+
+                    enqueue(() => restoreHint(track, part));
+                }
+
+                if (record.frameRate) {
+                    const part = record.frameRate;
+
+                    enqueue(() => restoreFrameRate(track, part));
+                }
             }
         });
 
-        if (wanted && !changed.has(wanted)) {
-            const record = newRecord();
+        if (wanted) {
+            const record = changed.get(wanted) || { hint: null, frameRate: null };
 
             changed.set(wanted, record);
-            enqueue(() => apply(wanted, record));
+
+            if (record.hint && (!hintActive || record.hint.detailHint !== mode.detailHint)) {
+                const part = record.hint;
+
+                record.hint = null;
+                enqueue(() => restoreHint(wanted, part));
+            }
+
+            if (hintActive && !record.hint) {
+                const part = newHintPart();
+
+                record.hint = part;
+                enqueue(() => applyHint(wanted, part));
+            }
+
+            if (record.frameRate && (!frameRateActive || record.frameRate.maxFps !== mode.maxFps)) {
+                const part = record.frameRate;
+
+                record.frameRate = null;
+                enqueue(() => restoreFrameRate(wanted, part));
+            }
+
+            if (frameRateActive && !record.frameRate) {
+                const part = newFrameRatePart();
+
+                record.frameRate = part;
+                enqueue(() => applyFrameRate(wanted, part));
+            }
         }
 
-        syncPoll(active);
+        syncPoll(hintActive || frameRateActive);
         reportStatus();
     }
 
@@ -9854,7 +9951,11 @@ const SL_DEVICE_STATUS_GAP = 8;
             epoch: data.epoch,
             enabled: data.enabled,
             maxFps: data.maxFps === undefined ? SL_TM_DEFAULT_FRAME_RATE : data.maxFps,
-            detailHint: data.detailHint === undefined ? true : data.detailHint
+            detailHint: data.detailHint === undefined ? true : data.detailHint,
+            // An explicit maxFps is the camera frame rate, applied whether
+            // the mode is on or off; an older parent page (no maxFps) gets
+            // its cap only while on, as before.
+            frameRateAlways: data.maxFps !== undefined
         };
         heard = true;
         // The parent gets the current status for every message it sends.
@@ -9914,6 +10015,328 @@ const SL_DEVICE_STATUS_GAP = 8;
 
 })();
  
+
+
+
+/* ==========================================================
+   SL Classroom - Teacher Video Bitrate (live cap, send side)
+
+   Teacher only. The teacher's page sets the AV1 / VP8 / VP9 "high"
+   (720p, top layer) bitrate cap when it creates this iframe
+   (configOverwrite videoQuality.<codec>.maxBitratesVideo.high). This
+   section lets the page change that cap DURING the meeting, on the
+   active bridge connection, without a rejoin:
+     - lib-jitsi-meet keeps the per-codec caps it read at connection
+       set-up in its TraceablePeerConnection (tpcUtils.codecSettings)
+       and reads them every time it computes the camera's encodings;
+     - the "high" value is set there for AV1, VP8 and VP9 only (H.264,
+       the other levels, screen sharing's own cap and the codec order
+       are left as they are), then lib-jitsi-meet's own
+       configureVideoSenderEncodings() re-applies the encodings through
+       its own queue, exactly as it does after a codec change.
+   Its later recomputes (receiver requests, codec change, camera track
+   replaced, camera off / on) keep using the new value. A new bridge
+   connection (reconnect) is built from the page's configOverwrite and
+   gets the latest cap again here (store change / poll).
+
+   A MAXIMUM, not a rate: the browser and Jitsi still adapt to the
+   network, the CPU and the size students request (below 720p Jitsi
+   uses its "standard" / "low" caps, which are not changed).
+
+   These are lib-jitsi-meet internals, not the public API: anything
+   missing (no tpcUtils, no codecSettings, no
+   configureVideoSenderEncodings) is reported "unsupported" and nothing
+   is changed; the cap then applies from the next join only.
+
+   Runs ONLY for the local moderator (teacher), only once the page sends:
+     { type: "SL_TEACHER_BITRATE", v: 1, epoch, maxBitrate }
+     maxBitrate  500000 | 1000000 | 1500000 | 2500000
+   (resent by the page after SL_RECEIVE_READY). Reports, whenever it
+   changes:
+     { type: "SL_TEACHER_BITRATE_STATUS", v: 1, maxBitrate, state,
+       topMaxBitrate, codec }
+     state          "applied" | "pending" | "unsupported" | "failed"
+     topMaxBitrate  the camera sender's active top encoding maxBitrate
+                    as the browser holds it, or null
+     codec          the camera sender's codec ("av1", "vp8", ...) or null
+========================================================== */
+
+(function () {
+
+    const SL_TBR_CODECS = ["av1", "vp8", "vp9"];
+    const SL_TBR_ALLOWED = [500000, 1000000, 1500000, 2500000];
+    // Safety net: a replaced bridge connection is not always a store change.
+    const SL_TBR_POLL_MS = 2000;
+
+    let wanted = { epoch: 0, maxBitrate: null };
+    // Nothing is done or posted before the teacher's page has sent a cap.
+    let heard = false;
+    // TraceablePeerConnection -> the cap set on it.
+    const appliedOn = new WeakMap();
+    let state = null;
+    let pollTimer = null;
+    let lastStatus = "";
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(store) {
+        return store?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    // The bridge connection's TraceablePeerConnection (P2P is off).
+    function getBridgeConnection(store) {
+        const conference = store?.["features/base/conference"]?.conference;
+
+        return conference?.jvbJingleSession?.peerconnection || null;
+    }
+
+    function getCodecSettings(tpc) {
+        const settings = tpc?.tpcUtils?.codecSettings;
+
+        return settings && typeof settings === "object" ? settings : null;
+    }
+
+    // The local camera's MediaStreamTrack (never a screen share).
+    function getLocalCameraTrack(store) {
+        const tracks = store?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track && track.local && track.videoType === "camera" && track.jitsiTrack);
+
+        try {
+            return entry && typeof entry.jitsiTrack.getTrack === "function" ? entry.jitsiTrack.getTrack() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // What the browser holds for the camera sender: its codec and the
+    // maxBitrate of its largest active encoding.
+    function readCameraSender(store, tpc) {
+        const result = { codec: null, topMaxBitrate: null };
+        const cameraTrack = getLocalCameraTrack(store);
+        let sender = null;
+
+        try {
+            const senders = tpc?.peerconnection?.getSenders?.() || [];
+
+            sender = senders.find(candidate => candidate.track && candidate.track === cameraTrack) || null;
+        } catch (error) {
+            sender = null;
+        }
+
+        if (!sender || typeof sender.getParameters !== "function") {
+            return result;
+        }
+
+        try {
+            const parameters = sender.getParameters() || {};
+            const mimeType = parameters.codecs?.[0]?.mimeType;
+            const active = (Array.isArray(parameters.encodings) ? parameters.encodings : [])
+                .filter(encoding => encoding && encoding.active !== false)
+                .sort((a, b) => (a.scaleResolutionDownBy || 1) - (b.scaleResolutionDownBy || 1));
+
+            result.codec = typeof mimeType === "string" ? mimeType.replace(/^video\//i, "").toLowerCase() : null;
+            result.topMaxBitrate = active.length && typeof active[0].maxBitrate === "number" ? active[0].maxBitrate : null;
+        } catch (error) {
+            /* left unknown */
+        }
+
+        return result;
+    }
+
+    function currentStatus() {
+        const store = getState();
+        const sender = state === "applied" ? readCameraSender(store, getBridgeConnection(store)) : { codec: null, topMaxBitrate: null };
+
+        return {
+            type: "SL_TEACHER_BITRATE_STATUS",
+            v: 1,
+            maxBitrate: wanted.maxBitrate,
+            state,
+            topMaxBitrate: sender.topMaxBitrate,
+            codec: sender.codec
+        };
+    }
+
+    function reportStatus() {
+        if (!heard || state === null) {
+            return;
+        }
+
+        const status = currentStatus();
+        const signature = JSON.stringify(status);
+
+        if (signature !== lastStatus) {
+            lastStatus = signature;
+            slPostToParent(status);
+        }
+    }
+
+    function syncPoll(active) {
+        if (active && !pollTimer) {
+            pollTimer = setInterval(() => sync(true), SL_TBR_POLL_MS);
+        } else if (!active && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    // Cheap; runs on every store change and on the poll. Sets the wanted cap
+    // on the current bridge connection once (again for a new connection or
+    // a new cap), then reports. Once applied, the sender's current state is
+    // re-read on the poll only (fromPoll), not on every store change.
+    function sync(fromPoll) {
+        const store = getState();
+        const active = Boolean(heard && wanted.maxBitrate !== null && isLocalModerator(store));
+
+        syncPoll(active);
+
+        if (!active) {
+            return;
+        }
+
+        const tpc = getBridgeConnection(store);
+
+        if (!tpc) {
+            state = "pending";
+            reportStatus();
+
+            return;
+        }
+
+        if (appliedOn.get(tpc) === wanted.maxBitrate) {
+            if (fromPoll === true) {
+                reportStatus();
+            }
+
+            return;
+        }
+
+        const settings = getCodecSettings(tpc);
+
+        if (!settings || typeof tpc.configureVideoSenderEncodings !== "function") {
+            state = "unsupported";
+            reportStatus();
+
+            return;
+        }
+
+        const cap = wanted.maxBitrate;
+
+        SL_TBR_CODECS.forEach(codec => {
+            const levels = settings[codec]?.maxBitratesVideo;
+
+            if (levels && typeof levels === "object") {
+                levels.high = cap;
+            }
+        });
+
+        appliedOn.set(tpc, cap);
+        state = "pending";
+        reportStatus();
+
+        Promise.resolve()
+            .then(() => tpc.configureVideoSenderEncodings())
+            .then(() => {
+                if (getBridgeConnection(getState()) === tpc && wanted.maxBitrate === cap) {
+                    state = "applied";
+                    reportStatus();
+                }
+            }, error => {
+                console.warn("[SL Classroom] Teacher bitrate: encodings not re-applied:",
+                    (error && (error.name || error.message)) || String(error));
+
+                if (wanted.maxBitrate === cap) {
+                    // The value stays in codecSettings (used by the next
+                    // recompute); the next sync tries the re-apply again.
+                    appliedOn.delete(tpc);
+                    state = "failed";
+                    reportStatus();
+                }
+            });
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_TEACHER_BITRATE") {
+            return;
+        }
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || !SL_TBR_ALLOWED.includes(data.maxBitrate)) {
+            console.warn("[SL Classroom] Ignored malformed teacher bitrate", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the page resends it after SL_RECEIVE_READY.
+        if (data.epoch < wanted.epoch) {
+            return;
+        }
+
+        wanted = { epoch: data.epoch, maxBitrate: data.maxBitrate };
+        heard = true;
+        // The page gets the current status for every message it sends.
+        lastStatus = "";
+
+        console.log("[SL Classroom] Teacher bitrate", wanted);
+
+        sync(true);
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slTeacherBitrateTest.state()   what is wanted / applied
+    // ---------------------------------------------------------------------
+    window.__slTeacherBitrateTest = {
+        state: () => {
+            const store = getState();
+            const tpc = getBridgeConnection(store);
+            const settings = getCodecSettings(tpc);
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                ...currentStatus(),
+                appliedOnConnection: tpc ? appliedOn.get(tpc) ?? null : null,
+                codecHigh: settings
+                    ? Object.fromEntries(Object.keys(settings)
+                        .filter(codec => settings[codec]?.maxBitratesVideo)
+                        .map(codec => [codec, settings[codec].maxBitratesVideo.high]))
+                    : null,
+                polling: Boolean(pollTimer)
+            };
+        }
+    };
+
+    window.addEventListener("pagehide", () => syncPoll(false));
+
+    // Follow every store change: the conference / bridge connection
+    // (reconnect), the local camera, the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
+    }, 500);
+
+})();
 
 
 

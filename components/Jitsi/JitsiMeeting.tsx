@@ -27,6 +27,7 @@ import useJitsi, {
   JitsiControls,
   type TeacherTilesNavAction,
   type TeacherTilesSettingsChange,
+  type TeacherBitrateStatus,
   type TeachingModeSettings,
   type TeachingModeStatus,
   type VideoTelemetryStatus,
@@ -111,6 +112,9 @@ type JitsiMeetingProps = {
   /** Teacher only: what Teaching Mode applied to the camera (see useJitsi). */
   onTeachingModeStatus?: (status: TeachingModeStatus) => void;
 
+  /** Teacher only: whether the chosen bitrate cap is on the live camera (see useJitsi). */
+  onTeacherBitrateStatus?: (status: TeacherBitrateStatus) => void;
+
   /** Teacher only: video diagnostics snapshots (see useJitsi). */
   onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
 
@@ -140,6 +144,7 @@ const JitsiMeeting = forwardRef<
     onTeacherTilesNav,
     onTeacherTilesSettings,
     onTeachingModeStatus,
+    onTeacherBitrateStatus,
     onVideoTelemetry,
   },
   ref
@@ -269,6 +274,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setTeachingMode(settings);
       },
 
+      setTeacherBitrate: (maxBitrate: number) => {
+        controlsRef.current?.setTeacherBitrate(maxBitrate);
+      },
+
       setVideoTelemetry: (enabled: boolean) => {
         controlsRef.current?.setVideoTelemetry(enabled);
       },
@@ -342,6 +351,7 @@ const JitsiMeeting = forwardRef<
     onTeacherTilesNav,
     onTeacherTilesSettings,
     onTeachingModeStatus,
+    onTeacherBitrateStatus,
     onVideoTelemetry,
     isFullscreen,
     devices: selectedDevices,

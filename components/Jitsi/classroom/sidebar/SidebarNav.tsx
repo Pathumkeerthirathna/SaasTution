@@ -15,17 +15,32 @@ import {
   ScanEye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
+import type { TeacherBitrateStatus, TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
 import VideoDiagnosticsSection from "./VideoDiagnosticsSection";
+import { closeSettings, settingsKeyDown, toggleSettings } from "../../video-diagnostics-controls.mjs";
 import {
+  DEFAULT_TEACHER_VIDEO_QUALITY,
   DEFAULT_TEACHING_FRAME_RATE,
+  describeFrameRateStatus,
+  describeTeacherBitrateStatus,
+  formatBitrate,
   parseStoredVideoQuality,
   readStorage,
+  TEACHER_BITRATE_PRESETS,
   TEACHER_VIDEO_QUALITY_HEIGHTS,
   TEACHING_FRAME_RATES,
   VIDEO_QUALITY_STORAGE_KEY,
   writeStorage,
 } from "../../teacher-camera-preferences.mjs";
+
+/** Teacher only: the camera's top-layer bitrate cap (owned by JitsiClassroom). */
+export type TeacherBitrateControl = {
+  /** The selected cap, bits/s (one of TEACHER_BITRATE_PRESETS). */
+  value: number;
+  /** custom.js's report for the live camera; null: none (yet). */
+  status: TeacherBitrateStatus | null;
+  onChange: (maxBitrate: number) => void;
+};
 
 type SidebarNavProps = {
   activePanel: string | null;
@@ -62,6 +77,8 @@ type SidebarNavProps = {
   /** Teaching Mode's contentHint "detail" (saved preference). */
   teachingDetailHint?: boolean;
   onSetTeachingDetailHint?: (enabled: boolean) => void;
+  /** Teacher only: the Teacher Video Bitrate selector in the settings menu's Camera section. */
+  teacherBitrate?: TeacherBitrateControl;
   /** Video diagnostics (read-only WebRTC stats): on / off and the latest snapshot. */
   videoDiagnostics?: boolean;
   videoTelemetry?: VideoTelemetryStatus | null;
@@ -154,6 +171,62 @@ function readStoredNoiseSuppression(): boolean | null {
   }
 }
 
+/**
+ * Teacher only: the Teacher Video Bitrate selector (maximum caps for the
+ * camera's main video layer), in the settings menu's Camera section.
+ */
+export function TeacherBitrateSection({ bitrate }: { bitrate: TeacherBitrateControl }) {
+  return (
+    <div className="mt-2 px-3">
+      <p className="pb-1 text-[10px] text-[#94A3B8]">Teacher Video Bitrate</p>
+      <div className="flex flex-col gap-1" role="radiogroup" aria-label="Teacher Video Bitrate">
+        {TEACHER_BITRATE_PRESETS.map((preset) => {
+          const selected = bitrate.value === preset.bps;
+
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              data-bitrate={preset.bps}
+              onClick={() => bitrate.onChange(preset.bps)}
+              className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-1.5 text-left transition ${
+                selected
+                  ? "bg-[#3B82F6]/15 ring-1 ring-[#3B82F6]/60"
+                  : "hover:bg-[#1E293B]"
+              }`}
+            >
+              <span className="flex w-full flex-wrap items-center justify-between gap-1">
+                <span className="text-xs font-medium text-[#F8FAFC]">
+                  {preset.label}
+                  {"recommended" in preset && preset.recommended ? " — Recommended" : ""}
+                </span>
+                <span className="text-[10px] font-semibold text-[#CBD5E1]">
+                  {formatBitrate(preset.bps)}
+                </span>
+              </span>
+              <span className="text-[10px] leading-snug text-[#94A3B8]">{preset.description}</span>
+              {"warning" in preset && preset.warning ? (
+                <span className="text-[10px] font-medium leading-snug text-[#FCD34D]">
+                  {preset.warning}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      <p role="status" className="pt-1 text-[10px] leading-snug text-[#94A3B8]">
+        {describeTeacherBitrateStatus(bitrate.status, bitrate.value)}
+      </p>
+      <p className="pt-1 text-[10px] leading-snug text-[#64748B]">
+        These are maximum caps for your camera&apos;s main video layer. Actual quality and data
+        use depend on your network, your students&apos; connections and what is on camera.
+      </p>
+    </div>
+  );
+}
+
 export default function SidebarNav({
   activePanel,
   onPanelChange,
@@ -172,6 +245,7 @@ export default function SidebarNav({
   onSetTeachingFps,
   teachingDetailHint = true,
   onSetTeachingDetailHint,
+  teacherBitrate,
   videoDiagnostics = false,
   videoTelemetry = null,
   videoTelemetryLabel,
@@ -182,9 +256,10 @@ export default function SidebarNav({
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Remembers the teacher's last-chosen video quality (localStorage) so it
-  // stays selected — and gets re-applied — across reloads/rejoins.
+  // stays selected — and gets re-applied — across reloads/rejoins. Nothing
+  // chosen yet: 720p, selected and sent to Jitsi like a saved choice.
   const [selectedQuality, setSelectedQuality] = useState<number | null>(() =>
-    readStoredVideoQuality()
+    readStoredVideoQuality() ?? DEFAULT_TEACHER_VIDEO_QUALITY
   );
   const [noiseSuppression, setNoiseSuppression] = useState<boolean>(
     () => readStoredNoiseSuppression() ?? false
@@ -214,6 +289,29 @@ export default function SidebarNav({
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPopoverRef = useRef<HTMLDivElement>(null);
 
+  // Closing the settings menu (gear, Escape, a click outside it, or the menu
+  // going away) also turns Video Diagnostics OFF. The latest values are read
+  // through refs, so the Escape listener (added once per opening) never acts
+  // on a stale state.
+  const diagnosticsRef = useRef({ on: videoDiagnostics, set: onSetVideoDiagnostics });
+  diagnosticsRef.current = { on: videoDiagnostics, set: onSetVideoDiagnostics };
+  const settingsOpenRef = useRef(isSettingsOpen);
+  settingsOpenRef.current = isSettingsOpen;
+
+  const settingsControl = () => ({
+    diagnosticsOn: diagnosticsRef.current.on,
+    setSettingsOpen: setIsSettingsOpen,
+    setDiagnostics: diagnosticsRef.current.set,
+  });
+  const closeSettingsMenu = () => closeSettings(settingsControl());
+
+  // The menu going away while open (this component unmounted): diagnostics off too.
+  useEffect(() => () => {
+    if (settingsOpenRef.current && diagnosticsRef.current.on) {
+      diagnosticsRef.current.set?.(false);
+    }
+  }, []);
+
   const placeSettingsPopover = () => {
     const rect = settingsButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -230,7 +328,7 @@ export default function SidebarNav({
     placeSettingsPopover();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsSettingsOpen(false);
+      settingsKeyDown(event.key, settingsControl());
     }
 
     window.addEventListener("resize", placeSettingsPopover);
@@ -325,7 +423,7 @@ export default function SidebarNav({
             icon={Settings}
             buttonRef={settingsButtonRef}
             active={isSettingsOpen}
-            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            onClick={() => toggleSettings({ isOpen: settingsOpenRef.current, ...settingsControl() })}
           />
         </div>
       ) : null}
@@ -338,7 +436,7 @@ export default function SidebarNav({
           <button
             type="button"
             aria-label="Close"
-            onClick={() => setIsSettingsOpen(false)}
+            onClick={closeSettingsMenu}
             className="fixed inset-0 z-40 cursor-default"
           />
           <div
@@ -448,8 +546,15 @@ export default function SidebarNav({
                         </button>
                       ))}
                     </div>
+                    {teachingMode ? (
+                      <p role="status" className="pt-1 text-[10px] leading-snug text-[#94A3B8]">
+                        {describeFrameRateStatus(teachingModeStatus, teachingFps)}
+                      </p>
+                    ) : null}
                     <p className="pt-1 text-[10px] leading-snug text-[#64748B]">
                       Lower = sharper still writing; higher = smoother motion.
+                      Applies while Teaching Mode is on; the frame rate actually
+                      sent is shown in Video diagnostics.
                     </p>
                   </div>
                 ) : null}
@@ -482,6 +587,8 @@ export default function SidebarNav({
                     </span>
                   </button>
                 ) : null}
+
+                {teacherBitrate ? <TeacherBitrateSection bitrate={teacherBitrate} /> : null}
               </>
             ) : null}
 

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
+import type { TeacherBitrateControl } from "./SidebarNav";
 import WhiteboardPanel from "./WhiteboardPanel";
 import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
@@ -60,6 +61,8 @@ type RightSidebarProps = {
   currentStudentId?: string;
   /** Teacher only: camera monitoring state + actions, shown in the Camera Monitoring panel. */
   cameraMonitoring?: CameraMonitoringController;
+  /** Teacher only: the camera bitrate cap selector in the settings menu (SidebarNav). */
+  teacherBitrate?: TeacherBitrateControl;
   onMuteEveryone?: () => void;
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
   chatMessages?: ChatMessage[];
@@ -524,6 +527,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           onSetTeachingFps={isTeacher ? props.onSetTeachingFps : undefined}
           teachingDetailHint={props.teachingDetailHint}
           onSetTeachingDetailHint={isTeacher ? props.onSetTeachingDetailHint : undefined}
+          teacherBitrate={isTeacher ? props.teacherBitrate : undefined}
           videoDiagnostics={props.videoDiagnostics}
           videoTelemetry={props.videoTelemetry}
           videoTelemetryLabel={props.videoTelemetryLabel}

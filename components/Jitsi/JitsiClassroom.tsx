@@ -12,17 +12,20 @@ import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
 import useCameraMonitoring from "./hooks/useCameraMonitoring";
 import useTeacherTiles from "./hooks/useTeacherTiles";
-import type { TeacherTilesNavAction, TeacherTilesSettingsChange, TeachingModeSettings, TeachingModeStatus, VideoTelemetryStatus } from "./hooks/useJitsi";
+import type { TeacherBitrateStatus, TeacherTilesNavAction, TeacherTilesSettingsChange, TeachingModeSettings, TeachingModeStatus, VideoTelemetryStatus } from "./hooks/useJitsi";
 import {
   buildDiagnosticsExport,
   createTelemetryHistory,
   resolveStudentLabel,
 } from "./video-telemetry.mjs";
 import {
+  isTeacherBitrate,
   isTeachingFrameRate,
   parseStoredBoolean,
   parseStoredFrameRate,
+  parseStoredTeacherBitrate,
   readStorage,
+  TEACHER_BITRATE_STORAGE_KEY,
   TEACHING_DETAIL_HINT_STORAGE_KEY,
   TEACHING_FRAME_RATE_STORAGE_KEY,
   writeStorage,
@@ -847,9 +850,10 @@ const [classStudents, setClassStudents] =
   }, []);
 
   // Teacher only: Teaching Mode (camera tuned for handwriting). On / off is
-  // off on every join and never persisted; its frame rate and detail hint
-  // are the teacher's saved preferences (like the video quality). custom.js
-  // reports what it applied.
+  // off on every join and never persisted; the camera frame rate and the
+  // detail hint are the teacher's saved preferences (like the video
+  // quality). The frame rate applies while Teaching Mode is on; toggling the
+  // mode never changes the chosen value. custom.js reports what it applied.
   const [teachingMode, setTeachingMode] = useState(false);
   const [teachingFps, setTeachingFps] = useState<number>(() =>
     parseStoredFrameRate(readStorage(TEACHING_FRAME_RATE_STORAGE_KEY))
@@ -892,6 +896,27 @@ const [classStudents, setClassStudents] =
     writeStorage(TEACHING_DETAIL_HINT_STORAGE_KEY, String(detailHint));
     applyTeachingSettings({ detailHint });
   }, [applyTeachingSettings]);
+
+  // Teacher only: the camera's top-layer bitrate cap (Camera Monitoring
+  // panel). Saved like the other camera preferences (this browser only);
+  // useJitsi uses the saved value when it creates the meeting, and every
+  // change is sent to custom.js for the live camera, which reports back.
+  const [teacherBitrate, setTeacherBitrate] = useState<number>(() =>
+    parseStoredTeacherBitrate(readStorage(TEACHER_BITRATE_STORAGE_KEY))
+  );
+  const teacherBitrateRef = useRef(teacherBitrate);
+  const [teacherBitrateStatus, setTeacherBitrateStatus] = useState<TeacherBitrateStatus | null>(null);
+
+  const handleSetTeacherBitrate = useCallback((maxBitrate: number) => {
+    if (!isTeacherBitrate(maxBitrate)) {
+      return;
+    }
+
+    teacherBitrateRef.current = maxBitrate;
+    setTeacherBitrate(maxBitrate);
+    writeStorage(TEACHER_BITRATE_STORAGE_KEY, String(maxBitrate));
+    jitsiMeetingRef.current?.setTeacherBitrate(maxBitrate);
+  }, []);
 
   // Teacher only: video diagnostics (WebRTC stats measured by custom.js).
   // Off on every join and never persisted; read-only, it changes no video
@@ -1471,11 +1496,16 @@ const [classStudents, setClassStudents] =
               // A (re)joined conference: Jibri's state is unknown until its
               // next status event.
               youtubeStreamRef.current?.conferenceChanged();
-              // Teaching Mode stays as the teacher left it, even if the
-              // meeting component was recreated (useJitsi also resends it
-              // whenever custom.js reports ready).
-              if (role === "teacher" && teachingSettingsRef.current.enabled) {
+              // Teaching Mode and the camera frame rate stay as the teacher
+              // left them, even if the meeting component was recreated
+              // (useJitsi also resends them whenever custom.js reports
+              // ready). Sent while Teaching Mode is off too, so custom.js
+              // always has the current settings (it applies them while on).
+              if (role === "teacher") {
                 jitsiMeetingRef.current?.setTeachingMode(teachingSettingsRef.current);
+                // The bitrate cap too (the new meeting already started with
+                // the saved value; this keeps custom.js's live cap in step).
+                jitsiMeetingRef.current?.setTeacherBitrate(teacherBitrateRef.current);
               }
               // Video diagnostics too (read-only).
               if (role === "teacher" && videoDiagnosticsRef.current) {
@@ -1489,6 +1519,7 @@ const [classStudents, setClassStudents] =
             onTeacherTilesNav={role === "teacher" ? handleTeacherTilesNav : undefined}
             onTeacherTilesSettings={role === "teacher" ? handleTeacherTilesSettings : undefined}
             onTeachingModeStatus={role === "teacher" ? setTeachingModeStatus : undefined}
+            onTeacherBitrateStatus={role === "teacher" ? setTeacherBitrateStatus : undefined}
             onVideoTelemetry={role === "teacher" ? handleVideoTelemetry : undefined}
             joinInfo={joinInfo}
             role={role}
@@ -1729,6 +1760,9 @@ const [classStudents, setClassStudents] =
           participants={participants}
           ClassroomStudents={classStudents}
           cameraMonitoring={role === "teacher" ? cameraMonitoring : undefined}
+          teacherBitrate={role === "teacher"
+            ? { value: teacherBitrate, status: teacherBitrateStatus, onChange: handleSetTeacherBitrate }
+            : undefined}
           currentStudentId={role === "student" ? joinInfo.student?.id : undefined}
           // Teacher-only controls: students never get them (Jitsi itself also
           // refuses remote mutes from a non-moderator).

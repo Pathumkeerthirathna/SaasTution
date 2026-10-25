@@ -29,9 +29,16 @@ import {
 } from "../breakout-utils";
 
 import {
+  buildTeacherBitrateConfig,
+  buildTeacherBitrateMessage,
   buildTeachingModeMessage,
   createVideoQualityController,
+  isTeacherBitrate,
   isTeachingFrameRate,
+  parseStoredTeacherBitrate,
+  parseTeacherBitrateStatus,
+  readStorage,
+  TEACHER_BITRATE_STORAGE_KEY,
 } from "../teacher-camera-preferences.mjs";
 import {
   buildVideoTelemetryMessage,
@@ -121,12 +128,22 @@ export type JitsiControls = BreakoutControls & {
 
   /**
    * Teacher only: Teaching Mode in the teacher's own Jitsi iframe
-   * (custom.js): the teacher's camera capped at `maxFps` (15 / 24 / 30),
-   * optionally with contentHint "detail". Off, or a changed setting,
-   * restores the camera's original settings first. What was applied comes
-   * back through `onTeachingModeStatus`.
+   * (custom.js): while `enabled`, the teacher's camera capped at `maxFps`
+   * (15 / 24 / 30), optionally with contentHint "detail". Turning it off, or
+   * a changed setting, restores the camera's original settings first. What
+   * was applied comes back through `onTeachingModeStatus`.
    */
   setTeachingMode: (settings: TeachingModeSettings) => void;
+
+  /**
+   * Teacher only: the AV1 / VP8 / VP9 top-layer bitrate cap (bits/s, one of
+   * TEACHER_BITRATE_PRESETS) on the teacher's live camera, through custom.js
+   * (SL_TEACHER_BITRATE). The cap used at join comes from the saved choice
+   * (configOverwrite). What was applied comes back through
+   * `onTeacherBitrateStatus`; no report means an older custom.js (the cap
+   * then applies from the next join only).
+   */
+  setTeacherBitrate: (maxBitrate: number) => void;
 
   /**
    * Teacher only: video diagnostics in the teacher's own Jitsi iframe
@@ -136,6 +153,9 @@ export type JitsiControls = BreakoutControls & {
    */
   setVideoTelemetry: (enabled: boolean) => void;
 };
+
+/** custom.js's report on the teacher's live bitrate cap (SL_TEACHER_BITRATE_STATUS). */
+export type TeacherBitrateStatus = NonNullable<ReturnType<typeof parseTeacherBitrateStatus>>;
 
 /** custom.js's video diagnostics snapshot (SL_VIDEO_TELEMETRY_STATUS). */
 export type VideoTelemetryStatus = NonNullable<ReturnType<typeof parseVideoTelemetryStatus>>;
@@ -572,6 +592,9 @@ type UseJitsiProps = {
   /** Teacher only: what Teaching Mode applied to the camera (from custom.js). */
   onTeachingModeStatus?: (status: TeachingModeStatus) => void;
 
+  /** Teacher only: whether the chosen bitrate cap is on the live camera (from custom.js). */
+  onTeacherBitrateStatus?: (status: TeacherBitrateStatus) => void;
+
   /** Teacher only: video diagnostics snapshots (from custom.js, every ~5 s while on). */
   onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
 
@@ -606,6 +629,7 @@ export default function useJitsi({
   onTeacherTilesNav,
   onTeacherTilesSettings,
   onTeachingModeStatus,
+  onTeacherBitrateStatus,
   onVideoTelemetry,
   isFullscreen = false,
   devices = null,
@@ -649,6 +673,9 @@ export default function useJitsi({
 
   const onTeachingModeStatusRef = useRef(onTeachingModeStatus);
   onTeachingModeStatusRef.current = onTeachingModeStatus;
+
+  const onTeacherBitrateStatusRef = useRef(onTeacherBitrateStatus);
+  onTeacherBitrateStatusRef.current = onTeacherBitrateStatus;
 
   const onVideoTelemetryRef = useRef(onVideoTelemetry);
   onVideoTelemetryRef.current = onVideoTelemetry;
@@ -974,12 +1001,35 @@ export default function useJitsi({
   };
 
   // Teaching Mode: kept and resent on SL_RECEIVE_READY, like the teacher
-  // view. Nothing is sent until the teacher turns it on (off by default).
+  // view. JitsiClassroom sends it (off by default, with the camera frame
+  // rate) on every conference join.
   const teachingModeEpochRef = useRef(0);
   const teachingModeRef = useRef<TeachingModeMessage | null>(null);
 
   const postTeachingMode = () => {
     const message = teachingModeRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
+  // Teacher bitrate cap: kept and resent on SL_RECEIVE_READY, like Teaching
+  // Mode. JitsiClassroom sends it on every conference join.
+  const teacherBitrateEpochRef = useRef(0);
+  const teacherBitrateRef = useRef<ReturnType<typeof buildTeacherBitrateMessage> | null>(null);
+
+  const postTeacherBitrate = () => {
+    const message = teacherBitrateRef.current;
 
     if (!message || roleRef.current !== "teacher") {
       return;
@@ -1292,6 +1342,17 @@ export default function useJitsi({
         postTeachingMode();
       },
 
+      setTeacherBitrate: (maxBitrate) => {
+        if (roleRef.current !== "teacher" || !isTeacherBitrate(maxBitrate)) {
+          return;
+        }
+
+        teacherBitrateEpochRef.current += 1;
+        teacherBitrateRef.current = buildTeacherBitrateMessage(teacherBitrateEpochRef.current, maxBitrate);
+
+        postTeacherBitrate();
+      },
+
       setVideoTelemetry: (enabled) => {
         if (roleRef.current !== "teacher") {
           return;
@@ -1346,6 +1407,7 @@ export default function useJitsi({
         postTeacherView();
         postTeacherTiles();
         postTeachingMode();
+        postTeacherBitrate();
         postVideoTelemetry();
         postToolbarView();
         return;
@@ -1363,6 +1425,16 @@ export default function useJitsi({
       }
 
       // Teaching Mode: what custom.js applied to the teacher's camera.
+      const teacherBitrateStatus = parseTeacherBitrateStatus(event.data);
+
+      if (teacherBitrateStatus) {
+        if (roleRef.current === "teacher") {
+          onTeacherBitrateStatusRef.current?.(teacherBitrateStatus);
+        }
+
+        return;
+      }
+
       const teachingModeStatus = toTeachingModeStatus(event.data);
 
       if (teachingModeStatus) {
@@ -1597,6 +1669,17 @@ export default function useJitsi({
             filmstrip: {
               disabled: role === "student",
             },
+
+            // Teacher only: the top-layer bitrate cap for AV1 / VP8 / VP9 as
+            // dotted keys (the External API puts each into the iframe URL as
+            // config.videoQuality.<codec>.maxBitratesVideo.high; Jitsi merges
+            // only that value). H.264 and the codec order are left as they are.
+            // The cap is the teacher's saved choice (Standard+ 1.5 Mbps by
+            // default); changes during the meeting go through custom.js.
+            ...buildTeacherBitrateConfig(
+              role,
+              parseStoredTeacherBitrate(readStorage(TEACHER_BITRATE_STORAGE_KEY))
+            ),
           },
 
           interfaceConfigOverwrite: {
