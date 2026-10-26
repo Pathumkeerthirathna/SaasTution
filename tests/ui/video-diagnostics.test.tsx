@@ -266,7 +266,7 @@ test("unrelated settings are still in the menu (camera quality, Teaching Mode, b
 
   for (const marker of [
     "VIDEO_QUALITY_OPTIONS.map",
-    '<span className="block text-[#F8FAFC]">Teaching Mode</span>',
+    "On by default · Sharper handwriting and whiteboards",
     ">Teaching Mode frame rate</p>",
     "{teacherBitrate ? <TeacherBitrateSection bitrate={teacherBitrate} /> : null}",
     "Noise Suppression",

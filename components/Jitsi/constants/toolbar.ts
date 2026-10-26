@@ -39,7 +39,8 @@ const baseTeacherToolbar = [
   "videoquality",
   "select-background",
   "videobackgroundblur",
-  "noisesuppression",
+  // "noisesuppression": the SLClassroom Audio toggle (settings menu) is the
+  // single noise-suppression control for teachers.
   "mute-everyone",
   "security",
   "whiteboard",

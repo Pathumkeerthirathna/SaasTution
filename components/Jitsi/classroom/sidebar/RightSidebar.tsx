@@ -68,6 +68,8 @@ type RightSidebarProps = {
   chatMessages?: ChatMessage[];
   onSendChat?: (message: string) => void;
   onSetVideoQuality?: (heightPx: number) => void;
+  /** Teacher only: Jitsi's RNNoise on the teacher's mic (owned by JitsiClassroom). */
+  noiseSuppression?: boolean;
   onSetNoiseSuppression?: (enabled: boolean) => void;
   /** Teacher only: Teaching Mode (camera tuned for handwriting) and what it applied. */
   teachingMode?: boolean;
@@ -519,7 +521,8 @@ export default function RightSidebar(props: RightSidebarProps) {
           variant={isStudent ? "student" : "teacher"}
           showSettings={isTeacher}
           onSetVideoQuality={props.onSetVideoQuality}
-          onSetNoiseSuppression={props.onSetNoiseSuppression}
+          noiseSuppression={props.noiseSuppression}
+          onSetNoiseSuppression={isTeacher ? props.onSetNoiseSuppression : undefined}
           teachingMode={props.teachingMode}
           teachingModeStatus={props.teachingModeStatus}
           onSetTeachingMode={isTeacher ? props.onSetTeachingMode : undefined}

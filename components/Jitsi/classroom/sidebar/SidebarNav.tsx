@@ -33,6 +33,11 @@ import {
   writeStorage,
 } from "../../teacher-camera-preferences.mjs";
 
+// The Teaching Mode on / off switch is hidden: Teaching Mode is on by default
+// (JitsiClassroom). Its frame rate, detail hint and status stay in the Camera
+// section, which is still rendered for the teacher (onSetTeachingMode).
+const SHOW_TEACHING_MODE_TOGGLE = false;
+
 /** Teacher only: the camera's top-layer bitrate cap (owned by JitsiClassroom). */
 export type TeacherBitrateControl = {
   /** The selected cap, bits/s (one of TEACHER_BITRATE_PRESETS). */
@@ -63,7 +68,9 @@ type SidebarNavProps = {
    * it on every conference join.
    */
   onSetVideoQuality?: (heightPx: number) => void;
-  /** Enables/disables noise suppression on the teacher's own microphone. */
+  /** Teacher only: Jitsi's RNNoise on the teacher's own microphone (owned by JitsiClassroom). */
+  noiseSuppression?: boolean;
+  /** Shows the Audio toggle (teacher only). */
   onSetNoiseSuppression?: (enabled: boolean) => void;
   /** Teaching Mode (teacher's camera tuned for handwriting): on / off. */
   teachingMode?: boolean;
@@ -159,18 +166,6 @@ function describeTeachingMode(status: TeachingModeStatus | null | undefined): st
   return "Not supported by this browser or camera.";
 }
 
-const NOISE_SUPPRESSION_STORAGE_KEY = "sl-classroom-teacher-noise-suppression";
-
-/** `null` means "the teacher has never touched this" — don't auto-apply anything. */
-function readStoredNoiseSuppression(): boolean | null {
-  try {
-    const raw = localStorage.getItem(NOISE_SUPPRESSION_STORAGE_KEY);
-    return raw === null ? null : raw === "true";
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Teacher only: the Teacher Video Bitrate selector (maximum caps for the
  * camera's main video layer), in the settings menu's Camera section.
@@ -237,6 +232,7 @@ export default function SidebarNav({
   variant = "teacher",
   showSettings = false,
   onSetVideoQuality,
+  noiseSuppression = false,
   onSetNoiseSuppression,
   teachingMode = false,
   teachingModeStatus = null,
@@ -261,9 +257,6 @@ export default function SidebarNav({
   const [selectedQuality, setSelectedQuality] = useState<number | null>(() =>
     readStoredVideoQuality() ?? DEFAULT_TEACHER_VIDEO_QUALITY
   );
-  const [noiseSuppression, setNoiseSuppression] = useState<boolean>(
-    () => readStoredNoiseSuppression() ?? false
-  );
   const [settingsPos, setSettingsPos] = useState<{ bottom: number; right: number } | null>(null);
 
   const appliedStoredQualityRef = useRef(false);
@@ -275,16 +268,6 @@ export default function SidebarNav({
     // join (also when Jitsi is not ready yet at this point).
     onSetVideoQuality(selectedQuality);
   }, [onSetVideoQuality, selectedQuality]);
-
-  const appliedStoredNoiseSuppressionRef = useRef(false);
-  useEffect(() => {
-    if (appliedStoredNoiseSuppressionRef.current) return;
-    if (!onSetNoiseSuppression) return;
-    const stored = readStoredNoiseSuppression();
-    if (stored === null) return; // teacher never set a preference — leave Jitsi's default alone
-    appliedStoredNoiseSuppressionRef.current = true;
-    onSetNoiseSuppression(stored);
-  }, [onSetNoiseSuppression]);
 
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPopoverRef = useRef<HTMLDivElement>(null);
@@ -488,32 +471,42 @@ export default function SidebarNav({
                 <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
                   Camera
                 </p>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={teachingMode}
-                  onClick={() => onSetTeachingMode(!teachingMode)}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
-                >
-                  <span className="text-left">
+                {SHOW_TEACHING_MODE_TOGGLE ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={teachingMode}
+                    onClick={() => onSetTeachingMode(!teachingMode)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
+                  >
+                    <span className="text-left">
+                      <span className="block text-[#F8FAFC]">Teaching Mode</span>
+                      <span className="block text-[10px] text-[#64748B]">
+                        Sharper handwriting and whiteboards
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                        teachingMode ? "bg-[#3B82F6]" : "bg-[#334155]"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          teachingMode ? "translate-x-4" : "translate-x-0.5"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                ) : (
+                  // Toggle hidden: a plain label, so the status below reads in context.
+                  <div className="px-3 py-2 text-sm">
                     <span className="block text-[#F8FAFC]">Teaching Mode</span>
                     <span className="block text-[10px] text-[#64748B]">
-                      Sharper handwriting and whiteboards
+                      On by default · Sharper handwriting and whiteboards
                     </span>
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                      teachingMode ? "bg-[#3B82F6]" : "bg-[#334155]"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        teachingMode ? "translate-x-4" : "translate-x-0.5"
-                      }`}
-                    />
-                  </span>
-                </button>
+                  </div>
+                )}
                 {teachingMode ? (
                   <p
                     role="status"
@@ -553,8 +546,8 @@ export default function SidebarNav({
                     ) : null}
                     <p className="pt-1 text-[10px] leading-snug text-[#64748B]">
                       Lower = sharper still writing; higher = smoother motion.
-                      Applies while Teaching Mode is on; the frame rate actually
-                      sent is shown in Video diagnostics.
+                      Applies to your camera in Teaching Mode (on by default); the
+                      frame rate actually sent is shown in Video diagnostics.
                     </p>
                   </div>
                 ) : null}
@@ -592,6 +585,8 @@ export default function SidebarNav({
               </>
             ) : null}
 
+            {onSetNoiseSuppression ? (
+            <>
             <div className="my-3 h-px bg-[#1E293B]" />
 
             <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
@@ -599,25 +594,16 @@ export default function SidebarNav({
             </p>
             <button
               type="button"
-              onClick={() => {
-                const next = !noiseSuppression;
-                setNoiseSuppression(next);
-                onSetNoiseSuppression?.(next);
-                try {
-                  localStorage.setItem(
-                    NOISE_SUPPRESSION_STORAGE_KEY,
-                    String(next)
-                  );
-                } catch {
-                  /* private mode — selection just won't persist */
-                }
-              }}
+              role="switch"
+              aria-checked={noiseSuppression}
+              onClick={() => onSetNoiseSuppression(!noiseSuppression)}
               className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-[#CBD5E1] transition hover:bg-[#1E293B]"
             >
               <span className="text-left">
                 <span className="block text-[#F8FAFC]">Noise Suppression</span>
                 <span className="block text-[10px] text-[#64748B]">
-                  Reduces background noise on your mic
+                  Reduces background noise on your mic (on by default). Turn off if
+                  your voice sounds robotic or words get cut.
                 </span>
               </span>
               <span
@@ -633,6 +619,14 @@ export default function SidebarNav({
                 />
               </span>
             </button>
+            <p className="mt-1 px-3 text-[10px] leading-snug text-[#64748B]">
+              Uses Jitsi&apos;s RNNoise noise suppression. It may not be available with a
+              stereo microphone or while you share desktop audio; Jitsi then shows a
+              notice in the meeting. This switch shows your choice: SLClassroom cannot
+              read back whether Jitsi applied it.
+            </p>
+            </>
+            ) : null}
 
             {onSetVideoDiagnostics ? (
               <VideoDiagnosticsSection

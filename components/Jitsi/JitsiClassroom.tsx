@@ -30,6 +30,10 @@ import {
   TEACHING_FRAME_RATE_STORAGE_KEY,
   writeStorage,
 } from "./teacher-camera-preferences.mjs";
+import {
+  NOISE_SUPPRESSION_STORAGE_KEY,
+  readStoredNoiseSuppression,
+} from "./teacher-audio-preferences.mjs";
 import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
@@ -849,12 +853,14 @@ const [classStudents, setClassStudents] =
     }
   }, []);
 
-  // Teacher only: Teaching Mode (camera tuned for handwriting). On / off is
-  // off on every join and never persisted; the camera frame rate and the
-  // detail hint are the teacher's saved preferences (like the video
-  // quality). The frame rate applies while Teaching Mode is on; toggling the
-  // mode never changes the chosen value. custom.js reports what it applied.
-  const [teachingMode, setTeachingMode] = useState(false);
+  // Teacher only: Teaching Mode (camera tuned for handwriting). ON by default
+  // on every classroom load (not persisted: it simply starts on); its on / off
+  // switch is hidden in the settings menu (SidebarNav). The camera frame rate
+  // and the detail hint are the teacher's saved preferences (like the video
+  // quality) and apply while Teaching Mode is on. The current settings are
+  // sent on every join and resent when the iframe is ready; custom.js
+  // reports what it applied.
+  const [teachingMode, setTeachingMode] = useState(true);
   const [teachingFps, setTeachingFps] = useState<number>(() =>
     parseStoredFrameRate(readStorage(TEACHING_FRAME_RATE_STORAGE_KEY))
   );
@@ -864,7 +870,7 @@ const [classStudents, setClassStudents] =
   const [teachingModeStatus, setTeachingModeStatus] = useState<TeachingModeStatus | null>(null);
   // The latest settings, for the (stable) callbacks and the rejoin resend.
   const teachingSettingsRef = useRef<TeachingModeSettings>({
-    enabled: false,
+    enabled: true,
     maxFps: teachingFps,
     detailHint: teachingDetailHint,
   });
@@ -916,6 +922,23 @@ const [classStudents, setClassStudents] =
     setTeacherBitrate(maxBitrate);
     writeStorage(TEACHER_BITRATE_STORAGE_KEY, String(maxBitrate));
     jitsiMeetingRef.current?.setTeacherBitrate(maxBitrate);
+  }, []);
+
+  // Teacher only: Jitsi's model-based noise suppression (RNNoise) on the
+  // teacher's own microphone. ON unless the teacher saved OFF (this browser
+  // only). Read for every page but only used for the teacher: it is passed
+  // to the sidebar and sent to Jitsi only for role "teacher" (useJitsi also
+  // drops it for anyone else). useJitsi keeps it and sends it once per join.
+  const [noiseSuppression, setNoiseSuppressionState] = useState<boolean>(() =>
+    readStoredNoiseSuppression()
+  );
+  const noiseSuppressionRef = useRef(noiseSuppression);
+
+  const handleSetNoiseSuppression = useCallback((enabled: boolean) => {
+    noiseSuppressionRef.current = enabled;
+    setNoiseSuppressionState(enabled);
+    writeStorage(NOISE_SUPPRESSION_STORAGE_KEY, String(enabled));
+    jitsiMeetingRef.current?.setNoiseSuppression(enabled);
   }, []);
 
   // Teacher only: video diagnostics (WebRTC stats measured by custom.js).
@@ -1503,6 +1526,9 @@ const [classStudents, setClassStudents] =
               // always has the current settings (it applies them while on).
               if (role === "teacher") {
                 jitsiMeetingRef.current?.setTeachingMode(teachingSettingsRef.current);
+                // Noise suppression: the current choice for this join (useJitsi
+                // sends it once per conference).
+                jitsiMeetingRef.current?.setNoiseSuppression(noiseSuppressionRef.current);
                 // The bitrate cap too (the new meeting already started with
                 // the saved value; this keeps custom.js's live cap in step).
                 jitsiMeetingRef.current?.setTeacherBitrate(teacherBitrateRef.current);
@@ -1782,9 +1808,8 @@ const [classStudents, setClassStudents] =
           onSetVideoQuality={(heightPx) =>
             jitsiMeetingRef.current?.setVideoQuality(heightPx)
           }
-          onSetNoiseSuppression={(enabled) =>
-            jitsiMeetingRef.current?.setNoiseSuppression(enabled)
-          }
+          noiseSuppression={noiseSuppression}
+          onSetNoiseSuppression={role === "teacher" ? handleSetNoiseSuppression : undefined}
           teachingMode={teachingMode}
           teachingModeStatus={teachingModeStatus}
           onSetTeachingMode={role === "teacher" ? handleSetTeachingMode : undefined}

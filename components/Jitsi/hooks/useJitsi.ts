@@ -40,6 +40,7 @@ import {
   readStorage,
   TEACHER_BITRATE_STORAGE_KEY,
 } from "../teacher-camera-preferences.mjs";
+import { createNoiseSuppressionController } from "../teacher-audio-preferences.mjs";
 import {
   buildVideoTelemetryMessage,
   parseVideoTelemetryStatus,
@@ -88,7 +89,13 @@ export type JitsiControls = BreakoutControls & {
    */
   setVideoQuality: (heightPx: number) => void;
 
-  /** Enable/disable noise suppression on the local (teacher's) microphone track. */
+  /**
+   * Teacher only: Jitsi's model-based noise suppression (RNNoise) on the
+   * teacher's own microphone ("setNoiseSuppressionEnabled"). Kept and sent
+   * once per conference join and at once on a change while joined; never
+   * dropped when Jitsi is not ready yet. Jitsi gives no read-back: it may
+   * decline (stereo microphone, shared desktop audio) with its own notice.
+   */
   setNoiseSuppression: (enabled: boolean) => void;
 
   /** Moderator: end the Jitsi conference for every participant (teacher included). */
@@ -1000,8 +1007,28 @@ export default function useJitsi({
     return videoQualityControllerRef.current;
   };
 
+  // Teacher noise suppression (RNNoise): kept and sent once per conference
+  // join, like the video quality.
+  const noiseSuppressionControllerRef = useRef<ReturnType<typeof createNoiseSuppressionController> | null>(null);
+
+  const getNoiseSuppressionController = () => {
+    if (!noiseSuppressionControllerRef.current) {
+      noiseSuppressionControllerRef.current = createNoiseSuppressionController((enabled) => {
+        if (!apiRef.current) {
+          return false;
+        }
+
+        apiRef.current.executeCommand("setNoiseSuppressionEnabled", { enabled });
+
+        return true;
+      });
+    }
+
+    return noiseSuppressionControllerRef.current;
+  };
+
   // Teaching Mode: kept and resent on SL_RECEIVE_READY, like the teacher
-  // view. JitsiClassroom sends it (off by default, with the camera frame
+  // view. JitsiClassroom sends it (on by default, with the camera frame
   // rate) on every conference join.
   const teachingModeEpochRef = useRef(0);
   const teachingModeRef = useRef<TeachingModeMessage | null>(null);
@@ -1235,14 +1262,17 @@ export default function useJitsi({
       },
 
       setNoiseSuppression: (enabled) => {
-        if (!apiRef.current) {
-          console.warn("Jitsi API is not ready");
+        // Teacher only: a student's page never sends it.
+        if (roleRef.current !== "teacher") {
           return;
         }
 
-        console.log("🔇 Setting noise suppression:", enabled);
+        const sent = getNoiseSuppressionController().setDesired(enabled);
 
-        apiRef.current.executeCommand("setNoiseSuppressionEnabled", { enabled });
+        console.log(
+          sent ? "🔇 Setting noise suppression:" : "🔇 Noise suppression kept for the next conference join:",
+          enabled
+        );
       },
 
       endConference: () => {
@@ -1933,6 +1963,8 @@ export default function useJitsi({
       // The teacher's maximum send quality, once per join (first join,
       // reconnect, breakout switch); nothing is sent if none was chosen.
       getVideoQualityController().conferenceJoined();
+      // The teacher's noise suppression too (nothing for students).
+      getNoiseSuppressionController().conferenceJoined();
 
       // Student view, custom stage view, device status view and toolbar view
       // on every join (first join, reconnect, breakout switch).
@@ -2003,6 +2035,7 @@ export default function useJitsi({
 
       // The next "joined" (a reconnect or room switch) sends the quality again.
       getVideoQualityController().conferenceLeft();
+      getNoiseSuppressionController().conferenceLeft();
 
       pendingLeaveTimer = setTimeout(() => {
         pendingLeaveTimer = null;
@@ -2358,6 +2391,7 @@ export default function useJitsi({
       inBreakoutRef.current = false;
       // A recreated meeting gets the quality again on its first join.
       getVideoQualityController().conferenceLeft();
+      getNoiseSuppressionController().conferenceLeft();
 
       api.dispose();
 

@@ -103,7 +103,8 @@ test("explains caps vs actual use, and the live status line", () => {
 test("settings menu: the selector sits in the teacher-only Camera section, below Teaching Mode and its frame rate", () => {
   const nav = source("classroom", "sidebar", "SidebarNav.tsx");
   const camera = nav.indexOf(">\n                  Camera\n");
-  const teachingMode = nav.indexOf('<span className="block text-[#F8FAFC]">Teaching Mode</span>');
+  // The visible Teaching Mode label (its on / off switch is hidden).
+  const teachingMode = nav.indexOf("On by default · Sharper handwriting and whiteboards");
   const frameRate = nav.indexOf(">Teaching Mode frame rate</p>");
   const detailHint = nav.indexOf(">Detail hint</span>");
   const selector = nav.indexOf("{teacherBitrate ? <TeacherBitrateSection bitrate={teacherBitrate} /> : null}");
