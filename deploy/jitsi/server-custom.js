@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1016;
+const SL_CUSTOM_JS_VERSION = 1017;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -11487,6 +11487,151 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         APP.store.subscribe(syncTeacher);
         syncTeacher();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Leave Classroom (hangup menu wording)
+
+   Display only, in the menu Jitsi opens from the hangup button
+   (a moderator's "End meeting for all" / "Leave meeting"; on a
+   narrow screen the same buttons in a drawer):
+   - "Leave meeting" reads "Leave Classroom" (its text, and its
+     aria-label / title where they carry the old wording). Only the
+     text node is rewritten; the button, its React onClick and so
+     the normal leave are untouched.
+   - "End meeting for all" is hidden (display: none) when it sits
+     next to a leave button in that menu. Jitsi's end-conference
+     action, its permissions and every other control are unchanged.
+
+   Matched on the visible text or the aria-label / title (English
+   wording, as Jitsi shows it here). The toolbar's own hangup button
+   ("Leave the meeting") does not match.
+
+   Cost: nothing watches the page while the menu is closed. While
+   features/toolbox.hangupMenuVisible is set (or a Jitsi dialog is
+   open), one MutationObserver on <body> reapplies the change to
+   whatever Jitsi renders; it is disconnected as soon as both close.
+   Its callback runs before the next paint, so the old wording and
+   the hidden button never flash.
+========================================================== */
+
+(function () {
+
+    const SL_LC_LEAVE_TEXT = "leave meeting";
+    const SL_LC_LEAVE_LABEL = "Leave Classroom";
+    const SL_LC_END_TEXT = "end meeting for all";
+    const SL_LC_HIDDEN_ATTR = "data-sl-end-hidden";
+    const SL_LC_BUTTONS = "button, [role='button']";
+    // How far up from "End meeting for all" a leave button is looked for
+    // (the menu's own container), so nothing outside the menu is hidden.
+    const SL_LC_MENU_DEPTH = 4;
+
+    let observer = null;
+
+    function normalize(text) {
+        return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
+    function matchesText(el, wanted) {
+        return normalize(el.textContent) === wanted
+            || normalize(el.getAttribute("aria-label")) === wanted
+            || normalize(el.getAttribute("title")) === wanted;
+    }
+
+    function isLeaveButton(el) {
+        return matchesText(el, SL_LC_LEAVE_TEXT) || matchesText(el, normalize(SL_LC_LEAVE_LABEL));
+    }
+
+    function renameLeaveButton(button) {
+        const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (normalize(node.nodeValue) === SL_LC_LEAVE_TEXT) {
+                node.nodeValue = node.nodeValue.replace(/\S.*\S|\S/, SL_LC_LEAVE_LABEL);
+            }
+        }
+
+        ["aria-label", "title"].forEach((attr) => {
+            if (normalize(button.getAttribute(attr)) === SL_LC_LEAVE_TEXT) {
+                button.setAttribute(attr, SL_LC_LEAVE_LABEL);
+            }
+        });
+    }
+
+    // A leave button within a few levels above: the hangup menu itself.
+    function isInHangupMenu(button) {
+        let container = button.parentElement;
+
+        for (let depth = 0; container && container !== document.body && depth < SL_LC_MENU_DEPTH; depth++) {
+            const siblings = container.querySelectorAll(SL_LC_BUTTONS);
+
+            for (let i = 0; i < siblings.length; i++) {
+                if (siblings[i] !== button && isLeaveButton(siblings[i])) {
+                    return true;
+                }
+            }
+
+            container = container.parentElement;
+        }
+
+        return false;
+    }
+
+    function apply() {
+        if (!document.body) {
+            return;
+        }
+
+        const buttons = document.body.querySelectorAll(SL_LC_BUTTONS);
+
+        for (let i = 0; i < buttons.length; i++) {
+            const button = buttons[i];
+
+            if (matchesText(button, SL_LC_LEAVE_TEXT)) {
+                renameLeaveButton(button);
+            } else if (!button.hasAttribute(SL_LC_HIDDEN_ATTR)
+                    && matchesText(button, SL_LC_END_TEXT)
+                    && isInHangupMenu(button)) {
+                button.setAttribute(SL_LC_HIDDEN_ATTR, "");
+                button.style.setProperty("display", "none", "important");
+            }
+        }
+    }
+
+    function isMenuOpen(state) {
+        return Boolean(state?.["features/toolbox"]?.hangupMenuVisible
+            || state?.["features/base/dialog"]?.component);
+    }
+
+    function sync() {
+        const open = isMenuOpen(APP.store.getState());
+
+        if (open && !observer) {
+            apply();
+
+            if (typeof MutationObserver === "function" && document.body) {
+                observer = new MutationObserver(apply);
+                observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+            }
+        } else if (!open && observer) {
+            observer.disconnect();
+            observer = null;
+        }
+    }
+
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
     }, 500);
 
 })();
