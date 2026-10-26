@@ -12,6 +12,8 @@ import {
   PenTool,
   UsersRound,
   ScanEye,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
@@ -48,6 +50,10 @@ type RightSidebarProps = {
   breakoutRoomLabels?: Record<string, string>;
   /** Reports whether a slide-out panel is open (used to keep the rail visible in fullscreen). */
   onPanelOpenChange?: (open: boolean) => void;
+  /** Jitsi fullscreen (real or the CSS fallback) is on: a maximized whiteboard is restored. */
+  isFullscreenActive?: boolean;
+  /** Reports whether the whiteboard is maximized (this participant's own view; never sent anywhere). */
+  onWhiteboardMaximizedChange?: (maximized: boolean) => void;
   sessionId?: string;
   classId : string;
   className : String;
@@ -121,6 +127,57 @@ export default function RightSidebar(props: RightSidebarProps) {
       setWhiteboardMounted(true);
     }
   }, [isWhiteboardPanel]);
+
+  // Maximized whiteboard: this participant's own view only (never sent anywhere).
+  // The same panel element gets .sl-panel--max, so the board is never remounted.
+  const [whiteboardMaximized, setWhiteboardMaximized] = useState(false);
+  const isWhiteboardMaximized = whiteboardMaximized && isWhiteboardPanel;
+  const { isFullscreenActive } = props;
+
+  // Closing the whiteboard, opening another panel or entering Jitsi fullscreen
+  // restores it; it is never maximized again by itself.
+  useEffect(() => {
+    if (!isWhiteboardPanel || isFullscreenActive) {
+      setWhiteboardMaximized(false);
+    }
+  }, [isWhiteboardPanel, isFullscreenActive]);
+
+  const { onWhiteboardMaximizedChange } = props;
+
+  useEffect(() => {
+    onWhiteboardMaximizedChange?.(isWhiteboardMaximized);
+  }, [isWhiteboardMaximized, onWhiteboardMaximizedChange]);
+
+  // Escape restores, but only when it reaches the document: Excalidraw keeps
+  // the Escape it uses itself (deselect, finish a line or text).
+  useEffect(() => {
+    if (!isWhiteboardMaximized) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) {
+        return;
+      }
+
+      const target = event.target;
+
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+      ) {
+        return;
+      }
+
+      setWhiteboardMaximized(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isWhiteboardMaximized]);
 
   // The teacher's "Class Register" (participants panel) is styled like the
   // lecture tool panels: blue header, light body.
@@ -281,6 +338,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                   ? "sl-panel--wide"
                   : ""
           }
+          ${isWhiteboardMaximized ? "sl-panel--max" : ""}
           overflow-hidden
           border-l
           ${chrome.panelBorder}
@@ -367,13 +425,28 @@ export default function RightSidebar(props: RightSidebarProps) {
 
           </div>
 
-          <button
-            type="button"
-            onClick={closePanel}
-            className={`shrink-0 rounded-lg p-2 transition ${chrome.closeIdle} ${chrome.closeHover}`}
-          >
-            <X size={18} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {isWhiteboardPanel && (
+              <button
+                type="button"
+                onClick={() => setWhiteboardMaximized((current) => !current)}
+                aria-label={isWhiteboardMaximized ? "Restore whiteboard" : "Maximize whiteboard"}
+                title={isWhiteboardMaximized ? "Restore whiteboard" : "Maximize whiteboard"}
+                className={`shrink-0 rounded-lg p-2 transition ${chrome.closeIdle} ${chrome.closeHover}`}
+              >
+                {isWhiteboardMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={closePanel}
+              aria-label="Close panel"
+              className={`shrink-0 rounded-lg p-2 transition ${chrome.closeIdle} ${chrome.closeHover}`}
+            >
+              <X size={18} />
+            </button>
+          </div>
 
         </div>
 

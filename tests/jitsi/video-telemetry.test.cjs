@@ -17,9 +17,37 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
+const vm = require("vm");
 const { pathToFileURL } = require("url");
 
 const { createHarness } = require("./harness.cjs");
+
+// The custom.js copy the harness loads (same rule as harness.cjs).
+const CUSTOM_JS_UNDER_TEST = path.resolve(process.env.SL_CUSTOM_JS
+    || path.join(__dirname, "..", "..", "deploy", "jitsi", "custom.js"));
+// SL_CUSTOM_JS_VERSION expected for each known copy; update with every bump.
+const EXPECTED_CUSTOM_JS_VERSIONS = {
+    "deploy/jitsi/custom.js": 1019,
+    "deploy/jitsi/server-custom.js": 1018
+};
+
+// Any other copy needs SL_EXPECTED_CUSTOM_JS_VERSION (e.g. an older version).
+function expectedCustomJsVersion() {
+    const fromEnv = process.env.SL_EXPECTED_CUSTOM_JS_VERSION;
+
+    if (fromEnv !== undefined) {
+        assert.match(fromEnv, /^\d+$/, "SL_EXPECTED_CUSTOM_JS_VERSION must be a whole number");
+
+        return Number(fromEnv);
+    }
+
+    const key = path.relative(path.join(__dirname, "..", ".."), CUSTOM_JS_UNDER_TEST).split(path.sep).join("/");
+
+    assert.ok(Object.prototype.hasOwnProperty.call(EXPECTED_CUSTOM_JS_VERSIONS, key),
+        "no expected version for " + key + ": set SL_EXPECTED_CUSTOM_JS_VERSION");
+
+    return EXPECTED_CUSTOM_JS_VERSIONS[key];
+}
 
 const ENDPOINT_EVENT = "conference.endpoint_message_received";
 const REQUEST = { type: "sl-video-telemetry-request", v: 1 };
@@ -916,7 +944,13 @@ test("end to end: the teacher's request reaches the student, the report comes ba
     const row = status.students.find(entry => entry.participantId === "stud001");
 
     assert.ok(row, "the student's report arrived");
-    assert.equal(row.customJsVersion, 1014);
+    // Both the file's own constant and what the student reported must be the
+    // version expected for the copy under test.
+    const expectedVersion = expectedCustomJsVersion();
+
+    assert.equal(vm.runInContext("SL_CUSTOM_JS_VERSION", student.ctx), expectedVersion,
+        "SL_CUSTOM_JS_VERSION of " + CUSTOM_JS_UNDER_TEST);
+    assert.equal(row.customJsVersion, expectedVersion);
     assert.equal(row.sources[0].participantId, "teacher01");
     assert.equal(row.sources[0].fps, 20);
     assert.deepEqual(status.silent, []);

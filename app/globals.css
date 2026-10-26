@@ -566,6 +566,49 @@
   }
 }
 
+/* ---- Maximized whiteboard (every layout) ----
+   The same panel fills the viewport over the header, stage and rail / bottom
+   bar. Two classes and placed after the phone block, so it wins over .sl-panel
+   and .sl-panel--tall in every media query. z-index: above the classroom chrome
+   and popovers (<= 80), below the Jitsi fullscreen wrapper (100). No transform:
+   fixed modals inside (saved whiteboard viewer) cover the viewport; no
+   transition: the canvas is not re-laid out on every animation frame. */
+.sl-panel.sl-panel--max {
+  position: fixed;
+  inset: 0;
+  bottom: var(--sl-kb, 0px);
+  z-index: 90;
+  width: auto;
+  height: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-width: 0;
+  border-radius: 0;
+  transform: none;
+  transition: none;
+}
+
+/* ---- Floating meeting over a student's maximized whiteboard ----
+   The same wrapper as always (JitsiMeeting's fullscreen wrapper): only its
+   class changes, so the iframe is never moved and the meeting stays
+   connected. Above the maximized whiteboard (90), below Jitsi fullscreen
+   (100), which never floats. Bottom-right, raised above Excalidraw's footer
+   row so the whiteboard's Restore / Close (top-right) stay clear. Not used on
+   phone layouts (see shouldFloatMeeting). */
+.sl-meeting--float {
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 95;
+  width: clamp(320px, 26vw, 420px);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #000000;
+  box-shadow: 0 12px 32px rgba(2, 6, 23, 0.45);
+}
+
 /* ---- Small screens: inputs must be >= 16px or iOS zooms the page on focus ---- */
 @media (max-width: 639px) {
   .sl-classroom input:not(.excalidraw *),

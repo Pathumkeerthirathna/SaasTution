@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1015;
+const SL_CUSTOM_JS_VERSION = 1019;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -1153,14 +1153,7 @@ window.addEventListener("load", () => {
 
 
 
-// setInterval(() => {
 
-//     if (!window.APP || !APP.conference)
-//         return;
-
-//     console.log(APP);
-
-// }, 3000);
 
 
 // STEP 1 - Find Jitsi menu items
@@ -11717,6 +11710,119 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         APP.store.subscribe(sync);
         sync();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Broadcast Filmstrip Hide (Jibri recorder)
+
+   Display only, ONLY in the recorder's own browser: Jibri opens the
+   meeting with config.iAmRecorder (it joins through the hidden
+   recorder domain), and what it renders is what YouTube Live,
+   YouTube Recording and file recordings show. Jitsi keeps its
+   filmstrip there (it only drops its toggle button and the
+   recorder's own thumbnail), so participant thumbnails appeared in
+   the broadcast.
+
+   - Jitsi's own filmstrip visibility is set to hidden
+     (SET_FILMSTRIP_VISIBLE, the action of its "toggle-film-strip"
+     command), so the large video takes the full width. It is set
+     again only when the filmstrip turns visible again (e.g. a later
+     action), never repeatedly: no dispatch loop.
+   - Backstop: <body> gets a class whose rule hides .filmstrip
+     (display: none !important, as in Student Filmstrip Hide).
+
+   Every other participant (teacher, student) has no iAmRecorder, so
+   nothing here runs for them. The large video itself (teacher,
+   screen share) stays as the Stage Lock above chooses it.
+========================================================== */
+
+(function () {
+
+    const SL_BC_CLASS = "sl-recorder-no-filmstrip";
+    const SL_BC_STYLE_ID = "sl-recorder-filmstrip-style";
+
+    // Whether Jitsi's filmstrip was visible at the last check (undefined:
+    // not checked yet). Hiding is requested once per turn to visible.
+    let lastVisible;
+    // Our own dispatch notifies the store subscribers (this one included).
+    let dispatching = false;
+    let logged = false;
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isRecorder(state) {
+        return state?.["features/base/config"]?.iAmRecorder === true;
+    }
+
+    function injectStyles() {
+        if (document.getElementById(SL_BC_STYLE_ID) || !document.head) {
+            return;
+        }
+
+        const style = document.createElement("style");
+
+        style.id = SL_BC_STYLE_ID;
+        style.textContent = "body." + SL_BC_CLASS + " .filmstrip { display: none !important; }";
+
+        document.head.appendChild(style);
+    }
+
+    function render() {
+        const state = getState();
+
+        if (dispatching || !isRecorder(state)) {
+            return;
+        }
+
+        const body = document.body;
+
+        if (body && !body.classList.contains(SL_BC_CLASS)) {
+            injectStyles();
+            body.classList.add(SL_BC_CLASS);
+        }
+
+        const visible = state["features/filmstrip"]?.visible !== false;
+        const turnedVisible = visible && lastVisible !== true;
+
+        lastVisible = visible;
+
+        if (!turnedVisible) {
+            return;
+        }
+
+        dispatching = true;
+
+        try {
+            APP.store.dispatch({ type: "SET_FILMSTRIP_VISIBLE", visible: false });
+        } finally {
+            dispatching = false;
+        }
+
+        lastVisible = getState()?.["features/filmstrip"]?.visible !== false;
+
+        if (!logged) {
+            logged = true;
+            console.log("[SL Classroom] Broadcast view (recorder): filmstrip hidden");
+        }
+    }
+
+    // Follow every store change: the config arriving, and anything that
+    // shows the filmstrip again.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function" || !document.body) {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(render);
+        render();
     }, 500);
 
 })();

@@ -49,6 +49,40 @@ export type JitsiMeetingControls = JitsiControls & {
   requestFullscreen: () => Promise<void>;
 };
 
+/**
+ * The meeting floats over a student's maximized whiteboard so the teacher
+ * stays visible. Never for the teacher, never on phone layouts (portrait or
+ * short landscape: too small), never while Jitsi is fullscreen.
+ */
+export function shouldFloatMeeting(view: {
+  role: UserRole;
+  whiteboardMaximized: boolean;
+  isPhone: boolean;
+  isShort: boolean;
+  isFullscreen: boolean;
+}): boolean {
+  return (
+    view.role === "student" &&
+    view.whiteboardMaximized &&
+    !view.isPhone &&
+    !view.isShort &&
+    !view.isFullscreen
+  );
+}
+
+/**
+ * The wrapper around Jitsi's iframe container. Only its class changes (the
+ * element and the iframe inside are never moved), so the meeting stays
+ * connected; fullscreen wins over floating.
+ */
+export function meetingWrapperClassName(state: { isFullscreen: boolean; isFloating: boolean }): string {
+  if (state.isFullscreen) {
+    return "fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black";
+  }
+
+  return state.isFloating ? "sl-meeting--float" : "relative h-full min-h-0 w-full";
+}
+
 type JitsiMeetingProps = {
   joinInfo: JoinInfo;
   role: UserRole;
@@ -64,6 +98,12 @@ type JitsiMeetingProps = {
 
   /** Called when the "Exit fullscreen" overlay button is pressed. */
   onExitFullscreen?: () => void;
+
+  /**
+   * Floating window over a student's maximized whiteboard (see
+   * shouldFloatMeeting). Layout only: never passed to useJitsi.
+   */
+  isFloating?: boolean;
 
   onParticipantsChanged?: (
     participants: JitsiParticipant[]
@@ -130,6 +170,7 @@ const JitsiMeeting = forwardRef<
     teacherName,
     isFullscreen = false,
     onExitFullscreen,
+    isFloating = false,
     onParticipantsChanged,
     onParticipantStatusChanged,
     onRecordingStatusChanged,
@@ -384,11 +425,7 @@ const JitsiMeeting = forwardRef<
       */}
       <div
         ref={fullscreenWrapperRef}
-        className={
-          isFullscreen
-            ? "fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black"
-            : "relative h-full min-h-0 w-full"
-        }
+        className={meetingWrapperClassName({ isFullscreen, isFloating })}
       >
         <div
           ref={containerRef}

@@ -1,7 +1,7 @@
 "use client";
 
 import PermissionGate from "./PermissionGate";
-import JitsiMeeting from "./JitsiMeeting";
+import JitsiMeeting, { shouldFloatMeeting } from "./JitsiMeeting";
 import type { JitsiMeetingControls } from "./JitsiMeeting";
 
 import useJoinSession from "./hooks/useJoinSession";
@@ -259,6 +259,16 @@ const [classStudents, setClassStudents] =
   const [revealTop, setRevealTop] = useState(false);
   const [revealRight, setRevealRight] = useState(false);
   const [sidebarPanelOpen, setSidebarPanelOpen] = useState(false);
+  // This participant's maximized whiteboard (reported by RightSidebar; local
+  // only): a student's floats the meeting above it so the teacher stays visible.
+  const [whiteboardMaximized, setWhiteboardMaximized] = useState(false);
+  const floatMeeting = shouldFloatMeeting({
+    role,
+    whiteboardMaximized,
+    isPhone: viewport.isPhone,
+    isShort: viewport.isShort,
+    isFullscreen: isFullscreenActive,
+  });
   const hideTopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideRightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1552,6 +1562,7 @@ const [classStudents, setClassStudents] =
             teacherName={teacherName}
             isFullscreen={isFullscreenActive}
             onExitFullscreen={handleExitFullscreen}
+            isFloating={floatMeeting}
             onParticipantsChanged={handleParticipantsChanged}
             onChatMessage={handleChatMessage}
             onParticipantStatusChanged={(
@@ -1776,6 +1787,8 @@ const [classStudents, setClassStudents] =
           breakout={breakout}
           breakoutRoomLabels={breakoutRoomLabels}
           onPanelOpenChange={setSidebarPanelOpen}
+          isFullscreenActive={isFullscreenActive}
+          onWhiteboardMaximizedChange={setWhiteboardMaximized}
           sessionId={joinInfo.session.id}
           classId={joinInfo.class.id}
           className={joinInfo.class.name}

@@ -7,7 +7,7 @@ import { FilePlus2, FolderOpen, Radio, Save, SaveAll, Trash2, X } from "lucide-r
 import type { ExcalidrawImperativeAPI } from "./WhiteboardCanvas";
 import WhiteboardCanvasLazy from "./WhiteboardCanvasLazy";
 import { EMPTY_SCENE, formatWhiteboardDate, sceneSignature } from "./scene-utils";
-import type { WhiteboardDetail, WhiteboardListItem, WhiteboardScene } from "@/types/whiteboard";
+import type { WhiteboardDetail, WhiteboardListItem, WhiteboardLiveUpdate, WhiteboardScene } from "@/types/whiteboard";
 
 type Props = {
   lectureId: string;
@@ -31,6 +31,76 @@ const primaryButton =
   "inline-flex items-center gap-1.5 rounded-md bg-[#4D6C90] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#3B5776] disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryButton =
   "inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+
+export type LiveSceneSource = Pick<EventSource, "addEventListener" | "close">;
+
+/**
+ * How long the read of the live scene waits: the server sends the latest
+ * scene right after "connected" (settle: more frames of the same burst),
+ * so none within the grace means there is no live board.
+ */
+export const LIVE_RESTORE_TIMING = { settleMs: 150, graceMs: 1000, timeoutMs: 8000 };
+
+/**
+ * Reads the session's latest live scene once from the teacher stream, then
+ * closes it: `done(scene)`, or `done(null)` when there is none (or the stream
+ * never answered). The newest scene received wins. Returns a cancel.
+ */
+export function readLatestLiveScene(
+  source: LiveSceneSource,
+  done: (scene: WhiteboardScene | null) => void,
+  timing = LIVE_RESTORE_TIMING
+): () => void {
+  let latest: WhiteboardScene | null = null;
+  let finished = false;
+  let timer: ReturnType<typeof setTimeout>;
+
+  const stop = () => {
+    finished = true;
+    clearTimeout(timer);
+    source.close();
+  };
+
+  const finish = () => {
+    if (!finished) {
+      stop();
+      done(latest);
+    }
+  };
+
+  const finishIn = (ms: number) => {
+    clearTimeout(timer);
+    timer = setTimeout(finish, ms);
+  };
+
+  timer = setTimeout(finish, timing.timeoutMs);
+
+  source.addEventListener("connected", () => {
+    if (!finished && !latest) {
+      finishIn(timing.graceMs);
+    }
+  });
+
+  source.addEventListener("scene", (event) => {
+    if (finished) {
+      return;
+    }
+
+    try {
+      latest = (JSON.parse((event as MessageEvent<string>).data) as WhiteboardLiveUpdate).scene;
+    } catch {
+      /* ignore a malformed frame */
+    }
+
+    finishIn(timing.settleMs);
+  });
+
+  return () => {
+    if (!finished) {
+      stop();
+    }
+  };
+}
 
 async function readApiError(response: Response, fallback: string) {
   const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -69,8 +139,17 @@ export default function WhiteboardEditor({
   const broadcastInFlightRef = useRef(false);
   const broadcastPendingRef = useRef(false);
 
+  // Until the live scene is read (a refresh / rejoin may find students
+  // already watching a board), nothing is broadcast.
+  const restorePendingRef = useRef(Boolean(sessionId));
+  // The teacher changed the board since the editor opened: their scene wins.
+  const localChangeRef = useRef(false);
+  // The canvas reports the scene it was loaded with (the empty start, a
+  // restored live board): that echo is not a change and is never broadcast.
+  const loadedSignatureRef = useRef<string | null>(sceneSignature(initialBoard?.data ?? EMPTY_SCENE));
+
   const flushBroadcast = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || restorePendingRef.current) {
       return;
     }
 
@@ -111,9 +190,6 @@ export default function WhiteboardEditor({
   }, [sessionId, flushBroadcast]);
 
   useEffect(() => {
-    // Let students see the board as soon as the teacher opens it.
-    void flushBroadcast();
-
     return () => {
       if (broadcastTimerRef.current) {
         clearTimeout(broadcastTimerRef.current);
@@ -122,12 +198,60 @@ export default function WhiteboardEditor({
     };
   }, [flushBroadcast]);
 
+  // Shows the live board students are already watching, without broadcasting
+  // it again (the server has it) and without marking it as a saved board.
+  const restoreLiveScene = useCallback((scene: WhiteboardScene) => {
+    sceneRef.current = scene;
+    loadedSignatureRef.current = sceneSignature(scene);
+    setCanvasScene(scene);
+    setCanvasKey((key) => key + 1);
+    setDirty(sceneSignature(scene) !== savedSignatureRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      restorePendingRef.current = false;
+      return;
+    }
+
+    restorePendingRef.current = true;
+
+    const source = new EventSource(`/api/sessions/${sessionId}/whiteboard?role=teacher`);
+
+    return readLatestLiveScene(source, (live) => {
+      restorePendingRef.current = false;
+
+      if (localChangeRef.current) {
+        // Changed while the read was pending: the teacher's newer scene wins.
+        void flushBroadcast();
+      } else if (live && live.elements.length > 0) {
+        restoreLiveScene(live);
+      } else if (sceneRef.current.elements.length > 0) {
+        // No live board: a non-empty starting board is shown to students.
+        void flushBroadcast();
+      }
+      // Otherwise nothing is sent: an empty start never replaces a live board.
+    });
+  }, [sessionId, flushBroadcast, restoreLiveScene]);
+
   /* --------------------------------- canvas --------------------------------- */
 
   const handleSceneChange = useCallback(
     (scene: WhiteboardScene) => {
       sceneRef.current = scene;
       setDirty(sceneSignature(scene) !== savedSignatureRef.current);
+
+      const signature = sceneSignature(scene);
+
+      if (loadedSignatureRef.current !== null) {
+        if (signature === loadedSignatureRef.current) {
+          return;
+        }
+
+        loadedSignatureRef.current = null;
+      }
+
+      localChangeRef.current = true;
       scheduleBroadcast();
     },
     [scheduleBroadcast]
@@ -141,6 +265,9 @@ export default function WhiteboardEditor({
 
   const loadBoard = useCallback(
     (next: { id: string | null; title: string; scene: WhiteboardScene }) => {
+      // An explicit choice (new board, open a saved one): always broadcast.
+      loadedSignatureRef.current = null;
+      localChangeRef.current = true;
       sceneRef.current = next.scene;
       savedSignatureRef.current = sceneSignature(next.scene);
       setBoard({ id: next.id, title: next.title });
@@ -166,7 +293,9 @@ export default function WhiteboardEditor({
       return;
     }
 
-    // resetScene triggers onChange, which broadcasts the empty board.
+    // resetScene triggers onChange, which broadcasts the empty board (an
+    // intentional clear, so it is never treated as the empty start).
+    loadedSignatureRef.current = null;
     apiRef.current?.resetScene();
   }
 
