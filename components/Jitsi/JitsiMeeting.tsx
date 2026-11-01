@@ -34,6 +34,7 @@ import useJitsi, {
   type VideoTelemetryStatus,
 } from "./hooks/useJitsi";
 import type { TeacherTilesState } from "./hooks/useTeacherTiles";
+import type { StudentHistoryEntry } from "./session-visit-history";
 
 /**
  * JitsiMeeting's own exposed ref adds `requestFullscreen` on top of the
@@ -314,6 +315,10 @@ const JitsiMeeting = forwardRef<
       setLocalDisplayName: (name: string) =>
         controlsRef.current?.setLocalDisplayName(name) ??
         Promise.reject(new Error("The classroom is not connected yet.")),
+
+      setStudentHistory: (entries: StudentHistoryEntry[]) => {
+        controlsRef.current?.setStudentHistory(entries);
+      },
 
       setStudentNames: (names: ReadonlyMap<string, string>) => {
         controlsRef.current?.setStudentNames(names);

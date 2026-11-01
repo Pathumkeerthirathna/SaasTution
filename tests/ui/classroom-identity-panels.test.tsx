@@ -582,3 +582,25 @@ test("teacher header: unchanged (no profile menu)", () => {
   assert.ok(!teacher.includes("Change display name"));
   assert.ok(!teacher.includes("Registered:"));
 });
+
+test("source: visit history is teacher-only, from the existing endpoint and stream, times only, sent like the names", () => {
+  const page = source("components/Jitsi/JitsiClassroom.tsx");
+  const jitsi = source("components/Jitsi/hooks/useJitsi.ts");
+  const hook = source("components/Jitsi/hooks/useSessionVisitHistory.ts");
+
+  // The existing teacher-only endpoint and event stream; nothing new on the server.
+  assert.ok(hook.includes("`/api/sessions/${sessionId}/attendance`"));
+  assert.ok(hook.includes("`/api/sessions/${sessionId}/events`"));
+  assert.ok(hook.includes('"attendance-update"'));
+  // The stream only while the teacher view shows (fewer open connections).
+  assert.match(page, /enabled: isTeacherNormalView && SL_TEACHER_FILMSTRIP_ENABLED/);
+
+  // Matched by studentId -> current participant ID, class students only.
+  assert.match(page, /studentIdByParticipantId\(participantMap, jitsiMeetingRef\.current\?\.getOwnParticipantIds\(\)\)[\s\S]*?roster\.has\(studentId\)/);
+  assert.match(page, /if \(role !== "teacher" \|\| conferenceGeneration === 0\) \{\s*return;\s*\}\s*jitsiMeetingRef\.current\?\.setStudentHistory\(studentHistory\);/);
+
+  // Teacher-only control, the iframe's own origin, resent when custom.js is ready.
+  assert.match(jitsi, /setStudentHistory: \(entries\) => \{\s*if \(roleRef\.current !== "teacher"\) \{\s*return;/);
+  assert.match(jitsi, /const postStudentHistory = \(\) => \{[\s\S]*?roleRef\.current !== "teacher"[\s\S]*?frameWindow\.postMessage\(message, SL_JITSI_ORIGIN\);/);
+  assert.match(jitsi, /postStudentNames\(\);\s*postStudentHistory\(\);/);
+});

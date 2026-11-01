@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1023;
+const SL_CUSTOM_JS_VERSION = 1024;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -5287,6 +5287,11 @@ const SL_DEVICE_STATUS_GAP = 8;
     // SL_STUDENT_NAMES limits: entries per message and characters per name.
     const SL_TV_STUDENT_NAMES_MAX = 500;
     const SL_TV_STUDENT_NAME_MAX_LENGTH = 200;
+    // SL_STUDENT_HISTORY limits: students per message, visits per student
+    // (the latest; a larger total is sent with them) and the largest total.
+    const SL_TV_HISTORY_MAX_STUDENTS = 500;
+    const SL_TV_HISTORY_MAX_VISITS = 50;
+    const SL_TV_HISTORY_MAX_TOTAL = 100000;
     const SL_TV_CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     // The settings menu's View section (static icons) and the Tiles view's
     // page sizes. The choice itself belongs to the parent page
@@ -5383,6 +5388,72 @@ const SL_DEVICE_STATUS_GAP = 8;
         return clean(a) === clean(b);
     }
 
+    // Each mapped class student's visits in this session, by participant ID,
+    // from the parent page (SL_STUDENT_HISTORY; teacher's page only):
+    // { visits: [[joinedMs, leftMs | null], ...] oldest first, total }. Display
+    // only; an ID not in it (teacher, guest, an old ID) shows no history.
+    let studentHistory = { epoch: 0, byId: new Map() };
+
+    // The teacher's local time, the same format everywhere ("10:18 AM").
+    const historyClock = (() => {
+        try {
+            return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+        } catch (error) {
+            return null;
+        }
+    })();
+
+    function formatClock(ms) {
+        const date = new Date(ms);
+
+        return historyClock ? historyClock.format(date) : date.toLocaleTimeString();
+    }
+
+    // What a tile / the panel says about a participant's visits, or null.
+    // live: the participant is in this Jitsi conference NOW. A visit whose
+    // leave was never recorded (leftAt null) is "connected" only then: an open
+    // record alone proves nothing (a crashed tab's leave never arrives).
+    // Fixed text: nothing here counts time, so no timer is needed.
+    function visitHistoryView(participantId, live) {
+        const record = studentHistory.byId.get(participantId);
+
+        if (!record) {
+            return null;
+        }
+
+        const { visits, total } = record;
+        const last = visits[visits.length - 1];
+        const open = last[1] === null;
+        const state = open
+            ? (live ? "Connected since " + formatClock(last[0]) : "Not connected (leave not recorded)")
+            : (live ? "Connected now, last left " + formatClock(last[1]) : "Left " + formatClock(last[1]));
+        const lines = [];
+        const hidden = total - visits.length;
+
+        if (hidden > 0) {
+            lines.push(hidden + (hidden === 1 ? " earlier visit" : " earlier visits") + " not shown");
+        }
+
+        visits.forEach((visit, index) => {
+            lines.push((hidden === 0 && index === 0 ? "Joined " : "Rejoined ") + formatClock(visit[0]));
+
+            if (visit[1] !== null) {
+                lines.push("Left " + formatClock(visit[1]));
+            } else {
+                lines.push(index === visits.length - 1 && live ? "Currently connected" : "Leave not recorded");
+            }
+        });
+
+        // In the room although the latest record is closed (it is catching up).
+        if (live && !open) {
+            lines.push("Currently connected");
+        }
+
+        const summary = state + " · Visit " + total;
+
+        return { summary, lines, key: summary + "|" + lines.join("|") };
+    }
+
     // The registered name to show under `shownName` for this participant ID:
     // "" when it is not a mapped class student or the names are the same.
     function registeredNameFor(participantId, shownName) {
@@ -5453,6 +5524,9 @@ const SL_DEVICE_STATUS_GAP = 8;
     let panelVideo = null;
     let panelNameEl = null;
     let panelRegisteredEl = null;
+    let panelHistoryEl = null;
+    let panelHistorySummaryEl = null;
+    let panelHistoryListEl = null;
     let panelStateEl = null;
     let panelPlaceholder = null;
     let panelTrack = null;
@@ -5939,6 +6013,7 @@ const SL_DEVICE_STATUS_GAP = 8;
                 id: participantId,
                 name,
                 registeredName: registeredNameFor(participantId, name),
+                history: visitHistoryView(participantId, true),
                 kind: "camera",
                 role: roleOf(participant),
                 local: false,
@@ -7185,6 +7260,14 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-ph-role { font-size: 11px; font-weight: 500; line-height: 1.3; color: #A5B4FC; }",
             "#" + SL_TV_ID + " .sl-tv-ph-registered { max-width: 100%; font-size: 11px; font-weight: 400; line-height: 1.3; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
             "#" + SL_TV_ID + " .sl-tv-ph-registered:empty { display: none; }",
+            "#" + SL_TV_ID + " .sl-tv-ph-history { max-width: 100%; font-size: 10px; font-weight: 500; line-height: 1.3; color: #7DD3FC; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+            "#" + SL_TV_ID + " .sl-tv-ph-history:empty { display: none; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-history { font-size: 9px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-history { flex: 0 0 auto; max-height: 34%; overflow-y: auto; box-sizing: border-box; padding: 8px 12px 10px; background: #0B1220; border-top: 1px solid rgba(148, 163, 184, 0.2); color: #CBD5E1; font: 500 12px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-history[hidden] { display: none; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-history-title { color: #94A3B8; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-history-summary { margin-top: 2px; color: #7DD3FC; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-history-list { margin: 6px 0 0; padding: 0; list-style: none; }",
             "#" + SL_TV_ID + " .sl-tv-stage .sl-tv-ph-registered { font-size: 14px; }",
             "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-registered { font-size: 9px; }",
             "#" + SL_TV_ID + " .sl-tv-panel-registered { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94A3B8; font-weight: 400; font-size: 12px; }",
@@ -7200,6 +7283,8 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-name > span { display: block; overflow: hidden; text-overflow: ellipsis; }",
             "#" + SL_TV_ID + " .sl-tv-name-secondary { display: none !important; font-weight: 400; font-size: 0.9em; opacity: 0.8; }",
             "#" + SL_TV_ID + " .sl-tv-name.sl-has-registered .sl-tv-name-secondary { display: block !important; }",
+            "#" + SL_TV_ID + " .sl-tv-name-history { display: none !important; font-weight: 400; font-size: 0.85em; opacity: 0.85; }",
+            "#" + SL_TV_ID + " .sl-tv-name.sl-has-history .sl-tv-name-history { display: block !important; }",
             "#" + SL_TV_ID + " .sl-tv-pin { position: absolute; top: 6px; right: 6px; display: none; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(252, 211, 77, 0.5); background: rgba(120, 53, 15, 0.82); color: #FDE68A; font: 600 10px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 0.02em; }",
             "#" + SL_TV_ID + " .sl-tv-tile.sl-pinned .sl-tv-pin { display: block; }",
             "#" + SL_TV_ID + " .sl-tv-stage-chip { position: absolute; top: 6px; left: 6px; display: none; align-items: center; gap: 5px; padding: 1px 7px 1px 6px; border-radius: 999px; border: 1px solid rgba(96, 165, 250, 0.45); background: rgba(23, 37, 84, 0.82); color: #BFDBFE; font: 600 10px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 0.02em; }",
@@ -7489,8 +7574,28 @@ const SL_DEVICE_STATUS_GAP = 8;
         panelBodyEl.appendChild(panelVideo);
         panelBodyEl.appendChild(panelPlaceholder.el);
 
+        // Visit history of the enlarged student (hidden without one).
+        panelHistoryEl = document.createElement("div");
+        panelHistoryEl.className = "sl-tv-panel-history";
+        panelHistoryEl.hidden = true;
+
+        const historyTitle = document.createElement("div");
+        historyTitle.className = "sl-tv-panel-history-title";
+        historyTitle.textContent = "Visits";
+
+        panelHistorySummaryEl = document.createElement("div");
+        panelHistorySummaryEl.className = "sl-tv-panel-history-summary";
+
+        panelHistoryListEl = document.createElement("ol");
+        panelHistoryListEl.className = "sl-tv-panel-history-list";
+
+        panelHistoryEl.appendChild(historyTitle);
+        panelHistoryEl.appendChild(panelHistorySummaryEl);
+        panelHistoryEl.appendChild(panelHistoryListEl);
+
         panelEl.appendChild(head);
         panelEl.appendChild(panelBodyEl);
+        panelEl.appendChild(panelHistoryEl);
 
         // The grid's size changes (window, panel, chat): new columns, and
         // the nearby groups follow what is on screen.
@@ -7524,6 +7629,10 @@ const SL_DEVICE_STATUS_GAP = 8;
         const roleEl = document.createElement("div");
         roleEl.className = "sl-tv-ph-role";
 
+        // Visit summary of a class student.
+        const historyEl = document.createElement("div");
+        historyEl.className = "sl-tv-ph-history";
+
         // Phase D: "Camera on" (waiting to be received) / "Camera off".
         const statusEl = document.createElement("div");
         statusEl.className = "sl-tv-ph-status";
@@ -7532,15 +7641,17 @@ const SL_DEVICE_STATUS_GAP = 8;
         el.appendChild(nameEl);
         el.appendChild(registeredEl);
         el.appendChild(roleEl);
+        el.appendChild(historyEl);
         el.appendChild(statusEl);
 
-        return { el, iconEl, nameEl, registeredEl, roleEl, statusEl };
+        return { el, iconEl, nameEl, registeredEl, roleEl, historyEl, statusEl };
     }
 
     // variant: "teacher" | "student" | "screen"; status: Phase D camera
     // state text for a student tile ("" = none); registeredName: a class
-    // student's registered name ("" = none, see registeredNameFor).
-    function setPlaceholder(placeholder, name, variant, status, registeredName) {
+    // student's registered name ("" = none, see registeredNameFor);
+    // historySummary: their visit summary ("" = none, see visitHistoryView).
+    function setPlaceholder(placeholder, name, variant, status, registeredName, historySummary) {
         if (placeholder.el.dataset.variant !== variant) {
             placeholder.el.dataset.variant = variant;
             placeholder.iconEl.innerHTML = SL_ICONS[variant] || SL_ICONS.student;
@@ -7548,6 +7659,7 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         placeholder.nameEl.textContent = name;
         placeholder.registeredEl.textContent = registeredName || "";
+        placeholder.historyEl.textContent = historySummary || "";
         placeholder.roleEl.textContent = variant === "teacher" ? "(Teacher)" : "";
         placeholder.statusEl.textContent = status || "";
         placeholder.el.dataset.status = status === "Camera on" || status === SL_TV_TILE_PLACEHOLDER_STATUS.connecting
@@ -7780,8 +7892,13 @@ const SL_DEVICE_STATUS_GAP = 8;
         const nameSecondaryEl = document.createElement("span");
         nameSecondaryEl.className = "sl-tv-name-secondary";
 
+        // Visit summary ("Connected since 10:18 AM · Visit 3").
+        const nameHistoryEl = document.createElement("span");
+        nameHistoryEl.className = "sl-tv-name-history";
+
         nameEl.appendChild(namePrimaryEl);
         nameEl.appendChild(nameSecondaryEl);
+        nameEl.appendChild(nameHistoryEl);
 
         const pinEl = document.createElement("div");
         pinEl.className = "sl-tv-pin";
@@ -7821,7 +7938,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         // the camera stays ON). statusTrack: the track whose streaming status
         // this tile follows (Phase D), or null.
         const tile = {
-            el, video, nameEl, namePrimaryEl, nameSecondaryEl, placeholder, frozenEl, jitsiTrack: null, frozen: false, mode: "", statusTrack: null
+            el, video, nameEl, namePrimaryEl, nameSecondaryEl, nameHistoryEl, placeholder, frozenEl, jitsiTrack: null, frozen: false, mode: "", statusTrack: null
         };
 
         tiles.set(tileId, tile);
@@ -7996,6 +8113,7 @@ const SL_DEVICE_STATUS_GAP = 8;
                 id,
                 name,
                 registeredName: registeredNameFor(id, name),
+                history: visitHistoryView(id, present),
                 kind: "camera",
                 role: present ? roleOf(participant) : "student",
                 local: false,
@@ -8233,6 +8351,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         if (!participant || participant.fakeParticipant) {
             return {
                 id: enlarged.id, name: enlarged.name, registeredName: registeredNameFor(enlarged.id, enlarged.name),
+                history: visitHistoryView(enlarged.id, false),
                 role: "student", state: "disconnected", track: null, status: null
             };
         }
@@ -8241,6 +8360,7 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         const base = {
             id: enlarged.id, name: enlarged.name, registeredName: registeredNameFor(enlarged.id, enlarged.name),
+            history: visitHistoryView(enlarged.id, true),
             role: roleOf(participant)
         };
 
@@ -8289,6 +8409,23 @@ const SL_DEVICE_STATUS_GAP = 8;
         watchTileStatus(panelWatch, panelTrack, onPanelStatusChanged);
     }
 
+    // The enlarged panel's visit list (every recorded visit, oldest first).
+    function renderPanelHistory(history) {
+        panelHistoryEl.hidden = !history;
+        panelHistorySummaryEl.textContent = history ? history.summary : "";
+
+        while (panelHistoryListEl.firstChild) {
+            panelHistoryListEl.removeChild(panelHistoryListEl.firstChild);
+        }
+
+        (history ? history.lines : []).forEach(line => {
+            const item = document.createElement("li");
+
+            item.textContent = line;
+            panelHistoryListEl.appendChild(item);
+        });
+    }
+
     function renderPanel(panel) {
         root.classList.toggle("sl-tv-panel-open", Boolean(panel));
 
@@ -8301,6 +8438,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         panelNameEl.textContent = panel.name;
         panelNameEl.title = panel.registeredName ? panel.name + " (" + panel.registeredName + ")" : panel.name;
         panelRegisteredEl.textContent = panel.registeredName || "";
+        renderPanelHistory(panel.history);
         setPanelTrack(panel.track);
 
         let mode = panel.state;
@@ -8330,7 +8468,7 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         panelBodyEl.classList.toggle("sl-no-video", mode === "connecting" || mode === "off" || mode === "disconnected");
         setPlaceholder(panelPlaceholder, panel.name, panel.role || "student", SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "",
-            panel.registeredName);
+            panel.registeredName, panel.history ? panel.history.summary : "");
         panelStateEl.textContent = messages[mode] || "";
         panelEl.dataset.state = mode;
 
@@ -8558,6 +8696,9 @@ const SL_DEVICE_STATUS_GAP = 8;
         panelVideo = null;
         panelNameEl = null;
         panelRegisteredEl = null;
+        panelHistoryEl = null;
+        panelHistorySummaryEl = null;
+        panelHistoryListEl = null;
         panelStateEl = null;
         panelPlaceholder = null;
     }
@@ -8646,7 +8787,8 @@ const SL_DEVICE_STATUS_GAP = 8;
         // shows actually changed.
         const signature = JSON.stringify([
             items.map(item => [
-                item.id, item.name, item.registeredName || "", item.kind, item.role, item.local,
+                item.id, item.name, item.registeredName || "", item.history ? item.history.key : "",
+                item.kind, item.role, item.local,
                 trackKey(item.track && item.track.jitsiTrack),
                 item.muted, item.pinned, item.onStage,
                 // Phase D: camera ON / planned live / streaming status change
@@ -8659,7 +8801,8 @@ const SL_DEVICE_STATUS_GAP = 8;
                 stage.placeholder ? [stage.placeholder.name, stage.placeholder.role, stage.placeholder.registeredName || ""] : null],
             // Tiles view: page, and the enlarged panel's student and state.
             [tilesMode, tilesView.epoch, tilesView.page, tilesView.pageCount, tilesView.total, tilesView.pageSize,
-                panel ? [panel.id, panel.name, panel.registeredName, panel.state, panel.status, trackKey(panel.track)] : null]
+                panel ? [panel.id, panel.name, panel.registeredName, panel.history ? panel.history.key : "",
+                    panel.state, panel.status, trackKey(panel.track)] : null]
         ]);
 
         // Unchanged, and still mounted in Jitsi's current page element.
@@ -8737,14 +8880,19 @@ const SL_DEVICE_STATUS_GAP = 8;
             tile.namePrimaryEl.textContent = item.name;
             tile.nameSecondaryEl.textContent = item.registeredName || "";
             tile.nameEl.classList.toggle("sl-has-registered", Boolean(item.registeredName));
-            tile.el.title = item.registeredName ? item.name + " (" + item.registeredName + ")" : item.name;
+            tile.nameHistoryEl.textContent = item.history ? item.history.summary : "";
+            tile.nameEl.classList.toggle("sl-has-history", Boolean(item.history));
+            // The tooltip: the names, then every recorded visit.
+            tile.el.title = (item.registeredName ? item.name + " (" + item.registeredName + ")" : item.name)
+                + (item.history ? "\n" + item.history.lines.join("\n") : "");
             tile.el.setAttribute("aria-pressed", item.pinned ? "true" : "false");
             setPlaceholder(
                 tile.placeholder,
                 item.name,
                 item.kind === "desktop" ? "screen" : item.role,
                 isRotatingCameraTile(item) ? (SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "") : "",
-                item.kind === "desktop" ? "" : item.registeredName
+                item.kind === "desktop" ? "" : item.registeredName,
+                item.history ? item.history.summary : ""
             );
             tile.el.classList.toggle("sl-no-video",
                 mode === "off" || mode === "waiting" || mode === "connecting" || mode === "disconnected");
@@ -8927,6 +9075,75 @@ const SL_DEVICE_STATUS_GAP = 8;
         render();
     });
 
+    // Visit history from the parent page (the teacher's page only, from its
+    // authorized attendance records and participant map; resent after
+    // SL_RECEIVE_READY):
+    //   { type: "SL_STUDENT_HISTORY", v: 1, epoch,
+    //     entries: [[participantId, [[joinedMs, leftMs | null], ...], total?], ...] }
+    // At most 500 entries and 50 visits each (the latest, oldest first; total
+    // given when there are more). The whole list every time: an ID no longer
+    // in it is dropped. Used only by the teacher view (moderators). Display only.
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may send it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_STUDENT_HISTORY") {
+            return;
+        }
+
+        const ms = value => typeof value === "number" && Number.isInteger(value) && value > 0;
+        const visitOk = visit => Array.isArray(visit) && visit.length === 2 && ms(visit[0])
+            && (visit[1] === null || (ms(visit[1]) && visit[1] >= visit[0]));
+        const entryOk = entry => Array.isArray(entry)
+            && (entry.length === 2 || entry.length === 3)
+            && typeof entry[0] === "string"
+            && SL_TV_PARTICIPANT_ID_PATTERN.test(entry[0])
+            && Array.isArray(entry[1])
+            && entry[1].length > 0
+            && entry[1].length <= SL_TV_HISTORY_MAX_VISITS
+            && entry[1].every(visitOk)
+            && entry[1].every((visit, index) => index === 0 || visit[0] >= entry[1][index - 1][0])
+            && (entry.length === 2
+                || (Number.isInteger(entry[2]) && entry[2] > entry[1].length && entry[2] <= SL_TV_HISTORY_MAX_TOTAL));
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || !Array.isArray(data.entries)
+            || data.entries.length > SL_TV_HISTORY_MAX_STUDENTS
+            || !data.entries.every(entryOk)
+            || new Set(data.entries.map(entry => entry[0])).size !== data.entries.length) {
+            console.warn("[SL Classroom] Ignored malformed student history");
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < studentHistory.epoch) {
+            return;
+        }
+
+        studentHistory = {
+            epoch: data.epoch,
+            byId: new Map(data.entries.map(entry => [entry[0], {
+                visits: entry[1].map(visit => [visit[0], visit[1]]),
+                total: entry.length === 3 ? entry[2] : entry[1].length
+            }]))
+        };
+
+        console.log("[SL Classroom] Student history", { epoch: data.epoch, count: studentHistory.byId.size });
+
+        lastSignature = "";
+        render();
+    });
+
     // Tiles view from the parent page (which owns the roster order and the
     // paging, and resends it after SL_RECEIVE_READY):
     //   { type: "SL_TEACHER_TILES", v: 1, epoch, layout: "list" | "tiles",
@@ -9061,6 +9278,27 @@ const SL_DEVICE_STATUS_GAP = 8;
                 })
             };
         },
+        // SL_STUDENT_HISTORY as received and as shown (IDs and counts only).
+        studentHistory: () => ({
+            epoch: studentHistory.epoch,
+            count: studentHistory.byId.size,
+            viewShowing: Boolean(root),
+            tiles: Array.from(studentHistory.byId.entries()).map(([id, record]) => {
+                const tile = tiles.get(id);
+                const label = tile && tile.nameEl.classList.contains("sl-has-history")
+                    && !tile.el.classList.contains("sl-no-video");
+                const placeholder = tile && tile.el.classList.contains("sl-no-video")
+                    && Boolean(tile.placeholder.historyEl.textContent);
+
+                return {
+                    id,
+                    visits: record.visits.length,
+                    total: record.total,
+                    tile: Boolean(tile),
+                    shown: label ? "label" : placeholder ? "placeholder" : ""
+                };
+            })
+        }),
         tileModes: () => {
             const modes = {};
 

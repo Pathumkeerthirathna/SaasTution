@@ -58,6 +58,7 @@ import {
   type DisplayNameReporter,
 } from "../participant-display-name";
 import { toYouTubeStreamStatus } from "../youtube-jibri";
+import type { StudentHistoryEntry } from "../session-visit-history";
 import { fetchStagePhoto, toStageTeacher } from "../stage-teacher.mjs";
 
 // A breakout-room switch fires `videoConferenceLeft` and then `videoConferenceJoined`
@@ -175,6 +176,14 @@ export type JitsiControls = BreakoutControls & {
    * SL_STUDENT_NAMES). Display only; the full list replaces the previous one.
    */
   setStudentNames: (names: ReadonlyMap<string, string>) => void;
+
+  /**
+   * Teacher only: each mapped class student's visits in this session, by
+   * participant ID (session-visit-history.ts), for the teacher view's tiles in
+   * the teacher's own Jitsi iframe (custom.js, SL_STUDENT_HISTORY). Times
+   * only; the full list replaces the previous one.
+   */
+  setStudentHistory: (entries: StudentHistoryEntry[]) => void;
 
   /**
    * Teacher only: the Normal mode view's layout (List / Tiles) and, for Tiles,
@@ -382,6 +391,19 @@ const SL_STUDENT_NAMES_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
 /** How long a student's own name change waits for Jitsi's displayNameChange. */
 const DISPLAY_NAME_CONFIRM_MS = 8000;
 
+/**
+ * Teacher page -> its own Jitsi iframe (handled by custom.js): each mapped
+ * class student's visits in this session, by participant ID. Times only.
+ */
+type StudentHistoryMessage = {
+  type: "SL_STUDENT_HISTORY";
+  v: 1;
+  /** Own counter: increases on every change. */
+  epoch: number;
+  /** [participantId, [[joinedMs, leftMs | null], ...], total?]; the whole list every time. */
+  entries: StudentHistoryEntry[];
+};
+
 /** Display-only message for the teacher's monitoring grid (handled by custom.js). */
 type MonitorViewMessage = {
   type: "SL_MONITOR_VIEW";
@@ -458,7 +480,7 @@ type TeacherViewMessage = {
  * is built with NEXT_PUBLIC_SL_TEACHER_FILMSTRIP=true; while off, the teacher's
  * iframe is always told `enabled: false`, so Jitsi's own layout stays as it is.
  */
-const SL_TEACHER_FILMSTRIP_ENABLED =
+export const SL_TEACHER_FILMSTRIP_ENABLED =
   process.env.NEXT_PUBLIC_SL_TEACHER_FILMSTRIP === "true";
 
 /**
@@ -1127,6 +1149,28 @@ export default function useJitsi({
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
+  // Visit history for the teacher view's tiles: kept and resent on
+  // SL_RECEIVE_READY, like the registered names. Teacher only.
+  const studentHistoryEpochRef = useRef(0);
+  const studentHistoryRef = useRef<StudentHistoryMessage | null>(null);
+
+  const postStudentHistory = () => {
+    const message = studentHistoryRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
   // Teacher Tiles view: kept and resent on SL_RECEIVE_READY, like the teacher
   // view. Only sent once the page has set it (after the join).
   const teacherTilesEpochRef = useRef(0);
@@ -1560,6 +1604,30 @@ export default function useJitsi({
         postStudentNames();
       },
 
+      setStudentHistory: (entries) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        // Unchanged (e.g. a map update that moved no student).
+        if (
+          studentHistoryRef.current &&
+          JSON.stringify(studentHistoryRef.current.entries) === JSON.stringify(entries)
+        ) {
+          return;
+        }
+
+        studentHistoryEpochRef.current += 1;
+        studentHistoryRef.current = {
+          type: "SL_STUDENT_HISTORY",
+          v: 1,
+          epoch: studentHistoryEpochRef.current,
+          entries,
+        };
+
+        postStudentHistory();
+      },
+
       setTeacherTiles: (state) => {
         if (roleRef.current !== "teacher") {
           return;
@@ -1658,6 +1726,7 @@ export default function useJitsi({
         postDeviceStatusView();
         postTeacherView();
         postStudentNames();
+        postStudentHistory();
         postTeacherTiles();
         postTeachingMode();
         postTeacherBitrate();

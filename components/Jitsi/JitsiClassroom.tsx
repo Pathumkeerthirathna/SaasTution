@@ -63,6 +63,9 @@ import {
 } from "./participant-identity.mjs";
 import { roomLabelByParticipantId } from "./breakout-utils";
 import usePresenceGrace from "./hooks/usePresenceGrace";
+import useSessionVisitHistory from "./hooks/useSessionVisitHistory";
+import { SL_TEACHER_FILMSTRIP_ENABLED } from "./hooks/useJitsi";
+import { studentHistoryEntries } from "./session-visit-history";
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1156,6 +1159,42 @@ const [classStudents, setClassStudents] =
 
     jitsiMeetingRef.current?.setStudentNames(breakoutStudentNames);
   }, [role, breakoutStudentNames, conferenceGeneration]);
+
+  // Teacher only: each class student's visits in this session (the existing
+  // Attendance rows, via the teacher's attendance endpoint and event stream),
+  // for the teacher view's tiles (SL_STUDENT_HISTORY). Only while that view
+  // shows (Normal mode, filmstrip enabled): its event stream is closed
+  // otherwise. Matched by studentId -> the CURRENT participant ID (participant
+  // map: current, unambiguous entries of class students, never the teacher's
+  // own IDs), never by name. Times only reach the iframe.
+  const visitHistory = useSessionVisitHistory({
+    sessionId: joinInfo?.session?.id,
+    enabled: isTeacherNormalView && SL_TEACHER_FILMSTRIP_ENABLED,
+    generation: conferenceGeneration,
+  });
+
+  const studentHistory = useMemo(() => {
+    if (role !== "teacher") return [];
+
+    const roster = new Set(classStudents.map((student) => student.studentId));
+    const studentByParticipantId = new Map<string, string>();
+
+    studentIdByParticipantId(participantMap, jitsiMeetingRef.current?.getOwnParticipantIds()).forEach(
+      (studentId, participantId) => {
+        if (roster.has(studentId)) studentByParticipantId.set(participantId, studentId);
+      }
+    );
+
+    return studentHistoryEntries(studentByParticipantId, visitHistory);
+  }, [role, classStudents, participantMap, visitHistory]);
+
+  useEffect(() => {
+    if (role !== "teacher" || conferenceGeneration === 0) {
+      return;
+    }
+
+    jitsiMeetingRef.current?.setStudentHistory(studentHistory);
+  }, [role, studentHistory, conferenceGeneration]);
 
   // Teacher only: the Normal mode view's layout (List / Tiles) and the Tiles
   // page: the same present students as monitoring, in roster order, with the
