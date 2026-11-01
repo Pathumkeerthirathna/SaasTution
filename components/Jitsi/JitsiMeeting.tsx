@@ -19,6 +19,7 @@ import type {
   JitsiParticipant,
 } from "./types";
 
+import { requestElementFullscreen } from "./fullscreen.mjs";
 import useAttendance from "./hooks/useAttendance";
 import useJitsiScript from "./hooks/useJitsiScript";
 import { useSelectedDevices } from "./PermissionGate";
@@ -76,8 +77,9 @@ export function shouldFloatMeeting(view: {
  * connected; fullscreen wins over floating.
  */
 export function meetingWrapperClassName(state: { isFullscreen: boolean; isFloating: boolean }): string {
+  // sl-meeting--fullscreen (globals.css): 100dvh and the safe-area insets.
   if (state.isFullscreen) {
-    return "fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black";
+    return "sl-meeting--fullscreen fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black";
   }
 
   return state.isFloating ? "sl-meeting--float" : "relative h-full min-h-0 w-full";
@@ -323,17 +325,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setVideoTelemetry(enabled);
       },
 
-      requestFullscreen: () => {
-        const element = fullscreenWrapperRef.current;
-
-        if (!element?.requestFullscreen) {
-          return Promise.reject(
-            new Error("Fullscreen API is not available on this element.")
-          );
-        }
-
-        return element.requestFullscreen();
-      },
+      // navigationUI "hide": as much screen as the browser allows (Android
+      // Chrome hides its address and navigation bars); prefixed on old Safari.
+      requestFullscreen: () =>
+        requestElementFullscreen(fullscreenWrapperRef.current),
 
       createBreakoutRoom: (name?: string) => {
         controlsRef.current?.createBreakoutRoom(name);
@@ -432,12 +427,14 @@ const JitsiMeeting = forwardRef<
           className="h-full min-h-0 w-full"
         />
 
+        {/* 12px inside the safe area (clear of a notch / rounded corner), so
+            12px from the iframe's own corner, where custom.js keeps clear of it. */}
         {isFullscreen && (
           <button
             type="button"
             onClick={() => onExitFullscreen?.()}
             aria-label="Exit fullscreen"
-            className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
+            className="absolute right-[calc(0.75rem+env(safe-area-inset-right))] top-[calc(0.75rem+env(safe-area-inset-top))] z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
           >
             <X size={18} />
           </button>

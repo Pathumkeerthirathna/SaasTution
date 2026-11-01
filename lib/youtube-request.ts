@@ -33,10 +33,35 @@ export const youtubeTimeouts = {
   sessionCleanupLockRetriesMs: [1_000, 2_000] as number[],
   /** Failed-start cleanup (POST /api/youtube/lecture/start/abort); below the page's 10 s wait. */
   startAbortMs: 8_000,
+  /**
+   * Teacher-departure stop: all YouTube requests of one stop. Must leave
+   * lockSafetyMarginMs of the lock's lifetime (the lock's deadline caps it
+   * anyway): 40 s + 15 s <= 60 s.
+   */
+  departureStopMs: 40_000,
+  /**
+   * One liveBroadcasts.transition request (ending a live broadcast can take
+   * YouTube longer than other calls). Still capped by the operation deadline.
+   */
+  transitionMs: 25_000,
+  /**
+   * Status polling (lib/youtube-status-cache.ts): how long a non-terminal
+   * broadcast status is reused by concurrent pollers. Never for lifecycle
+   * operations, never for a terminal status.
+   */
+  statusCacheMs: 2_000,
 };
 
 export class YouTubeRequestTimeoutError extends AppError {
-  constructor(reason: "timeout" | "deadline") {
+  /**
+   * False only when the operation deadline had already passed before the
+   * request was handed to fetch(): nothing was sent, so YouTube cannot apply
+   * it. True for every request that was dispatched and then aborted (it may
+   * or may not have reached YouTube).
+   */
+  readonly dispatched: boolean;
+
+  constructor(reason: "timeout" | "deadline", options: { dispatched?: boolean } = {}) {
     super(
       reason === "deadline"
         ? "YouTube did not answer in time for this action, so it was not finished. Please try again in a moment."
@@ -45,6 +70,7 @@ export class YouTubeRequestTimeoutError extends AppError {
       "YOUTUBE_TIMEOUT"
     );
     this.name = "YouTubeRequestTimeoutError";
+    this.dispatched = options.dispatched ?? true;
   }
 }
 
@@ -90,24 +116,37 @@ export function runWithYouTubeDeadline<T>(deadline: number, operation: () => Pro
   return deadlines.run(outer === undefined ? deadline : Math.min(outer, deadline), operation);
 }
 
+/** Time left before the current operation deadline (Infinity without one). */
+export function youtubeDeadlineRemainingMs(): number {
+  const deadline = deadlines.getStore();
+
+  return deadline === undefined ? Infinity : deadline - Date.now();
+}
+
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 /**
- * fetch() for YouTube / Google: limited to youtubeTimeouts.requestMs and to
- * the current operation deadline. The body is read inside the limit, so the
- * returned Response's text() / json() never wait on the network.
+ * fetch() for YouTube / Google: limited to youtubeTimeouts.requestMs (or
+ * `limits.timeoutMs` for a request known to take longer) and to the current
+ * operation deadline. The body is read inside the limit, so the returned
+ * Response's text() / json() never wait on the network.
  */
-export async function youtubeFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const deadline = deadlines.getStore();
-  const remaining = deadline === undefined ? Infinity : deadline - Date.now();
+export async function youtubeFetch(
+  url: string,
+  init: RequestInit = {},
+  limits: { timeoutMs?: number } = {}
+): Promise<Response> {
+  const remaining = youtubeDeadlineRemainingMs();
 
   if (remaining <= 0) {
-    throw new YouTubeRequestTimeoutError("deadline");
+    // Never handed to fetch(): nothing reached YouTube.
+    throw new YouTubeRequestTimeoutError("deadline", { dispatched: false });
   }
 
-  const limitedByDeadline = remaining < youtubeTimeouts.requestMs;
+  const requestMs = limits.timeoutMs ?? youtubeTimeouts.requestMs;
+  const limitedByDeadline = remaining < requestMs;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.min(youtubeTimeouts.requestMs, remaining));
+  const timer = setTimeout(() => controller.abort(), Math.min(requestMs, remaining));
 
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });

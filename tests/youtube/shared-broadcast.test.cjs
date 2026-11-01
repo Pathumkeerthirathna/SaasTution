@@ -41,8 +41,10 @@ function matches(row, where = {}) {
     return Object.entries(where).every(([key, value]) => {
         if (value && typeof value === "object" && "in" in value) return value.in.includes(row[key]);
         if (value && typeof value === "object" && "gte" in value) return row[key] >= value.gte;
-        if (value && typeof value === "object" && "not" in value) return row[key] !== value.not;
+        // As in the database: a column never set is NULL.
+        if (value && typeof value === "object" && "not" in value) return value.not === null ? row[key] != null : row[key] !== value.not;
         if (value instanceof Date) return row[key] instanceof Date && row[key].getTime() === value.getTime();
+        if (value === null) return row[key] == null;
         return row[key] === value;
     });
 }
@@ -146,7 +148,13 @@ const fakePrisma = {
     // Starts need the lecture's active class session (started before every row here).
     classSession: {
         findFirst: async ({ where }) =>
-            where.lectureId === LECTURE && where.isActive === true ? { id: "session-1", startedAt: new Date(0) } : null
+            where.lectureId === LECTURE && where.isActive === true ? { id: "session-1", startedAt: new Date(0) } : null,
+        // The Jibri shutdown gate (lib/jibri-shutdown-gate.ts): no backend STOP in progress here.
+        findMany: async () => []
+    },
+    // The shared Jibri shutdown control (lib/jibri-fence-control.ts): no row, mode off.
+    jibriShutdownControl: {
+        findUnique: async () => null
     },
     lecture: {
         findFirst: async ({ where }) => (where.id === LECTURE ? lectureRow() : null),
@@ -212,6 +220,13 @@ function fake(relativePath, exports) {
 class YouTubeReauthorizationRequiredError extends Error {}
 
 fake("lib/prisma.ts", { prisma: fakePrisma });
+// The pre-start cleanup (lib/youtube-feature-lifecycle.ts): no leftover
+// broadcasts on this channel, so it lists none and never deletes.
+fakeYoutubeLive.SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX = "SLClassroom - ";
+fakeYoutubeLive.listUpcomingYouTubeLiveBroadcasts = async () => [];
+fakeYoutubeLive.deleteYouTubeLiveBroadcast = async () => {
+    throw new Error("unexpected broadcast deletion in this test");
+};
 fake("lib/youtube-live.ts", fakeYoutubeLive);
 fake("lib/youtube-auth.ts", { YouTubeReauthorizationRequiredError });
 fake("lib/auth-session.ts", { requireTeacherSession: async () => ({ teacherId: TEACHER, role: "TEACHER" }) });

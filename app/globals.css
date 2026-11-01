@@ -587,6 +587,19 @@
   transition: none;
 }
 
+/* ---- Classroom fullscreen (real Fullscreen API or the CSS fallback) ----
+   JitsiMeeting's wrapper, edge to edge. 100dvh where supported (the visible
+   viewport, so the Jitsi toolbar is not hidden behind a collapsing browser
+   bar), 100vh otherwise. The page uses viewport-fit=cover, so the meeting is
+   padded by the safe-area insets: nothing sits under a notch, rounded corner
+   or home indicator. The browser's own bars are the browser's: in the CSS
+   fallback (iPhone Safari) they stay; this only uses the space they leave. */
+.sl-meeting--fullscreen {
+  height: 100vh;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
 /* ---- Floating meeting over a student's maximized whiteboard ----
    The same wrapper as always (JitsiMeeting's fullscreen wrapper): only its
    class changes, so the iframe is never moved and the meeting stays

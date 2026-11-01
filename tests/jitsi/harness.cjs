@@ -709,6 +709,12 @@ function createHarness(options = {}) {
         });
     }
 
+    // A fake navigator (options.navigator), for the screen-share tests.
+    // Without the option there is no navigator, as before.
+    if (options.navigator) {
+        ctx.navigator = options.navigator;
+    }
+
     ctx.window = ctx;
     ctx.self = ctx;
 

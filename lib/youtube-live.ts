@@ -25,6 +25,9 @@ export type YouTubeLiveBroadcast = {
         description?: string;
         scheduledStartTime?: string;
         scheduledEndTime?: string;
+        actualStartTime?: string;
+        /** Set by YouTube once the broadcast has ended. */
+        actualEndTime?: string;
     };
 
     status?: {
@@ -412,16 +415,133 @@ export async function getYouTubeLiveBroadcast(
     const data =
         await response.json();
 
-    const broadcast =
-        data.items?.[0];
+    const items: YouTubeLiveBroadcast[] =
+        Array.isArray(data.items) ? data.items : [];
 
-    if (!broadcast) {
+    if (items.length === 0) {
         throw new Error(
             "YouTube live broadcast not found."
         );
     }
 
+    // Only the broadcast that was asked for: an answer about any other
+    // resource is invalid (never "not found", never a status to act on).
+    const broadcast =
+        items.find(item => item?.id === broadcastId);
+
+    if (!broadcast) {
+        console.error(
+            "YouTube answered a broadcast lookup with a different resource:",
+            { requested: broadcastId, returned: items.map(item => item?.id) }
+        );
+
+        throw new YouTubeApiError(
+            "YouTube answered with a different broadcast than the one requested.",
+            response.status
+        );
+    }
+
     return broadcast;
+}
+
+/**
+ * Every broadcast this application creates has a description starting with
+ * this (youtube-lecture.ts uses it for Recording and Live): the pre-start
+ * cleanup only ever considers broadcasts carrying it.
+ */
+export const SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX = "SLClassroom - ";
+
+/**
+ * Deletes a broadcast (liveBroadcasts.delete). Used only for a broadcast a
+ * fresh lookup just reported as never started (ready / created). Errors keep
+ * YouTube's HTTP status and reason (YouTubeApiError: 404 not found, 403
+ * liveBroadcastDeletionNotAllowed, ...); a timeout is YouTubeRequestTimeoutError.
+ */
+export async function deleteYouTubeLiveBroadcast(
+    encryptedRefreshToken: string,
+    broadcastId: string
+): Promise<void> {
+    const accessToken = await getYouTubeAccessToken(encryptedRefreshToken);
+
+    const url = new URL("https://www.googleapis.com/youtube/v3/liveBroadcasts");
+
+    url.searchParams.set("id", broadcastId);
+
+    const response = await youtubeFetch(url.toString(), {
+        method: "DELETE",
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+        },
+    });
+
+    if (!response.ok) {
+        const errorDetails = await response.text();
+
+        console.error("YouTube liveBroadcast deletion failed:", { broadcastId, status: response.status, errorDetails });
+
+        throw new YouTubeApiError("Failed to delete YouTube live broadcast.", response.status, errorDetails);
+    }
+}
+
+/** At most this many pages of 50 are read; a channel with more is refused, never partly checked. */
+export const UPCOMING_BROADCAST_MAX_PAGES = 20;
+
+/**
+ * Every broadcast of the authorized channel that has not started yet
+ * (liveBroadcasts.list, broadcastStatus=upcoming, all types), with its status,
+ * description and bound stream, following every page. Throws (never returns a
+ * partial list) when a page fails, is malformed, or there are more pages than
+ * UPCOMING_BROADCAST_MAX_PAGES.
+ */
+export async function listUpcomingYouTubeLiveBroadcasts(
+    encryptedRefreshToken: string
+): Promise<YouTubeLiveBroadcast[]> {
+    const accessToken = await getYouTubeAccessToken(encryptedRefreshToken);
+    const broadcasts: YouTubeLiveBroadcast[] = [];
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < UPCOMING_BROADCAST_MAX_PAGES; page++) {
+        const url = new URL("https://www.googleapis.com/youtube/v3/liveBroadcasts");
+
+        url.searchParams.set("part", "id,snippet,status,contentDetails");
+        url.searchParams.set("broadcastStatus", "upcoming");
+        url.searchParams.set("broadcastType", "all");
+        url.searchParams.set("maxResults", "50");
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+        const response = await youtubeFetch(url.toString(), {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+            },
+        });
+
+        if (!response.ok) {
+            const errorDetails = await response.text();
+
+            console.error("YouTube upcoming liveBroadcasts list failed:", { status: response.status, errorDetails });
+
+            throw new YouTubeApiError("Failed to list upcoming YouTube live broadcasts.", response.status, errorDetails);
+        }
+
+        const data = await response.json().catch(() => null);
+
+        if (!data || !Array.isArray(data.items)) {
+            throw new YouTubeApiError("YouTube answered the upcoming broadcasts list without a list.", response.status);
+        }
+
+        broadcasts.push(...data.items);
+
+        pageToken = typeof data.nextPageToken === "string" && data.nextPageToken ? data.nextPageToken : undefined;
+
+        if (!pageToken) {
+            return broadcasts;
+        }
+    }
+
+    throw new Error(
+        `More than ${UPCOMING_BROADCAST_MAX_PAGES * 50} upcoming YouTube broadcasts; they were not all checked.`
+    );
 }
 
 export async function updateYouTubeLiveBroadcastPrivacy(
@@ -478,7 +598,8 @@ export async function updateYouTubeLiveBroadcastPrivacy(
 export async function transitionYouTubeLiveBroadcast(
     encryptedRefreshToken: string,
     broadcastId: string,
-    broadcastStatus: "testing" | "live" | "complete"
+    broadcastStatus: "testing" | "live" | "complete",
+    limits: { timeoutMs?: number } = {}
 ): Promise<YouTubeLiveBroadcast> {
 
     const accessToken =
@@ -505,6 +626,8 @@ export async function transitionYouTubeLiveBroadcast(
         "id,snippet,status,contentDetails"
     );
 
+    // A caller may allow longer than a normal request (the teacher-departure
+    // stop: youtubeTimeouts.transitionMs); still within the deadline.
     const response = await youtubeFetch(
         url.toString(),
         {
@@ -513,7 +636,8 @@ export async function transitionYouTubeLiveBroadcast(
                 Authorization:
                     `Bearer ${accessToken}`,
             },
-        }
+        },
+        { timeoutMs: limits.timeoutMs }
     );
 
     if (!response.ok) {

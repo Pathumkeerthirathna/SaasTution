@@ -7,6 +7,11 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // instrumentation.ts: starts the teacher-departure sweeper once per
+  // long-running server process (Next.js 14.2 needs this flag for the hook).
+  experimental: {
+    instrumentationHook: true,
+  },
   images: {
     remotePatterns: [
       {

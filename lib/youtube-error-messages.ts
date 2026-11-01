@@ -61,6 +61,23 @@ export function getYoutubeFriendlyErrorMessage(
         return `YouTube did not answer in time, so the ${actionLabel} was not started. Please try again in a moment.`;
     }
 
+    if (code === "YOUTUBE_PRESTART_CLEANUP_FAILED") {
+        return `Couldn't remove an unused earlier YouTube broadcast from your stream, so the ${actionLabel} was not started. Please try again in a moment.`;
+    }
+
+    // lib/jibri-shutdown-gate.ts: the classroom stream of an earlier departure is still being stopped.
+    if (code === "JIBRI_SHUTDOWN_IN_PROGRESS") {
+        return `A classroom stream from a class you left earlier has not been confirmed stopped yet, so the ${actionLabel} was not started. It is being checked automatically: please try again in a few minutes. Ending a class session does not speed this up.`;
+    }
+
+    if (code === "JIBRI_SHUTDOWN_WORKER_UNAVAILABLE") {
+        return `A classroom stream from a class you left earlier has not been confirmed stopped, and the service that checks it is not running right now, so the ${actionLabel} was not started. Please try again later or contact an administrator.`;
+    }
+
+    if (code === "JIBRI_SHUTDOWN_NEEDS_ADMIN") {
+        return `A classroom stream from a class you left earlier has not been confirmed stopped, so the ${actionLabel} was not started. An administrator must review it first.`;
+    }
+
     // The page's own Jibri confirmation (components/Jitsi/youtube-stream-controller.ts).
     if (code === "JIBRI_START_TIMEOUT") {
         return `The ${actionLabel} did not start: the classroom stream was not confirmed in time. Nothing was left running. Please try again.`;
@@ -144,6 +161,10 @@ export function getYoutubeStopErrorMessage(
             return `Couldn't reach YouTube, so the ${actionLabel} is still running. Please try stopping it again in a moment.`;
         case "YOUTUBE_TIMEOUT":
             return `YouTube did not answer in time, so the ${actionLabel} may still be running. Please try stopping it again in a moment.`;
+        case "YOUTUBE_BROADCAST_CLEANUP_PENDING":
+            return `YouTube has not removed the unused broadcast of this ${actionLabel} yet. Please try stopping it again in a moment.`;
+        case "YOUTUBE_STOP_UNCONFIRMED":
+            return `YouTube has not confirmed that the ${actionLabel} ended, so it may still be running. Please check again in a moment, and stop it again if it is still live.`;
         default:
             return `The ${actionLabel} could not be stopped. Please try again.`;
     }

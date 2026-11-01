@@ -2,6 +2,13 @@ import { requireStudentSession, requireTeacherSession } from "@/lib/auth-session
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { subscribeLiveChanges } from "@/lib/session-events";
+import {
+  isValidPageId,
+  recordTeacherActivity,
+  recordTeacherPresence,
+  TEACHER_PRESENCE_REFRESH_MS,
+} from "@/lib/teacher-presence";
+import { checkLectureForDepartedTeacher, TEACHER_DEPARTURE_SWEEP_INTERVAL_MS } from "@/lib/teacher-departure-sweep";
 import { getLiveSnapshot, type LiveSnapshotAudience } from "@/lib/youtube-live-snapshot";
 
 export const runtime = "nodejs";
@@ -26,6 +33,10 @@ export async function GET(
 
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role")?.trim();
+    // The classroom page instance (teacher-departure-signal.ts); optional for
+    // pages loaded before it existed.
+    const rawPageId = searchParams.get("pageId");
+    const pageId = isValidPageId(rawPageId) ? rawPageId : null;
 
     const classSession = await prisma.classSession.findUnique({
       where: { id: sessionId },
@@ -144,6 +155,42 @@ export async function GET(
           send("ping", { timestamp: new Date().toISOString() });
         }, 15_000);
 
+        // Teacher presence (lib/teacher-presence.ts): only the class's own
+        // teacher, checked above. Opening the connection (also every
+        // reconnect) is a live page's own request: teacher activity, which
+        // cancels a pending tab-close signal of another page. The refresh
+        // timer below runs on the server, so it only refreshes
+        // teacherLastSeenAt: a connection the server has not noticed is gone
+        // must never cancel a departure. A lost connection is never taken as
+        // the teacher leaving. Best effort: never affects the stream.
+        let presenceIntervalId: ReturnType<typeof setInterval> | null = null;
+
+        if (audience === "teacher") {
+          void recordTeacherActivity(sessionId, pageId);
+
+          presenceIntervalId = setInterval(() => {
+            if (!closed) {
+              void recordTeacherPresence(sessionId);
+            }
+          }, TEACHER_PRESENCE_REFRESH_MS);
+        }
+
+        // Teacher-departure check (lib/teacher-departure-sweep.ts) from the
+        // students still in the class: ends the class's YouTube features once
+        // its teacher has left. Throttled per lecture, never throws, and never
+        // changes what this stream sends.
+        let departureIntervalId: ReturnType<typeof setInterval> | null = null;
+
+        if (audience === "student") {
+          void checkLectureForDepartedTeacher(lectureId);
+
+          departureIntervalId = setInterval(() => {
+            if (!closed) {
+              void checkLectureForDepartedTeacher(lectureId);
+            }
+          }, TEACHER_DEPARTURE_SWEEP_INTERVAL_MS);
+        }
+
         cleanup = () => {
           if (closed) {
             return;
@@ -151,6 +198,15 @@ export async function GET(
 
           closed = true;
           clearInterval(keepAliveIntervalId);
+
+          if (presenceIntervalId) {
+            clearInterval(presenceIntervalId);
+          }
+
+          if (departureIntervalId) {
+            clearInterval(departureIntervalId);
+          }
+
           unsubscribe();
           request.signal.removeEventListener("abort", cleanup);
           controller.close();

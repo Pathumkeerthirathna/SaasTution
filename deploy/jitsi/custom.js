@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1019;
+const SL_CUSTOM_JS_VERSION = 1021;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -3105,6 +3105,364 @@ const SL_DEVICE_STATUS_GAP = 8;
     console.log(
         "======== SL CLASSROOM STUDENT SHARE PIP ENABLED ========"
     );
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Student Self-Camera PiP
+
+   Display only. A student has no self-view (the page sets
+   disableSelfView and filmstrip.disabled for students, and the
+   Student Filmstrip Hide below removes Jitsi's filmstrip), so a
+   student could not see their own camera. While the student's OWN
+   camera is on, a small tile in the top-right corner of the large
+   video shows it.
+
+   The camera is the LOCAL track only (features/base/tracks: local,
+   mediaType "video", never a "desktop" screen share), never a
+   remote participant's and never a fallback. Shown only while that
+   track exists, is not muted, has data (isReceivingData) and its
+   MediaStreamTrack has not ended; otherwise (camera off, permission
+   denied, the device failing or the track removed) the tile is
+   removed at once. The tile attaches Jitsi's existing local
+   JitsiTrack to one more <video>, muted: nothing new is captured,
+   sent or received, and no audio track is ever attached.
+
+   Placed under the device status indicator, or left of the
+   teacher-camera PiP while that shows; in the page's fullscreen
+   below its "Exit fullscreen" button (SL_DEVICE_STATUS_VIEW's
+   fullscreen, sent to every student iframe). Clicks pass through.
+
+   Runs ONLY in a student's iframe (filmstrip disabled by the page)
+   while the local participant is not a moderator, and never in the
+   recorder (iAmRecorder). Teachers never get the tile.
+========================================================== */
+
+(function () {
+
+    const SL_SP_ID = "sl-self-pip";
+    const SL_SP_STYLE_ID = "sl-self-pip-style";
+    const SL_SP_MARGIN = 12;
+    // The teacher-camera PiP (Student Teacher-Camera PiP above).
+    const SL_SP_SHARE_PIP_ID = "sl-share-pip";
+    // The page's "Exit fullscreen" button (JitsiMeeting.tsx): 36px, 12px
+    // from the top and right. Kept clear of it with a gap.
+    const SL_SP_FULLSCREEN_TOP = 12 + 36 + SL_DEVICE_STATUS_GAP;
+
+    let root = null;
+    let video = null;
+    let attachedTrack = null;
+    // The MediaStreamTrack carrying our "ended" listener.
+    let endedTrack = null;
+    let lastSignature = "";
+    let resizeObserver = null;
+    let observedContainer = null;
+    let fullscreen = { epoch: 0, on: false };
+
+    const trackKeys = new WeakMap();
+    let nextTrackKey = 1;
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    // A student's iframe: created by the page with the filmstrip disabled,
+    // the local participant not a moderator, not the recorder.
+    function isStudent(state) {
+        const config = state?.["features/base/config"];
+
+        return config?.filmstrip?.disabled === true
+            && config.iAmRecorder !== true
+            && state?.["features/base/participants"]?.local?.role !== "moderator";
+    }
+
+    function trackKey(jitsiTrack) {
+        if (!trackKeys.has(jitsiTrack)) {
+            trackKeys.set(jitsiTrack, nextTrackKey++);
+        }
+
+        return trackKeys.get(jitsiTrack);
+    }
+
+    function mediaTrackOf(jitsiTrack) {
+        try {
+            return typeof jitsiTrack.getTrack === "function" ? jitsiTrack.getTrack() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // The student's own live camera entry, or null (see the header).
+    function findOwnCamera(state) {
+        const tracks = state?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track
+            && track.local === true
+            && track.mediaType === "video"
+            && track.videoType !== "desktop"
+            && track.jitsiTrack);
+
+        if (!entry || entry.muted || entry.isReceivingData === false) {
+            return null;
+        }
+
+        const mediaTrack = mediaTrackOf(entry.jitsiTrack);
+
+        return mediaTrack && mediaTrack.readyState === "ended" ? null : entry;
+    }
+
+    function injectStyles() {
+        if (document.getElementById(SL_SP_STYLE_ID) || !document.head) {
+            return;
+        }
+
+        const style = document.createElement("style");
+
+        style.id = SL_SP_STYLE_ID;
+
+        // z-index 200 like the teacher-camera PiP: above the large video,
+        // below the toolbar (252), chat, dialogs and notifications. The self
+        // view is mirrored, like Jitsi's own (not for a rear camera).
+        style.textContent = [
+            "#" + SL_SP_ID + " { position: fixed; z-index: 200; box-sizing: border-box; width: 160px; max-width: 26vw; min-width: 96px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: #000000; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); pointer-events: none; }",
+            "#" + SL_SP_ID + " video { display: block; width: 100%; height: 100%; object-fit: cover; background: #000000; transform: scaleX(-1); }",
+            "#" + SL_SP_ID + ".sl-rear video { transform: none; }",
+            "@media (max-width: 640px) { #" + SL_SP_ID + " { width: 26vw; min-width: 80px; border-radius: 8px; } }"
+        ].join("\n");
+
+        document.head.appendChild(style);
+    }
+
+    // Below the device status indicator (its height and a gap; 0 while off).
+    function deviceStatusOffset() {
+        const body = document.body;
+
+        if (!body || !body.classList.contains(SL_DEVICE_STATUS_ACTIVE_CLASS)) {
+            return 0;
+        }
+
+        const height = parseFloat(body.style.getPropertyValue(SL_DEVICE_STATUS_VAR_H));
+
+        return height > 0 ? height + SL_DEVICE_STATUS_GAP : 0;
+    }
+
+    function position() {
+        if (!root) {
+            return;
+        }
+
+        const share = document.getElementById(SL_SP_SHARE_PIP_ID);
+        const shareRect = share && share.classList.contains("sl-visible") ? share.getBoundingClientRect() : null;
+
+        if (shareRect && shareRect.width > 0) {
+            // Beside the teacher-camera PiP, same top.
+            root.style.top = Math.round(shareRect.top) + "px";
+            root.style.right = Math.round(window.innerWidth - shareRect.left + SL_DEVICE_STATUS_GAP) + "px";
+        } else {
+            const container = document.getElementById("largeVideoContainer");
+            const rect = container ? container.getBoundingClientRect() : null;
+            const hasRect = Boolean(rect && rect.width > 0 && rect.height > 0);
+            const top = (hasRect ? rect.top : 0) + SL_SP_MARGIN + deviceStatusOffset();
+
+            root.style.top = Math.round(Math.max(top, fullscreen.on ? SL_SP_FULLSCREEN_TOP : 0)) + "px";
+            root.style.right = Math.round(hasRect ? window.innerWidth - rect.right + SL_SP_MARGIN : SL_SP_MARGIN) + "px";
+        }
+
+        const container = document.getElementById("largeVideoContainer");
+
+        if (container !== observedContainer && typeof ResizeObserver === "function") {
+            resizeObserver = resizeObserver || new ResizeObserver(position);
+            resizeObserver.disconnect();
+
+            if (container) {
+                resizeObserver.observe(container);
+            }
+
+            observedContainer = container;
+        }
+    }
+
+    function ensureRoot() {
+        if (root) {
+            return;
+        }
+
+        injectStyles();
+
+        root = document.createElement("div");
+        root.id = SL_SP_ID;
+        root.setAttribute("aria-hidden", "true");
+
+        video = document.createElement("video");
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("muted", "");
+        video.setAttribute("playsinline", "");
+
+        root.appendChild(video);
+        document.body.appendChild(root);
+    }
+
+    // The camera ended without a store change (device unplugged or failed).
+    function onTrackEnded() {
+        render();
+    }
+
+    function watchEnded(mediaTrack) {
+        if (endedTrack === mediaTrack) {
+            return;
+        }
+
+        if (endedTrack) {
+            endedTrack.removeEventListener("ended", onTrackEnded);
+        }
+
+        endedTrack = mediaTrack && typeof mediaTrack.addEventListener === "function" ? mediaTrack : null;
+
+        if (endedTrack) {
+            endedTrack.addEventListener("ended", onTrackEnded);
+        }
+    }
+
+    // Always detach OUR element only: lib-jitsi-meet's detach() without an
+    // argument would also detach Jitsi's own video elements.
+    function detach() {
+        if (attachedTrack && video) {
+            try {
+                attachedTrack.detach(video);
+            } catch (error) {
+                /* track already disposed */
+            }
+        }
+
+        attachedTrack = null;
+        watchEnded(null);
+
+        if (video) {
+            video.srcObject = null;
+        }
+    }
+
+    // Removes the tile completely: detached, out of the DOM, not observed.
+    function hide() {
+        lastSignature = "";
+
+        if (!root) {
+            return;
+        }
+
+        detach();
+        root.remove();
+        root = null;
+        video = null;
+
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+        }
+
+        observedContainer = null;
+    }
+
+    function render() {
+        const state = getState();
+        const entry = state && isStudent(state) ? findOwnCamera(state) : null;
+
+        if (!entry) {
+            hide();
+            return;
+        }
+
+        const jitsiTrack = entry.jitsiTrack;
+        const signature = String(trackKey(jitsiTrack));
+
+        if (signature !== lastSignature || !root) {
+            lastSignature = signature;
+            ensureRoot();
+
+            if (attachedTrack !== jitsiTrack) {
+                detach();
+
+                try {
+                    // Jitsi's own local video track, one more (muted) element.
+                    Promise.resolve(jitsiTrack.attach(video))
+                        .catch(error => console.warn("[SL Classroom] Self PiP attach failed:", error));
+                    attachedTrack = jitsiTrack;
+                } catch (error) {
+                    console.warn("[SL Classroom] Self PiP attach failed:", error);
+                }
+
+                watchEnded(mediaTrackOf(jitsiTrack));
+            }
+
+            let facing = null;
+
+            try {
+                facing = typeof jitsiTrack.getCameraFacingMode === "function" ? jitsiTrack.getCameraFacingMode() : null;
+            } catch (error) {
+                /* unknown: mirrored */
+            }
+
+            root.classList.toggle("sl-rear", facing === "environment");
+
+            if (video.paused) {
+                const playing = video.play();
+
+                if (playing && typeof playing.catch === "function") {
+                    playing.catch(() => {});
+                }
+            }
+        }
+
+        // Every render: the teacher-camera PiP may have appeared or gone.
+        position();
+    }
+
+    // The page's fullscreen (the same message the device status reads; sent
+    // to every student iframe, also with the indicator off).
+    window.addEventListener("message", function (event) {
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_DEVICE_STATUS_VIEW"
+            || data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || typeof data.fullscreen !== "boolean"
+            || data.epoch < fullscreen.epoch) {
+            return;
+        }
+
+        fullscreen = { epoch: data.epoch, on: data.fullscreen };
+        position();
+    });
+
+    window.addEventListener("resize", position);
+
+    // The device status indicator appeared, went or changed size.
+    window.addEventListener(SL_DEVICE_STATUS_LAYOUT_EVENT, position);
+
+    // Page teardown: detach the tile's own element.
+    window.addEventListener("pagehide", hide);
+
+    // Follow every store change: the camera turning on / off, its track
+    // being replaced or removed, the local role, the teacher-camera PiP.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function" || !document.body) {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(render);
+        render();
+    }, 500);
 
 })();
 
@@ -11824,5 +12182,82 @@ const SL_DEVICE_STATUS_GAP = 8;
         APP.store.subscribe(render);
         render();
     }, 500);
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Screen Share Audio Echo Guard
+
+   Any participant (teacher or student). Sharing a screen with audio
+   made everyone hear echoed / doubled voices, the sharer included:
+   lib-jitsi-meet asks getDisplayMedia for audio with
+   systemAudio "include", and a whole-screen share's system audio
+   (or the classroom tab's own audio) contains the meeting's own
+   playback - every remote voice. Jitsi mixes that shared audio into
+   the sharer's microphone track and sends it, so each voice comes
+   back to the room a second time. Display audio has no echo
+   cancellation. (lib-jitsi-meet fixed this upstream in Nov 2025 with
+   restrictOwnAudio; older builds and browsers still capture it.)
+
+   Only the getDisplayMedia constraints change, and only when audio is
+   requested (a video-only share is passed through untouched):
+     - browser supports restrictOwnAudio: it is added to the audio
+       constraint. Tab and system audio are still shared, without
+       this page's own playback;
+     - otherwise: systemAudio "exclude", so whole-screen system audio
+       (which always contains the meeting) is not offered. Another
+       tab's audio (a video, a lesson clip) is still offered.
+   No track is created, added, removed or stopped here: the microphone
+   and the shared audio stay Jitsi's (its own add on start and removal
+   on stop). The microphone's echo cancellation, noise suppression and
+   gain control are not touched.
+========================================================== */
+
+(function () {
+
+    const mediaDevices = window.navigator && navigator.mediaDevices;
+
+    if (!mediaDevices || typeof mediaDevices.getDisplayMedia !== "function"
+        || mediaDevices.getDisplayMedia.slEchoGuard) {
+        return;
+    }
+
+    const originalGetDisplayMedia = mediaDevices.getDisplayMedia;
+
+    function supportsRestrictOwnAudio() {
+        try {
+            return Boolean(typeof mediaDevices.getSupportedConstraints === "function"
+                && mediaDevices.getSupportedConstraints().restrictOwnAudio);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function withEchoSafeAudio(constraints) {
+        if (!constraints || typeof constraints !== "object" || !constraints.audio) {
+            return constraints;
+        }
+
+        if (supportsRestrictOwnAudio()) {
+            const audio = typeof constraints.audio === "object" ? { ...constraints.audio } : {};
+
+            audio.restrictOwnAudio = true;
+
+            return { ...constraints, audio };
+        }
+
+        return { ...constraints, systemAudio: "exclude" };
+    }
+
+    function getDisplayMedia(constraints) {
+        return originalGetDisplayMedia.call(mediaDevices, withEchoSafeAudio(constraints));
+    }
+
+    getDisplayMedia.slEchoGuard = true;
+    mediaDevices.getDisplayMedia = getDisplayMedia;
+
+    console.log("[SL Classroom] Screen share audio echo guard on");
 
 })();

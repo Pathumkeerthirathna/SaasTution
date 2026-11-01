@@ -239,7 +239,14 @@ test("D2: a classroom's live-updates stream sends session-ended only for its own
 
     const readUntil = async predicate => {
         while (!predicate(text)) {
-            const { value, done } = await reader.read();
+            // Bounded: a stream that never sends what is awaited fails the test instead of hanging.
+            let timer;
+            const { value, done } = await Promise.race([
+                reader.read(),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(new Error(`stream event not received within 10 s: ${JSON.stringify(text)}`)), 10_000);
+                })
+            ]).finally(() => clearTimeout(timer));
             if (done) break;
             text += decoder.decode(value);
         }

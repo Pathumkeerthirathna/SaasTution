@@ -36,17 +36,42 @@ const db = {
     otherConnection: null,
     // Class sessions and attendance closes (session-service tests).
     sessions: [],
-    attendanceCloses: []
+    attendanceCloses: [],
+    // JibriShutdownOverride rows.
+    overrides: [],
+    // JibriShutdownControl (null: no row) and JibriShutdownModeChange rows.
+    control: null,
+    modeChanges: []
 };
+
+// One column condition, as Postgres evaluates it: a comparison with NULL
+// (a column never set) is never true, except `null` itself.
+function matchValue(actual, cond) {
+    if (cond === null) return actual == null;
+    if (cond instanceof Date) return actual instanceof Date && actual.getTime() === cond.getTime();
+    if (cond && typeof cond === "object") {
+        return Object.entries(cond).every(([op, v]) => {
+            switch (op) {
+                case "in": return v.includes(actual);
+                case "notIn": return !v.includes(actual);
+                case "not": return v === null ? actual != null : actual != null && !matchValue(actual, v);
+                case "gte": return actual != null && actual >= v;
+                case "gt": return actual != null && actual > v;
+                case "lte": return actual != null && actual <= v;
+                case "lt": return actual != null && actual < v;
+                default: return true;
+            }
+        });
+    }
+    return actual === cond;
+}
 
 function matches(row, where = {}) {
     return Object.entries(where).every(([key, value]) => {
-        if (key === "lecture") return true;
-        if (value && typeof value === "object" && "in" in value) return value.in.includes(row[key]);
-        if (value && typeof value === "object" && "gte" in value) return row[key] >= value.gte;
-        if (value && typeof value === "object" && "not" in value) return row[key] !== value.not;
-        if (value instanceof Date) return row[key] instanceof Date && row[key].getTime() === value.getTime();
-        return row[key] === value;
+        // Relation filters (the class's teacher): not modelled here.
+        if (key === "lecture" || key === "class") return true;
+        if (key === "OR") return value.some(clause => matches(row, clause));
+        return matchValue(row[key], value);
     });
 }
 
@@ -175,9 +200,13 @@ const prisma = {
             const sorted = orderBy ? found.slice().sort((a, b) => b.startedAt - a.startedAt) : found;
             return sorted[0] ? { ...sorted[0] } : null;
         },
-        findMany: async ({ where }) => db.sessions
-            .filter(row => row.classId === where.classId && row.isActive === where.isActive)
-            .map(row => ({ id: row.id, lectureId: row.lectureId })),
+        findMany: async ({ where, select }) => db.sessions
+            .filter(row => matches(row, where))
+            // The class's teacher (sessions carry it directly here).
+            .filter(row => !where || !where.class || row.teacherId === where.class.teacherId)
+            .map(row => (select
+                ? Object.fromEntries(Object.keys(select).map(key => [key, key === "class" ? { teacherId: row.teacherId } : row[key]]))
+                : { id: row.id, lectureId: row.lectureId })),
         findUnique: async ({ where }) => {
             const row = db.sessions.find(r => r.id === where.id);
             return row ? { ...row, class: { teacherId: row.teacherId } } : null;
@@ -188,10 +217,7 @@ const prisma = {
             return { classId: row.classId, lectureId: row.lectureId };
         },
         updateMany: async ({ where, data }) => {
-            const found = db.sessions.filter(r =>
-                (where.id === undefined || r.id === where.id) &&
-                (where.classId === undefined || r.classId === where.classId) &&
-                (where.isActive === undefined || r.isActive === where.isActive));
+            const found = db.sessions.filter(r => matches(r, where));
             found.forEach(r => Object.assign(r, data));
             return { count: found.length };
         },
@@ -204,6 +230,32 @@ const prisma = {
             return { ...row, lecture: { id: row.lectureId, title: "Physics", date: null } };
         }
     },
+    // Administrators' Jibri shutdown fence overrides (append-only audit).
+    jibriShutdownOverride: {
+        create: async ({ data }) => {
+            const row = { id: "override-" + db.nextId++, createdAt: now(), ...data };
+            db.overrides.push(row);
+            return { ...row };
+        },
+        findMany: async ({ where } = {}) => db.overrides.filter(row => matches(row, where)).map(row => ({ ...row }))
+    },
+    // The shared Jibri shutdown control (one row; null: none, mode off).
+    jibriShutdownControl: {
+        findUnique: async () => (db.control ? { ...db.control } : null),
+        upsert: async ({ create, update }) => {
+            db.control = db.control ? { ...db.control, ...update, updatedAt: now() } : { ...create, updatedAt: now() };
+            return { ...db.control };
+        }
+    },
+    jibriShutdownModeChange: {
+        create: async ({ data }) => {
+            const row = { id: "mode-change-" + db.nextId++, createdAt: now(), ...data };
+            db.modeChanges.push(row);
+            return { ...row };
+        }
+    },
+    // Interactive transactions run on the same in-memory tables.
+    $transaction: async operation => operation(prisma),
     attendance: {
         updateMany: async ({ where, data }) => {
             db.attendanceCloses.push({ classSessionId: where.classSessionId, leftAt: data.leftAt });
@@ -246,7 +298,20 @@ const yt = {
     createStreamHook: null,
     // Operations that hang ("stream", "get", "transition", "create") until the
     // REAL lib/youtube-request.ts limits abort them (see stall()).
-    stall: new Set()
+    stall: new Set(),
+    // YouTube refuses `complete` for a broadcast that never went live (ready /
+    // created) with 403 invalidTransition. Off by default (earlier tests
+    // complete such broadcasts); the never-live cleanup tests turn it on.
+    refuseNeverLiveComplete: false,
+    // broadcastId -> Error thrown by deleteYouTubeLiveBroadcast.
+    deleteErrors: new Map(),
+    // With yt.stall.add("delete"): whether YouTube applied the delete before
+    // the request timed out (the caller cannot know).
+    deleteAppliedBeforeTimeout: false,
+    // Error thrown by listUpcomingYouTubeLiveBroadcasts (null: none).
+    listError: null,
+    // Runs (awaited) inside listUpcomingYouTubeLiveBroadcasts (e.g. a concurrent request).
+    listHook: null
 };
 
 // No real network in these tests: any fetch hangs until its signal aborts.
@@ -272,7 +337,44 @@ async function stall(op) {
 const ytBroadcast = id => {
     const b = yt.broadcasts.get(id);
     if (!b) throw new Error("YouTube live broadcast not found.");
-    return { id, status: { lifeCycleStatus: b.lifecycle, privacyStatus: b.privacy }, contentDetails: { boundStreamId: b.stream } };
+    return {
+        id,
+        // actualEndTime: set when the broadcast ended (yt.autoStop, a completion).
+        snippet: {
+            ...(b.description !== undefined ? { description: b.description } : {}),
+            ...(b.actualEndTime ? { actualEndTime: b.actualEndTime.toISOString() } : {})
+        },
+        status: { lifeCycleStatus: b.lifecycle, privacyStatus: b.privacy },
+        contentDetails: { boundStreamId: b.stream, enableAutoStart: b.autoStart === true }
+    };
+};
+
+// YouTube ends a broadcast on its own (enableAutoStop after the stream
+// stopped) at `at`; `withEndTime: false` = YouTube does not report the time.
+// The teacher's stream starts receiving video (Jibri streaming): YouTube
+// starts EVERY broadcast bound to it that is ready with auto-start on (as
+// documented for enableAutoStart). Returns the IDs it started.
+yt.startStreaming = (streamId = STREAM) => {
+    yt.streamActive = true;
+    const started = [];
+    for (const [id, b] of yt.broadcasts) {
+        if (b.stream === streamId && b.lifecycle === "ready" && b.autoStart) {
+            b.lifecycle = "live";
+            started.push(id);
+        }
+    }
+    return started;
+};
+
+// A YouTube API error as lib/youtube-request.ts builds it (status + reason).
+yt.apiError = (status, reason) =>
+    new youtubeRequest.YouTubeApiError("YouTube API error " + status + " " + reason, status,
+        JSON.stringify({ error: { errors: [{ reason }] } }));
+
+yt.autoStop = (id, at, { withEndTime = true } = {}) => {
+    const b = yt.broadcasts.get(id);
+    b.lifecycle = "complete";
+    b.actualEndTime = withEndTime ? at : null;
 };
 
 const youtubeLive = {
@@ -290,7 +392,10 @@ const youtubeLive = {
         await stall("create");
         const id = "bc-" + yt.nextId++;
         yt.calls.push("create:" + options.privacyStatus);
-        yt.broadcasts.set(id, { privacy: options.privacyStatus, lifecycle: "created", stream: null });
+        yt.broadcasts.set(id, {
+            privacy: options.privacyStatus, lifecycle: "created", stream: null,
+            description: options.description, autoStart: options.enableAutoStart ?? true
+        });
         return ytBroadcast(id);
     },
     bindYouTubeLiveBroadcast: async (_t, id, streamId) => {
@@ -313,8 +418,35 @@ const youtubeLive = {
         yt.calls.push("transition:" + id + ":" + to);
         await stall("transition");
         if (yt.transitionErrors.has(id)) throw yt.transitionErrors.get(id);
+        // A scripted answer to `complete` (HTTP success): YouTube reports this
+        // and does NOT apply it (e.g. { id, status: { lifeCycleStatus: "live" } }).
+        if (to === "complete" && yt.transitionAnswer) return yt.transitionAnswer(id);
+        if (to === "complete" && yt.refuseNeverLiveComplete && ["ready", "created"].includes(yt.broadcasts.get(id)?.lifecycle)) {
+            throw yt.apiError(403, "invalidTransition");
+        }
         yt.broadcasts.get(id).lifecycle = to;
+        if (to === "complete") yt.broadcasts.get(id).actualEndTime = new Date();
         return ytBroadcast(id);
+    },
+    SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX: "SLClassroom - ",
+    deleteYouTubeLiveBroadcast: async (_t, id) => {
+        yt.calls.push("delete:" + id);
+        if (yt.stall.has("delete") && yt.deleteAppliedBeforeTimeout) yt.broadcasts.delete(id);
+        await stall("delete");
+        if (yt.deleteErrors.has(id)) throw yt.deleteErrors.get(id);
+        const b = yt.broadcasts.get(id);
+        if (!b) throw yt.apiError(404, "liveBroadcastNotFound");
+        if (!["ready", "created"].includes(b.lifecycle)) throw yt.apiError(403, "liveBroadcastDeletionNotAllowed");
+        yt.broadcasts.delete(id);
+    },
+    listUpcomingYouTubeLiveBroadcasts: async () => {
+        yt.calls.push("list");
+        await stall("list");
+        if (yt.listHook) await yt.listHook();
+        if (yt.listError) throw yt.listError;
+        return [...yt.broadcasts.entries()]
+            .filter(([, b]) => ["created", "ready", "testing"].includes(b.lifecycle))
+            .map(([id]) => ytBroadcast(id));
     },
     updateYouTubeLiveBroadcastPrivacy: async (_t, id, privacy) => {
         yt.calls.push("privacy:" + id + ":" + privacy);
@@ -339,16 +471,36 @@ function fake(relativePath, exports) {
 
 fake("lib/prisma.ts", { prisma });
 fake("lib/youtube-live.ts", youtubeLive);
-fake("lib/youtube-auth.ts", { YouTubeReauthorizationRequiredError });
-fake("lib/jitsi-auth.ts", { generateJitsiToken: async () => "token" });
+// The departure stop asks for a token itself (the fake YouTube helpers do
+// not); token reuse is tested with the real module (teacher-departure-timeouts).
+fake("lib/youtube-auth.ts", {
+    YouTubeReauthorizationRequiredError,
+    getYouTubeAccessToken: async () => {
+        yt.calls.push("token");
+        return "access";
+    },
+    withYouTubeAccessTokenReuse: operation => operation()
+});
+// The real room / domain rules and system token helper; the teacher /
+// student token is a fixed string.
+const realJitsiAuth = require(path.join(root, "lib/jitsi-auth.ts"));
+fake("lib/jitsi-auth.ts", { ...realJitsiAuth, generateJitsiToken: async () => "token" });
 fake("lib/mailer.ts", { buildLiveSessionInviteLoginLink: () => "", sendLiveSessionInviteEmail: async () => {} });
 fake("lib/session-invite.ts", { signSessionInviteToken: () => "" });
 // The logged-in teacher (tests may switch it).
-const session = { teacherId: TEACHER };
+// adminId: the logged-in administrator (null: not an administrator).
+const session = { teacherId: TEACHER, adminId: null };
 
 fake("lib/auth-session.ts", {
     requireTeacherSession: async () => ({ teacherId: session.teacherId, role: "TEACHER" }),
-    requireStudentSession: async () => ({ studentId: "student-1", role: "STUDENT" })
+    requireStudentSession: async () => ({ studentId: "student-1", role: "STUDENT" }),
+    requireAdminSession: async () => {
+        if (!session.adminId) {
+            const { AppError } = require(path.join(root, "lib/error-handler.ts"));
+            throw new AppError("Admin privileges are required.", 403, "FORBIDDEN");
+        }
+        return { adminId: session.adminId, email: session.adminId + "@admin.test", name: "Admin", role: "ADMIN" };
+    }
 });
 
 const load = relativePath => require(path.join(root, relativePath));
@@ -357,8 +509,14 @@ const youtubeRequest = load("lib/youtube-request.ts");
 const DEFAULT_TIMEOUTS = {
     ...youtubeRequest.youtubeTimeouts,
     // Tests: session cleanup retries a held lock quickly (its own tests set it).
-    sessionCleanupLockRetriesMs: [5, 10]
+    sessionCleanupLockRetriesMs: [5, 10],
+    // Tests change YouTube's state between polls: no reuse of a poll answer
+    // (concurrent polls still share one request); teacher-departure-timeouts
+    // tests the reuse itself.
+    statusCacheMs: 0
 };
+
+const statusCache = load("lib/youtube-status-cache.ts");
 
 const lectureLib = load("lib/youtube-lecture.ts");
 const { getLiveSnapshot } = load("lib/youtube-live-snapshot.ts");
@@ -393,12 +551,23 @@ function reset() {
         startedAt: new Date(0), endedAt: null, teacherId: TEACHER, fixture: true
     }));
     yt.transitionErrors = new Map();
+    yt.transitionAnswer = null;
+    yt.refuseNeverLiveComplete = false;
+    yt.deleteErrors = new Map();
+    yt.deleteAppliedBeforeTimeout = false;
+    yt.listError = null;
+    yt.listHook = null;
     yt.stall = new Set();
     yt.getGate = null;
     yt.createStreamHook = null;
     Object.assign(youtubeRequest.youtubeTimeouts, DEFAULT_TIMEOUTS);
+    statusCache.clearYouTubeStatusCache();
     networkRequests = 0;
     db.attendanceCloses = [];
+    db.overrides = [];
+    db.control = null;
+    db.modeChanges = [];
+    session.adminId = null;
     session.teacherId = TEACHER;
     lockAttempts.length = 0;
     jibri.running = false;

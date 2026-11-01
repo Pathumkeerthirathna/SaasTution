@@ -55,7 +55,7 @@ test("no floating while Jitsi is fullscreen (real or CSS fallback)", () => {
 test("wrapper: normal, floating, fullscreen; fullscreen always wins", () => {
   assert.equal(meetingWrapperClassName({ isFullscreen: false, isFloating: false }), "relative h-full min-h-0 w-full");
   assert.equal(meetingWrapperClassName({ isFullscreen: false, isFloating: true }), "sl-meeting--float");
-  const fullscreen = "fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black";
+  const fullscreen = "sl-meeting--fullscreen fixed inset-0 z-[100] h-screen h-dvh w-screen bg-black";
   assert.equal(meetingWrapperClassName({ isFullscreen: true, isFloating: false }), fullscreen);
   assert.equal(meetingWrapperClassName({ isFullscreen: true, isFloating: true }), fullscreen);
 });

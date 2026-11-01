@@ -8,7 +8,8 @@ import {
     getYouTubeLiveBroadcast,
     updateYouTubeLiveBroadcastPrivacy,
     transitionYouTubeLiveBroadcast,
-    createYouTubeLiveStream
+    createYouTubeLiveStream,
+    SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX,
 
 } from "@/lib/youtube-live";
 import type { YouTubeLiveBroadcast } from "@/lib/youtube-live";
@@ -16,12 +17,24 @@ import { YouTubeReauthorizationRequiredError } from "@/lib/youtube-auth";
 import { withLectureYouTubeLock, withTeacherYouTubeLock } from "@/lib/youtube-operation-lock";
 import {
     ACTIVE_FEATURE_STATUSES,
+    clearCompleteRequested,
+    findDepartureSendState,
+    isCompleteRequested,
     isOtherYouTubeFeatureActive,
+    newFeatureGeneration,
+    youTubeEndedCloseData,
     type YouTubeFeature,
 } from "@/lib/youtube-feature-state";
-import { reconcileStaleYouTubeFeatures } from "@/lib/youtube-feature-lifecycle";
+import { serverNow } from "@/lib/server-clock";
+import { assertNoJibriShutdownInProgress } from "@/lib/jibri-shutdown-gate";
+import { forgetPolledYouTubeBroadcast, getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
+import {
+    assertNoDepartureStopBeforeStart,
+    cleanUpLeftoverBroadcastsBeforeStart,
+    reconcileStaleYouTubeFeatures,
+} from "@/lib/youtube-feature-lifecycle";
 
-import { Prisma, YouTubeBroadcastStatus, YouTubePrivacy } from "@prisma/client";
+import { Prisma, YouTubeBroadcastStatus, YouTubeFeatureStopReason, YouTubePrivacy } from "@prisma/client";
 
 
 // Shared broadcasts and active-feature helpers: see youtube-feature-state.ts
@@ -113,14 +126,27 @@ type ExistingBroadcastCheck =
 export async function checkExistingBroadcast(
     feature: YouTubeFeature,
     row: { id: string; broadcastId: string },
-    refreshTokenEncrypted: string
+    refreshTokenEncrypted: string,
+    // A start that would reuse or share this broadcast: refused (409) while a
+    // `complete` request for it is unconfirmed (completeRequestedAt), even if
+    // YouTube reports it ready / live: that request may still be applied.
+    options: { forReuse?: boolean } = {}
 ): Promise<ExistingBroadcastCheck> {
-    const closeRow = async (status: YouTubeBroadcastStatus) => {
+    // A YouTube end is recorded as such, with YouTube's time
+    // (youTubeEndedCloseData).
+    const closeRow = async (status: YouTubeBroadcastStatus, ended?: YouTubeLiveBroadcast) => {
         const where = {
             id: row.id,
             status: { in: ACTIVE_FEATURE_STATUSES },
         };
-        const data = { status, endedAt: new Date() };
+        // Departure-aware: an ended broadcast our departure stop may have
+        // completed is still reported as the departure's (youTubeEndedCloseData).
+        const data = {
+            status,
+            ...(ended
+                ? youTubeEndedCloseData(ended, new Date(), await findDepartureSendState(feature, row.id))
+                : { endedAt: new Date() }),
+        };
 
         if (feature === "recording") {
             await prisma.youTubeRecording.updateMany({ where, data });
@@ -167,15 +193,28 @@ export async function checkExistingBroadcast(
     const lifecycleStatus = broadcast.status?.lifeCycleStatus;
 
     if (lifecycleStatus === "ready" || lifecycleStatus === "live") {
+        if (options.forReuse && await isCompleteRequested(row.broadcastId)) {
+            throw new AppError(
+                feature === "live"
+                    ? "Your earlier YouTube Live is still being ended on YouTube, so it cannot be restarted yet. Use Stop Live, or try again in a moment."
+                    : "Your earlier YouTube recording is still being ended on YouTube, so it cannot be restarted yet. Use Stop Recording, or try again in a moment.",
+                409,
+                "YOUTUBE_COMPLETE_PENDING"
+            );
+        }
+
         return { reusable: true, broadcast, lifecycleStatus };
     }
 
     if (lifecycleStatus === "complete" || lifecycleStatus === "revoked") {
-        await closeRow(
-            lifecycleStatus === "complete"
-                ? YouTubeBroadcastStatus.COMPLETE
-                : YouTubeBroadcastStatus.REVOKED
-        );
+        if (lifecycleStatus === "complete") {
+            await closeRow(YouTubeBroadcastStatus.COMPLETE, broadcast);
+        } else {
+            await closeRow(YouTubeBroadcastStatus.REVOKED);
+        }
+
+        // Ended on YouTube: nothing pending can affect it any more.
+        await clearCompleteRequested(row.broadcastId);
 
         return { reusable: false };
     }
@@ -205,11 +244,17 @@ const featureChangedError = () =>
         "YOUTUBE_FEATURE_CHANGED"
     );
 
+/*
+ * Every reuse / reactivation by a start, and every new row, also begins a new
+ * feature generation (newFeatureGeneration, database clock): any earlier
+ * teacher-departure stop's state is cleared, and that departure no longer
+ * covers the row (lib/youtube-feature-lifecycle.ts).
+ */
 async function reuseLiveRow(id: string, data: Prisma.YouTubeLiveBroadcastUpdateInput) {
     try {
         return await prisma.youTubeLiveBroadcast.update({
             where: { id, status: { in: ACTIVE_FEATURE_STATUSES } },
-            data: { ...data, version: { increment: 1 } },
+            data: { ...data, ...newFeatureGeneration(await serverNow()), version: { increment: 1 } },
         });
     } catch (error) {
         if (isRecordNotFound(error)) throw featureChangedError();
@@ -221,7 +266,7 @@ async function reuseRecordingRow(id: string, data: Prisma.YouTubeRecordingUpdate
     try {
         return await prisma.youTubeRecording.update({
             where: { id, status: { in: ACTIVE_FEATURE_STATUSES } },
-            data: { ...data, version: { increment: 1 } },
+            data: { ...data, ...newFeatureGeneration(await serverNow()), version: { increment: 1 } },
         });
     } catch (error) {
         if (isRecordNotFound(error)) throw featureChangedError();
@@ -422,6 +467,94 @@ async function assertStreamFreeForLecture(teacherId: string, lectureId: string) 
             throw streamInUseError();
         }
     }
+
+    await assertNoDepartedClassStreaming(teacherId, lectureId);
+}
+
+/** How far back a teacher-departure stop can still leave Jibri streaming. */
+const DEPARTED_CLASS_STREAM_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The teacher-departure stop (endYouTubeFeaturesForDepartedTeacher) ends a
+ * class's broadcasts on YouTube without its teacher's browser, so Jibri may
+ * still be streaming that classroom (students still in it) into this
+ * teacher's ONE reusable stream. Before that stop, the class's active rows
+ * blocked other lectures above; this keeps blocking them: while such a class
+ * session is still active and YouTube reports the reusable stream active, a
+ * start here would ride that stream and publish the other classroom (409).
+ * A stream YouTube reports inactive means nothing is streaming: allowed. A
+ * failed lookup refuses (503) and changes nothing. Rows of this lecture are
+ * not considered: its own classroom may ride its own stream.
+ */
+async function assertNoDepartedClassStreaming(teacherId: string, lectureId: string) {
+    const args = {
+        where: {
+            lectureId: { not: lectureId },
+            stopReason: YouTubeFeatureStopReason.TEACHER_LEFT,
+            endedAt: { gte: new Date(Date.now() - DEPARTED_CLASS_STREAM_WINDOW_MS) },
+            lecture: { class: { teacherId } },
+        },
+        select: { lectureId: true, createdAt: true },
+    };
+
+    const [recordings, lives] = await Promise.all([
+        prisma.youTubeRecording.findMany(args),
+        prisma.youTubeLiveBroadcast.findMany(args),
+    ]);
+
+    let departedClassActive = false;
+
+    for (const row of [...recordings, ...lives]) {
+        const session = await findActiveLectureSession(row.lectureId);
+
+        if (session && row.createdAt >= session.startedAt) {
+            departedClassActive = true;
+            break;
+        }
+    }
+
+    if (!departedClassActive) {
+        return;
+    }
+
+    const connection = await prisma.youTubeConnection.findUnique({
+        where: { teacherId },
+        select: { refreshTokenEncrypted: true, liveStreamId: true },
+    });
+
+    // No reusable stream: nothing can be streaming into it.
+    if (!connection?.liveStreamId) {
+        return;
+    }
+
+    let streamStatus: string | undefined;
+
+    try {
+        streamStatus = (await getYouTubeLiveStream(connection.refreshTokenEncrypted, connection.liveStreamId))
+            .status?.streamStatus;
+    } catch (error) {
+        if (error instanceof YouTubeReauthorizationRequiredError) throw error;
+
+        console.error("Could not check the reusable YouTube stream after a teacher-departure stop:", {
+            teacherId,
+            lectureId,
+            error,
+        });
+
+        throw new AppError(
+            "Couldn't check your YouTube stream, so nothing was started. Please try again in a moment.",
+            503,
+            "YOUTUBE_STREAM_CHECK_FAILED"
+        );
+    }
+
+    if (streamStatus === "active") {
+        throw new AppError(
+            "Your YouTube stream may still be carrying a class you left earlier (its students are still connected). Please wait until that stream has stopped, then try again.",
+            409,
+            "YOUTUBE_STREAM_IN_USE"
+        );
+    }
 }
 
 const noActiveSessionError = (feature: YouTubeFeature) =>
@@ -484,7 +617,23 @@ async function startInCurrentSession<T>(
         );
     }
 
+    // The teacher's start is classroom activity; a feature a confirmed
+    // teacher-departure stop is still ending is never restarted (409).
+    await assertNoDepartureStopBeforeStart(lectureId, session.id);
+
     await assertStreamFreeForLecture(teacherId, lectureId);
+
+    // A classroom stream of the teacher may still be running after a
+    // departure, unverified: no new stream on the shared key (409). AFTER
+    // the stream check: a departure arms this fence before it closes the
+    // rows that check sees (lib/jibri-shutdown-gate.ts). The teacher's
+    // return was already recorded above, refused or not.
+    await assertNoJibriShutdownInProgress(teacherId);
+
+    // Before any broadcast is created, bound or streamed to: leftover
+    // never-started broadcasts on the teacher's reusable stream are removed
+    // (fails closed: the start is refused if that is not confirmed).
+    await cleanUpLeftoverBroadcastsBeforeStart(teacherId);
 
     return start(session.startedAt);
 }
@@ -557,6 +706,10 @@ export async function startYouTubeLecture(
             startJibri: !(await isOtherYouTubeFeatureActive("live", lectureId)),
         }))
     );
+
+    // The status pollers this event wakes up must ask YouTube, not reuse an
+    // answer from before the start (lib/youtube-status-cache.ts).
+    forgetPolledYouTubeBroadcast(result.broadcastId);
 
     // Push a "live is available" signal to student dashboards (no polling).
     try {
@@ -678,7 +831,8 @@ async function startYouTubeLectureInternal(
         ? await checkExistingBroadcast(
             "live",
             existingLiveBroadcast,
-            connection.refreshTokenEncrypted
+            connection.refreshTokenEncrypted,
+            { forReuse: true }
         )
         : null;
 
@@ -881,7 +1035,8 @@ async function startYouTubeLectureInternal(
                 await checkExistingBroadcast(
                     "recording",
                     activeRecording,
-                    connection.refreshTokenEncrypted
+                    connection.refreshTokenEncrypted,
+                    { forReuse: true }
                 );
 
             if (recordingCheck.reusable) {
@@ -950,6 +1105,7 @@ async function startYouTubeLectureInternal(
                                 activeRecording.broadcastId,
                         },
                         create: {
+                            ...newFeatureGeneration(await serverNow()),
                             lectureId:
                                 lecture.id,
                             broadcastId:
@@ -967,6 +1123,9 @@ async function startYouTubeLectureInternal(
                                 : {}),
                         },
                         update: {
+                            // Reactivated by this start: a new generation
+                            // (no earlier stop's reason or state comes back).
+                            ...newFeatureGeneration(await serverNow()),
                             status:
                                 liveStatus,
                             endedAt:
@@ -1051,7 +1210,7 @@ async function startYouTubeLectureInternal(
                 title: lecture.title,
 
                 description:
-                    `SLClassroom - ${lecture.title}`,
+                    `${SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX}${lecture.title}`,
 
                 scheduledStartTime:
                     new Date(
@@ -1223,6 +1382,7 @@ async function startYouTubeLectureInternal(
     const createdLiveRow =
         await prisma.youTubeLiveBroadcast.create({
         data: {
+            ...newFeatureGeneration(await serverNow()),
             lectureId:
                 lecture.id,
 
@@ -1428,7 +1588,8 @@ async function startYouTubeRecordingInternal(
         ? await checkExistingBroadcast(
             "recording",
             existingRecording,
-            connection.refreshTokenEncrypted
+            connection.refreshTokenEncrypted,
+            { forReuse: true }
         )
         : null;
 
@@ -1537,7 +1698,8 @@ async function startYouTubeRecordingInternal(
         ? await checkExistingBroadcast(
             "live",
             activeUnlistedLive,
-            connection.refreshTokenEncrypted
+            connection.refreshTokenEncrypted,
+            { forReuse: true }
         )
         : null;
 
@@ -1573,6 +1735,7 @@ async function startYouTubeRecordingInternal(
                         broadcastId: activeUnlistedLive.broadcastId,
                     },
                     create: {
+                        ...newFeatureGeneration(await serverNow()),
                         lectureId: lecture.id,
                         broadcastId: activeUnlistedLive.broadcastId,
                         videoId: activeUnlistedLive.videoId,
@@ -1584,6 +1747,9 @@ async function startYouTubeRecordingInternal(
                             : {}),
                     },
                     update: {
+                        // Reactivated by this start: a new generation
+                        // (no earlier stop's reason or state comes back).
+                        ...newFeatureGeneration(await serverNow()),
                         status: recordingStatus,
                         endedAt: null,
                         // Reactivated by this start: a new version.
@@ -1646,7 +1812,7 @@ async function startYouTubeRecordingInternal(
                 title: lecture.title,
 
                 description:
-                    `SLClassroom - ${lecture.title}`,
+                    `${SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX}${lecture.title}`,
 
                 scheduledStartTime:
                     new Date(
@@ -1782,6 +1948,7 @@ async function startYouTubeRecordingInternal(
     const createdRecordingRow =
         await prisma.youTubeRecording.create({
         data: {
+            ...newFeatureGeneration(await serverNow()),
             lectureId: lecture.id,
             broadcastId: broadcast.id,
             videoId,
@@ -1978,8 +2145,10 @@ export async function checkYouTubeRecordingStatus(
     let broadcastDefinitelyGone = false;
 
     try {
+        // Status polling (the teacher page asks on every join): coordinated
+        // with the other pollers; never reuses an ended status.
         broadcast =
-            await getYouTubeLiveBroadcast(
+            await getPolledYouTubeBroadcast(
                 connection.refreshTokenEncrypted,
                 recording.broadcastId
             );
@@ -2107,6 +2276,19 @@ export async function checkYouTubeRecordingStatus(
         broadcastStatus !== "complete" &&
         broadcastStatus !== "revoked";
 
+    // Read before the protection is cleared below: whether a `complete` we
+    // requested was still unconfirmed decides the reason (youTubeEndedCloseData).
+    const sendState =
+        broadcast && broadcastStatus === "complete"
+            ? await findDepartureSendState("recording", recording.id)
+            : null;
+
+    // Ended on YouTube (a fresh answer: the poll never keeps an ended status):
+    // the late-`complete` protection is cleared.
+    if (broadcast && !isStillOngoingOnYoutube) {
+        await clearCompleteRequested(recording.broadcastId);
+    }
+
     /*
      * The row was read before YouTube was asked; a Stop / cleanup may have
      * closed it meanwhile. Writes are conditional on its status, so a stale
@@ -2148,6 +2330,8 @@ export async function checkYouTubeRecordingStatus(
         recording.status !==
             YouTubeBroadcastStatus.COMPLETE
     ) {
+        // A YouTube end is recorded as such, with YouTube's time
+        // (youTubeEndedCloseData).
         await prisma.youTubeRecording.updateMany({
             where: {
                 id: recording.id,
@@ -2157,8 +2341,9 @@ export async function checkYouTubeRecordingStatus(
                 status:
                     YouTubeBroadcastStatus.COMPLETE,
 
-                endedAt:
-                    new Date(),
+                ...(broadcastStatus === "complete"
+                    ? youTubeEndedCloseData(broadcast, new Date(), sendState)
+                    : { endedAt: new Date() }),
             },
         });
     }

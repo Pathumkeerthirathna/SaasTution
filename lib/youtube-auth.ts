@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { decryptYouTubeToken } from "@/lib/youtube-crypto";
 import { youtubeFetch } from "@/lib/youtube-request";
 
@@ -12,7 +14,48 @@ export class YouTubeReauthorizationRequiredError extends Error {
     }
 }
 
-export async function getYouTubeAccessToken(
+/*
+ * Access-token reuse, opt-in per operation (withYouTubeAccessTokenReuse):
+ * inside it, every getYouTubeAccessToken for the same refresh token shares
+ * ONE token request (parallel callers share the pending request). Never
+ * stored beyond the operation, so an authorization revoked meanwhile is seen
+ * by the next operation. A failed request is not kept: a later call in the
+ * same operation asks Google again. Outside such an operation nothing changes.
+ */
+const tokenReuse = new AsyncLocalStorage<Map<string, Promise<string>>>();
+
+export function withYouTubeAccessTokenReuse<T>(operation: () => Promise<T>): Promise<T> {
+    return tokenReuse.getStore() ? operation() : tokenReuse.run(new Map(), operation);
+}
+
+export function getYouTubeAccessToken(
+    encryptedRefreshToken: string
+): Promise<string> {
+    const reused = tokenReuse.getStore();
+
+    if (!reused) {
+        return requestYouTubeAccessToken(encryptedRefreshToken);
+    }
+
+    const pending = reused.get(encryptedRefreshToken);
+
+    if (pending) {
+        return pending;
+    }
+
+    const request = requestYouTubeAccessToken(encryptedRefreshToken);
+
+    reused.set(encryptedRefreshToken, request);
+    request.catch(() => {
+        if (reused.get(encryptedRefreshToken) === request) {
+            reused.delete(encryptedRefreshToken);
+        }
+    });
+
+    return request;
+}
+
+async function requestYouTubeAccessToken(
     encryptedRefreshToken: string
 ): Promise<string> {
 

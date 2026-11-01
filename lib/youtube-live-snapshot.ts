@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getYouTubeLiveBroadcast } from "@/lib/youtube-live";
+import { clearCompleteRequested, findDepartureSendState, youTubeEndedCloseData } from "@/lib/youtube-feature-state";
+import { getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
 import { YouTubeBroadcastStatus, YouTubePrivacy } from "@prisma/client";
 
 /**
@@ -121,7 +122,9 @@ export async function getLiveSnapshot(
   }
 
   try {
-    const broadcast = await getYouTubeLiveBroadcast(
+    // Status polling: one live-status event fans out to every connected
+    // student; they share one YouTube request (lib/youtube-status-cache.ts).
+    const broadcast = await getPolledYouTubeBroadcast(
       connection.refreshTokenEncrypted,
       liveBroadcast.broadcastId
     );
@@ -131,13 +134,22 @@ export async function getLiveSnapshot(
     if (lifeCycleStatus && ENDED_YOUTUBE_LIFECYCLE_STATUSES.has(lifeCycleStatus)) {
       // The channel says this broadcast has ended (or was revoked) even
       // though our row still looked active — self-heal the stale row so
-      // future checks don't keep re-verifying it against YouTube.
+      // future checks don't keep re-verifying it against YouTube. A YouTube
+      // end is recorded as such, with YouTube's time (youTubeEndedCloseData).
       await prisma.youTubeLiveBroadcast
         .updateMany({
           where: { id: liveBroadcast.id, status: { in: ACTIVE_ROW_STATUSES } },
-          data: { status: YouTubeBroadcastStatus.COMPLETE, endedAt: new Date() },
+          data: {
+            status: YouTubeBroadcastStatus.COMPLETE,
+            ...(lifeCycleStatus === "complete"
+              ? youTubeEndedCloseData(broadcast, new Date(), await findDepartureSendState("live", liveBroadcast.id))
+              : { endedAt: new Date() }),
+          },
         })
         .catch(() => {});
+
+      // Ended on YouTube: the late-`complete` protection is cleared.
+      await clearCompleteRequested(liveBroadcast.broadcastId).catch(() => {});
 
       return NOT_LIVE;
     }

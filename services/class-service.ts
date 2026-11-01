@@ -5,7 +5,7 @@ import { AppError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { nowInSriLanka } from "@/lib/time";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
-import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
+import { ClassLectureRecording, ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
 import { ClassPublicNote } from "@/types/teacherProfileTypes/ClassPublicNote";
 
 type ListClassesParams = {
@@ -234,7 +234,9 @@ export async function getPublicClass(
  * publicly visible recording, newest lecture first. Each lecture keeps all of
  * its public recordings ordered by when the recording started (oldest first),
  * so the UI can number them 1, 2, 3. Recordings marked LOCKED are still
- * returned so the page can render them behind a lock.
+ * listed so the page can render them behind a lock, but WITHOUT their YouTube
+ * video ID / URL (toPublicClassRecording): these pages are public, so nothing
+ * they receive may lead to a locked video.
  */
 export async function getPublicClassSessions(
   classId: string
@@ -282,19 +284,32 @@ export async function getPublicClassSessions(
     title: lecture.title,
     date: lecture.date.toISOString(),
     createdAt: lecture.createdAt.toISOString(),
-    recordings: lecture.youtubeRecordings.map((recording) => ({
-      id: recording.id,
-      videoId: recording.videoId,
-      youtubeUrl: recording.youtubeUrl,
-      access: recording.access,
-      startedAt: recording.startedAt
-        ? recording.startedAt.toISOString()
-        : null,
-      endedAt: recording.endedAt
-        ? recording.endedAt.toISOString()
-        : null,
-    })),
+    recordings: lecture.youtubeRecordings.map(toPublicClassRecording),
   }));
+}
+
+/**
+ * A recording for the public class pages. The YouTube video ID / URL is
+ * included only for FREE recordings; a LOCKED (or any other) recording is
+ * returned without them, decided here on the server, never by the page.
+ */
+export function toPublicClassRecording(recording: {
+  id: string;
+  videoId: string;
+  youtubeUrl: string;
+  access: string;
+  startedAt: Date | null;
+  endedAt: Date | null;
+}): ClassLectureRecording {
+  const times = {
+    id: recording.id,
+    startedAt: recording.startedAt ? recording.startedAt.toISOString() : null,
+    endedAt: recording.endedAt ? recording.endedAt.toISOString() : null,
+  };
+
+  return recording.access === "FREE"
+    ? { ...times, access: "FREE", videoId: recording.videoId, youtubeUrl: recording.youtubeUrl }
+    : { ...times, access: "LOCKED", videoId: null, youtubeUrl: null };
 }
 
 function formatFileSize(bytes: number): string {

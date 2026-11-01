@@ -69,30 +69,30 @@ enum SubscriptionInterval {
 }
 
 model SubscriptionPlan {
-  id                  String                  @id @default(uuid())
-  name                String                  @unique
-  description         String?
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
 
-  price               Decimal                 @db.Decimal(10, 2)
-  currency             String                 @default("LKR")
-  interval             SubscriptionInterval  @default(MONTHLY)
+  price    Decimal              @db.Decimal(10, 2)
+  currency String               @default("LKR")
+  interval SubscriptionInterval @default(MONTHLY)
 
   maxLiveParticipants Int
 
-  unlimitedLiveSessions Boolean              @default(true)
-  unlimitedRecording    Boolean              @default(true)
-  unlimitedStudents     Boolean              @default(true)
+  unlimitedLiveSessions Boolean @default(true)
+  unlimitedRecording    Boolean @default(true)
+  unlimitedStudents     Boolean @default(true)
 
-  maxTeachers           Int?
-  storageGB             Int?
+  maxTeachers Int?
+  storageGB   Int?
 
-  status                SubscriptionPlanStatus @default(ACTIVE)
-  sortOrder             Int                    @default(0)
+  status    SubscriptionPlanStatus @default(ACTIVE)
+  sortOrder Int                    @default(0)
 
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  subscriptions         TeacherSubscription[]
+  subscriptions TeacherSubscription[]
 
   @@index([status])
 }
@@ -105,26 +105,26 @@ enum SubscriptionStatus {
 }
 
 model TeacherSubscription {
-  id              String              @id @default(uuid())
+  id String @id @default(uuid())
 
-  teacherId       String
-  planId          String
+  teacherId String
+  planId    String
 
-  status          SubscriptionStatus  @default(ACTIVE)
+  status SubscriptionStatus @default(ACTIVE)
 
-  startDate       DateTime
-  endDate         DateTime?
+  startDate DateTime
+  endDate   DateTime?
 
-  price           Decimal             @db.Decimal(10, 2)
-  currency        String              @default("LKR")
+  price    Decimal @db.Decimal(10, 2)
+  currency String  @default("LKR")
 
-  autoRenew       Boolean             @default(true)
+  autoRenew Boolean @default(true)
 
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  teacher         Teacher             @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  plan            SubscriptionPlan    @relation(fields: [planId], references: [id])
+  teacher Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  plan    SubscriptionPlan @relation(fields: [planId], references: [id])
 
   @@index([teacherId])
   @@index([planId])
@@ -917,23 +917,23 @@ model PaperSupportMessage {
 }
 
 model MaterialBundleItemSubmission {
-  id          String             @id @default(uuid())
+  id          String   @id @default(uuid())
   itemId      String
   studentId   String
   fileName    String
   fileUrl     String
   mimeType    String
   sizeBytes   Int
-  submittedAt DateTime           @default(now())
-  createdAt   DateTime           @default(now())
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   // Teacher review — reviewedAt null means the submission hasn't been
   // reviewed/marked yet.
   marks      Int?
   reviewedAt DateTime?
 
-  item        MaterialBundleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  student     Student            @relation(fields: [studentId], references: [id])
+  item    MaterialBundleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  student Student            @relation(fields: [studentId], references: [id])
 
   @@index([itemId, studentId, submittedAt])
   @@index([studentId, submittedAt])
@@ -967,22 +967,171 @@ model ClassSchedule {
 }
 
 model ClassSession {
-  id          String       @id @default(uuid())
-  classId     String
-  roomName    String       @unique
-  jitsiDomain String       @default("meet.jit.si")
-  startedAt   DateTime     @default(now())
-  endedAt     DateTime?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  lectureId   String?
-  attendance  Attendance[]
-  class       Class        @relation(fields: [classId], references: [id])
-  lecture     Lecture?     @relation(fields: [lectureId], references: [id])
+  id                            String                  @id @default(uuid())
+  classId                       String
+  roomName                      String                  @unique
+  jitsiDomain                   String                  @default("meet.jit.si")
+  startedAt                     DateTime                @default(now())
+  endedAt                       DateTime?
+  isActive                      Boolean                 @default(true)
+  createdAt                     DateTime                @default(now())
+  lectureId                     String?
+  /// Last time the class's own teacher had this classroom open: set when the
+  /// teacher's live-updates SSE connection opens and refreshed while it stays
+  /// open (lib/teacher-presence.ts). Null until then and for older sessions.
+  /// Never used on its own to decide that the teacher left.
+  teacherLastSeenAt             DateTime?
+  /// The teacher's current classroom page instance (lib/teacher-presence.ts):
+  /// registered by each page when it loads (the newest load), handed over to
+  /// a live page whose activity followed the current page's tab-close
+  /// signal. Only this page can send a tab-close signal. Null: none yet.
+  teacherCurrentPageId          String?
+  /// Teacher tab-close signal (lib/teacher-presence.ts): when the current
+  /// classroom page reported it was closing (pagehide, not persisted; desktop
+  /// browsers only), and which page sent it. Null: no signal.
+  teacherDepartureAt            DateTime?
+  teacherDeparturePageId        String?
+  /// First activity of a live teacher page after that signal (a new page,
+  /// another tab's heartbeat, a resume). Within the reload-confirmation
+  /// window it cancels the signal; later it is the teacher's return.
+  teacherActiveAfterDepartureAt DateTime?
+  /// Backend Jibri stop after a confirmed teacher departure
+  /// (lib/jibri-stop-for-departure.ts). jibriStopDepartureAt: the
+  /// teacherDepartureAt this state belongs to (a later departure starts
+  /// afresh). jibriStopState: provisional | pending | stop-sent |
+  /// verifying | unresolved (open), confirmed | not-running (released; an
+  /// override also releases). The attempt is recorded (attemptedAt,
+  /// attemptCount) BEFORE connecting to Jitsi.
+  /// jibriStopLastError: an outcome code only (never a token or a name).
+  /// jibriStopConfirmedAt: when the fence was released by evidence: the
+  /// room clear AND three idle readings of the pinned stream, at least 30 s
+  /// apart, over at least 2 minutes.
+  jibriStopDepartureAt          DateTime?
+  jibriStopState                String?
+  jibriStopAttemptedAt          DateTime?
+  jibriStopAttemptCount         Int                     @default(0)
+  jibriStopLastError            String?
+  jibriStopConfirmedAt          DateTime?
+  /// When the backend sent the Jibri STOP for this fence, written BEFORE
+  /// sending; never a second STOP for the same fence (observation only).
+  jibriStopSentAt               DateTime?
+  /// Shutdown fence evidence (lib/jibri-shutdown-gate.ts): when the stream
+  /// recorder was seen leaving the room voluntarily after our STOP, and the
+  /// first of the three "no ingest" readings of the pinned YouTube stream
+  /// that a release needs (reset by any other reading).
+  jibriStopRecorderLeftAt       DateTime?
+  jibriStopStreamInactiveAt     DateTime?
+  /// An administrator's explicit release of the fence (never automatic):
+  /// who, when, why. Every override is also kept in JibriShutdownOverride.
+  jibriStopOverrideAt           DateTime?
+  jibriStopOverrideBy           String?
+  jibriStopOverrideReason       String?
+  jibriShutdownOverrides        JibriShutdownOverride[]
+  /// The teacher's reusable YouTube stream the classroom's Jibri pushed
+  /// into, pinned when the fence was created (the tab-close signal's
+  /// provisional fence; else when armed). Only THIS stream is ever checked;
+  /// a newer or reconnected stream never stands in for it.
+  jibriStopStreamId             String?
+  /// The series of "no ingest" readings (the first is
+  /// jibriStopStreamInactiveAt): how many so far and the latest. Reset by
+  /// any other reading.
+  jibriStopIdleReadingCount     Int                     @default(0)
+  jibriStopLastIdleAt           DateTime?
+  /// After a release: the stream is still watched until then; it resuming
+  /// (with no new feature of the teacher) re-opens the fence.
+  jibriStopWatchUntil           DateTime?
+  /// Who armed the fence: signal (the tab-close signal's provisional
+  /// fence), departure (the YouTube departure stop), worker, late (found
+  /// after the session ended without a fence) or start (a start found it).
+  jibriStopOrigin               String?
+  attendance                    Attendance[]
+  class                         Class                   @relation(fields: [classId], references: [id])
+  lecture                       Lecture?                @relation(fields: [lectureId], references: [id])
 
   @@index([classId, isActive])
   @@index([classId, isActive, startedAt])
   @@index([lectureId, startedAt])
+  /// Open shutdown fences of a class (lib/jibri-shutdown-gate.ts).
+  @@index([classId, jibriStopState])
+  /// Recently ended sessions with a departure (late-fence recovery).
+  @@index([isActive, endedAt])
+}
+
+/// The ONE shared source of the Jibri shutdown fence's mode and the
+/// worker's heartbeat (lib/jibri-fence-control.ts): the app and the worker
+/// both read it. Single row (id "default"); no row: mode "off".
+model JibriShutdownControl {
+  id                    String    @id
+  /// off: nothing armed, no worker work (open fences stay enforced).
+  /// on: armed at departure, STOP + verification by the worker.
+  /// drain: nothing new armed, no STOP; the worker only verifies open fences.
+  mode                  String    @default("off")
+  modeChangedAt         DateTime?
+  modeChangedBy         String?
+  /// The worker's liveness: written on its own timer, independent of sweeps
+  /// and of any Jitsi connection.
+  heartbeatAt           DateTime?
+  workerStartedAt       DateTime?
+  workerVersion         String?
+  /// A hash of the worker's non-secret Jitsi settings (domains, focus JID, URL).
+  workerConfigId        String?
+  /// The mode the worker saw at its last tick.
+  workerMode            String?
+  /// The worker's Jitsi target and JWT identity (non-secret; the secret
+  /// only as a non-reversible fingerprint), compared field by field with
+  /// what the app expects (lib/jibri-stop-config.ts).
+  workerJitsiDomain     String?
+  workerWebsocketUrl    String?
+  workerMucDomain       String?
+  workerRecorderDomain  String?
+  workerFocusJid        String?
+  workerJwtIssuer       String?
+  workerJwtAudience     String?
+  workerJwtFingerprint  String?
+  /// Sweep progress, separate from liveness (heartbeatAt): the last sweep
+  /// that began and the last one that completed.
+  sweepStartedAt        DateTime?
+  sweepCompletedAt      DateTime?
+  /// Connection proof (not the heartbeat): the last XMPP login to the
+  /// expected server, the last join of an expected room as a moderator,
+  /// and the last connection failure (an outcome code) and when.
+  lastXmppAuthAt        DateTime?
+  lastRoomJoinAt        DateTime?
+  lastConnectionError   String?
+  lastConnectionErrorAt DateTime?
+  updatedAt             DateTime  @updatedAt
+}
+
+/// Audit log of fence mode changes by administrators (append-only).
+model JibriShutdownModeChange {
+  id         String   @id @default(uuid())
+  fromMode   String
+  toMode     String
+  adminId    String
+  adminEmail String?
+  reason     String
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Audit log of administrators' Jibri shutdown fence overrides
+/// (services/jibri-fence-override-service.ts): append-only, one row per
+/// override, never written automatically.
+model JibriShutdownOverride {
+  id               String       @id @default(uuid())
+  classSessionId   String
+  /// The fence (ClassSession.jibriStopDepartureAt) this override released.
+  fenceDepartureAt DateTime
+  /// The fence's state when it was overridden (pending, stop-sent, ...).
+  previousState    String?
+  adminId          String
+  adminEmail       String?
+  reason           String
+  createdAt        DateTime     @default(now())
+  classSession     ClassSession @relation(fields: [classSessionId], references: [id])
+
+  @@index([classSessionId, createdAt])
 }
 
 model ClassStudent {
@@ -1058,7 +1207,7 @@ model Lecture {
 
   assignments Assignment[]
   sessions    ClassSession[]
-  class       Class          @relation(fields: [classId], references: [id])
+  class       Class               @relation(fields: [classId], references: [id])
   notes       Note[]
   quizzes     Quiz[]
   whiteboards LectureWhiteboard[]
@@ -1122,7 +1271,58 @@ model YouTubeRecording {
   /// failed start closes the row only at the version that start observed.
   version Int @default(0)
 
+  /// Teacher-departure stop (see YouTubeFeatureStopReason). stopReason is set
+  /// only in the same update that ends the row after YouTube confirmed it;
+  /// the end time is endedAt. autoStopAttemptedAt: when the departure stop
+  /// last SENT YouTube a `complete` transition for this row's broadcast
+  /// (written just before sending; null: none sent). autoStopError: why the
+  /// row is still active ("timeout" = that transition got no answer and may
+  /// still be applied; "youtube", "reauth-required", "shared-broadcast").
+  stopReason               YouTubeFeatureStopReason?
+  autoStopAttemptedAt      DateTime?
+  autoStopError            String?
+  /// When the current feature generation started (database clock): set when
+  /// a start creates, reuses or reactivates the row, which also clears every
+  /// departure field above and below. A teacher-departure stop covers the
+  /// row only if this is before its tab-close signal (null: older rows, then
+  /// createdAt).
+  generationStartedAt      DateTime?
+  /// When the departure stop last looked the broadcast up on YouTube (its
+  /// retry schedule; nothing else writes it).
+  autoStopCheckedAt        DateTime?
+  /// How many `complete` transitions the departure stop sent for this
+  /// generation, and the last failure seen (diagnostics; "unresolved" in
+  /// autoStopError once automatic retries gave up).
+  autoStopSendCount        Int                       @default(0)
+  autoStopLastError        String?
+  /// A YouTube `complete` transition was requested for THIS row's broadcast
+  /// (broadcastId) and YouTube has not yet been seen to end it: set before
+  /// every such request (teacher-departure stop, Stop, failed-start cleanup)
+  /// on every row of the broadcast, kept through new generations, cleared
+  /// only when a fresh lookup reports the broadcast complete / revoked. While
+  /// set, no start reuses or shares the broadcast (YouTube may still apply
+  /// the request). No time limit.
+  completeRequestedAt      DateTime?
+  /// When the teacher dismissed the notice about a stop with a stopReason
+  /// (null: not yet, the notice still shows on their return).
+  stopNoticeAcknowledgedAt DateTime?
+
   @@index([lectureId])
+}
+
+/// Why the app ended a Recording / Live on its own. Null: ended as before
+/// (the teacher's Stop, End Session, a failed-start cleanup or a
+/// reconciliation).
+/// - TEACHER_LEFT: the class's teacher closed the classroom tab (a confirmed
+///   tab-close signal, ClassSession.teacherDepartureAt) and the feature ended
+///   because of it. Only the YouTube broadcast was ended: Jibri may still be
+///   streaming that classroom.
+/// - YOUTUBE_ENDED: YouTube ended the broadcast on its own (e.g. auto-stop
+///   after the stream stopped); endedAt is YouTube's actualEndTime. Becomes
+///   TEACHER_LEFT only if it ended after a confirmed tab-close signal.
+enum YouTubeFeatureStopReason {
+  TEACHER_LEFT
+  YOUTUBE_ENDED
 }
 
 enum RecordingVisibility {
@@ -1158,6 +1358,18 @@ model YouTubeLiveBroadcast {
   /// incremented only when a start reuses or reactivates it; the cleanup of a
   /// failed start closes the row only at the version that start observed.
   version Int @default(0)
+
+  /// Teacher-departure stop: as on YouTubeRecording.
+  stopReason               YouTubeFeatureStopReason?
+  autoStopAttemptedAt      DateTime?
+  autoStopError            String?
+  generationStartedAt      DateTime?
+  autoStopCheckedAt        DateTime?
+  autoStopSendCount        Int                       @default(0)
+  autoStopLastError        String?
+  /// See YouTubeRecording.completeRequestedAt.
+  completeRequestedAt      DateTime?
+  stopNoticeAcknowledgedAt DateTime?
 
   @@index([lectureId])
 }

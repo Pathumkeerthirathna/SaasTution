@@ -76,6 +76,17 @@ export type YouTubeStreamControllerDeps = {
   cleanupTimeoutMs?: number;
   /** Failed-start cleanup: waits between attempts (ms); attempts = length + 1. */
   cleanupRetryDelaysMs?: number[];
+  /** After a Stop YouTube did not confirm: how long Stop waits before it may be pressed again (ms). */
+  stopCheckWaitMs?: number;
+  /**
+   * The server's confirmation that NO Recording / Live of the session is
+   * still active (resolves true only then). Asked before Jibri is stopped
+   * after a late YouTube confirmation (lateStopConfirmed): this page's view of
+   * the other feature may be stale (started from another tab, a reload), and
+   * stopping Jibri would starve it. Without it, this page's view decides
+   * (tests of the page logic alone).
+   */
+  confirmNoActiveFeature?: () => Promise<boolean>;
   schedule?: (fn: () => void, ms: number) => () => void;
   log?: (...args: unknown[]) => void;
 };
@@ -129,6 +140,12 @@ const isActive = (state: FeatureState) => state !== "off";
 export const DEFAULT_CONFIRM_TIMEOUT_MS = 25_000;
 export const DEFAULT_CLEANUP_TIMEOUT_MS = 10_000;
 export const DEFAULT_CLEANUP_RETRY_DELAYS_MS = [1_000, 3_000];
+export const DEFAULT_STOP_CHECK_WAIT_MS = 10_000;
+
+/** The server's answer to a Stop whose `complete` YouTube did not confirm (the feature stays active). */
+export const STOP_UNCONFIRMED_CODE = "YOUTUBE_STOP_UNCONFIRMED";
+/** This page's answer to a Stop pressed during the short wait after an unconfirmed one. */
+export const STOP_CHECKING_CODE = "YOUTUBE_STOP_CHECKING";
 
 type CleanupResult =
   | { confirmed: true; stopJibri: boolean }
@@ -147,6 +164,7 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS;
   const cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
   const cleanupRetryDelaysMs = deps.cleanupRetryDelaysMs ?? DEFAULT_CLEANUP_RETRY_DELAYS_MS;
+  const stopCheckWaitMs = deps.stopCheckWaitMs ?? DEFAULT_STOP_CHECK_WAIT_MS;
 
   const state: YouTubeStreamSnapshot = { recording: "off", live: "off", jibri: "unknown" };
   const listeners = new Set<(snapshot: YouTubeStreamSnapshot, change: YouTubeStreamChange) => void>();
@@ -162,6 +180,17 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
   const cleanupPending = new Set<YouTubeFeature>();
   // The class session ended: nothing may become active on this page any more.
   let sessionOver = false;
+  // Orphaned-stream stop (armOrphanStreamStop): the server's re-check, while
+  // armed, and whether that check is running.
+  let orphanConfirm: (() => Promise<boolean>) | null = null;
+  let orphanCheckRunning = false;
+  // Stops the server answered STOP_UNCONFIRMED: YouTube may still end the
+  // broadcast later. When the server then reports the feature inactive, the
+  // Jibri stream is stopped as after a confirmed Stop (lateStopConfirmed).
+  const unconfirmedStops = new Set<YouTubeFeature>();
+  // The short wait after such a Stop ("Checking with YouTube…"): its timer's
+  // cancel. Ends after stopCheckWaitMs or at the next server report.
+  const stopChecks = new Map<YouTubeFeature, () => void>();
 
   const snapshot = (): YouTubeStreamSnapshot => ({ ...state });
 
@@ -258,6 +287,144 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     deps.stopJibri();
   }
 
+  /** Ends the short wait after an unconfirmed Stop; whether one was running. */
+  function endStopCheck(feature: YouTubeFeature) {
+    const cancel = stopChecks.get(feature);
+
+    if (!cancel) return false;
+
+    cancel();
+    stopChecks.delete(feature);
+    return true;
+  }
+
+  function forgetUnconfirmedStop(feature: YouTubeFeature) {
+    unconfirmedStops.delete(feature);
+    endStopCheck(feature);
+  }
+
+  /**
+   * The server reports a feature inactive after its Stop was unconfirmed:
+   * YouTube ended it later. Off, and Jibri stopped by the confirmed-Stop rule
+   * (only when the other feature is not active on this page). Once: the
+   * pending Stop is forgotten, and a stopped Jibri is not stopped again.
+   */
+  function lateStopConfirmed(feature: YouTubeFeature) {
+    forgetUnconfirmedStop(feature);
+    state[feature] = "off";
+    cleanupPending.delete(feature);
+
+    if (!isActive(state[OTHER[feature]]) && state.jibri !== "off") {
+      if (deps.confirmNoActiveFeature) {
+        void confirmThenStopJibri(feature);
+      } else {
+        log("YouTube confirmed an earlier Stop late; stopping the Jibri stream:", feature);
+        requestJibriStop();
+      }
+    }
+
+    emit();
+  }
+
+  // A server check before a late-confirmation Jibri stop is running.
+  let jibriStopCheckRunning = false;
+
+  /**
+   * Stops Jibri after a late YouTube confirmation only once the server
+   * confirms no Recording / Live of the session is still active, and only if,
+   * when it answered, this page still has nothing active, starting or waiting
+   * for Jibri. An unanswered or failed check stops nothing. At most one check
+   * at a time; a stop already requested (Jibri seen off) is not repeated.
+   */
+  async function confirmThenStopJibri(feature: YouTubeFeature) {
+    if (jibriStopCheckRunning || !deps.confirmNoActiveFeature) return;
+
+    jibriStopCheckRunning = true;
+
+    let confirmed = false;
+
+    try {
+      confirmed = await deps.confirmNoActiveFeature();
+    } catch (error) {
+      log("Server check before stopping Jibri failed; nothing was stopped:", error);
+    } finally {
+      jibriStopCheckRunning = false;
+    }
+
+    if (
+      confirmed &&
+      !sessionOver &&
+      !isActive(state.recording) &&
+      !isActive(state.live) &&
+      waiters.size === 0 &&
+      cleanupPending.size === 0 &&
+      state.jibri !== "off"
+    ) {
+      log("YouTube confirmed an earlier Stop late and nothing is active on the server; stopping the Jibri stream:", feature);
+      requestJibriStop();
+      emit();
+    }
+  }
+
+  /**
+   * Whether a Jibri stream running in this conference has no feature on this
+   * page: Jitsi reports it on, nothing is starting / active / restored /
+   * awaiting cleanup here, and no start waits for it.
+   */
+  function streamWithoutFeature() {
+    return (
+      state.jibri === "on" &&
+      !sessionOver &&
+      !expectingStop &&
+      waiters.size === 0 &&
+      cleanupPending.size === 0 &&
+      state.recording === "off" &&
+      state.live === "off"
+    );
+  }
+
+  /**
+   * The armed orphan stop (armOrphanStreamStop): once the stream has no
+   * feature here, ask the server again; stop Jibri only if it confirms
+   * nothing of the session is active AND the page still has no feature once
+   * it answered. At most one stop. An unanswered / failed check stops nothing.
+   */
+  function maybeStopOrphanStream() {
+    if (!orphanConfirm || orphanCheckRunning || !streamWithoutFeature()) return;
+
+    const confirm = orphanConfirm;
+
+    orphanCheckRunning = true;
+
+    Promise.resolve()
+      .then(confirm)
+      .then(
+        nothingActive => {
+          orphanCheckRunning = false;
+
+          // Disarmed (a start, an active report) or replaced meanwhile.
+          if (orphanConfirm !== confirm) return;
+
+          if (!nothingActive) {
+            // A feature of the session is active: the stream is legitimate.
+            orphanConfirm = null;
+            return;
+          }
+
+          if (!streamWithoutFeature()) return;
+
+          orphanConfirm = null;
+          log("Stopping a Jibri stream left running after the teacher left the classroom.");
+          requestJibriStop();
+          emit();
+        },
+        error => {
+          orphanCheckRunning = false;
+          log("Orphaned-stream check failed; nothing was stopped:", error);
+        }
+      );
+  }
+
   function waitForJibri(feature: YouTubeFeature) {
     return new Promise<{ ok: true } | { ok: false; reason: "jibri-timeout" | "jibri-error"; error?: string }>(resolve => {
       let cancel = () => {};
@@ -284,6 +451,11 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     if (state[feature] === "starting") {
       return { ok: false, reason: "busy" };
     }
+
+    // The teacher starts a feature: a running stream may be ridden by it.
+    orphanConfirm = null;
+    // A new start of this feature: an earlier unconfirmed Stop no longer applies.
+    forgetUnconfirmedStop(feature);
 
     const previous = state[feature];
 
@@ -436,6 +608,15 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
   }
 
   async function stop(feature: YouTubeFeature): Promise<StopOutcome> {
+    if (stopChecks.has(feature)) {
+      // The short wait after an unconfirmed Stop (temporary, never permanent).
+      return {
+        ok: false,
+        status: 0,
+        data: { success: false, code: STOP_CHECKING_CODE, error: "Checking with YouTube…" }
+      };
+    }
+
     let response: ApiResult<YouTubeStopData>;
 
     try {
@@ -451,10 +632,22 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     const data = response.data ?? {};
 
     if (response.status >= 400 || !data.success) {
-      // Nothing changed on the server: the feature stays as it was.
+      // Nothing changed on the server: the feature stays as it was. YouTube
+      // did not confirm the end: it may still end it later (lateStopConfirmed),
+      // and Stop waits briefly before it can be pressed again.
+      if (data.code === STOP_UNCONFIRMED_CODE && !sessionOver && isActive(state[feature]) && state[feature] !== "starting") {
+        unconfirmedStops.add(feature);
+        endStopCheck(feature);
+        stopChecks.set(feature, schedule(() => {
+          if (stopChecks.delete(feature)) emit();
+        }, stopCheckWaitMs));
+        emit();
+      }
+
       return { ok: false, status: response.status, data };
     }
 
+    forgetUnconfirmedStop(feature);
     state[feature] = "off";
     cleanupPending.delete(feature);
 
@@ -503,6 +696,7 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
       }
 
       emit();
+      maybeStopOrphanStream();
       return;
     }
 
@@ -522,7 +716,8 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     const ended = (["recording", "live"] as const).filter(
       feature => (state[feature] === "on" || state[feature] === "restored") && !cleanupPending.has(feature));
 
-    ended.forEach(feature => { state[feature] = "off"; });
+    // Nothing left to stop for them: an earlier unconfirmed Stop is forgotten.
+    ended.forEach(feature => { state[feature] = "off"; forgetUnconfirmedStop(feature); });
 
     emit(ended.length ? { type: "jibri-stopped", features: ended, error: status.error } : { type: "state" });
   }
@@ -533,9 +728,23 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
    * this page has already seen Jibri streaming).
    */
   function serverReport(feature: YouTubeFeature, active: boolean) {
+    // The server sees a feature active: a running stream is legitimate.
+    if (active) orphanConfirm = null;
+
+    // Any report about the feature ends the short wait after an unconfirmed Stop.
+    const checkEnded = endStopCheck(feature);
+
     if (state[feature] === "starting") return;
     // After the session ended a report can only be stale: nothing comes back.
     if (sessionOver && active) return;
+
+    // YouTube ended it after a Stop it had not confirmed: finish that Stop.
+    if (!active && unconfirmedStops.has(feature)) {
+      lateStopConfirmed(feature);
+      return;
+    }
+
+    if (checkEnded) emit();
 
     // Jibri seen stopped on this page: a database row (e.g. a later SSE
     // snapshot) cannot bring the feature back; nothing is streaming. Once a
@@ -567,12 +776,31 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     });
     cleanupPending.clear();
     lateStopPending = false;
+    (["recording", "live"] as const).forEach(forgetUnconfirmedStop);
 
     if (state.jibri !== "off") {
       requestJibriStop();
     }
 
     emit({ type: "session-ended" });
+  }
+
+  /**
+   * After the teacher-departure stop ended this session's features on YouTube
+   * (Jibri was not stopped: the teacher's browser had gone), a Jibri stream
+   * may still be running in this conference with nothing on it. Armed by the
+   * returning teacher's page when the server reports such a stop and no
+   * active feature. Once Jitsi reports the stream on (now or later) and this
+   * page has no feature, `confirm` must answer true (the server re-checked:
+   * nothing of the session is active) before Jibri is stopped, once. Any
+   * start, or a server report of an active feature, disarms it. Without a
+   * Jibri "on" from Jitsi nothing is ever stopped.
+   */
+  function armOrphanStreamStop(confirm: () => Promise<boolean>) {
+    if (sessionOver) return;
+
+    orphanConfirm = confirm;
+    maybeStopOrphanStream();
   }
 
   /** A new Jitsi conference (rejoin / reconnect): Jibri's state is unknown again. */
@@ -595,8 +823,15 @@ export function createYouTubeStreamController(deps: YouTubeStreamControllerDeps)
     serverReport,
     conferenceChanged,
     sessionEnded,
+    armOrphanStreamStop,
+    /** Whether an orphaned-stream stop is armed (not yet sent or disarmed). */
+    orphanStopArmed: () => orphanConfirm !== null,
     /** Features whose failed-start cleanup is not confirmed yet. */
-    pendingCleanups: () => Array.from(cleanupPending)
+    pendingCleanups: () => Array.from(cleanupPending),
+    /** Features whose Stop YouTube has not confirmed yet (see lateStopConfirmed). */
+    unconfirmedStops: () => Array.from(unconfirmedStops),
+    /** Features in the short wait after an unconfirmed Stop ("Checking with YouTube…"). */
+    stopChecking: () => Array.from(stopChecks.keys())
   };
 }
 

@@ -35,6 +35,25 @@ import {
   readStoredNoiseSuppression,
 } from "./teacher-audio-preferences.mjs";
 import { useClassroomViewport, useVisualViewportVars } from "./hooks/useClassroomViewport";
+import {
+  canStopOrphanStream,
+  describePendingNotice,
+  describeShutdownFenceNotice,
+  describeStoppedNotice,
+  parseDepartureNotices,
+} from "./teacher-departure-notice";
+import { syncTeacherYouTubeState } from "./teacher-return-sync";
+import {
+  createPageId,
+  installTeacherDepartureSignal,
+  suppressNextDepartureSignal,
+} from "./teacher-departure-signal";
+import {
+  enterClassroomFullscreen,
+  exitElementFullscreen,
+  FULLSCREEN_CHANGE_EVENTS,
+  getFullscreenElement,
+} from "./fullscreen.mjs";
 import { roomLabelByParticipantName } from "./breakout-utils";
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
@@ -55,6 +74,7 @@ import { announce } from "@/lib/voice-announcer";
 import {
   createYouTubeStreamController,
   DEFAULT_CLEANUP_TIMEOUT_MS,
+  STOP_CHECKING_CODE,
   type StartOutcome,
   type YouTubeFeature,
   type YouTubeStartData,
@@ -65,6 +85,9 @@ import { RotateCcw, Video, X, XCircle, Maximize2, Globe, Link2, Lock, Radio } fr
 
 function goToYouTubeOAuthConnect() {
   const returnTo = `${window.location.pathname}${window.location.search}`;
+
+  // Comes back to this classroom: not a tab close (teacher-departure-signal.ts).
+  suppressNextDepartureSignal();
 
   window.location.href =
     `/api/youtube/oauth/connect?returnTo=${encodeURIComponent(returnTo)}`;
@@ -107,6 +130,146 @@ function showYoutubeActionToast(
       </div>
     </div>
   ));
+}
+
+// Teacher-departure notices (teacher-departure-notice.ts). They stay until the
+// teacher closes them. A confirmed stop is dismissed for good ("Got it" saves
+// it); if saving fails it is only hidden here and shows again next time.
+function showDepartureStoppedToast(message: string, acknowledge: () => Promise<boolean>) {
+  toast.custom(
+    (t) => (
+      <div
+        role="status"
+        className={`${
+          t.visible ? "animate-enter" : "animate-leave"
+        } flex max-w-sm items-start gap-3 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-black/5`}
+      >
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+          <Radio className="h-3.5 w-3.5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] leading-5 text-slate-700">{message}</p>
+
+          <button
+            type="button"
+            onClick={() => {
+              void acknowledge().then((saved) => {
+                toast.dismiss(t.id);
+
+                if (!saved) {
+                  toast.error("Couldn't save that you've seen this. It will show again next time.");
+                }
+              });
+            }}
+            className="mt-2 inline-flex items-center rounded-md bg-slate-800 px-2.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-slate-900"
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    ),
+    { id: "teacher-departure-stopped", duration: Infinity }
+  );
+}
+
+function showDeparturePendingToast(message: string, reauthRequired: boolean) {
+  toast.custom(
+    (t) => (
+      <div
+        role="alert"
+        className={`${
+          t.visible ? "animate-enter" : "animate-leave"
+        } flex max-w-sm items-start gap-3 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-black/5`}
+      >
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+          <XCircle className="h-4 w-4" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-[13px] leading-5 text-slate-700">{message}</p>
+
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => toast.dismiss(t.id)}
+              className="shrink-0 rounded-md p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {reauthRequired && (
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(t.id);
+                goToYouTubeOAuthConnect();
+              }}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-red-700"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reconnect YouTube
+            </button>
+          )}
+        </div>
+      </div>
+    ),
+    { id: "teacher-departure-pending", duration: Infinity }
+  );
+}
+
+/**
+ * The teacher's Jibri shutdown fence (lib/jibri-shutdown-gate.ts): why
+ * Recording / Live cannot start yet, with a "Check again" that asks the
+ * server afresh. `checkAgain` resolves to the new message, null once nothing
+ * blocks any more, or undefined when the server could not be asked.
+ */
+function showShutdownFenceToast(message: string, checkAgain: () => Promise<string | null | undefined>) {
+  toast.custom(
+    (t) => (
+      <div
+        role="alert"
+        className={`${
+          t.visible ? "animate-enter" : "animate-leave"
+        } flex max-w-sm items-start gap-3 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-black/5`}
+      >
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+          <Radio className="h-3.5 w-3.5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] leading-5 text-slate-700">{message}</p>
+
+          <button
+            type="button"
+            onClick={() => {
+              void checkAgain().then((next) => {
+                if (next === undefined) {
+                  toast.error("Couldn't check right now. Please try again in a moment.");
+                  return;
+                }
+
+                toast.dismiss(t.id);
+
+                if (next === null) {
+                  toast.success("The earlier classroom stream is confirmed stopped. You can start Recording or Live.");
+                } else {
+                  showShutdownFenceToast(next, checkAgain);
+                }
+              });
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-slate-900"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Check again
+          </button>
+        </div>
+      </div>
+    ),
+    { id: "jibri-shutdown-fence", duration: Infinity }
+  );
 }
 
 // Width of the "Start YouTube Live" popover (desktop / tablet), shared by its
@@ -256,6 +419,26 @@ const [classStudents, setClassStudents] =
   const [isCssFullscreenFallback, setIsCssFullscreenFallback] = useState(false);
   const isFullscreenActive = isFullscreen || isCssFullscreenFallback;
 
+  // The CSS fallback has no browser exit gesture of its own: Escape leaves it
+  // (real fullscreen's Escape / Back arrive as fullscreenchange instead).
+  useEffect(() => {
+    if (!isCssFullscreenFallback) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCssFullscreenFallback(false);
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isCssFullscreenFallback]);
+
   const [revealTop, setRevealTop] = useState(false);
   const [revealRight, setRevealRight] = useState(false);
   const [sidebarPanelOpen, setSidebarPanelOpen] = useState(false);
@@ -273,13 +456,13 @@ const [classStudents, setClassStudents] =
   const hideRightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const syncFullscreen = () => setIsFullscreen(Boolean(getFullscreenElement(document)));
 
     syncFullscreen();
-    document.addEventListener("fullscreenchange", syncFullscreen);
+    FULLSCREEN_CHANGE_EVENTS.forEach((type) => document.addEventListener(type, syncFullscreen));
 
     return () => {
-      document.removeEventListener("fullscreenchange", syncFullscreen);
+      FULLSCREEN_CHANGE_EVENTS.forEach((type) => document.removeEventListener(type, syncFullscreen));
     };
   }, []);
 
@@ -327,6 +510,10 @@ const [classStudents, setClassStudents] =
 
   const [isLive, setIsLive] =
   useState(false);
+
+  // Features in the short wait after a Stop YouTube did not confirm.
+  const [youtubeStopChecking, setYoutubeStopChecking] =
+  useState<YouTubeFeature[]>([]);
 
   const [isStartingLive, setIsStartingLive] =
   useState(false);
@@ -493,6 +680,14 @@ const [classStudents, setClassStudents] =
   const joinInfoRef = useRef(joinInfo);
   joinInfoRef.current = joinInfo;
 
+  // This classroom page instance (teacher-departure-signal.ts): sent with the
+  // teacher's live-updates connection and with its tab-close signal.
+  const pageIdRef = useRef("");
+
+  if (!pageIdRef.current && typeof window !== "undefined") {
+    pageIdRef.current = createPageId();
+  }
+
   const youtubeStreamRef = useRef<YouTubeStreamController | null>(null);
 
   if (!youtubeStreamRef.current) {
@@ -557,6 +752,23 @@ const [classStudents, setClassStudents] =
             : "/api/youtube/lecture/stop",
           {}
         ),
+      // Before a Jibri stop after a late YouTube confirmation: the server must
+      // report no active Recording / Live in this session (this page's view of
+      // the other feature may be stale). Any failure: false (nothing stopped).
+      confirmNoActiveFeature: async () => {
+        const sessionId = joinInfoRef.current?.session?.id;
+
+        if (!sessionId) return false;
+
+        const response = await fetch(
+          `/api/sessions/${sessionId}/teacher-departure?pageId=${encodeURIComponent(pageIdRef.current)}`,
+          { cache: "no-store" }
+        );
+        const body = await response.json().catch(() => null);
+        const notices = response.ok && body?.success ? parseDepartureNotices(body.data) : null;
+
+        return Boolean(notices && notices.sessionActive && notices.activeFeatures.length === 0);
+      },
       startJibri: (streamKey, broadcastId, feature) =>
         jitsiMeetingRef.current?.startYouTubeLive(streamKey, broadcastId, feature),
       stopJibri: () => jitsiMeetingRef.current?.stopYouTubeLive(),
@@ -575,6 +787,7 @@ const [classStudents, setClassStudents] =
     return controller.subscribe((state, change) => {
       setIsRecording(state.recording === "on" || state.recording === "restored");
       setIsLive(state.live === "on" || state.live === "restored");
+      setYoutubeStopChecking(controller.stopChecking());
 
       if (state.live === "off") {
         setYoutubeLiveUrl(null);
@@ -601,7 +814,8 @@ const [classStudents, setClassStudents] =
     if (!sessionId) return;
 
     const source = new EventSource(
-      `/api/sessions/${sessionId}/live-updates?role=${role}`
+      `/api/sessions/${sessionId}/live-updates?role=${role}` +
+        (role === "teacher" ? `&pageId=${encodeURIComponent(pageIdRef.current)}` : "")
     );
 
     const handleLiveStatus = (event: MessageEvent) => {
@@ -1129,39 +1343,146 @@ const [classStudents, setClassStudents] =
 
 }, [joinInfo]);
 
-  // A teacher who closed the browser (or lost connection) without pressing
-  // "Stop Recording" leaves the server-side Jibri → YouTube recording
-  // running unattended. When they come back to this lecture, reconcile the
-  // UI against YouTube itself rather than trusting a possibly-stale
-  // YouTubeRecording row, so "Stop Recording" reappears only if the
-  // recording is confirmed still live on the channel.
-  useEffect(() => {
-    const lectureId = joinInfo?.lecture?.id;
+  // The Recording status on (re)opening the classroom is loaded by the
+  // departure-notices effect below, AFTER the notices (syncTeacherYouTubeState).
 
-    if (!joinInfo || role !== "teacher" || !lectureId) {
+  // Tab-close signal (teacher-departure-signal.ts): the class's teacher only.
+  // This page registers as the current page and sends a heartbeat while it
+  // lives; on a desktop browser, pagehide (not persisted) reports it closing.
+  // The server stops YouTube only if no classroom page / other tab shows up
+  // within its 15 s reload-confirmation window. Removed (and the heartbeat
+  // stopped) on leaving the classroom in-app.
+  useEffect(() => {
+    const sessionId = joinInfo?.session?.id;
+
+    if (!joinInfo || role !== "teacher" || !sessionId) {
+      return;
+    }
+
+    return installTeacherDepartureSignal({ sessionId, pageId: pageIdRef.current });
+  }, [joinInfo, role]);
+
+  // Teacher-departure stop (lib/teacher-departure-notices.ts): on the
+  // teacher's return to this session, what the server stopped while they were
+  // away (confirmed stops only) and what it could not confirm. Then, if
+  // nothing of the session is active, arm the controller to stop a Jibri
+  // stream left running in this conference (the server can't stop Jibri);
+  // it re-checks with the server before stopping and stops nothing unless
+  // Jitsi reports the stream on.
+  useEffect(() => {
+    const sessionId = joinInfo?.session?.id;
+
+    if (!joinInfo || role !== "teacher" || !sessionId) {
       return;
     }
 
     let cancelled = false;
+    const url = `/api/sessions/${sessionId}/teacher-departure`;
+
+    const loadNotices = async () => {
+      // This page asking is its activity (teacher-departure-signal.ts).
+      const response = await fetch(`${url}?pageId=${encodeURIComponent(pageIdRef.current)}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok || !body?.success) {
+        console.error("Teacher-departure notices request failed:", {
+          status: response.status,
+          error: body?.error ?? null,
+        });
+        return null;
+      }
+
+      const notices = parseDepartureNotices(body.data);
+
+      if (!notices) {
+        console.error("Teacher-departure notices response had an unexpected shape:", body.data);
+      }
+
+      return notices;
+    };
+
+    // Recording's state after a reload / return, read from YouTube (never a
+    // possibly stale row); null when it could not be checked.
+    const loadRecordingStatus = async () => {
+      const response = await fetch(
+        `/api/youtube/lecture/recording/status?lectureId=${encodeURIComponent(joinInfo.lecture?.id ?? "")}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json().catch(() => null);
+
+      return data?.success ? data.isRecording === true : null;
+    };
 
     (async () => {
       try {
-        const response = await fetch(
-          `/api/youtube/lecture/recording/status?lectureId=${lectureId}`
+        // Notices first (they process a departure not processed yet), then
+        // the Recording status: both features from the server, never a stale
+        // Recording restored after the departure ended it.
+        const notices = await syncTeacherYouTubeState({
+          loadNotices,
+          loadRecordingStatus,
+          controller: () => youtubeStreamRef.current,
+          cancelled: () => cancelled,
+          log: (...args) => console.error(...args),
+        });
+
+        if (cancelled || !notices) {
+          return;
+        }
+
+        const stopped = describeStoppedNotice(notices.stopped, (date) =>
+          date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
         );
 
-        const data = await response.json();
+        if (stopped) {
+          showDepartureStoppedToast(stopped.message, async () => {
+            try {
+              const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ recordingIds: stopped.recordingIds, liveIds: stopped.liveIds }),
+              });
 
-        // Restored as "active per the server"; Jibri's own events confirm
-        // (or end) it.
-        if (!cancelled && data.success) {
-          youtubeStreamRef.current?.serverReport("recording", data.isRecording === true);
+              return response.ok;
+            } catch {
+              return false;
+            }
+          });
+          announce(stopped.message);
+        }
+
+        const pending = describePendingNotice(notices.pending);
+
+        if (pending) {
+          showDeparturePendingToast(pending.message, pending.reauthRequired);
+          announce(pending.message);
+        }
+
+        // Shown after every load (a reload never hides it): why Recording /
+        // Live cannot start yet, and a way to check again.
+        const formatTime = (date: Date) => date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        const fence = describeShutdownFenceNotice(notices, formatTime);
+
+        if (fence) {
+          showShutdownFenceToast(fence.message, async () => {
+            const fresh = await loadNotices().catch(() => null);
+
+            if (!fresh || !fresh.shutdownFence) return undefined;
+
+            return describeShutdownFenceNotice(fresh, formatTime)?.message ?? null;
+          });
+          announce(fence.message);
+        }
+
+        if (canStopOrphanStream(notices)) {
+          youtubeStreamRef.current?.armOrphanStreamStop(async () => {
+            const fresh = await loadNotices();
+
+            return Boolean(fresh && canStopOrphanStream(fresh));
+          });
         }
       } catch (error) {
-        console.error(
-          "Failed to check existing YouTube recording status:",
-          error
-        );
+        console.error("Failed to load the teacher-departure notices:", error);
       }
     })();
 
@@ -1333,6 +1654,11 @@ const [classStudents, setClassStudents] =
 
     const code = outcome.data?.code ?? null;
 
+    // Still in the short wait after an unconfirmed Stop (the button shows it).
+    if (code === STOP_CHECKING_CODE) {
+      throw new Error("Checking with YouTube…");
+    }
+
     if (code === "YOUTUBE_REAUTH_REQUIRED") {
       setYoutubeReauthRequired(true);
     }
@@ -1380,40 +1706,27 @@ const [classStudents, setClassStudents] =
     router.push("/dashboard");
   };
 
-  // Capability check, not a device/user-agent check: document.fullscreenEnabled
-  // is false on real iPhone Safari (no Element.requestFullscreen() support for
-  // arbitrary elements there) and true everywhere the real API works, so this
-  // naturally covers "iPhone" without naming it.
-  const supportsElementFullscreen =
-    typeof document !== "undefined" && document.fullscreenEnabled === true;
-
+  // Both fullscreen buttons (desktop floating, mobile header). Capability
+  // check, not a device/user-agent check: real fullscreen wherever the
+  // browser allows it (Android Chrome then hides its address bar and system
+  // bars), the CSS fallback where it does not (iPhone Safari:
+  // document.fullscreenEnabled is false) or refuses. Called straight from the
+  // click, so the request keeps the user's gesture.
   const handleEnterFullscreen = async () => {
-    if (!supportsElementFullscreen) {
-      setIsCssFullscreenFallback(true);
-      return;
-    }
+    const mode = await enterClassroomFullscreen(
+      typeof document === "undefined" ? undefined : document,
+      () => jitsiMeetingRef.current?.requestFullscreen()
+    );
 
-    try {
-      await jitsiMeetingRef.current?.requestFullscreen();
-    } catch (error) {
-      console.error("Unable to enter fullscreen, using the CSS fallback instead:", error);
+    if (mode === "fallback") {
       setIsCssFullscreenFallback(true);
     }
-  };
-
-  // Mobile header button only: purely CSS/state — never calls
-  // Element.requestFullscreen() or touches document.fullscreenElement at all.
-  // Desktop keeps using handleEnterFullscreen (the real API) above, unchanged.
-  const handleEnterCssFullscreen = () => {
-    setIsCssFullscreenFallback(true);
   };
 
   const handleExitFullscreen = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch((error) => {
-        console.error("Unable to exit fullscreen:", error);
-      });
-    }
+    exitElementFullscreen(document).catch((error) => {
+      console.error("Unable to exit fullscreen:", error);
+    });
 
     setIsCssFullscreenFallback(false);
   };
@@ -1455,6 +1768,8 @@ const [classStudents, setClassStudents] =
         role={role}
         isRecording={isRecording}
         isLive={isLive}
+        isCheckingRecordingStop={youtubeStopChecking.includes("recording")}
+        isCheckingLiveStop={youtubeStopChecking.includes("live")}
         isStartingLive={isStartingLive}
         liveStartFailed={liveStartFailed}
         isConferenceReady={isConferenceReady}
@@ -1512,7 +1827,7 @@ const [classStudents, setClassStudents] =
 
         onEndSession={handleEndSessionForEveryone}
         isMobile={viewport.isTouchLayout}
-        onEnterFullscreen={handleEnterCssFullscreen}
+        onEnterFullscreen={() => void handleEnterFullscreen()}
       >
         <PermissionGate onReadyChange={setMeetingReady}>
           <JitsiMeeting
@@ -1843,10 +2158,9 @@ const [classStudents, setClassStudents] =
           (not document.documentElement) via the real Fullscreen API, so the
           header/right sidebar are hidden by the browser's native fullscreen
           rendering itself. Mobile/touch layouts use MeetingCard's own header
-          button instead (isMobile / onEnterFullscreen below), which never calls
-          the real API at all — see handleEnterCssFullscreen. The matching "Exit
-          fullscreen" button lives inside JitsiMeeting's wrapper and works for
-          both paths already. */}
+          button instead (isMobile / onEnterFullscreen above), which runs the
+          same handleEnterFullscreen. The matching "Exit fullscreen" button
+          lives inside JitsiMeeting's wrapper and works for both paths. */}
       {meetingReady && !isFullscreenActive && !viewport.isTouchLayout && (
         <button
           type="button"

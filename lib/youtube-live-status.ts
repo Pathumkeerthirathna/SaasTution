@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { getYouTubeLiveBroadcast } from "@/lib/youtube-live";
+import { type YouTubeLiveBroadcast } from "@/lib/youtube-live";
+import { clearCompleteRequested, findDepartureSendState, youTubeEndedCloseData } from "@/lib/youtube-feature-state";
+import { getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
 import { YouTubeBroadcastStatus } from "@prisma/client";
 
 /**
@@ -178,9 +180,11 @@ async function resolveCandidate(
     }
 
     let lifecycle: string | undefined;
+    let broadcast: YouTubeLiveBroadcast;
 
     try {
-        const broadcast = await getYouTubeLiveBroadcast(
+        // Status polling, coordinated with the other pollers (lib/youtube-status-cache.ts).
+        broadcast = await getPolledYouTubeBroadcast(
             refreshToken,
             candidate.broadcastId
         );
@@ -233,10 +237,26 @@ async function resolveCandidate(
             lifecycle === "complete"
                 ? YouTubeBroadcastStatus.COMPLETE
                 : YouTubeBroadcastStatus.REVOKED;
+        // Read before the protection is cleared: whether a `complete` we
+        // requested was still unconfirmed decides the reason (youTubeEndedCloseData).
+        const sendState = lifecycle === "complete" && candidate.status !== nextStatus
+            ? await findDepartureSendState("live", candidate.id)
+            : null;
+
+        // Ended on YouTube: the late-`complete` protection is cleared.
+        await clearCompleteRequested(candidate.broadcastId);
+
         if (candidate.status !== nextStatus) {
+            // A YouTube end is recorded as such, with YouTube's time
+            // (youTubeEndedCloseData).
             await prisma.youTubeLiveBroadcast.updateMany({
                 where: { id: candidate.id, endedAt: null },
-                data: { status: nextStatus, endedAt: now },
+                data: {
+                    status: nextStatus,
+                    ...(lifecycle === "complete"
+                        ? youTubeEndedCloseData(broadcast, now, sendState)
+                        : { endedAt: now }),
+                },
             });
         }
         return null;

@@ -43,6 +43,14 @@ type MeetingCardProps = {
   isRecording?: boolean;
   isLive?: boolean;
 
+  /**
+   * The short wait after a Stop YouTube did not confirm: that Stop shows
+   * "Checking with YouTube…" and is disabled until the wait ends (then it can
+   * be pressed again).
+   */
+  isCheckingRecordingStop?: boolean;
+  isCheckingLiveStop?: boolean;
+
   isStartingLive?: boolean;
   liveStartFailed?: boolean;
 
@@ -114,9 +122,9 @@ type MeetingCardProps = {
   isMobile?: boolean;
 
   /**
-   * Mobile only: called when the header fullscreen button is pressed. Expected
-   * to set the existing CSS/state fullscreen mode directly — never calls
-   * Element.requestFullscreen() itself.
+   * Mobile only: called (from the click) when the header fullscreen button is
+   * pressed. JitsiClassroom requests real fullscreen where the browser allows
+   * it and falls back to its CSS fullscreen mode otherwise.
    */
   onEnterFullscreen?: () => void;
 };
@@ -129,6 +137,8 @@ export default function MeetingCard({
   role,
   isRecording = false,
   isLive = false,
+  isCheckingRecordingStop = false,
+  isCheckingLiveStop = false,
   onStartRecording,
   onStopRecording,
   onStartLive,
@@ -407,16 +417,20 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleStopRecording}
-                  disabled={isYoutubeActionBusy}
+                  disabled={isYoutubeActionBusy || isCheckingRecordingStop}
                   title={breakoutHint}
                   className={HEADER_DESTRUCTIVE}
                 >
-                  {isStoppingRecording ? (
+                  {isStoppingRecording || isCheckingRecordingStop ? (
                     <Loader2 size={HEADER_ICON} className="animate-spin" />
                   ) : (
                     <CircleStop size={HEADER_ICON} />
                   )}
-                  {isStoppingRecording ? "Stopping Recording..." : "Stop Recording"}
+                  {isStoppingRecording
+                    ? "Stopping Recording..."
+                    : isCheckingRecordingStop
+                      ? "Checking with YouTube…"
+                      : "Stop Recording"}
                 </button>
               )}
 
@@ -448,11 +462,11 @@ export default function MeetingCard({
                 <button
                   type="button"
                   onClick={handleStopLive}
-                  disabled={isYoutubeActionBusy}
+                  disabled={isYoutubeActionBusy || isCheckingLiveStop}
                   title={breakoutHint}
                   className={HEADER_STOP_LIVE}
                 >
-                  {isStoppingLive ? (
+                  {isStoppingLive || isCheckingLiveStop ? (
                     <Loader2
                       size={HEADER_ICON}
                       className="animate-spin"
@@ -466,7 +480,9 @@ export default function MeetingCard({
 
                   {isStoppingLive
                     ? "Stopping Live..."
-                    : "Stop Live"}
+                    : isCheckingLiveStop
+                      ? "Checking with YouTube…"
+                      : "Stop Live"}
                 </button>
               )}
 
@@ -555,10 +571,9 @@ export default function MeetingCard({
 
           {/* FULLSCREEN — mobile only, both roles. Beside End Session for the
               teacher (it's the sibling immediately after that block); the only
-              content in this spot for the student. Sets the existing CSS/state
-              fullscreen mode directly (onEnterFullscreen) — never calls
-              Element.requestFullscreen() itself; the desktop floating button in
-              JitsiClassroom.tsx keeps using the real Fullscreen API, unchanged. */}
+              content in this spot for the student. onEnterFullscreen runs the
+              same handler as the desktop floating button in JitsiClassroom.tsx:
+              real fullscreen where allowed, the CSS fallback otherwise. */}
           {isMobile && (
             <button
               type="button"

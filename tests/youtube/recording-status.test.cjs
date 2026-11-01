@@ -78,6 +78,14 @@ const fakePrisma = {
         },
         // Conditional write: only a row still matching `where` changes.
         updateMany: async args => {
+            // The late-`complete` protection (per broadcast): kept apart.
+            if (args.where.broadcastId) {
+                db.markerUpdates.push(args);
+                const found = db.recordings.filter(row => row.broadcastId === args.where.broadcastId);
+                found.forEach(row => Object.assign(row, args.data));
+                return { count: found.length };
+            }
+
             db.recordingUpdates.push(args);
             const { id, status } = args.where;
             const found = db.recordings.filter(row => row.id === id &&
@@ -88,6 +96,14 @@ const fakePrisma = {
         update: async args => {
             db.recordingUpdates.push(args);
             return args.data;
+        }
+    },
+    // No Live in these tests: only the per-broadcast protection writes reach it.
+    youTubeLiveBroadcast: {
+        findFirst: async () => null,
+        updateMany: async args => {
+            db.markerUpdates.push(args);
+            return { count: 0 };
         }
     }
 };
@@ -125,12 +141,25 @@ function fake(relativePath, exports) {
 }
 
 fake("lib/prisma.ts", { prisma: fakePrisma });
+// The pre-start cleanup (lib/youtube-feature-lifecycle.ts): no leftover
+// broadcasts on this channel, so it lists none and never deletes.
+fakeYoutubeLive.SLCLASSROOM_BROADCAST_DESCRIPTION_PREFIX = "SLClassroom - ";
+fakeYoutubeLive.listUpcomingYouTubeLiveBroadcasts = async () => [];
+fakeYoutubeLive.deleteYouTubeLiveBroadcast = async () => {
+    throw new Error("unexpected broadcast deletion in this test");
+};
 fake("lib/youtube-live.ts", fakeYoutubeLive);
 fake("lib/session-events.ts", { emitLiveChange: () => {} });
 fake("lib/auth-session.ts", { requireTeacherSession: async () => session });
 
 const { YouTubeBroadcastStatus } = require("@prisma/client");
 const { checkYouTubeRecordingStatus } = require(path.join(root, "lib/youtube-lecture.ts"));
+const { youtubeTimeouts } = require(path.join(root, "lib/youtube-request.ts"));
+const { clearYouTubeStatusCache } = require(path.join(root, "lib/youtube-status-cache.ts"));
+
+// Each test sets YouTube's answer: no reuse of an earlier poll's answer
+// (tests/youtube/teacher-departure-timeouts.test.cjs tests the reuse).
+youtubeTimeouts.statusCacheMs = 0;
 const { GET } = require(path.join(root, "app/api/youtube/lecture/recording/status/route.ts"));
 
 // ---- Helpers --------------------------------------------------------------
@@ -140,6 +169,7 @@ function reset({ liveStreamId = "stream-1" } = {}) {
     db.lecture = { id: LECTURE_ID, status: 0, teacherId: TEACHER_ID };
     db.recordings = [];
     db.recordingUpdates = [];
+    db.markerUpdates = [];
     db.connectionUpdates = [];
     db.recordingQueries = [];
     youtube.calls = { getStream: 0, getBroadcast: 0, createStream: 0, other: 0 };
@@ -148,6 +178,7 @@ function reset({ liveStreamId = "stream-1" } = {}) {
     youtube.streamError = null;
     youtube.broadcastError = null;
     session = { teacherId: TEACHER_ID };
+    clearYouTubeStatusCache();
 }
 
 function addRecording(status, extra = {}) {

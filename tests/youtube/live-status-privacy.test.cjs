@@ -86,8 +86,13 @@ const fakePrisma = {
         findUnique: async ({ where }) =>
             where.id === SESSION
                 ? { id: SESSION, classId: CLASS, lectureId: LECTURE, class: { teacherId: TEACHER } }
-                : null
+                : null,
+        // Teacher presence (lib/teacher-presence.ts): not under test here.
+        updateMany: async () => ({ count: 0 })
     },
+    // Teacher-departure check from student connections: not under test here
+    // (tests/youtube/teacher-departure.test.cjs); no lecture means nothing to stop.
+    lecture: { findUnique: async () => null },
     student: {
         findFirst: async ({ where }) =>
             where.id === STUDENT && where.classes.some.classId === CLASS ? { id: STUDENT } : null
@@ -190,7 +195,14 @@ async function openLiveUpdates(roleParam) {
     let text = "";
 
     while (!text.includes("event: live-status")) {
-        const { value, done } = await reader.read();
+        // Bounded: a stream that never sends the event fails the test instead of hanging.
+        let timer;
+        const { value, done } = await Promise.race([
+            reader.read(),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`no live-status event within 10 s: ${JSON.stringify(text)}`)), 10_000);
+            })
+        ]).finally(() => clearTimeout(timer));
 
         if (done) break;
         text += decoder.decode(value);
