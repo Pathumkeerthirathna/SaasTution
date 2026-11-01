@@ -9,6 +9,7 @@ import {
   Mic,
   MicOff,
   BookOpenCheck,
+  UserRound,
   UserRoundX,
   Bell,
   X,
@@ -18,6 +19,7 @@ import {
 
 import type { ClassroomStudent, JitsiParticipant } from "../../types";
 import { splitClassRegister } from "../../class-register.mjs";
+import { liveParticipantForStudent, type StudentLocation } from "../../participant-identity.mjs";
 import StudentClassRegister from "./StudentClassRegister";
 import { ClassStudent } from "@prisma/client";
 import { ClassItem } from "@/components/class-management-panel";
@@ -32,10 +34,13 @@ type ParticipantsPanelProps = {
   onMuteEveryone?: () => void;
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
   /**
-   * Display name -> "Main room" / breakout room name, for people in a room other than
-   * the one this browser is in. They are in the class, so they must not show as absent.
+   * studentId -> where that class student is: this room (roomLabel null) or
+   * another room ("Main room" / a breakout room name; they are in the class, so
+   * they must not show as absent). Matched by participant ID, never by name.
    */
-  breakoutRoomLabels?: Record<string, string>;
+  studentLocations?: Map<string, StudentLocation>;
+  /** Teacher register only: live participants that are not a class student. */
+  otherParticipants?: JitsiParticipant[];
   /** Student register only: the viewing student. */
   currentStudentId?: string;
 };
@@ -47,7 +52,8 @@ export default function ParticipantsPanel({
   classId,
   onMuteEveryone,
   onMuteParticipant,
-  breakoutRoomLabels,
+  studentLocations,
+  otherParticipants,
   currentStudentId,
 }: ParticipantsPanelProps) {
 
@@ -79,7 +85,7 @@ export default function ParticipantsPanel({
 
 // Present / absent (shared with the student's register, class-register.mjs).
 // A student in another room (e.g. a breakout room) is still in the class.
-const register = splitClassRegister(ClassroomStudents, participants, breakoutRoomLabels);
+const register = splitClassRegister(ClassroomStudents, studentLocations);
 const elsewhereLabel = register.elsewhereLabel;
 
 const presentStudents = ClassroomStudents ? register.present : undefined;
@@ -89,11 +95,13 @@ const absentStudents = ClassroomStudents ? register.absent : undefined;
 console.log(presentStudents);
 console.log(absentStudents);
 
-  // Match a class student to their live Jitsi participant (by display name, the
-  // same key the present/absent split already uses) so we can show mic/camera
-  // state and let the teacher mute them.
-  const participantFor = (displayName: string) =>
-    participants.find((p) => p.displayName === displayName);
+  // Match a class student to their live Jitsi participant by the participant ID
+  // they registered (never by display name: names repeat and can change), so we
+  // can show mic/camera state and let the teacher mute exactly that student.
+  const participantFor = (studentId: string) =>
+    liveParticipantForStudent(studentId, studentLocations, participants);
+
+  const others = otherParticipants ?? [];
 
   const handleSendNotifyEmails = async () => {
     if (!classId || selectedAbsentIds.size === 0) {
@@ -156,10 +164,9 @@ console.log(absentStudents);
   if (role === "student") {
     return (
       <StudentClassRegister
-        participants={participants}
         students={ClassroomStudents}
         currentStudentId={currentStudentId}
-        breakoutRoomLabels={breakoutRoomLabels}
+        studentLocations={studentLocations}
       />
     );
   }
@@ -206,7 +213,7 @@ console.log(absentStudents);
             </div>
           ) : (
             presentStudents?.map((student) => {
-              const participant = participantFor(student.displayName);
+              const participant = participantFor(student.studentId);
               const audioMuted = participant?.status?.audioMuted ?? true;
               const videoMuted = participant?.status?.videoMuted ?? true;
 
@@ -228,9 +235,9 @@ console.log(absentStudents);
                     <span className="block truncate text-sm font-medium text-slate-900">
                       {student.displayName}
                     </span>
-                    {elsewhereLabel(student.displayName) ? (
+                    {elsewhereLabel(student.studentId) ? (
                       <span className="mt-0.5 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                        In {elsewhereLabel(student.displayName)}
+                        In {elsewhereLabel(student.studentId)}
                       </span>
                     ) : null}
                   </div>
@@ -276,6 +283,62 @@ console.log(absentStudents);
           )}
         </div>
       </div>
+
+
+      {/* OTHER PARTICIPANTS: live in this room but not matched to a class
+          student by participant ID (a co-host, or a student whose registration
+          has not arrived). Shown by their Jitsi name; never treated as a student. */}
+      {others.length > 0 ? (
+        <div className="flex shrink-0 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
+
+            <h3 className="text-sm font-semibold text-slate-900">
+              Other participants
+            </h3>
+
+            <span className="rounded-full bg-slate-100 px-1.5 text-xs font-semibold text-slate-600">
+              {others.length}
+            </span>
+          </div>
+
+          <div className="scrollbar-thin max-h-40 space-y-1.5 overflow-y-auto pr-1">
+            {others.map((other) => (
+              <div
+                key={other.participantId}
+                className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2"
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100">
+                  <UserRound size={14} className="text-slate-500" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-slate-700">
+                    {other.displayName || "Unnamed participant"}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] text-slate-400">
+                    Not matched to a class student
+                  </span>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {(other.status?.audioMuted ?? true) ? (
+                    <MicOff size={15} className="text-red-500" />
+                  ) : (
+                    <Mic size={15} className="text-emerald-600" />
+                  )}
+
+                  {(other.status?.videoMuted ?? true) ? (
+                    <CameraOff size={15} className="text-red-500" />
+                  ) : (
+                    <Camera size={15} className="text-emerald-600" />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
 
       {/* ABSENT */}

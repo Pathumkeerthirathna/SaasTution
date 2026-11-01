@@ -143,6 +143,7 @@ type JitsiMeetingProps = {
 
   onBreakoutRoomsUpdated?: (rooms: BreakoutRoom[]) => void;
   onRoomChanged?: (room: CurrentRoomInfo) => void;
+  onLocalDisplayNameChanged?: (name: string) => void;
   onBreakoutSupportChanged?: (supported: boolean) => void;
 
   /** Teacher only: Previous / Next pressed in the Tiles view inside the iframe. */
@@ -183,6 +184,7 @@ const JitsiMeeting = forwardRef<
     onModeratorStatusChanged,
     onBreakoutRoomsUpdated,
     onRoomChanged,
+    onLocalDisplayNameChanged,
     onBreakoutSupportChanged,
     onTeacherTilesNav,
     onTeacherTilesSettings,
@@ -309,6 +311,14 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setTeacherView(enabled);
       },
 
+      setLocalDisplayName: (name: string) =>
+        controlsRef.current?.setLocalDisplayName(name) ??
+        Promise.reject(new Error("The classroom is not connected yet.")),
+
+      setStudentNames: (names: ReadonlyMap<string, string>) => {
+        controlsRef.current?.setStudentNames(names);
+      },
+
       setTeacherTiles: (state: TeacherTilesState) => {
         controlsRef.current?.setTeacherTiles(state);
       },
@@ -323,6 +333,23 @@ const JitsiMeeting = forwardRef<
 
       setVideoTelemetry: (enabled: boolean) => {
         controlsRef.current?.setVideoTelemetry(enabled);
+      },
+
+      getLocalParticipantId: () =>
+        controlsRef.current?.getLocalParticipantId() ?? null,
+
+      getOwnParticipantIds: () =>
+        controlsRef.current?.getOwnParticipantIds() ?? new Set<string>(),
+
+      ensureParticipantRegistered: (mappedParticipantId: string | undefined) => {
+        controlsRef.current?.ensureParticipantRegistered(mappedParticipantId);
+      },
+
+      syncParticipantDisplayName: (
+        mappedParticipantId: string | undefined,
+        mappedDisplayName: string | undefined
+      ) => {
+        controlsRef.current?.syncParticipantDisplayName(mappedParticipantId, mappedDisplayName);
       },
 
       // navigationUI "hide": as much screen as the browser allows (Android
@@ -383,6 +410,7 @@ const JitsiMeeting = forwardRef<
     onModeratorStatusChanged,
     onBreakoutRoomsUpdated,
     onRoomChanged,
+    onLocalDisplayNameChanged,
     onBreakoutSupportChanged,
     onTeacherTilesNav,
     onTeacherTilesSettings,

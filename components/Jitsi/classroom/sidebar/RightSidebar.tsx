@@ -31,6 +31,7 @@ import StudentNotesPanel from "../student/StudentNotesPanel";
 import StudentAssignmentsPanel from "../student/StudentAssignmentsPanel";
 import StudentQuizzesPanel from "../student/StudentQuizzesPanel";
 import { ChatMessage, ClassroomStudent, JitsiParticipant, UserRole } from "../../types";
+import type { StudentLocation } from "../../participant-identity.mjs";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
@@ -46,8 +47,17 @@ const SHOW_CAMERA_MONITORING_TAB = false;
 type RightSidebarProps = {
   /** Breakout-room state + actions (the panel is hidden when this is not provided). */
   breakout?: BreakoutController;
-  /** Participant display name -> "Main room" / breakout room name, for the register and attendance. */
-  breakoutRoomLabels?: Record<string, string>;
+  /** Breakout panel: participant ID -> registered name of the class student using it. */
+  breakoutStudentNames?: ReadonlyMap<string, string>;
+  /** Breakout panel: participant ID -> current Jitsi display name (display only). */
+  breakoutDisplayNames?: ReadonlyMap<string, string>;
+  /**
+   * studentId -> where that class student is in the live session (by participant
+   * ID, never display name), for the registers and the attendance panel.
+   */
+  studentLocations?: Map<string, StudentLocation>;
+  /** Teacher register: live participants that are not a class student. */
+  otherParticipants?: JitsiParticipant[];
   /** Reports whether a slide-out panel is open (used to keep the rail visible in fullscreen). */
   onPanelOpenChange?: (open: boolean) => void;
   /** Jitsi fullscreen (real or the CSS fallback) is on: a maximized whiteboard is restored. */
@@ -59,7 +69,6 @@ type RightSidebarProps = {
   className : String;
   lectureId? : string | null;
   lectureTitle? : string;
-  teacherName : string;
   role : UserRole;
   participants: JitsiParticipant[];
   ClassroomStudents?: ClassroomStudent[];
@@ -479,7 +488,8 @@ export default function RightSidebar(props: RightSidebarProps) {
               classId={props.classId}
               onMuteEveryone={props.onMuteEveryone}
               onMuteParticipant={props.onMuteParticipant}
-              breakoutRoomLabels={props.breakoutRoomLabels}
+              studentLocations={props.studentLocations}
+              otherParticipants={props.otherParticipants}
               currentStudentId={props.currentStudentId}
             />
           )}
@@ -491,15 +501,15 @@ export default function RightSidebar(props: RightSidebarProps) {
           {isAttendancePanel && (
             <AttendancePanel
               classId={props.classId}
-              participants={props.participants}
-              breakoutRoomLabels={props.breakoutRoomLabels}
+              studentLocations={props.studentLocations}
             />
           )}
 
           {isBreakoutPanel && props.breakout && (
             <BreakoutRoomsPanel
               controller={props.breakout}
-              teacherName={props.teacherName}
+              studentNameByParticipantId={props.breakoutStudentNames}
+              displayNameByParticipantId={props.breakoutDisplayNames}
             />
           )}
 

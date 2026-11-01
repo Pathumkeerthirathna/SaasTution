@@ -15,12 +15,23 @@ import {
 } from "lucide-react";
 
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
-import type { BreakoutRoom } from "../../types";
+import { studentDisplayLabel } from "../../participant-identity.mjs";
+import type { BreakoutParticipant, BreakoutRoom } from "../../types";
 
 type BreakoutRoomsPanelProps = {
   controller: BreakoutController;
-  /** The teacher's Jitsi display name; the teacher is never listed as a student. */
-  teacherName: string;
+  /**
+   * Teacher view: participant ID -> registered (roster) name of the class student
+   * using it (participant map). Room occupants not in it are "Other participants".
+   * Display names are never used to decide who is a student.
+   */
+  studentNameByParticipantId?: ReadonlyMap<string, string>;
+  /**
+   * Teacher view: participant ID -> current Jitsi display name (live, reported by
+   * the student, or from the rooms list). Labels only; it never decides who is
+   * a student. Falls back to the rooms list entry's name.
+   */
+  displayNameByParticipantId?: ReadonlyMap<string, string>;
 };
 
 const primaryButton =
@@ -85,21 +96,49 @@ function MoveSelect({
   );
 }
 
-function TeacherView({ controller, teacherName }: BreakoutRoomsPanelProps) {
+function TeacherView({ controller, studentNameByParticipantId, displayNameByParticipantId }: BreakoutRoomsPanelProps) {
   const [name, setName] = useState("");
 
   const { supported, mainRoom, breakoutRooms, rooms, currentRoom, busy, isInBreakout } = controller;
   const working = busy !== null;
-  const students = (room: BreakoutRoom) => room.participants.filter((p) => p.displayName !== teacherName);
-  const studentsInMain = mainRoom ? students(mainRoom) : [];
+  // Everyone in a room except this browser (by its own participant IDs).
+  const occupantsOf = (room: BreakoutRoom) => controller.occupants(room);
+  const studentNameOf = (person: BreakoutParticipant) =>
+    person.participantId ? studentNameByParticipantId?.get(person.participantId) : undefined;
+  const jitsiNameOf = (person: BreakoutParticipant) =>
+    (person.participantId ? displayNameByParticipantId?.get(person.participantId) : undefined) ??
+    person.displayName;
+  // A class student: "<Jitsi name> (<registered name>)" when they differ.
+  const studentLabelOf = (person: BreakoutParticipant) =>
+    studentDisplayLabel(studentNameOf(person) ?? "", jitsiNameOf(person));
+  const occupantsInMain = mainRoom ? occupantsOf(mainRoom) : [];
 
   const submitCreate = () => {
     controller.createRoom(name);
     setName("");
   };
 
+  const personRow = (room: BreakoutRoom, person: BreakoutParticipant, label: string) => (
+    <li
+      key={person.occupantJid}
+      className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2.5 py-1.5"
+    >
+      <span className="min-w-0 flex-1 truncate text-[13px] text-slate-800">{label}</span>
+      {person.jid ? (
+        <MoveSelect
+          room={room}
+          targets={rooms}
+          jid={person.jid}
+          onMove={controller.moveParticipant}
+        />
+      ) : null}
+    </li>
+  );
+
   const roomCard = (room: BreakoutRoom) => {
-    const people = students(room);
+    const people = occupantsOf(room);
+    const students = people.filter((person) => studentNameOf(person) !== undefined);
+    const others = people.filter((person) => studentNameOf(person) === undefined);
     const teacherHere = currentRoom?.roomName === room.id;
 
     return (
@@ -110,7 +149,8 @@ function TeacherView({ controller, teacherName }: BreakoutRoomsPanelProps) {
               {room.isMainRoom ? "Main room" : room.name || "Breakout room"}
             </p>
             <p className="text-[11px] text-slate-500">
-              {people.length} student{people.length === 1 ? "" : "s"}
+              {students.length} student{students.length === 1 ? "" : "s"}
+              {others.length > 0 ? ` · ${others.length} other` : ""}
               {teacherHere ? " · you are here" : ""}
             </p>
           </div>
@@ -152,22 +192,24 @@ function TeacherView({ controller, teacherName }: BreakoutRoomsPanelProps) {
             {room.isMainRoom ? "No students here." : "Empty"}
           </p>
         ) : (
-          <ul className="mt-2 space-y-1">
-            {people.map((person) => (
-              <li
-                key={person.jid}
-                className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2.5 py-1.5"
-              >
-                <span className="min-w-0 flex-1 truncate text-[13px] text-slate-800">{person.displayName}</span>
-                <MoveSelect
-                  room={room}
-                  targets={rooms}
-                  jid={person.jid}
-                  onMove={controller.moveParticipant}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            {students.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {students.map((person) => personRow(room, person, studentLabelOf(person)))}
+              </ul>
+            ) : null}
+
+            {/* Not matched to a class student by participant ID: shown by their
+                Jitsi name, still counted and still movable. */}
+            {others.length > 0 ? (
+              <>
+                <p className="mt-2 text-[11px] font-semibold text-slate-500">Other participants</p>
+                <ul className="mt-1 space-y-1">
+                  {others.map((person) => personRow(room, person, jitsiNameOf(person) || "Unnamed participant"))}
+                </ul>
+              </>
+            ) : null}
+          </>
         )}
       </div>
     );
@@ -216,7 +258,7 @@ function TeacherView({ controller, teacherName }: BreakoutRoomsPanelProps) {
         <button
           type="button"
           onClick={controller.autoAssign}
-          disabled={!supported || working || breakoutRooms.length === 0 || studentsInMain.length === 0}
+          disabled={!supported || working || breakoutRooms.length === 0 || occupantsInMain.length === 0}
           title="Spread the students in the main room evenly across the rooms"
           className={secondaryButton}
         >
@@ -364,11 +406,19 @@ function StudentView({ controller }: { controller: BreakoutController }) {
   );
 }
 
-export default function BreakoutRoomsPanel({ controller, teacherName }: BreakoutRoomsPanelProps) {
+export default function BreakoutRoomsPanel({
+  controller,
+  studentNameByParticipantId,
+  displayNameByParticipantId,
+}: BreakoutRoomsPanelProps) {
   return (
     <div className="scrollbar-thin h-full overflow-y-auto pr-1 text-slate-900">
       {controller.role === "teacher" ? (
-        <TeacherView controller={controller} teacherName={teacherName} />
+        <TeacherView
+          controller={controller}
+          studentNameByParticipantId={studentNameByParticipantId}
+          displayNameByParticipantId={displayNameByParticipantId}
+        />
       ) : (
         <StudentView controller={controller} />
       )}

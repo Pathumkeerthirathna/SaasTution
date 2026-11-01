@@ -47,6 +47,16 @@ import {
 } from "../video-telemetry.mjs";
 
 import type { TeacherTilesState } from "./useTeacherTiles";
+import {
+  createParticipantRegistration,
+  type ParticipantRegistration,
+} from "../participant-registration";
+import {
+  createDisplayNameChanger,
+  createDisplayNameReporter,
+  type DisplayNameChanger,
+  type DisplayNameReporter,
+} from "../participant-display-name";
 import { toYouTubeStreamStatus } from "../youtube-jibri";
 import { fetchStagePhoto, toStageTeacher } from "../stage-teacher.mjs";
 
@@ -81,6 +91,39 @@ export type JitsiControls = BreakoutControls & {
 
   /** Send a chat message to everyone in the meeting (Jitsi group chat). */
   sendChatMessage: (message: string) => void;
+
+  /** This browser's current Jitsi participant ID (null before the first join). */
+  getLocalParticipantId: () => string | null;
+
+  /** Every participant ID this page has had (its own entries only; never a student). */
+  getOwnParticipantIds: () => ReadonlySet<string>;
+
+  /**
+   * Student only: self-repair. `mappedParticipantId` is this student's entry
+   * in the latest participant map; registers again when it is missing or one
+   * of this browser's older IDs.
+   */
+  ensureParticipantRegistered: (mappedParticipantId: string | undefined) => void;
+
+  /**
+   * Student only: this student's entry in the latest participant map (ID and
+   * the display name the server has for it). Reports the current Jitsi display
+   * name when the server's differs (display only). See participant-display-name.ts.
+   */
+  syncParticipantDisplayName: (
+    mappedParticipantId: string | undefined,
+    mappedDisplayName: string | undefined
+  ) => void;
+
+  /**
+   * Student only: changes this student's OWN Jitsi display name, with Jitsi's
+   * own command (`executeCommand("displayName", name)`, what Jitsi's profile
+   * settings use). Resolves with the name once Jitsi confirms it
+   * (`displayNameChange` for the local participant); rejects with a message
+   * for the person when the name is not valid, a change is already pending,
+   * or Jitsi does not confirm it. Display only, never identity.
+   */
+  setLocalDisplayName: (name: string) => Promise<string>;
 
   /**
    * Teacher only: sets the send (and receive) video resolution, in pixels of
@@ -124,6 +167,14 @@ export type JitsiControls = BreakoutControls & {
    * effect unless the app is built with NEXT_PUBLIC_SL_TEACHER_FILMSTRIP=true.
    */
   setTeacherView: (enabled: boolean) => void;
+
+  /**
+   * Teacher only: participant ID -> registered (roster) name of the class
+   * student using it, from the authorized participant map, for the teacher
+   * view's tiles in the teacher's own Jitsi iframe (custom.js,
+   * SL_STUDENT_NAMES). Display only; the full list replaces the previous one.
+   */
+  setStudentNames: (names: ReadonlyMap<string, string>) => void;
 
   /**
    * Teacher only: the Normal mode view's layout (List / Tiles) and, for Tiles,
@@ -308,6 +359,28 @@ type ReceiveSetMessage = {
   enabled: boolean;
   participantIds: string[];
 };
+
+/**
+ * Teacher page -> its own Jitsi iframe (handled by custom.js): the registered
+ * names of the class students in the session, by participant ID, so the
+ * teacher view's tiles can show them under the live Jitsi name. Display only.
+ */
+type StudentNamesMessage = {
+  type: "SL_STUDENT_NAMES";
+  v: 1;
+  /** Own counter: increases on every change. */
+  epoch: number;
+  /** [participantId, registeredName]; the whole list every time. */
+  names: [string, string][];
+};
+
+/** SL_STUDENT_NAMES limits (custom.js refuses anything larger). */
+const SL_STUDENT_NAMES_MAX = 500;
+const SL_STUDENT_NAME_MAX_LENGTH = 200;
+const SL_STUDENT_NAMES_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
+
+/** How long a student's own name change waits for Jitsi's displayNameChange. */
+const DISPLAY_NAME_CONFIRM_MS = 8000;
 
 /** Display-only message for the teacher's monitoring grid (handled by custom.js). */
 type MonitorViewMessage = {
@@ -587,6 +660,9 @@ type UseJitsiProps = {
   /** Fired each time this browser enters a room (main or breakout). */
   onRoomChanged?: (room: CurrentRoomInfo) => void;
 
+  /** This browser's own current Jitsi display name (on join, then on every confirmed change). */
+  onLocalDisplayNameChanged?: (name: string) => void;
+
   /** Tells whether the installed Jitsi build supports the breakout-room commands. */
   onBreakoutSupportChanged?: (supported: boolean) => void;
 
@@ -632,6 +708,7 @@ export default function useJitsi({
   onModeratorStatusChanged,
   onBreakoutRoomsUpdated,
   onRoomChanged,
+  onLocalDisplayNameChanged,
   onBreakoutSupportChanged,
   onTeacherTilesNav,
   onTeacherTilesSettings,
@@ -657,6 +734,67 @@ export default function useJitsi({
   // Set from `videoConferenceJoined` so `participantRoleChanged` events can
   // be matched against the local participant.
   const localParticipantIdRef = useRef<string | null>(null);
+
+  // Every participant ID this page has had (one per conference join: first
+  // join, reconnect, breakout switch). Only ever used to recognise THIS
+  // browser's own entries, never to resolve anyone to a student.
+  const ownParticipantIdsRef = useRef<Set<string>>(new Set());
+
+  // Jitsi's real moderator status of the local participant
+  // (`participantRoleChanged`), never derived from a display name.
+  const localIsModeratorRef = useRef(false);
+
+  const sessionIdRef = useRef(joinInfo.session.id);
+  sessionIdRef.current = joinInfo.session.id;
+
+  // Student -> participant ID registration with its safeguards (stale-retry
+  // guard, backoff, self-repair). See participant-registration.ts.
+  const registrationRef = useRef<ParticipantRegistration | null>(null);
+
+  if (!registrationRef.current) {
+    registrationRef.current = createParticipantRegistration({
+      getSessionId: () => sessionIdRef.current,
+      getLocalParticipantId: () => localParticipantIdRef.current,
+      getOwnParticipantIds: () => ownParticipantIdsRef.current,
+    });
+  }
+
+  // This browser's current Jitsi display name (conference join, then
+  // `displayNameChange`). Display only.
+  const localDisplayNameRef = useRef<string | null>(null);
+
+  // Student -> its current display name, for the teacher's view of rooms the
+  // teacher is not in. See participant-display-name.ts.
+  const displayNameReporterRef = useRef<DisplayNameReporter | null>(null);
+
+  if (!displayNameReporterRef.current) {
+    displayNameReporterRef.current = createDisplayNameReporter({
+      getSessionId: () => sessionIdRef.current,
+      getLocalParticipantId: () => localParticipantIdRef.current,
+      getLocalDisplayName: () => localDisplayNameRef.current,
+    });
+  }
+
+  // The student's own name change, with Jitsi's own command, confirmed by
+  // Jitsi's displayNameChange (one at a time). See participant-display-name.ts.
+  const displayNameChangerRef = useRef<DisplayNameChanger | null>(null);
+
+  if (!displayNameChangerRef.current) {
+    displayNameChangerRef.current = createDisplayNameChanger({
+      getApi: () => apiRef.current,
+      getCurrentName: () => localDisplayNameRef.current,
+      timeoutMs: DISPLAY_NAME_CONFIRM_MS,
+    });
+  }
+
+  useEffect(
+    () => () => {
+      registrationRef.current?.cancelRetry();
+      displayNameReporterRef.current?.cancelRetry();
+      displayNameChangerRef.current?.cancel("The classroom was closed.");
+    },
+    []
+  );
 
   // Kept in refs so the (deps: []) imperative handle and the Jitsi listeners
   // always call the latest callback / see the latest local display name.
@@ -692,6 +830,9 @@ export default function useJitsi({
 
   const onRoomChangedRef = useRef(onRoomChanged);
   onRoomChangedRef.current = onRoomChanged;
+
+  const onLocalDisplayNameChangedRef = useRef(onLocalDisplayNameChanged);
+  onLocalDisplayNameChangedRef.current = onLocalDisplayNameChanged;
 
   const onBreakoutSupportChangedRef = useRef(onBreakoutSupportChanged);
   onBreakoutSupportChangedRef.current = onBreakoutSupportChanged;
@@ -964,6 +1105,28 @@ export default function useJitsi({
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
+  // Registered student names for the teacher view's tiles: kept and resent on
+  // SL_RECEIVE_READY, like the teacher view. Teacher only.
+  const studentNamesEpochRef = useRef(0);
+  const studentNamesRef = useRef<StudentNamesMessage | null>(null);
+
+  const postStudentNames = () => {
+    const message = studentNamesRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
   // Teacher Tiles view: kept and resent on SL_RECEIVE_READY, like the teacher
   // view. Only sent once the page has set it (after the join).
   const teacherTilesEpochRef = useRef(0);
@@ -1213,6 +1376,27 @@ export default function useJitsi({
         apiRef.current.executeCommand("muteEveryone", "audio");
       },
 
+      getLocalParticipantId: () => localParticipantIdRef.current,
+
+      getOwnParticipantIds: () => ownParticipantIdsRef.current,
+
+      ensureParticipantRegistered: (mappedParticipantId) => {
+        if (roleRef.current === "student") {
+          registrationRef.current?.ensure(mappedParticipantId);
+        }
+      },
+
+      syncParticipantDisplayName: (mappedParticipantId, mappedDisplayName) => {
+        if (roleRef.current === "student") {
+          displayNameReporterRef.current?.sync(mappedParticipantId, mappedDisplayName);
+        }
+      },
+
+      setLocalDisplayName: (name) =>
+        roleRef.current === "student" && displayNameChangerRef.current
+          ? displayNameChangerRef.current.change(name)
+          : Promise.reject(new Error("Only a student can change their name here.")),
+
       setParticipantAudioMuted: (participantId, muted) => {
         if (!apiRef.current) {
           console.warn("Jitsi API is not ready");
@@ -1338,6 +1522,44 @@ export default function useJitsi({
         postTeacherView();
       },
 
+      setStudentNames: (names) => {
+        if (roleRef.current !== "teacher") {
+          return;
+        }
+
+        const entries: [string, string][] = [];
+
+        names.forEach((name, participantId) => {
+          const registered = name.trim().slice(0, SL_STUDENT_NAME_MAX_LENGTH);
+
+          if (
+            entries.length < SL_STUDENT_NAMES_MAX &&
+            SL_STUDENT_NAMES_ID_PATTERN.test(participantId) &&
+            registered.length > 0
+          ) {
+            entries.push([participantId, registered]);
+          }
+        });
+
+        // Unchanged (e.g. a map update that only changed a display name).
+        if (
+          studentNamesRef.current &&
+          JSON.stringify(studentNamesRef.current.names) === JSON.stringify(entries)
+        ) {
+          return;
+        }
+
+        studentNamesEpochRef.current += 1;
+        studentNamesRef.current = {
+          type: "SL_STUDENT_NAMES",
+          v: 1,
+          epoch: studentNamesEpochRef.current,
+          names: entries,
+        };
+
+        postStudentNames();
+      },
+
       setTeacherTiles: (state) => {
         if (roleRef.current !== "teacher") {
           return;
@@ -1435,6 +1657,7 @@ export default function useJitsi({
         postStageView();
         postDeviceStatusView();
         postTeacherView();
+        postStudentNames();
         postTeacherTiles();
         postTeachingMode();
         postTeacherBitrate();
@@ -1797,49 +2020,6 @@ export default function useJitsi({
 
     // };
 
-    /*
-     * ============================================================
-     * STUDENT -> PARTICIPANT ID REGISTRATION
-     * ============================================================
-     * Lets the teacher address this student by application student ID
-     * instead of by display name. Only the ID is sent; camera and mic are
-     * not touched.
-     */
-
-    const registerParticipantId = async (participantId: string) => {
-      const url = `/api/sessions/${joinInfo.session.id}/participant-map`;
-
-      for (let attempt = 1; attempt <= 2; attempt += 1) {
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ participantId }),
-          });
-
-          if (response.ok) {
-            return;
-          }
-
-          // 4xx (not enrolled, conflict, bad ID) will not get better on retry.
-          if (response.status < 500) {
-            console.warn(
-              "Participant ID registration rejected:",
-              response.status,
-              await response.text()
-            );
-            return;
-          }
-        } catch (error) {
-          console.warn("Participant ID registration failed:", error);
-        }
-
-        if (attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
-      }
-    };
-
     const updateParticipants = () => {
 
         const participants = api.getParticipantsInfo();
@@ -1864,8 +2044,12 @@ export default function useJitsi({
             displayName: participant.displayName,
             avatarURL: undefined,
 
+            // Only the local participant's role is known (Jitsi's own
+            // `participantRoleChanged`). Never derived from a display name, and
+            // never used for identity or authorization.
             role:
-                participant.displayName === teacherName
+                participant.participantId === localParticipantIdRef.current &&
+                localIsModeratorRef.current
                 ? "moderator"
                 : "participant",
 
@@ -1926,6 +2110,38 @@ export default function useJitsi({
     };
 
 
+    /*
+     * ============================================================
+     * DISPLAY NAME CHANGED
+     * ============================================================
+     * Anyone in this conference renamed (Jitsi `displayNameChange`
+     * { id, displayname }). Display only: the participant list is
+     * re-read so names stay current; identity is the participant ID.
+     * A student also reports its own new name (participant-display-name.ts)
+     * so the teacher sees it from any room.
+     */
+
+    const handleDisplayNameChange = (event: unknown) => {
+      const data = event as { id?: unknown; displayname?: unknown } | undefined;
+
+      if (
+        typeof data?.id === "string" &&
+        data.id === localParticipantIdRef.current &&
+        typeof data.displayname === "string"
+      ) {
+        localDisplayNameRef.current = data.displayname;
+        onLocalDisplayNameChangedRef.current?.(data.displayname);
+        displayNameChangerRef.current?.confirmed(data.displayname);
+
+        if (roleRef.current === "student") {
+          displayNameReporterRef.current?.nameChanged();
+        }
+      }
+
+      updateParticipants();
+    };
+
+
   
 
 
@@ -1943,20 +2159,26 @@ export default function useJitsi({
       );
 
       const data = event as
-        | { id?: string; roomName?: string; breakoutRoom?: boolean }
+        | { id?: string; roomName?: string; breakoutRoom?: boolean; displayName?: string }
         | undefined;
 
       // Any "joined" means the earlier "left" (if there was one) was a room switch.
       cancelPendingLeave();
 
+      if (typeof data?.displayName === "string") {
+        localDisplayNameRef.current = data.displayName;
+        onLocalDisplayNameChangedRef.current?.(data.displayName);
+      }
+
       if (data?.id) {
         localParticipantIdRef.current = data.id;
+        ownParticipantIdsRef.current.add(data.id);
 
         // Every join (first join, reconnect, breakout-room switch) can come with
         // a new participant ID, so the student re-registers it each time. The
         // server takes the student from the login session, not from this body.
         if (role === "student") {
-          void registerParticipantId(data.id);
+          registrationRef.current?.start(data.id);
         }
       }
 
@@ -2084,6 +2306,8 @@ export default function useJitsi({
       if (!data?.id || data.id !== localParticipantIdRef.current) {
         return;
       }
+
+      localIsModeratorRef.current = data.role === "moderator";
 
       onModeratorStatusChangedRef.current?.(
         data.role === "moderator"
@@ -2271,6 +2495,11 @@ export default function useJitsi({
     );
 
     api.addListener(
+      "displayNameChange",
+      handleDisplayNameChange
+    );
+
+    api.addListener(
       "participantMuted",
       handleParticipantMuted
     );
@@ -2360,6 +2589,11 @@ export default function useJitsi({
       api.removeListener(
         "participantLeft",
         handleParticipantLeft
+      );
+
+      api.removeListener(
+        "displayNameChange",
+        handleDisplayNameChange
       );
 
       api.removeListener(

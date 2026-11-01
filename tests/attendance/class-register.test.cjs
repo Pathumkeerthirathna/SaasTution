@@ -214,26 +214,41 @@ test("register: not a student (e.g. a teacher login) is refused (401)", async ()
 
 // ---- Present / absent split (shared by both registers) ---------------------
 
-test("split: present / absent lists, counts and live updates", async () => {
-    const { splitClassRegister } = await import(pathToFileURL(path.join(root, "components/Jitsi/class-register.mjs")).href);
+const loadSplit = async () => ({
+    ...(await import(pathToFileURL(path.join(root, "components/Jitsi/class-register.mjs")).href)),
+    ...(await import(pathToFileURL(path.join(root, "components/Jitsi/participant-identity.mjs")).href))
+});
+
+test("split: present / absent lists, counts and live updates (by participant ID)", async () => {
+    const { splitClassRegister, resolveClassroomIdentity } = await loadSplit();
     const roster = [
         { studentId: ME, displayName: "Nimal" },
         { studentId: AMAL, displayName: "Amal" },
         { studentId: BIMAL, displayName: "Bimal" }
     ];
+    const split = (participantMap, participants, roomLabelByParticipantId) =>
+        splitClassRegister(roster, resolveClassroomIdentity({ students: roster, participantMap, participants, roomLabelByParticipantId, ownParticipantIds: ["teach001"] }).locations);
 
-    let register = splitClassRegister(roster, [{ displayName: "Nimal" }, { displayName: "Teacher (Teacher)" }]);
+    let register = split({ [ME]: "nima0001" }, [{ participantId: "nima0001", displayName: "Nimal" }, { participantId: "teach001", displayName: "Teacher (Teacher)" }]);
 
     assert.deepEqual(register.present.map(s => s.displayName), ["Nimal"]);
     assert.deepEqual(register.absent.map(s => s.displayName), ["Amal", "Bimal"]);
 
     // Amal joins; Bimal is in a breakout room (still in the class).
-    register = splitClassRegister(roster, [{ displayName: "Nimal" }, { displayName: "Amal" }], { Bimal: "Room 1" });
+    register = split(
+        { [ME]: "nima0001", [AMAL]: "amal0001", [BIMAL]: "bima0001" },
+        [{ participantId: "nima0001", displayName: "Nimal" }, { participantId: "amal0001", displayName: "Amal" }],
+        { bima0001: "Room 1" }
+    );
 
     assert.equal(register.present.length, 3);
     assert.equal(register.absent.length, 0);
-    assert.equal(register.elsewhereLabel("Bimal"), "Room 1");
-    assert.equal(register.elsewhereLabel("Amal"), undefined, "here, not elsewhere");
+    assert.equal(register.elsewhereLabel(BIMAL), "Room 1");
+    assert.equal(register.elsewhereLabel(AMAL), undefined, "here, not elsewhere");
+
+    // A live participant named "Bimal" who is not Bimal's registered ID is not Bimal.
+    register = split({ [BIMAL]: "bima0001" }, [{ participantId: "xxxx0001", displayName: "Bimal" }]);
+    assert.deepEqual(register.present, []);
 
     // Empty / missing inputs.
     const empty = splitClassRegister(undefined, undefined);
@@ -318,8 +333,13 @@ test("teacher register and routes unchanged: teacher-only, own endpoints", () =>
     }
 });
 
-test("teacher register: the shared split gives exactly the original result", async () => {
-    const { splitClassRegister } = await import(pathToFileURL(path.join(root, "components/Jitsi/class-register.mjs")).href);
+// The register used to match students by display name. It now matches by
+// participant ID (participant-identity.mjs). Wherever the name match was
+// correct (unique names, every student registered), the result must be
+// exactly the original; where it was wrong (duplicate names, renames, a
+// stranger using a student's name), it must now be right.
+test("teacher register: with unique names and registered students, the ID split gives exactly the original result", async () => {
+    const { splitClassRegister, resolveClassroomIdentity } = await loadSplit();
 
     // The teacher panel's original code (before the shared helper), verbatim logic.
     function originalSplit(ClassroomStudents, participants, breakoutRoomLabels) {
@@ -337,24 +357,53 @@ test("teacher register: the shared split gives exactly the original result", asy
         return { presentStudents, absentStudents, elsewhereLabel };
     }
 
-    const names = ["Amal", "Bimal", "Chamal", "Dimal", "Teacher (Teacher)", "Amal"];
+    // Unique names (a student may be named like the teacher). Each person has
+    // one participant ID, and every roster student registered it.
+    const names = ["Amal", "Bimal", "Chamal", "Dimal", "Teacher (Teacher)"];
+    const idOf = name => "part000" + names.indexOf(name);
     let seed = 7;
     const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
 
     for (let round = 0; round < 300; round++) {
         const roster = names.filter(() => random() < 0.7).map((displayName, i) => ({ studentId: "s" + i, displayName }));
-        const live = names.filter(() => random() < 0.5).map(displayName => ({ displayName }));
+        const live = names.filter(() => random() < 0.5).map(displayName => ({ participantId: idOf(displayName), displayName }));
         const labels = {};
 
         names.forEach(name => {
             if (random() < 0.3) labels[name] = random() < 0.2 ? "" : "Room " + Math.floor(random() * 3);
         });
 
+        const participantMap = Object.fromEntries(roster.map(student => [student.studentId, idOf(student.displayName)]));
+        const labelsById = Object.fromEntries(Object.entries(labels).map(([name, label]) => [idOf(name), label]));
+        const { locations } = resolveClassroomIdentity({ students: roster, participantMap, participants: live, roomLabelByParticipantId: labelsById, ownParticipantIds: [] });
+
         const expected = originalSplit(roster, live, labels);
-        const actual = splitClassRegister(roster, live, labels);
+        const actual = splitClassRegister(roster, locations);
 
         assert.deepEqual(actual.present, expected.presentStudents);
         assert.deepEqual(actual.absent, expected.absentStudents);
-        names.forEach(name => assert.equal(Boolean(actual.elsewhereLabel(name)), Boolean(expected.elsewhereLabel(name))));
+        roster.forEach(student =>
+            assert.equal(Boolean(actual.elsewhereLabel(student.studentId)), Boolean(expected.elsewhereLabel(student.displayName))));
     }
+});
+
+test("teacher register: where the name match was wrong, the ID split is right", async () => {
+    const { splitClassRegister, resolveClassroomIdentity } = await loadSplit();
+    const roster = [
+        { studentId: "s-amal-1", displayName: "Amal" },
+        { studentId: "s-amal-2", displayName: "Amal" },
+        { studentId: "s-bimal", displayName: "Bimal" }
+    ];
+    const split = (participantMap, participants) =>
+        splitClassRegister(roster, resolveClassroomIdentity({ students: roster, participantMap, participants, ownParticipantIds: [] }).locations);
+
+    // Duplicate names: only the Amal who is here is present (the name match marked both).
+    let register = split({ "s-amal-1": "amal0001", "s-amal-2": "amal0002" }, [{ participantId: "amal0001", displayName: "Amal" }]);
+
+    assert.deepEqual(register.present.map(s => s.studentId), ["s-amal-1"]);
+    assert.equal(register.participantIdOf("s-amal-1"), "amal0001");
+
+    // Renamed in Jitsi: still present (the name match marked them absent).
+    register = split({ "s-bimal": "bima0001" }, [{ participantId: "bima0001", displayName: "B. (renamed)" }]);
+    assert.deepEqual(register.present.map(s => s.studentId), ["s-bimal"]);
 });

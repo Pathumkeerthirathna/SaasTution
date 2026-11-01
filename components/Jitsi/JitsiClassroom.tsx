@@ -6,6 +6,7 @@ import type { JitsiMeetingControls } from "./JitsiMeeting";
 
 import useJoinSession from "./hooks/useJoinSession";
 import MeetingCard from "./classroom/meeting/MeetingCard";
+import StudentProfileMenu from "./classroom/student/StudentProfileMenu";
 import OrientationHint from "./classroom/meeting/OrientationHint";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
@@ -54,7 +55,14 @@ import {
   FULLSCREEN_CHANGE_EVENTS,
   getFullscreenElement,
 } from "./fullscreen.mjs";
-import { roomLabelByParticipantName } from "./breakout-utils";
+import {
+  backoffDelay,
+  displayNameByParticipantId,
+  resolveClassroomIdentity,
+  studentIdByParticipantId,
+} from "./participant-identity.mjs";
+import { roomLabelByParticipantId } from "./breakout-utils";
+import usePresenceGrace from "./hooks/usePresenceGrace";
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -659,15 +667,9 @@ const [classStudents, setClassStudents] =
   const breakout = useBreakoutRooms({
     role,
     jitsiDomain: joinInfo?.session.jitsiDomain ?? "",
-    teacherName,
     isStreaming: isRecording || isLive,
     getControls: useCallback(() => jitsiMeetingRef.current, []),
   });
-
-  const breakoutRoomLabels = useMemo(
-    () => roomLabelByParticipantName(breakout.rooms),
-    [breakout.rooms]
-  );
 
   const [youtubeLiveUrl, setYoutubeLiveUrl] =
     useState<string | null>(null);
@@ -899,33 +901,164 @@ const [classStudents, setClassStudents] =
   const participantMapRef = useRef(participantMap);
   participantMapRef.current = participantMap;
 
+  // studentId -> the Jitsi display name that student's browser reported for its
+  // current participant ID (same stream; the teacher gets all, a student only
+  // its own). Display only, never identity.
+  // This browser's own current Jitsi display name, as Jitsi confirms it (join,
+  // then every displayNameChange): the student's header profile. Display only.
+  const [localDisplayName, setLocalDisplayName] = useState<string | null>(null);
+
+  const [reportedDisplayNames, setReportedDisplayNames] =
+    useState<Record<string, string>>({});
+
+  // Both roles: the teacher for monitoring and the register, an enrolled
+  // student (read-only) for its own register. The stream is reopened with
+  // exponential backoff after any error (the browser gives up for good after
+  // an HTTP error, e.g. a 502 during a deploy); the server sends the whole map
+  // on every (re)connect, so nothing is missed.
+  const currentStudentIdForMap = role === "student" ? joinInfo?.student?.id : undefined;
+
   useEffect(() => {
     const sessionId = joinInfo?.session?.id;
 
-    if (!sessionId || role !== "teacher") return;
+    if (!sessionId || (role !== "teacher" && role !== "student")) return;
 
-    const source = new EventSource(`/api/sessions/${sessionId}/participant-map`);
+    let source: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
+    let stopped = false;
 
     // Every event carries the whole map, so the latest one simply replaces it.
     const handleParticipantMap = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as {
           participants?: Record<string, string>;
+          displayNames?: Record<string, string>;
         };
+        const participants = data.participants ?? {};
+        const displayNames = data.displayNames ?? {};
 
-        setParticipantMap(data.participants ?? {});
+        failures = 0;
+        setParticipantMap(participants);
+        setReportedDisplayNames(displayNames);
+
+        // Student self-repair: re-register when the map lost our current ID
+        // (server restart, failed registration). See participant-registration.ts.
+        if (currentStudentIdForMap) {
+          jitsiMeetingRef.current?.ensureParticipantRegistered(
+            participants[currentStudentIdForMap]
+          );
+          jitsiMeetingRef.current?.syncParticipantDisplayName(
+            participants[currentStudentIdForMap],
+            displayNames[currentStudentIdForMap]
+          );
+        }
       } catch {
         /* ignore malformed payloads */
       }
     };
 
-    source.addEventListener("participant-map", handleParticipantMap);
+    const connect = () => {
+      if (stopped) return;
+
+      source = new EventSource(`/api/sessions/${sessionId}/participant-map`);
+      source.addEventListener("participant-map", handleParticipantMap);
+      source.onerror = () => {
+        source?.removeEventListener("participant-map", handleParticipantMap);
+        source?.close();
+        source = null;
+
+        if (stopped || reconnectTimer) return;
+
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, backoffDelay(failures));
+        failures += 1;
+      };
+    };
+
+    connect();
 
     return () => {
-      source.removeEventListener("participant-map", handleParticipantMap);
-      source.close();
+      stopped = true;
+
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+
+      source?.removeEventListener("participant-map", handleParticipantMap);
+      source?.close();
     };
-  }, [joinInfo?.session?.id, role]);
+  }, [joinInfo?.session?.id, role, currentStudentIdForMap]);
+
+  // Who is who in the live session, by studentId -> participantId only (never
+  // display names): the registers, the attendance panel and per-student mute
+  // and mic / camera state. Live participants that are not a class student
+  // (and not this browser) are the "Other participants". The teacher's own
+  // participant IDs are never a student (even if a student registered one);
+  // a student's own ID is that student, so it is not excluded for students.
+  // People in other rooms (breakout rooms, or the main room while this browser
+  // is in a breakout room), by the participant ID in Jitsi's rooms list.
+  const breakoutRoomLabels = useMemo(
+    () => roomLabelByParticipantId(breakout.rooms),
+    [breakout.rooms]
+  );
+
+  const classroomIdentity = useMemo(
+    () =>
+      resolveClassroomIdentity({
+        students: classStudents,
+        participantMap,
+        participants,
+        roomLabelByParticipantId: breakoutRoomLabels,
+        ownParticipantIds:
+          role === "teacher"
+            ? jitsiMeetingRef.current?.getOwnParticipantIds()
+            : undefined,
+      }),
+    [classStudents, participantMap, participants, breakoutRoomLabels, role]
+  );
+
+  // Teacher: participant ID -> the class student's registered name (current,
+  // unambiguous map entries only; never the teacher's own IDs), so room
+  // occupants and the teacher view's tiles show who they are, not by Jitsi name.
+  const breakoutStudentNames = useMemo(() => {
+    const names = new Map<string, string>();
+
+    if (role !== "teacher") return names;
+
+    const nameById = new Map(classStudents.map((student) => [student.studentId, student.displayName]));
+
+    studentIdByParticipantId(participantMap, jitsiMeetingRef.current?.getOwnParticipantIds()).forEach(
+      (studentId, participantId) => {
+        const name = nameById.get(studentId);
+
+        if (name !== undefined) names.set(participantId, name);
+      }
+    );
+
+    return names;
+  }, [classStudents, participantMap, role]);
+
+  // Breakout panel (teacher): participant ID -> current Jitsi display name, from
+  // the rooms list, the students' own reports (renames in other rooms) and this
+  // room's live participants (freshest). Display only, keyed by participant ID.
+  const breakoutDisplayNames = useMemo(
+    () =>
+      role === "teacher"
+        ? displayNameByParticipantId({
+            roomEntries: breakout.rooms.flatMap((room) => room.participants),
+            participantMap,
+            reportedNames: reportedDisplayNames,
+            participants,
+          })
+        : new Map<string, string>(),
+    [role, breakout.rooms, participantMap, reportedDisplayNames, participants]
+  );
+
+  // Display only (registers, attendance): a reconnect or room switch does not
+  // flicker a student to "absent" for 6 s. Mute targets and camera monitoring
+  // never use these grace entries.
+  const studentLocations = usePresenceGrace(classroomIdentity.locations, 6000);
 
   // ---------------------------------------------------------------------------
   // PHASE 1 TESTING ONLY — remove once the paging UI drives the receive set.
@@ -1010,6 +1143,19 @@ const [classStudents, setClassStudents] =
 
     jitsiMeetingRef.current?.setTeacherView(isTeacherNormalView);
   }, [role, isTeacherNormalView, conferenceGeneration]);
+
+  // Teacher only: the registered names for the teacher view's tiles in the
+  // teacher's own Jitsi iframe (SL_STUDENT_NAMES), from the participant map the
+  // teacher is authorized to read. Sent on every map change (a reconnect's new
+  // participant ID replaces the old one) and again for every new conference
+  // generation. Never sent by a student's page.
+  useEffect(() => {
+    if (role !== "teacher" || conferenceGeneration === 0) {
+      return;
+    }
+
+    jitsiMeetingRef.current?.setStudentNames(breakoutStudentNames);
+  }, [role, breakoutStudentNames, conferenceGeneration]);
 
   // Teacher only: the Normal mode view's layout (List / Tiles) and the Tiles
   // page: the same present students as monitoring, in roster order, with the
@@ -1283,7 +1429,20 @@ const [classStudents, setClassStudents] =
         newParticipants.length
       );
 
-      setParticipants(newParticipants);
+      // A refresh (someone joined or left) rebuilds the list with default
+      // mic / camera state; keep the state already known for each participant
+      // ID, so other people's icons do not reset to "muted".
+      setParticipants((previous) => {
+        const statusById = new Map(
+          previous.map((participant) => [participant.participantId, participant.status])
+        );
+
+        return newParticipants.map((participant) => {
+          const status = statusById.get(participant.participantId);
+
+          return status ? { ...participant, status } : participant;
+        });
+      });
 
     },
     [setParticipants]
@@ -1828,12 +1987,27 @@ const [classStudents, setClassStudents] =
         onEndSession={handleEndSessionForEveryone}
         isMobile={viewport.isTouchLayout}
         onEnterFullscreen={() => void handleEnterFullscreen()}
+        // Student only: their Jitsi name and, read-only, their registered
+        // name (the server-built join info of the logged-in student).
+        profileMenu={
+          role === "student" && joinInfo.student ? (
+            <StudentProfileMenu
+              registeredName={joinInfo.student.name}
+              displayName={localDisplayName}
+              onChangeName={(name) =>
+                jitsiMeetingRef.current?.setLocalDisplayName(name) ??
+                Promise.reject(new Error("The classroom is not connected yet."))
+              }
+            />
+          ) : undefined
+        }
       >
         <PermissionGate onReadyChange={setMeetingReady}>
           <JitsiMeeting
             ref={jitsiMeetingRef}
             onBreakoutRoomsUpdated={breakout.handleRoomsUpdated}
             onRoomChanged={breakout.handleRoomChanged}
+            onLocalDisplayNameChanged={setLocalDisplayName}
             onBreakoutSupportChanged={breakout.handleSupportChanged}
             onYouTubeStreamStatusChanged={(status) => {
               console.log("🎥 CLASSROOM YOUTUBE STREAM STATUS:", status);
@@ -2100,7 +2274,10 @@ const [classStudents, setClassStudents] =
         >
         <RightSidebar
           breakout={breakout}
-          breakoutRoomLabels={breakoutRoomLabels}
+          breakoutStudentNames={breakoutStudentNames}
+          breakoutDisplayNames={breakoutDisplayNames}
+          studentLocations={studentLocations}
+          otherParticipants={classroomIdentity.others}
           onPanelOpenChange={setSidebarPanelOpen}
           isFullscreenActive={isFullscreenActive}
           onWhiteboardMaximizedChange={setWhiteboardMaximized}
@@ -2109,7 +2286,6 @@ const [classStudents, setClassStudents] =
           className={joinInfo.class.name}
           lectureId={joinInfo.lecture?.id ?? null}
           lectureTitle={joinInfo.lecture?.title}
-          teacherName={teacherName}
           role={role}
           participants={participants}
           ClassroomStudents={classStudents}

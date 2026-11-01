@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1021;
+const SL_CUSTOM_JS_VERSION = 1023;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -5284,6 +5284,9 @@ const SL_DEVICE_STATUS_GAP = 8;
     const SL_TV_PANEL_STACK_WIDTH = 640;
     const SL_TV_TILES_MAX_PAGE = 50;
     const SL_TV_PARTICIPANT_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
+    // SL_STUDENT_NAMES limits: entries per message and characters per name.
+    const SL_TV_STUDENT_NAMES_MAX = 500;
+    const SL_TV_STUDENT_NAME_MAX_LENGTH = 200;
     const SL_TV_CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     // The settings menu's View section (static icons) and the Tiles view's
     // page sizes. The choice itself belongs to the parent page
@@ -5367,6 +5370,27 @@ const SL_DEVICE_STATUS_GAP = 8;
 
     let teacherView = { epoch: 0, enabled: false };
 
+    // The class students' REGISTERED names, by participant ID, from the parent
+    // page's participant map (SL_STUDENT_NAMES; teacher's page only). Display
+    // only: a student's tile shows the live Jitsi name with the registered name
+    // under it. Nobody is ever matched by name; an ID not in the map (the
+    // teacher, a guest, a student's old ID after a reconnect) shows as before.
+    let studentNames = { epoch: 0, byId: new Map() };
+
+    function sameDisplayName(a, b) {
+        const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+
+        return clean(a) === clean(b);
+    }
+
+    // The registered name to show under `shownName` for this participant ID:
+    // "" when it is not a mapped class student or the names are the same.
+    function registeredNameFor(participantId, shownName) {
+        const registered = studentNames.byId.get(participantId) || "";
+
+        return registered && !sameDisplayName(registered, shownName) ? registered : "";
+    }
+
     // Kept outside the view's DOM: the view is removed and rebuilt (Exam Mode,
     // disable), and the layout must survive that.
     let preferredPosition = "right";
@@ -5428,6 +5452,7 @@ const SL_DEVICE_STATUS_GAP = 8;
     let panelBodyEl = null;
     let panelVideo = null;
     let panelNameEl = null;
+    let panelRegisteredEl = null;
     let panelStateEl = null;
     let panelPlaceholder = null;
     let panelTrack = null;
@@ -5906,11 +5931,14 @@ const SL_DEVICE_STATUS_GAP = 8;
             (b[1].role === "moderator") - (a[1].role === "moderator"));
 
         people.forEach(([participantId, participant]) => {
-            const name = participant.name || "Participant";
+            // A class student: the live Jitsi name first, the registered name
+            // under it when it differs (or alone when Jitsi has no name).
+            const name = participant.name || studentNames.byId.get(participantId) || "Participant";
 
             pushItem({
                 id: participantId,
                 name,
+                registeredName: registeredNameFor(participantId, name),
                 kind: "camera",
                 role: roleOf(participant),
                 local: false,
@@ -6013,7 +6041,12 @@ const SL_DEVICE_STATUS_GAP = 8;
         }
 
         const track = findCameraTrack(state, stageId, false);
-        const placeholder = { name: participant.name || "Participant", role: roleOf(participant) };
+        const stageName = participant.name || studentNames.byId.get(stageId) || "Participant";
+        const placeholder = {
+            name: stageName,
+            role: roleOf(participant),
+            registeredName: registeredNameFor(stageId, stageName)
+        };
 
         if (track && !track.muted) {
             return result(track, false);
@@ -7150,6 +7183,12 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-icon svg { width: 56%; height: 56%; }",
             "#" + SL_TV_ID + " .sl-tv-ph-name { max-width: 100%; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: 0.01em; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
             "#" + SL_TV_ID + " .sl-tv-ph-role { font-size: 11px; font-weight: 500; line-height: 1.3; color: #A5B4FC; }",
+            "#" + SL_TV_ID + " .sl-tv-ph-registered { max-width: 100%; font-size: 11px; font-weight: 400; line-height: 1.3; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+            "#" + SL_TV_ID + " .sl-tv-ph-registered:empty { display: none; }",
+            "#" + SL_TV_ID + " .sl-tv-stage .sl-tv-ph-registered { font-size: 14px; }",
+            "#" + SL_TV_ID + " ." + SL_TV_GRID_COMPACT_CLASS + " .sl-tv-ph-registered { font-size: 9px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-registered { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94A3B8; font-weight: 400; font-size: 12px; }",
+            "#" + SL_TV_ID + " .sl-tv-panel-registered:empty { display: none; }",
             "#" + SL_TV_ID + " .sl-tv-ph-role:empty { display: none; }",
             "#" + SL_TV_ID + " .sl-tv-stage.sl-placeholder video { visibility: hidden; }",
             "#" + SL_TV_ID + " .sl-tv-stage .sl-tv-placeholder { gap: 12px; padding: 24px; }",
@@ -7158,6 +7197,9 @@ const SL_DEVICE_STATUS_GAP = 8;
             "#" + SL_TV_ID + " .sl-tv-stage .sl-tv-ph-name { font-size: 20px; }",
             "#" + SL_TV_ID + " .sl-tv-stage .sl-tv-ph-role { font-size: 15px; }",
             "#" + SL_TV_ID + " .sl-tv-name { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); padding: 2px 6px; border-radius: 6px; background: rgba(15, 23, 42, 0.78); color: #F8FAFC; font: 500 11px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+            "#" + SL_TV_ID + " .sl-tv-name > span { display: block; overflow: hidden; text-overflow: ellipsis; }",
+            "#" + SL_TV_ID + " .sl-tv-name-secondary { display: none !important; font-weight: 400; font-size: 0.9em; opacity: 0.8; }",
+            "#" + SL_TV_ID + " .sl-tv-name.sl-has-registered .sl-tv-name-secondary { display: block !important; }",
             "#" + SL_TV_ID + " .sl-tv-pin { position: absolute; top: 6px; right: 6px; display: none; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(252, 211, 77, 0.5); background: rgba(120, 53, 15, 0.82); color: #FDE68A; font: 600 10px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 0.02em; }",
             "#" + SL_TV_ID + " .sl-tv-tile.sl-pinned .sl-tv-pin { display: block; }",
             "#" + SL_TV_ID + " .sl-tv-stage-chip { position: absolute; top: 6px; left: 6px; display: none; align-items: center; gap: 5px; padding: 1px 7px 1px 6px; border-radius: 999px; border: 1px solid rgba(96, 165, 250, 0.45); background: rgba(23, 37, 84, 0.82); color: #BFDBFE; font: 600 10px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 0.02em; }",
@@ -7420,6 +7462,9 @@ const SL_DEVICE_STATUS_GAP = 8;
         panelNameEl = document.createElement("div");
         panelNameEl.className = "sl-tv-panel-name";
 
+        panelRegisteredEl = document.createElement("div");
+        panelRegisteredEl.className = "sl-tv-panel-registered";
+
         panelStateEl = document.createElement("div");
         panelStateEl.className = "sl-tv-panel-state";
 
@@ -7432,6 +7477,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         close.addEventListener("click", closeEnlarged);
 
         head.appendChild(panelNameEl);
+        head.appendChild(panelRegisteredEl);
         head.appendChild(panelStateEl);
         head.appendChild(close);
 
@@ -7471,6 +7517,10 @@ const SL_DEVICE_STATUS_GAP = 8;
         const nameEl = document.createElement("div");
         nameEl.className = "sl-tv-ph-name";
 
+        // A class student's registered name, under the live Jitsi name.
+        const registeredEl = document.createElement("div");
+        registeredEl.className = "sl-tv-ph-registered";
+
         const roleEl = document.createElement("div");
         roleEl.className = "sl-tv-ph-role";
 
@@ -7480,21 +7530,24 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         el.appendChild(iconEl);
         el.appendChild(nameEl);
+        el.appendChild(registeredEl);
         el.appendChild(roleEl);
         el.appendChild(statusEl);
 
-        return { el, iconEl, nameEl, roleEl, statusEl };
+        return { el, iconEl, nameEl, registeredEl, roleEl, statusEl };
     }
 
     // variant: "teacher" | "student" | "screen"; status: Phase D camera
-    // state text for a student tile ("" = none).
-    function setPlaceholder(placeholder, name, variant, status) {
+    // state text for a student tile ("" = none); registeredName: a class
+    // student's registered name ("" = none, see registeredNameFor).
+    function setPlaceholder(placeholder, name, variant, status, registeredName) {
         if (placeholder.el.dataset.variant !== variant) {
             placeholder.el.dataset.variant = variant;
             placeholder.iconEl.innerHTML = SL_ICONS[variant] || SL_ICONS.student;
         }
 
         placeholder.nameEl.textContent = name;
+        placeholder.registeredEl.textContent = registeredName || "";
         placeholder.roleEl.textContent = variant === "teacher" ? "(Teacher)" : "";
         placeholder.statusEl.textContent = status || "";
         placeholder.el.dataset.status = status === "Camera on" || status === SL_TV_TILE_PLACEHOLDER_STATUS.connecting
@@ -7720,6 +7773,16 @@ const SL_DEVICE_STATUS_GAP = 8;
         const nameEl = document.createElement("div");
         nameEl.className = "sl-tv-name";
 
+        // Live Jitsi name, and a class student's registered name under it.
+        const namePrimaryEl = document.createElement("span");
+        namePrimaryEl.className = "sl-tv-name-primary";
+
+        const nameSecondaryEl = document.createElement("span");
+        nameSecondaryEl.className = "sl-tv-name-secondary";
+
+        nameEl.appendChild(namePrimaryEl);
+        nameEl.appendChild(nameSecondaryEl);
+
         const pinEl = document.createElement("div");
         pinEl.className = "sl-tv-pin";
         pinEl.textContent = "Selected";
@@ -7758,7 +7821,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         // the camera stays ON). statusTrack: the track whose streaming status
         // this tile follows (Phase D), or null.
         const tile = {
-            el, video, nameEl, placeholder, frozenEl, jitsiTrack: null, frozen: false, mode: "", statusTrack: null
+            el, video, nameEl, namePrimaryEl, nameSecondaryEl, placeholder, frozenEl, jitsiTrack: null, frozen: false, mode: "", statusTrack: null
         };
 
         tiles.set(tileId, tile);
@@ -7927,10 +7990,12 @@ const SL_DEVICE_STATUS_GAP = 8;
             }
 
             const track = present ? findCameraTrack(state, id, false) : null;
+            const name = (present && participant.name) || knownNames.get(id) || studentNames.byId.get(id) || "Student";
 
             return {
                 id,
-                name: (present && participant.name) || knownNames.get(id) || "Student",
+                name,
+                registeredName: registeredNameFor(id, name),
                 kind: "camera",
                 role: present ? roleOf(participant) : "student",
                 local: false,
@@ -8166,12 +8231,18 @@ const SL_DEVICE_STATUS_GAP = 8;
         const participant = state?.["features/base/participants"]?.remote?.get?.(enlarged.id);
 
         if (!participant || participant.fakeParticipant) {
-            return { id: enlarged.id, name: enlarged.name, role: "student", state: "disconnected", track: null, status: null };
+            return {
+                id: enlarged.id, name: enlarged.name, registeredName: registeredNameFor(enlarged.id, enlarged.name),
+                role: "student", state: "disconnected", track: null, status: null
+            };
         }
 
         enlarged.name = participant.name || enlarged.name;
 
-        const base = { id: enlarged.id, name: enlarged.name, role: roleOf(participant) };
+        const base = {
+            id: enlarged.id, name: enlarged.name, registeredName: registeredNameFor(enlarged.id, enlarged.name),
+            role: roleOf(participant)
+        };
 
         if (!isCameraSourceOn(participant)) {
             return { ...base, state: "off", track: null, status: null };
@@ -8228,7 +8299,8 @@ const SL_DEVICE_STATUS_GAP = 8;
         }
 
         panelNameEl.textContent = panel.name;
-        panelNameEl.title = panel.name;
+        panelNameEl.title = panel.registeredName ? panel.name + " (" + panel.registeredName + ")" : panel.name;
+        panelRegisteredEl.textContent = panel.registeredName || "";
         setPanelTrack(panel.track);
 
         let mode = panel.state;
@@ -8257,7 +8329,8 @@ const SL_DEVICE_STATUS_GAP = 8;
         };
 
         panelBodyEl.classList.toggle("sl-no-video", mode === "connecting" || mode === "off" || mode === "disconnected");
-        setPlaceholder(panelPlaceholder, panel.name, panel.role || "student", SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "");
+        setPlaceholder(panelPlaceholder, panel.name, panel.role || "student", SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "",
+            panel.registeredName);
         panelStateEl.textContent = messages[mode] || "";
         panelEl.dataset.state = mode;
 
@@ -8484,6 +8557,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         panelBodyEl = null;
         panelVideo = null;
         panelNameEl = null;
+        panelRegisteredEl = null;
         panelStateEl = null;
         panelPlaceholder = null;
     }
@@ -8572,7 +8646,7 @@ const SL_DEVICE_STATUS_GAP = 8;
         // shows actually changed.
         const signature = JSON.stringify([
             items.map(item => [
-                item.id, item.name, item.kind, item.role, item.local,
+                item.id, item.name, item.registeredName || "", item.kind, item.role, item.local,
                 trackKey(item.track && item.track.jitsiTrack),
                 item.muted, item.pinned, item.onStage,
                 // Phase D: camera ON / planned live / streaming status change
@@ -8582,10 +8656,10 @@ const SL_DEVICE_STATUS_GAP = 8;
                 Boolean(item.absent)
             ]),
             [stage.id, trackKey(stage.track), stage.empty, statusMessage, stage.local,
-                stage.placeholder ? [stage.placeholder.name, stage.placeholder.role] : null],
+                stage.placeholder ? [stage.placeholder.name, stage.placeholder.role, stage.placeholder.registeredName || ""] : null],
             // Tiles view: page, and the enlarged panel's student and state.
             [tilesMode, tilesView.epoch, tilesView.page, tilesView.pageCount, tilesView.total, tilesView.pageSize,
-                panel ? [panel.id, panel.name, panel.state, panel.status, trackKey(panel.track)] : null]
+                panel ? [panel.id, panel.name, panel.registeredName, panel.state, panel.status, trackKey(panel.track)] : null]
         ]);
 
         // Unchanged, and still mounted in Jitsi's current page element.
@@ -8660,14 +8734,17 @@ const SL_DEVICE_STATUS_GAP = 8;
             }
 
             tile.mode = mode;
-            tile.nameEl.textContent = item.name;
-            tile.el.title = item.name;
+            tile.namePrimaryEl.textContent = item.name;
+            tile.nameSecondaryEl.textContent = item.registeredName || "";
+            tile.nameEl.classList.toggle("sl-has-registered", Boolean(item.registeredName));
+            tile.el.title = item.registeredName ? item.name + " (" + item.registeredName + ")" : item.name;
             tile.el.setAttribute("aria-pressed", item.pinned ? "true" : "false");
             setPlaceholder(
                 tile.placeholder,
                 item.name,
                 item.kind === "desktop" ? "screen" : item.role,
-                isRotatingCameraTile(item) ? (SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "") : ""
+                isRotatingCameraTile(item) ? (SL_TV_TILE_PLACEHOLDER_STATUS[mode] || "") : "",
+                item.kind === "desktop" ? "" : item.registeredName
             );
             tile.el.classList.toggle("sl-no-video",
                 mode === "off" || mode === "waiting" || mode === "connecting" || mode === "disconnected");
@@ -8723,7 +8800,8 @@ const SL_DEVICE_STATUS_GAP = 8;
         stageMessageEl.textContent = stage.empty;
 
         if (stage.placeholder) {
-            setPlaceholder(stagePlaceholder, stage.placeholder.name, stage.placeholder.role);
+            setPlaceholder(stagePlaceholder, stage.placeholder.name, stage.placeholder.role, "",
+                stage.placeholder.registeredName);
         }
         stageEl.classList.toggle("sl-weak", Boolean(statusMessage));
         stageStatusEl.textContent = statusMessage;
@@ -8786,6 +8864,64 @@ const SL_DEVICE_STATUS_GAP = 8;
 
         console.log("[SL Classroom] Teacher view", teacherView,
             "filmstrip:", preferredPosition, "auto-hide:", autoHideEnabled);
+
+        lastSignature = "";
+        render();
+    });
+
+    // Registered student names from the parent page (the teacher's page only,
+    // from its authorized participant map; resent after SL_RECEIVE_READY):
+    //   { type: "SL_STUDENT_NAMES", v: 1, epoch,
+    //     names: [[participantId, registeredName], ...] }   (at most 500)
+    // The whole list every time: an ID no longer in it (reconnect, left) is
+    // dropped. Kept before the local role is known, used only by the teacher
+    // view, which only ever shows for a moderator. Display only.
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may send it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_STUDENT_NAMES") {
+            return;
+        }
+
+        const entryOk = entry => Array.isArray(entry)
+            && entry.length === 2
+            && typeof entry[0] === "string"
+            && SL_TV_PARTICIPANT_ID_PATTERN.test(entry[0])
+            && typeof entry[1] === "string"
+            && entry[1].trim().length > 0
+            && entry[1].length <= SL_TV_STUDENT_NAME_MAX_LENGTH;
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || !Array.isArray(data.names)
+            || data.names.length > SL_TV_STUDENT_NAMES_MAX
+            || !data.names.every(entryOk)
+            || new Set(data.names.map(entry => entry[0])).size !== data.names.length) {
+            console.warn("[SL Classroom] Ignored malformed student names");
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the parent resends it after SL_RECEIVE_READY.
+        if (data.epoch < studentNames.epoch) {
+            return;
+        }
+
+        studentNames = {
+            epoch: data.epoch,
+            byId: new Map(data.names.map(entry => [entry[0], entry[1].trim()]))
+        };
+
+        console.log("[SL Classroom] Student names", { epoch: data.epoch, count: studentNames.byId.size });
 
         lastSignature = "";
         render();
@@ -8902,6 +9038,27 @@ const SL_DEVICE_STATUS_GAP = 8;
                 paused,
                 yielded,
                 largeVideoSuppressed
+            };
+        },
+        // SL_STUDENT_NAMES as received and as shown: participant IDs and flags
+        // only (no names). shown: "label" (live video), "placeholder" (camera
+        // off / waiting) or "" (not shown: same name, or no tile).
+        studentNames: () => {
+            const ids = Array.from(studentNames.byId.keys());
+
+            return {
+                epoch: studentNames.epoch,
+                count: ids.length,
+                viewShowing: Boolean(root),
+                tiles: ids.map(id => {
+                    const tile = tiles.get(id);
+                    const label = tile && tile.nameEl.classList.contains("sl-has-registered")
+                        && !tile.el.classList.contains("sl-no-video");
+                    const placeholder = tile && tile.el.classList.contains("sl-no-video")
+                        && Boolean(tile.placeholder.registeredEl.textContent);
+
+                    return { id, tile: Boolean(tile), shown: label ? "label" : placeholder ? "placeholder" : "" };
+                })
             };
         },
         tileModes: () => {

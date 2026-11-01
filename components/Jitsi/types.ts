@@ -131,8 +131,20 @@ export type ChatMessage = {
 /* ------------------------------ Breakout rooms ------------------------------ */
 
 export type BreakoutParticipant = {
-  /** Full XMPP address. This is what `sendParticipantToRoom` accepts for anyone, wherever they are. */
-  jid: string;
+  /** The rooms list key: the occupant JID "<room>@<muc>/<participantId>". Unique per room. */
+  occupantJid: string;
+  /**
+   * The Jitsi participant ID, parsed from `occupantJid` (participantIdFromRoomKey);
+   * null when the key is not of that form. Identity is matched on this only.
+   */
+  participantId: string | null;
+  /**
+   * The participant's real XMPP address, exactly as Jitsi reports it. This is
+   * what `sendParticipantToRoom` accepts for anyone, wherever they are. Never
+   * used for identity. Null when Jitsi did not report one (cannot be moved).
+   */
+  jid: string | null;
+  /** Display only (empty when Jitsi reports none); never used for identity. */
   displayName: string;
 };
 

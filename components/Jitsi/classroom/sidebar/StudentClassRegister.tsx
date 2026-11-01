@@ -2,16 +2,20 @@
 
 import { BookOpenCheck, UserRoundX } from "lucide-react";
 
-import type { ClassroomStudent, JitsiParticipant } from "../../types";
+import type { ClassroomStudent } from "../../types";
 import { splitClassRegister } from "../../class-register.mjs";
+import type { StudentLocation } from "../../participant-identity.mjs";
 
 type StudentClassRegisterProps = {
-  participants: JitsiParticipant[];
   /** The class roster (names only for students; see GET /api/sessions/[id]/register). */
   students?: ClassroomStudent[];
   /** The viewing student, marked "(You)". */
   currentStudentId?: string;
-  breakoutRoomLabels?: Record<string, string>;
+  /**
+   * studentId -> where that classmate is (read-only participant map, matched by
+   * participant ID, never by display name).
+   */
+  studentLocations?: Map<string, StudentLocation>;
 };
 
 /**
@@ -20,15 +24,13 @@ type StudentClassRegisterProps = {
  * notify, mute, camera or attendance controls.
  */
 export default function StudentClassRegister({
-  participants,
   students,
   currentStudentId,
-  breakoutRoomLabels,
+  studentLocations,
 }: StudentClassRegisterProps) {
   const { present, absent, elsewhereLabel } = splitClassRegister(
     students,
-    participants,
-    breakoutRoomLabels
+    studentLocations
   );
 
   if (!students) {
@@ -81,9 +83,9 @@ export default function StudentClassRegister({
                       <span className="ml-1 font-normal text-slate-500">(You)</span>
                     ) : null}
                   </span>
-                  {elsewhereLabel(student.displayName) ? (
+                  {elsewhereLabel(student.studentId) ? (
                     <span className="mt-0.5 inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                      In {elsewhereLabel(student.displayName)}
+                      In {elsewhereLabel(student.studentId)}
                     </span>
                   ) : null}
                 </div>

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { breakoutRoomJidFallback } from "../breakout-utils";
-import type { BreakoutRoom, CurrentRoomInfo, UserRole } from "../types";
+import { breakoutOccupants, breakoutRoomJidFallback } from "../breakout-utils";
+import type { BreakoutParticipant, BreakoutRoom, CurrentRoomInfo, UserRole } from "../types";
 import type { JitsiControls } from "./useJitsi";
 
 const CREATE_TIMEOUT_MS = 7000;
@@ -32,6 +32,12 @@ export type BreakoutController = {
   notice: string | null;
   dismissNotice: () => void;
 
+  /**
+   * Everyone in a room except this browser itself (matched by its own participant
+   * IDs, never by name). Unnamed or unidentified entries count.
+   */
+  occupants: (room: BreakoutRoom) => BreakoutParticipant[];
+
   // Event handlers to wire into <JitsiMeeting />
   handleRoomsUpdated: (rooms: BreakoutRoom[]) => void;
   handleRoomChanged: (room: CurrentRoomInfo) => void;
@@ -55,8 +61,6 @@ export type BreakoutController = {
 type Options = {
   role: UserRole;
   jitsiDomain: string;
-  /** The teacher's Jitsi display name, so the teacher is never treated as a student. */
-  teacherName: string;
   /** Recording / live run in the main room, so leaving it is worth a warning. */
   isStreaming: boolean;
   getControls: () => JitsiControls | null;
@@ -65,7 +69,6 @@ type Options = {
 export default function useBreakoutRooms({
   role,
   jitsiDomain,
-  teacherName,
   isStreaming,
   getControls,
 }: Options): BreakoutController {
@@ -172,11 +175,12 @@ export default function useBreakoutRooms({
     return value;
   }, [getControls]);
 
-  const isTeacherName = useCallback((name: string) => name === teacherName, [teacherName]);
-
+  // Everyone but this browser's own entries (its current and earlier participant
+  // IDs), never decided by display name: a student named like the teacher is an
+  // occupant, so their room is never removed with them inside.
   const occupants = useCallback(
-    (room: BreakoutRoom) => room.participants.filter((participant) => !isTeacherName(participant.displayName)),
-    [isTeacherName]
+    (room: BreakoutRoom) => breakoutOccupants(room, getControls()?.getOwnParticipantIds() ?? new Set<string>()),
+    [getControls]
   );
 
   /* --------------------------------- teacher -------------------------------- */
@@ -362,6 +366,7 @@ export default function useBreakoutRooms({
     busy,
     notice,
     dismissNotice: () => setNotice(null),
+    occupants,
     handleRoomsUpdated,
     handleRoomChanged,
     handleSupportChanged,

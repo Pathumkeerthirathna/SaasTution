@@ -873,9 +873,10 @@ function createHarness(options = {}) {
             }
         },
 
-        postFromParent(data) {
+        // { origin, source }: a message from somewhere else (must be ignored).
+        postFromParent(data, { origin = PARENT_ORIGIN, source = parent } = {}) {
             (windowListeners.message || []).slice().forEach(fn =>
-                fn({ source: parent, origin: PARENT_ORIGIN, data }));
+                fn({ source, origin, data }));
         },
 
         addParticipant(id, { role = "participant", camera = true, name } = {}) {

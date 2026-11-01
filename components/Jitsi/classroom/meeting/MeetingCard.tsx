@@ -127,6 +127,12 @@ type MeetingCardProps = {
    * it and falls back to its CSS fullscreen mode otherwise.
    */
   onEnterFullscreen?: () => void;
+
+  /**
+   * Shown at the right end of the header's controls (the student's profile
+   * menu). Omitted: the header is exactly as before.
+   */
+  profileMenu?: ReactNode;
 };
 
 export default function MeetingCard({
@@ -160,6 +166,7 @@ export default function MeetingCard({
   onEndSession,
   isMobile = false,
   onEnterFullscreen,
+  profileMenu,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -584,6 +591,8 @@ export default function MeetingCard({
               Fullscreen
             </button>
           )}
+
+          {profileMenu}
 
           {showYoutubeShare &&
             isLive &&

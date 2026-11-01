@@ -1,4 +1,5 @@
-import type { BreakoutRoom } from "./types";
+import { participantIdFromRoomKey } from "./participant-identity.mjs";
+import type { BreakoutParticipant, BreakoutRoom } from "./types";
 
 /**
  * Breakout-room support, as verified against the deployed Jitsi web build (9268):
@@ -61,10 +62,65 @@ export function breakoutRoomJidFallback(roomId: string, jitsiDomain: string): st
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
+/** "<local>@<domain>[/<resource>]" -> lower-cased local part and domain; null when not of that form. */
+function splitJid(jid: unknown): { local: string; domain: string } | null {
+  if (typeof jid !== "string") {
+    return null;
+  }
+
+  const slash = jid.indexOf("/");
+  const bare = slash === -1 ? jid : jid.slice(0, slash);
+  const at = bare.indexOf("@");
+
+  if (at <= 0 || at !== bare.lastIndexOf("@") || at === bare.length - 1) {
+    return null;
+  }
+
+  return { local: bare.slice(0, at).toLowerCase(), domain: bare.slice(at + 1).toLowerCase() };
+}
+
+/**
+ * The Jitsi domain of a room, from the room's own JID: "<room>@conference.<domain>" or
+ * "<id>@breakout.<domain>" -> "<domain>". Null when the JID is not of that form.
+ */
+export function jitsiDomainOfRoomJid(roomJid: unknown): string | null {
+  const parts = splitJid(roomJid);
+  const dot = parts ? parts.domain.indexOf(".") : -1;
+
+  if (!parts || dot <= 0 || dot === parts.domain.length - 1) {
+    return null;
+  }
+
+  return parts.domain.slice(dot + 1);
+}
+
+/**
+ * True only for Jicofo's focus occupant: real JID "focus@auth.<jitsiDomain>/...".
+ * Decided by the JID alone, never by display name, role or a missing name; anything
+ * else (including a missing or malformed JID, or an unknown domain) is not a service.
+ */
+export function isServiceOccupant(
+  entry: { jid?: unknown } | null | undefined,
+  jitsiDomain: string | null
+): boolean {
+  if (!jitsiDomain) {
+    return false;
+  }
+
+  const parts = splitJid(entry?.jid);
+
+  return parts !== null && parts.local === "focus" && parts.domain === `auth.${jitsiDomain.toLowerCase()}`;
+}
+
 /**
  * Turns Jitsi's rooms object (either `{ rooms }` from the event or the bare object from
  * `listBreakoutRooms()`) into a list: main room first, then breakout rooms by name.
- * Participants without a display name (Jicofo, the recorder) are dropped.
+ *
+ * Each participant keeps its rooms-list key (the occupant JID), the participant ID parsed
+ * from that key, and its real `jid` exactly as reported (for moves). Jicofo's focus
+ * occupant (listed in every room, without a name) is left out, by its JID. Every other
+ * entry is kept, including ones without a display name or without a `jid`: anyone in a
+ * room counts when deciding whether the room is empty.
  */
 export function normalizeBreakoutRooms(raw: unknown): BreakoutRoom[] {
   const source = (raw as { rooms?: unknown } | null | undefined)?.rooms ?? raw;
@@ -81,26 +137,30 @@ export function normalizeBreakoutRooms(raw: unknown): BreakoutRoom[] {
       jid?: string;
       name?: string;
       isMainRoom?: boolean;
-      participants?: Record<string, { jid?: string; displayName?: string }>;
+      participants?: Record<string, { jid?: unknown; displayName?: unknown } | null | undefined>;
     };
 
     if (!room || typeof room.id !== "string" || typeof room.jid !== "string") {
       continue;
     }
 
+    const jitsiDomain = jitsiDomainOfRoomJid(room.jid);
+
     rooms.push({
       id: room.id,
       jid: room.jid,
       name: room.name ?? "",
       isMainRoom: Boolean(room.isMainRoom),
-      participants: Object.values(room.participants ?? {})
-        .filter(
-          (participant): participant is { jid: string; displayName: string } =>
-            typeof participant?.jid === "string" &&
-            typeof participant?.displayName === "string" &&
-            participant.displayName.trim().length > 0
-        )
-        .map((participant) => ({ jid: participant.jid, displayName: participant.displayName })),
+      participants: Object.entries(room.participants ?? {})
+        .filter(([, participant]) => !isServiceOccupant(participant, jitsiDomain))
+        .map(
+          ([occupantJid, participant]): BreakoutParticipant => ({
+            occupantJid,
+            participantId: participantIdFromRoomKey(occupantJid),
+            jid: typeof participant?.jid === "string" ? participant.jid : null,
+            displayName: typeof participant?.displayName === "string" ? participant.displayName : "",
+          })
+        ),
     });
   }
 
@@ -113,17 +173,37 @@ export function normalizeBreakoutRooms(raw: unknown): BreakoutRoom[] {
   });
 }
 
-/** Display name -> label of the room that person is in ("Main room" or the breakout room name). */
-export function roomLabelByParticipantName(rooms: BreakoutRoom[]): Record<string, string> {
+/**
+ * Participant ID -> label of the room that participant is in ("Main room" or the breakout
+ * room name). Entries without a parseable participant ID are left out. Never by name.
+ */
+export function roomLabelByParticipantId(rooms: BreakoutRoom[]): Record<string, string> {
   const labels: Record<string, string> = {};
 
   for (const room of rooms) {
     for (const participant of room.participants) {
-      labels[participant.displayName] = room.isMainRoom ? "Main room" : room.name;
+      if (participant.participantId) {
+        labels[participant.participantId] = room.isMainRoom ? "Main room" : room.name;
+      }
     }
   }
 
   return labels;
+}
+
+/**
+ * Everyone in `room` except this browser's own entries (the teacher's current and earlier
+ * participant IDs: after returning to the main room the list can briefly still show the
+ * teacher's old entry in the breakout room). Entries without a parseable participant ID,
+ * without a name or without a `jid` all count, so a room is only "empty" when it really is.
+ */
+export function breakoutOccupants(
+  room: BreakoutRoom,
+  ownParticipantIds: ReadonlySet<string>
+): BreakoutParticipant[] {
+  return room.participants.filter(
+    (participant) => !(participant.participantId && ownParticipantIds.has(participant.participantId))
+  );
 }
 
 export type BreakoutControls = {

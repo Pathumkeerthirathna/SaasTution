@@ -1,5 +1,11 @@
 import { EventEmitter } from "node:events";
 
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  normalizeDisplayName,
+  PARTICIPANT_ID_PATTERN,
+} from "@/components/Jitsi/participant-identity.mjs";
+
 /**
  * Live classroom identity map: which Jitsi participant ID each student is
  * currently using inside one class session.
@@ -9,8 +15,13 @@ import { EventEmitter } from "node:events";
  * A student registers its own participant ID (from the authenticated student
  * session, never from the request body) every time its Jitsi conference
  * joins, because a reconnect or a breakout-room switch gives it a new ID. The
- * teacher reads the map over SSE so it can address students by application
- * student ID instead of by display name.
+ * teacher (and, read-only, the session's enrolled students) read the map over
+ * SSE so students are addressed by application student ID, never by display
+ * name.
+ *
+ * Each entry can also carry the student's current Jitsi display name, reported
+ * by the student's own browser for its CURRENT participant ID (presentation
+ * only, never identity; cleared whenever the participant ID changes).
  *
  * NOTE: like the other session event buses this is an in-process EventEmitter
  * held only in memory, so it only fans out within a single Node process and is
@@ -20,10 +31,10 @@ import { EventEmitter } from "node:events";
 const MAP_EVENT = "participant-map";
 const RETAIN_MS = 12 * 60 * 60 * 1000;
 
-/** Jitsi endpoint IDs are short hex strings (e.g. "de809448"); allow some headroom. */
-export const PARTICIPANT_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/;
+/** Jitsi endpoint IDs are short hex strings (e.g. "de809448"); shared with the client. */
+export { DISPLAY_NAME_MAX_LENGTH, normalizeDisplayName, PARTICIPANT_ID_PATTERN };
 
-type ParticipantEntry = { participantId: string; at: number };
+type ParticipantEntry = { participantId: string; at: number; displayName?: string };
 
 type SessionMap = {
   seq: number;
@@ -36,6 +47,8 @@ export type ParticipantMapSnapshot = {
   seq: number;
   /** studentId -> participantId */
   participants: Record<string, string>;
+  /** studentId -> current Jitsi display name, reported for the current participant ID (display only). */
+  displayNames: Record<string, string>;
   occurredAt: string;
 };
 
@@ -77,15 +90,21 @@ function pruneOldSessions(now: number) {
 
 function toSnapshot(sessionId: string, state: SessionMap | undefined): ParticipantMapSnapshot {
   const participants: Record<string, string> = {};
+  const displayNames: Record<string, string> = {};
 
   state?.students.forEach((entry, studentId) => {
     participants[studentId] = entry.participantId;
+
+    if (entry.displayName) {
+      displayNames[studentId] = entry.displayName;
+    }
   });
 
   return {
     sessionId,
     seq: state?.seq ?? 0,
     participants,
+    displayNames,
     occurredAt: new Date(state?.updatedAt ?? Date.now()).toISOString(),
   };
 }
@@ -130,10 +149,62 @@ export function setParticipant(sessionId: string, studentId: string, participant
     return;
   }
 
+  // A new participant ID starts without a display name: the old one belonged
+  // to the old connection. The student's browser reports the current one.
   state.students.set(studentId, { participantId, at: now });
   state.seq += 1;
   state.updatedAt = now;
   publish(sessionId, state);
+}
+
+/**
+ * Records a student's current Jitsi display name (display only). Applied only
+ * when `participantId` is still the student's current mapped ID, so a late
+ * report for an old connection never labels the new one. An empty name clears
+ * it. Returns whether the name now belongs to the current entry.
+ */
+export function setParticipantDisplayName(
+  sessionId: string,
+  studentId: string,
+  participantId: string,
+  displayName: string
+): boolean {
+  const state = sessions.get(sessionId);
+  const current = state?.students.get(studentId);
+
+  if (!state || !current || current.participantId !== participantId) {
+    return false;
+  }
+
+  const name = normalizeDisplayName(displayName) || undefined;
+
+  if (current.displayName === name) {
+    return true;
+  }
+
+  current.displayName = name;
+  state.seq += 1;
+  state.updatedAt = Date.now();
+  publish(sessionId, state);
+
+  return true;
+}
+
+/**
+ * The snapshot as one viewer may see it: the class teacher gets every display
+ * name; a student only its own (classmates appear by student ID only).
+ */
+export function snapshotForViewer(
+  snapshot: ParticipantMapSnapshot,
+  viewer: { role: "TEACHER" } | { role: "STUDENT"; studentId: string }
+): ParticipantMapSnapshot {
+  if (viewer.role === "TEACHER") {
+    return snapshot;
+  }
+
+  const own = snapshot.displayNames[viewer.studentId];
+
+  return { ...snapshot, displayNames: own ? { [viewer.studentId]: own } : {} };
 }
 
 /**

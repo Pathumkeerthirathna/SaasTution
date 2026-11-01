@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Users } from "lucide-react";
 
-import type { JitsiParticipant } from "../../types";
+import { sessionStatusFor, type StudentLocation } from "../../participant-identity.mjs";
 
 type AttendanceRow = {
   studentId: string;
@@ -15,10 +15,11 @@ type AttendanceRow = {
 
 type AttendancePanelProps = {
   classId?: string;
-  /** Live meeting participants, used to flag who joined this session. */
-  participants: JitsiParticipant[];
-  /** Display name -> room label for people in another room (e.g. a breakout room). */
-  breakoutRoomLabels?: Record<string, string>;
+  /**
+   * studentId -> where that student is in the live session (this room or
+   * another room, e.g. a breakout room), matched by participant ID, never by name.
+   */
+  studentLocations?: Map<string, StudentLocation>;
 };
 
 function barTone(percent: number) {
@@ -35,8 +36,7 @@ function textTone(percent: number) {
 
 export default function AttendancePanel({
   classId,
-  participants,
-  breakoutRoomLabels,
+  studentLocations,
 }: AttendancePanelProps) {
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,12 +71,10 @@ export default function AttendancePanel({
   }, [load]);
 
   // People in a breakout room (or the main room while the teacher is in a breakout)
-  // are still in the session, just not in this browser's room.
-  const joinedNames = new Set([
-    ...participants.map((p) => p.displayName),
-    ...Object.keys(breakoutRoomLabels ?? {}),
-  ]);
-  const joinedCount = rows.filter((r) => joinedNames.has(r.name)).length;
+  // are still in the session, just not in this browser's room. By student ID.
+  const joinedCount = rows.filter(
+    (r) => sessionStatusFor(r.studentId, studentLocations).inSession
+  ).length;
   const avgPercent =
     rows.length === 0
       ? 0
@@ -129,7 +127,7 @@ export default function AttendancePanel({
           </div>
         ) : (
           rows.map((row) => {
-            const inSession = joinedNames.has(row.name);
+            const { inSession, roomLabel } = sessionStatusFor(row.studentId, studentLocations);
             return (
               <div
                 key={row.studentId}
@@ -143,10 +141,7 @@ export default function AttendancePanel({
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
                       <CheckCircle2 size={10} />
                       In session
-                      {breakoutRoomLabels?.[row.name] &&
-                      !participants.some((p) => p.displayName === row.name)
-                        ? ` · ${breakoutRoomLabels[row.name]}`
-                        : ""}
+                      {roomLabel ? ` · ${roomLabel}` : ""}
                     </span>
                   ) : null}
                   <span
