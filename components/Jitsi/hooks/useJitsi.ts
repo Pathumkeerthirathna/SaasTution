@@ -41,6 +41,7 @@ import {
   TEACHER_BITRATE_STORAGE_KEY,
 } from "../teacher-camera-preferences.mjs";
 import { createNoiseSuppressionController } from "../teacher-audio-preferences.mjs";
+import { buildCodecPreferenceConfig } from "../jitsi-codec-preferences.mjs";
 import {
   buildVideoTelemetryMessage,
   parseVideoTelemetryStatus,
@@ -531,6 +532,15 @@ type DeviceStatusViewMessage = {
  */
 const SL_DEVICE_STATUS_ENABLED =
   process.env.NEXT_PUBLIC_SL_DEVICE_STATUS === "true";
+
+/**
+ * Role-based camera codec order (jitsi-codec-preferences.mjs): the teacher
+ * keeps AV1 while everyone can decode it and falls back to VP8, students send
+ * VP8. Off unless the app is built with NEXT_PUBLIC_SL_ROLE_CODEC_ORDER=true;
+ * while off, Jitsi's own default order is used.
+ */
+const SL_ROLE_CODEC_ORDER_ENABLED =
+  process.env.NEXT_PUBLIC_SL_ROLE_CODEC_ORDER === "true";
 
 /**
  * Teacher page -> its own Jitsi iframe (handled by custom.js): Teaching Mode,
@@ -2002,6 +2012,12 @@ export default function useJitsi({
               role,
               parseStoredTeacherBitrate(readStorage(TEACHER_BITRATE_STORAGE_KEY))
             ),
+
+            // Both roles, only with NEXT_PUBLIC_SL_ROLE_CODEC_ORDER=true: the
+            // camera codec order, as dotted videoQuality keys beside the
+            // bitrate keys above (the keys and orders live in
+            // jitsi-codec-preferences.mjs). Off: nothing is added.
+            ...buildCodecPreferenceConfig(role, SL_ROLE_CODEC_ORDER_ENABLED),
           },
 
           interfaceConfigOverwrite: {
