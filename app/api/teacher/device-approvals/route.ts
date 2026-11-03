@@ -34,6 +34,6 @@ export async function GET(request: NextRequest) {
 
     return apiSuccess({ devices, pendingCount });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

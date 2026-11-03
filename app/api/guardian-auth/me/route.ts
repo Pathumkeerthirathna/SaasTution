@@ -5,7 +5,7 @@ import { getGuardianStudents } from "@/services/guardian-portal-service";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireGuardianSession();
     const students = await getGuardianStudents(session.guardianId);
@@ -19,6 +19,6 @@ export async function GET() {
       students,
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

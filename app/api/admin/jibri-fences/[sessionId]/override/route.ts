@@ -21,6 +21,6 @@ export async function POST(request: Request, { params }: { params: { sessionId: 
 
     return apiSuccess(result, { message: "Jibri shutdown fence released by administrator override." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const result = await linkGuardianToStudent(session.teacherId, parsed.data);
     return apiSuccess(result, { status: 201, message: "Guardian linked to student." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -51,6 +51,6 @@ export async function DELETE(request: Request) {
 
     return apiSuccess(result, { message: "Guardian unlinked from student." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

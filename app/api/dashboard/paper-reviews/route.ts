@@ -9,7 +9,7 @@ import { getPendingPaperReviewsForTeacher } from "@/services/class-paper-service
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireTeacherSession();
 
@@ -21,6 +21,6 @@ export async function GET() {
 
     return apiSuccess(reviews);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

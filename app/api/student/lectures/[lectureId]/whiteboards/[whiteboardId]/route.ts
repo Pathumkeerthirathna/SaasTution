@@ -23,6 +23,6 @@ export async function GET(
     const whiteboard = await getWhiteboardForStudent(session.studentId, lectureId, whiteboardId);
     return apiSuccess({ whiteboard });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

@@ -25,6 +25,6 @@ export async function GET(
       session: activeSession,
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

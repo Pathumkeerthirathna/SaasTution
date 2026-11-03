@@ -61,6 +61,6 @@ export async function GET(request: Request) {
 
     return apiSuccess({ assignments });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

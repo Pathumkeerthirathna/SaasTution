@@ -35,7 +35,7 @@ export async function PUT(
     const type = await updateTeacherEventType(session.teacherId, id, body);
     return apiSuccess(type);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -50,6 +50,6 @@ export async function DELETE(
     const result = await deleteTeacherEventType(session.teacherId, id);
     return apiSuccess(result);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

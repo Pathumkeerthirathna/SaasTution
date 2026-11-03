@@ -104,6 +104,6 @@ export async function GET(
       submissions: submissionRows,
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

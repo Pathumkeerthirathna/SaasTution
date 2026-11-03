@@ -27,7 +27,7 @@ export async function GET(
     const notes = await listNotesForLectureForTeacher(session.teacherId, lectureId);
     return apiSuccess(notes);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -154,6 +154,6 @@ export async function POST(
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

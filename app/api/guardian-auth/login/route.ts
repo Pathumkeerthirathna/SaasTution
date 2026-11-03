@@ -44,6 +44,6 @@ export async function POST(request: Request) {
     response.cookies.set(GUARDIAN_AUTH_COOKIE_NAME, token, buildGuardianSessionCookieConfig());
     return response;
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

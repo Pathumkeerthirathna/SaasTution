@@ -20,6 +20,6 @@ export async function GET(
     const guardians = await listStudentGuardians(session.teacherId, studentId);
     return apiSuccess(guardians);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // not viewed yet. A note counts as unviewed when there is no NoteStudent row or
 // its `viewed` flag is false. Tutes, papers and material-bundle items are not
 // included here.
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireStudentSession();
     const studentId = session.studentId;
@@ -59,6 +59,6 @@ export async function GET() {
 
     return apiSuccess({ notes });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

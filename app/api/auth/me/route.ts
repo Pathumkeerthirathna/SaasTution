@@ -9,7 +9,7 @@ const ADMIN_ID = "admin-pathum";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const token = cookies().get(AUTH_COOKIE_NAME)?.value;
 
@@ -83,6 +83,6 @@ export async function GET() {
       },
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

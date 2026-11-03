@@ -82,6 +82,6 @@ export async function POST(
       { message: "Answer submitted." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

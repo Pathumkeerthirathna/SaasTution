@@ -1,10 +1,11 @@
+import { developmentOnly, reportRouteError } from "@/lib/error-handler";
 import { NextResponse } from "next/server";
 
 import {
   getMediums,
 } from "@/services/teacher-profile-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const mediums =
       await getMediums();
@@ -13,10 +14,12 @@ export async function GET() {
       mediums
     );
   } catch (error: unknown) {
+    reportRouteError(error, { request, statusCode: 400 });
+
+    // The raw message only in development: in production it can hold database details.
     const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to load mediums";
+      developmentOnly(error instanceof Error ? error.message : undefined) ??
+      "Failed to load mediums";
 
     return NextResponse.json(
       { message },

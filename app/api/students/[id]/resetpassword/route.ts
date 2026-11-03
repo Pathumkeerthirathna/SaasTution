@@ -1,3 +1,4 @@
+import { reportRouteError } from "@/lib/error-handler";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
@@ -93,7 +94,7 @@ export async function POST(
       success: true,
     });
   } catch (error) {
-    console.error(error);
+    reportRouteError(error, { request });
 
     return NextResponse.json(
       {

@@ -87,7 +87,7 @@ export async function GET(
 
     return apiSuccess({ submission: submission ?? null });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -227,6 +227,6 @@ export async function POST(
 
     return apiSuccess({ submission }, { message: "Assignment submitted successfully.", status: 201 });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -34,7 +34,7 @@ export async function GET(_request: Request, context: Context) {
     const whiteboard = await getWhiteboardForTeacher(session.teacherId, lectureId, whiteboardId);
     return apiSuccess({ whiteboard });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -59,7 +59,7 @@ export async function PUT(request: Request, context: Context) {
 
     return apiSuccess({ whiteboard }, { message: "Whiteboard updated successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -72,6 +72,6 @@ export async function DELETE(_request: Request, context: Context) {
 
     return apiSuccess({ deleted: true }, { message: "Whiteboard deleted successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

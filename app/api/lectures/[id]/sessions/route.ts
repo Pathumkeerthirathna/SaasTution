@@ -27,7 +27,7 @@ export async function GET(
 
     return apiSuccess(sessions);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -52,6 +52,6 @@ export async function POST(
 
     return apiSuccess({ session: result.session }, { status: 201 });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

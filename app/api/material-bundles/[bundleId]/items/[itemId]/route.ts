@@ -74,7 +74,7 @@ export async function PUT(
     );
     return apiSuccess({ item }, { message: "Bundle item updated successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -93,6 +93,6 @@ export async function DELETE(
     await deleteMaterialBundleItemForTeacher(session.teacherId, bundleId, itemId);
     return apiSuccess({ deleted: true }, { message: "Bundle item deleted successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

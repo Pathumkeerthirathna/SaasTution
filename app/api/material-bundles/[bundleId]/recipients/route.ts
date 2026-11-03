@@ -21,7 +21,7 @@ export async function GET(
     const bundle = await getMaterialBundleDetailsForTeacher(session.teacherId, bundleId);
     return apiSuccess({ bundle });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -52,6 +52,6 @@ export async function POST(
 
     return apiSuccess({ bundle }, { message: "Bundle sent and recipients saved successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -19,6 +19,6 @@ export async function GET(request: Request) {
     const counts = await getStudentDashboardCounts(session.studentId, range);
     return apiSuccess({ counts });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

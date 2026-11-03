@@ -138,6 +138,6 @@ export async function POST(
 
     return apiSuccess(result);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

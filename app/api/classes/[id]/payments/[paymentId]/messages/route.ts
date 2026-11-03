@@ -124,6 +124,6 @@ export async function POST(
 
     return apiSuccess({ message: created }, { status: 201, message: "Message sent to student." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

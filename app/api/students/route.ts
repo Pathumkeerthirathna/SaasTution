@@ -47,7 +47,7 @@ export async function GET(request: Request) {
       pagination: buildPaginationMeta(totalItems, pagination.page, pagination.pageSize),
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -84,6 +84,6 @@ export async function POST(request: Request) {
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

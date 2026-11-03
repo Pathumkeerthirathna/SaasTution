@@ -46,6 +46,6 @@ export async function POST(
       message: "Class session started successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

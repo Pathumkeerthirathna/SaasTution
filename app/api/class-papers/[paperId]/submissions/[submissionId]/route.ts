@@ -30,6 +30,6 @@ export async function PATCH(
     );
     return apiSuccess(result, { message: "Marks saved." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

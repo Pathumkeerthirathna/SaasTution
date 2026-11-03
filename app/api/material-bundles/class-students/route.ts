@@ -30,6 +30,6 @@ export async function GET(request: Request) {
 
     return apiSuccess({ students });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

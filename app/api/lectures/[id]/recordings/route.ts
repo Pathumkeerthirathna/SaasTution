@@ -22,6 +22,6 @@ export async function GET(
     const recordings = await listRecordingsForLectureForTeacher(session.teacherId, lectureId);
     return apiSuccess(recordings);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

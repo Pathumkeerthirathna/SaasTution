@@ -44,7 +44,7 @@ export async function GET(
       isValidPageId(pageId) ? pageId : null
     ));
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -77,6 +77,6 @@ export async function POST(
       { message: "Notices dismissed." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

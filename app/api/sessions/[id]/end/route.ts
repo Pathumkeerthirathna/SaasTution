@@ -25,6 +25,6 @@ export async function POST(
       message: "Class session ended successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

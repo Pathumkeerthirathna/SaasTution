@@ -53,6 +53,6 @@ export async function POST(
       message: result.updated ? "Student leave event tracked successfully." : "Student already left this session.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_COUNTDOWN_MINUTES = 30;
 const DEFAULT_GRACE_MINUTES = 20;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireTeacherSession();
 
@@ -26,7 +26,7 @@ export async function GET() {
       submissionGraceMinutes: config?.submissionGraceMinutes ?? DEFAULT_GRACE_MINUTES,
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -64,6 +64,6 @@ export async function PUT(request: Request) {
 
     return apiSuccess(config, { message: "Paper configuration updated successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

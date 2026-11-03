@@ -60,6 +60,6 @@ export async function POST(
 
     return apiSuccess({ item }, { status: 201, message: "Bundle item added successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

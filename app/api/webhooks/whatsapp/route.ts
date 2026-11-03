@@ -41,6 +41,6 @@ export async function POST(request: Request) {
       message: "Delivery status updated successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -48,6 +48,6 @@ export async function POST(
       message: "Live session notifications processed.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

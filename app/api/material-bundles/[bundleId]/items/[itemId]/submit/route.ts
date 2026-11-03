@@ -187,6 +187,6 @@ export async function POST(
       { status: 201, message: "Submission uploaded successfully." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

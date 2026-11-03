@@ -80,6 +80,6 @@ export async function GET(req: NextRequest) {
       { pagination: buildPaginationMeta(totalItems, page, pageSize) },
     );
   } catch (err) {
-    return handleRouteError(err);
+    return handleRouteError(err, { request: req });
   }
 }

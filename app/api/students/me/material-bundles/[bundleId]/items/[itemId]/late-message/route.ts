@@ -89,6 +89,6 @@ export async function POST(
       { status: 201, message: "Reason message sent to teacher." },
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

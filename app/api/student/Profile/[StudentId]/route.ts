@@ -1,3 +1,4 @@
+import { reportRouteError } from "@/lib/error-handler";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -38,7 +39,7 @@ export async function GET(
 
 
   } catch (error) {
-    console.error(error);
+    reportRouteError(error, { request });
 
     return NextResponse.json(
       {

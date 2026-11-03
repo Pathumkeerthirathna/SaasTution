@@ -23,6 +23,6 @@ export async function POST(request: Request) {
       { message: "A new confirmation code has been sent to your email." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

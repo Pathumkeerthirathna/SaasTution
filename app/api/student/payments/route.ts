@@ -165,7 +165,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ toPay, inReview, paid, classes });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -283,6 +283,6 @@ export async function POST(request: Request) {
 
     return apiSuccess({ payment }, { status: 201, message: "Payment slip submitted." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

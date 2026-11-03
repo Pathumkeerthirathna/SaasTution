@@ -22,6 +22,6 @@ export async function GET(
     const lives = await listLiveBroadcastsForLectureForTeacher(session.teacherId, lectureId);
     return apiSuccess(lives);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

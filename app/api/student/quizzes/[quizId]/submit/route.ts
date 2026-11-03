@@ -262,6 +262,6 @@ export async function POST(
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

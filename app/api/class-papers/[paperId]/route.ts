@@ -17,7 +17,7 @@ export async function GET(
     const paper = await getClassPaperForTeacher(session.teacherId, params.paperId);
     return apiSuccess({ paper });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -30,6 +30,6 @@ export async function DELETE(
     const result = await deleteClassPaperForTeacher(session.teacherId, params.paperId);
     return apiSuccess(result, { message: "Paper removed." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

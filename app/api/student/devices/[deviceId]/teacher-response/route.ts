@@ -27,6 +27,6 @@ export async function PUT(
 
     return apiSuccess(device);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

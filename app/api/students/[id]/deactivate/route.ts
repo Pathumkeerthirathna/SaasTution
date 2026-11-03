@@ -26,6 +26,6 @@ export async function PUT(
       message: "Student deactivated successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

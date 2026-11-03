@@ -25,6 +25,6 @@ export async function POST(
 
     return apiSuccess({ teacher }, { message: "Teacher blocked." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

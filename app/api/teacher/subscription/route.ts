@@ -6,7 +6,7 @@ import {
   selectTeacherSubscriptionPlan,
 } from "@/services/teacher-subscription-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const teacherSession = await requireTeacherSession();
 
@@ -16,7 +16,7 @@ export async function GET() {
 
     return apiSuccess({ subscription });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -41,6 +41,6 @@ export async function POST(request: Request) {
       { message: "Subscription plan selected." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

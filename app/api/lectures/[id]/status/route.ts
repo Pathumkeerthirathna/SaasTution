@@ -44,6 +44,6 @@ export async function PUT(
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -25,6 +25,6 @@ export async function DELETE(
 
     return apiSuccess({ deleted: true }, { message: "Device removed." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

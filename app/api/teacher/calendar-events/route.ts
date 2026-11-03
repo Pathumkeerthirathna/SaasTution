@@ -46,6 +46,6 @@ export async function POST(request: Request) {
 
     return apiSuccess(event, { status: 201 });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

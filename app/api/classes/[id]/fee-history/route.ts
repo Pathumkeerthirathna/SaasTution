@@ -23,6 +23,6 @@ export async function GET(
 
     return apiSuccess(history);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

@@ -45,7 +45,7 @@ export async function PUT(
     const event = await updateTeacherCalendarEvent(session.teacherId, id, patch);
     return apiSuccess(event);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -60,6 +60,6 @@ export async function DELETE(
     const result = await deleteTeacherCalendarEvent(session.teacherId, id);
     return apiSuccess(result);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

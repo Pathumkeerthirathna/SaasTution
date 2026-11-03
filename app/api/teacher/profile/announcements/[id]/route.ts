@@ -33,7 +33,7 @@ export async function PUT(
 
     return apiSuccess(announcement);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -53,6 +53,6 @@ export async function DELETE(
 
     return apiSuccess(result);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

@@ -47,6 +47,6 @@ export async function GET(
 
     return apiSuccess({ summary: data.summary, classes, years });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

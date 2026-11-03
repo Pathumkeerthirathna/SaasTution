@@ -34,6 +34,6 @@ export async function POST(request: Request) {
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

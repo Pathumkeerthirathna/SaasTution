@@ -49,6 +49,6 @@ export async function POST(
       message: "Student join event tracked successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

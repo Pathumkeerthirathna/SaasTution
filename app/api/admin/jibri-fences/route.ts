@@ -8,7 +8,7 @@ import { getJibriShutdownHealth, listOpenJibriFences } from "@/services/jibri-fe
  * Jibri shutdown fences (services/jibri-fence-override-service.ts). No
  * tokens, secrets or Jitsi credentials are included.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireAdminSession();
 
@@ -16,6 +16,6 @@ export async function GET() {
 
     return apiSuccess({ health, fences });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

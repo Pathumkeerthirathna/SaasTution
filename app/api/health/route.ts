@@ -1,7 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { handleRouteError } from "@/lib/error-handler";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     return apiSuccess(
       {
@@ -11,6 +11,6 @@ export async function GET() {
       { message: "Service is healthy." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

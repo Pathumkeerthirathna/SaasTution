@@ -25,6 +25,6 @@ export async function POST(request: Request) {
       message: "Guardian account created and credentials emailed.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -9,14 +9,14 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireTeacherSession();
     const announcements = await getTeacherAnnouncements(session.teacherId);
 
     return apiSuccess(announcements);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -40,6 +40,6 @@ export async function POST(request: Request) {
 
     return apiSuccess(announcement, { status: 201 });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

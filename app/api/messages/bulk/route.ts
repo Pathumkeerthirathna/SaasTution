@@ -35,6 +35,6 @@ export async function POST(request: Request) {
       message: "Message saved and sent to class students.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

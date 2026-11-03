@@ -3,7 +3,7 @@ import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { getActiveSubscriptionPlansForTeacher } from "@/services/teacher-subscription-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireTeacherSession();
 
@@ -11,6 +11,6 @@ export async function GET() {
 
     return apiSuccess({ plans });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -9,13 +9,13 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireTeacherSession();
     const types = await getTeacherEventTypes(session.teacherId);
     return apiSuccess(types);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -36,6 +36,6 @@ export async function POST(request: Request) {
 
     return apiSuccess(type, { status: 201 });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

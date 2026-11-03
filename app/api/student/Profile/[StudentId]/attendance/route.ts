@@ -1,3 +1,4 @@
+import { reportRouteError } from "@/lib/error-handler";
 import { NextResponse } from "next/server";
 import { getStudentAttendanceSummary } from "@/services/student-service";
 
@@ -15,7 +16,7 @@ export async function GET(
       data: classes,
     });
   } catch (error) {
-    console.error(error);
+    reportRouteError(error, { request });
 
     return NextResponse.json(
       {

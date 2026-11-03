@@ -21,6 +21,6 @@ export async function POST(request: Request) {
 
     return apiSuccess(result, { message: "Jibri shutdown mode changed." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

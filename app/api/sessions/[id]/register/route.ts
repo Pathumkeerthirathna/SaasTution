@@ -31,6 +31,6 @@ export async function GET(
 
     return apiSuccess(register);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

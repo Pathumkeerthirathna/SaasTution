@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     return apiSuccess(sheet);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
     return apiSuccess(sheet);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -92,6 +92,6 @@ export async function PATCH(request: Request) {
 
     return apiSuccess(sheet);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

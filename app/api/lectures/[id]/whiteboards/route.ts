@@ -27,7 +27,7 @@ export async function GET(
     const whiteboards = await listWhiteboardsForLectureForTeacher(session.teacherId, lectureId);
     return apiSuccess(whiteboards);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -56,6 +56,6 @@ export async function POST(
 
     return apiSuccess({ whiteboard }, { status: 201, message: "Whiteboard saved successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

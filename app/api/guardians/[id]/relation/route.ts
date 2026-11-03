@@ -34,6 +34,6 @@ export async function PATCH(
 
     return apiSuccess(result, { message: "Relation updated." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

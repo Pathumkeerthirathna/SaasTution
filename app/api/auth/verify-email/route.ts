@@ -24,6 +24,6 @@ export async function POST(request: Request) {
       { message: "Email confirmed successfully." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

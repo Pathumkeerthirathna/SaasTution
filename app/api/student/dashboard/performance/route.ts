@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // GET /api/student/dashboard/performance
 // Overall attendance rate and overall quiz score for the logged-in student,
 // both as whole-number percentages across every active enrolled class.
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireStudentSession();
     const studentId = session.studentId;
@@ -75,6 +75,6 @@ export async function GET() {
       },
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

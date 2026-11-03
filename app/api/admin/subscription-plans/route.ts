@@ -6,7 +6,7 @@ import {
   listSubscriptionPlansForAdmin,
 } from "@/services/admin-subscription-plan-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireAdminSession();
 
@@ -14,7 +14,7 @@ export async function GET() {
 
     return apiSuccess({ plans });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -31,6 +31,6 @@ export async function POST(request: Request) {
       { status: 201, message: "Subscription plan created." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -29,6 +29,6 @@ export async function GET(request: Request) {
     const entries = await getStudentCalendar(session.studentId, fromDate, toDate);
     return apiSuccess({ entries });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

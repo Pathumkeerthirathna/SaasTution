@@ -62,6 +62,6 @@ export async function GET(request: Request) {
 
     return apiSuccess({ papers });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       message: "Attendance marked successfully.",
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -84,6 +84,6 @@ export async function GET(request: Request) {
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

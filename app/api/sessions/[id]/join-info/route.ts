@@ -45,6 +45,6 @@ export async function GET(
 
     return apiSuccess(joinInfo);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

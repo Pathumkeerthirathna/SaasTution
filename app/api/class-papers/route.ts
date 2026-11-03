@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const papers = await listClassPapersForTeacher(session.teacherId, classId);
     return apiSuccess({ papers });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -94,6 +94,6 @@ export async function POST(request: Request) {
       throw createError;
     }
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -34,6 +34,6 @@ export async function PUT(
 
     return apiSuccess({ guardian }, { message: "Guardian details updated." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -19,7 +19,7 @@ export async function PUT(
 
     return apiSuccess({ plan }, { message: "Subscription plan updated." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -39,6 +39,6 @@ export async function DELETE(
 
     return apiSuccess({ plan }, { message: "Subscription plan removed." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

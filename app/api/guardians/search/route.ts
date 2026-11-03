@@ -21,6 +21,6 @@ export async function GET(request: Request) {
     const guardians = await searchGuardians(parsed.data.q);
     return apiSuccess(guardians);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

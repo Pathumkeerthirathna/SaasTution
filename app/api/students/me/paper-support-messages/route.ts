@@ -76,6 +76,6 @@ export async function GET(req: NextRequest) {
       { pagination: buildPaginationMeta(totalItems, page, pageSize) },
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: req });
   }
 }

@@ -60,6 +60,6 @@ export async function GET(
       }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

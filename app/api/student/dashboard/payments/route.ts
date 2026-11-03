@@ -19,7 +19,7 @@ function feeState(payments: { status: string }[]): FeeState {
 //   due     — the due date is now or past
 //   dueSoon — the due date is still ahead but falls within the current month
 // Fees due in a later month are not returned.
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireStudentSession();
     const studentId = session.studentId;
@@ -77,6 +77,6 @@ export async function GET() {
       dueSoonTotal: sum(dueSoon),
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

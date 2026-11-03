@@ -26,7 +26,7 @@ export async function GET(
     const bundle = await getMaterialBundleDetailsForTeacher(session.teacherId, bundleId);
     return apiSuccess({ bundle });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }
 
@@ -59,7 +59,7 @@ export async function PUT(
     const bundle = await updateMaterialBundleForTeacher(session.teacherId, bundleId, parsed.data);
     return apiSuccess({ bundle }, { message: "Bundle updated successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -78,6 +78,6 @@ export async function DELETE(
     await deleteMaterialBundleForTeacher(session.teacherId, bundleId);
     return apiSuccess({ deleted: true }, { message: "Bundle deleted successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

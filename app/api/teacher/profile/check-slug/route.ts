@@ -1,3 +1,4 @@
+import { reportRouteError } from "@/lib/error-handler";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       available: !exists,
     });
   } catch (error) {
-    console.error(error);
+    reportRouteError(error, { request });
 
     return NextResponse.json(
       {

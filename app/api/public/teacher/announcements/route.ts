@@ -22,6 +22,6 @@ export async function GET(request: Request) {
 
     return apiSuccess(announcements);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

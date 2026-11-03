@@ -120,6 +120,6 @@ export async function POST(
 
     return apiSuccess({ message: created.paymentMessage }, { status: 201, message: "Reply added successfully." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

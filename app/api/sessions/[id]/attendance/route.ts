@@ -30,6 +30,6 @@ export async function GET(
       notJoinedStudents: result.notJoinedStudents,
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

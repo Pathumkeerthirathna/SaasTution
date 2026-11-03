@@ -46,7 +46,7 @@ export async function POST(
 
     return apiSuccess({ published: true });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -131,6 +131,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

@@ -12,14 +12,14 @@ export const dynamic = "force-dynamic";
 
 const SECTIONS: ProfileSection[] = ["qualification", "achievements", "subjects"];
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireTeacherSession();
     const visibility = await getSectionVisibility(session.teacherId);
 
     return apiSuccess(visibility);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -56,6 +56,6 @@ export async function PATCH(request: Request) {
 
     return apiSuccess(visibility);
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

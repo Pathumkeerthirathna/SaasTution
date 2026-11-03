@@ -98,6 +98,6 @@ export async function POST(
 
     return apiSuccess({ payment: updated }, { message: status === "CONFIRMED" ? "Payment confirmed." : "Clarification requested." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

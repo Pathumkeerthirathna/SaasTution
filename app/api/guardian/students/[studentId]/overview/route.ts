@@ -15,6 +15,6 @@ export async function GET(
     );
     return apiSuccess(await getGuardianStudentOverview(studentId));
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request: _request });
   }
 }

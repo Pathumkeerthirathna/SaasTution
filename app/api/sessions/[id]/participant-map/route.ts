@@ -117,7 +117,7 @@ export async function POST(
       { message: "Participant registered." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -175,7 +175,7 @@ export async function PATCH(
       { message: updated ? "Display name updated." : "Participant ID is not current." }
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 
@@ -270,6 +270,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }

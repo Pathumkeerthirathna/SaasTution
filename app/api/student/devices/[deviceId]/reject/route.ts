@@ -34,7 +34,7 @@ export async function PUT(
       device
     );
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
 

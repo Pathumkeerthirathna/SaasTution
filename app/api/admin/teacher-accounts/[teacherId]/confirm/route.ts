@@ -14,6 +14,6 @@ export async function POST(
 
     return apiSuccess({ teacher }, { message: "Teacher confirmed." });
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error, { request });
   }
 }
