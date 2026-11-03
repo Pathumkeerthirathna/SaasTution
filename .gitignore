@@ -20,6 +20,9 @@
 # production
 /build
 
+# error logs (lib/error-logging): never committed
+/logs/
+
 # misc
 .DS_Store
 *.pem

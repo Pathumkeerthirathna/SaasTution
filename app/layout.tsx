@@ -3,6 +3,8 @@ import { Manrope, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 
+import GlobalErrorListener from "@/components/error-reporting/GlobalErrorListener";
+
 
 const manrope = Manrope({
   variable: "--font-sans",
@@ -38,7 +40,9 @@ export default function RootLayout({
       lang="en"
       className={`${manrope.variable} ${plusJakartaSans.variable} ${jetBrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}
+      <body className="min-h-full flex flex-col">
+        <GlobalErrorListener />
+        {children}
         <Toaster
           position="top-right"
           reverseOrder={false}
