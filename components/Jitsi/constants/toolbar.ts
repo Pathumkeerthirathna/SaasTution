@@ -35,6 +35,11 @@ const baseTeacherToolbar = [
   "hangup",
   "fullscreen",
   //"tileview",
+  // Jitsi's Settings: custom.js (Settings Button Visibility) hides it on a
+  // wide desktop layout, where the mic / camera buttons' own menus hold the
+  // device controls and SLClassroom's settings menu holds the screen-sharing
+  // frame rate. Android / iOS and narrow layouts (under 512 px) have no such
+  // menus, so Settings stays there (and stays everywhere without custom.js).
   "settings",
   "videoquality",
   "select-background",
@@ -52,14 +57,14 @@ const baseTeacherToolbar = [
   //"invite",
   "calendar",
   "closedcaptions",
-  "profile",
+  // "profile",
   "feedback",
   "help",
   "speakerstats",
-  "stats",
-  "shortcuts",
+  // "stats",
+  // "shortcuts",
   "download",
-  "embedmeeting",
+  // "embedmeeting",
   "fodeviceselection",
   "toggle-camera",
 ];
@@ -73,11 +78,15 @@ const baseStudentToolbar = [
   // No "tileview": students see only the teacher / screen share, never a
   // participant grid (their receive policy does not fetch other cameras).
   "fullscreen",
+  // Settings: shown / hidden by custom.js as for the teacher (see above).
   "settings",
   "videoquality",
   "shortcuts",
   "hangup",
-  "desktop"
+  "desktop",
+  // Front/back camera switch: Jitsi shows it only in mobile browsers with
+  // more than one camera, so desktop students never see it.
+  "toggle-camera",
 ];
 
 // Jitsi's own native "fullscreen" toolbar button only fullscreens its own

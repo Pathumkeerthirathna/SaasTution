@@ -206,3 +206,20 @@ test("webcam FPS and screen-sharing FPS stay separate (own values, own keys, own
 
   assert.doesNotMatch(handler, /setTeachingMode|applyTeachingSettings|TEACHING_FRAME_RATE|setTeacherBitrate|setVideoQuality/);
 });
+
+/* -------------------------------- toolbar -------------------------------- */
+
+test("both role toolbars still list Settings (custom.js hides it on wide desktop only); other controls stay", () => {
+  assert.ok(teacherToolbar.includes("settings"));
+  assert.ok(studentToolbar.includes("settings"));
+
+  // The mic / camera buttons carry the device menus (mic, speakers, noise
+  // suppression, camera, virtual background, mirror).
+  for (const button of ["microphone", "camera", "desktop", "select-background", "videobackgroundblur", "videoquality", "hangup"]) {
+    assert.ok(teacherToolbar.includes(button), `teacher ${button}`);
+  }
+
+  for (const button of ["microphone", "camera", "desktop", "videoquality", "raisehand", "shortcuts", "hangup", "toggle-camera"]) {
+    assert.ok(studentToolbar.includes(button), `student ${button}`);
+  }
+});

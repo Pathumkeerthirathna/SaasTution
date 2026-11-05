@@ -10126,6 +10126,137 @@ const SL_DEVICE_STATUS_GAP = 8;
 
 
 /* ==========================================================
+   SL Classroom - Settings Button Visibility (both roles)
+
+   Jitsi's own Settings button is hidden only where the microphone and
+   camera buttons' small arrow menus exist, since those menus then give
+   every device control (microphone, speakers, noise suppression,
+   camera, virtual background, mirror). Jitsi (build 9442) shows those
+   menus only when BOTH hold:
+     - the OS is not Android / iOS (Jitsi's own detection, copied
+       below: /Android/i -> android; /iP(ad|hone|od)/i, or a touch
+       "MacIntel" (iPadOS) -> ios);
+     - its layout is not narrow (features/base/responsive-ui
+       isNarrowLayout: the meeting area is under 512 px wide).
+   Otherwise Settings is the only way to those controls, so it stays.
+   On a wide desktop layout SLClassroom's own settings menu holds the
+   screen-sharing frame rate, which was in Settings' Video tab.
+
+   The page's toolbar (both roles) INCLUDES "settings"; this section
+   removes / restores it with Jitsi's own OVERWRITE_CONFIG (the action
+   the External API's overwriteConfig uses), after which Jitsi itself
+   recomputes the visible buttons. Nothing else in the toolbar changes.
+   Without this file (an older custom.js), Settings simply stays.
+   A page whose toolbar has no "settings" is left alone (never added).
+
+   Cheap: runs on store changes, reads two values, and dispatches only
+   when the wanted visibility flips (window resized across 512 px).
+========================================================== */
+
+(function () {
+
+    const SL_SBV_BUTTON = "settings";
+    // null until the page's toolbar is seen: whether it includes Settings.
+    let managed = null;
+    let dispatching = false;
+    let mobileOs = null;
+
+    // Jitsi 9442's OS detection (its isMobileBrowser: android / ios).
+    function isMobileOs() {
+        if (mobileOs === null) {
+            const nav = window.navigator || {};
+            const ua = String(nav.userAgent || "");
+            const touchMac = Number(nav.maxTouchPoints) > 2 && /MacIntel/.test(String(nav.platform || ""));
+
+            mobileOs = /Android/i.test(ua) || /iP(ad|hone|od)/i.test(ua) || touchMac;
+        }
+
+        return mobileOs;
+    }
+
+    function sync() {
+        if (dispatching || !window.APP || !APP.store) {
+            return;
+        }
+
+        const state = APP.store.getState();
+        const buttons = state?.["features/base/config"]?.toolbarButtons;
+
+        if (!Array.isArray(buttons)) {
+            return;
+        }
+
+        const has = buttons.includes(SL_SBV_BUTTON);
+
+        if (managed === null) {
+            managed = has;
+        }
+
+        if (!managed) {
+            return;
+        }
+
+        const narrow = state?.["features/base/responsive-ui"]?.isNarrowLayout === true;
+        const wanted = isMobileOs() || narrow;
+
+        if (wanted === has) {
+            return;
+        }
+
+        dispatching = true;
+
+        try {
+            APP.store.dispatch({
+                type: "OVERWRITE_CONFIG",
+                config: {
+                    toolbarButtons: wanted
+                        ? [...buttons, SL_SBV_BUTTON]
+                        : buttons.filter(button => button !== SL_SBV_BUTTON)
+                }
+            });
+        } catch (error) {
+            console.warn("[SL Classroom] Settings button visibility not changed:",
+                (error && (error.name || error.message)) || String(error));
+        } finally {
+            dispatching = false;
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slSettingsButtonTest.state()
+    // ---------------------------------------------------------------------
+    window.__slSettingsButtonTest = {
+        state: () => {
+            const state = window.APP && APP.store ? APP.store.getState() : null;
+            const buttons = state?.["features/base/config"]?.toolbarButtons;
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                managed,
+                mobileOs: isMobileOs(),
+                narrow: state?.["features/base/responsive-ui"]?.isNarrowLayout === true,
+                settingsShown: Array.isArray(buttons) ? buttons.includes(SL_SBV_BUTTON) : null
+            };
+        }
+    };
+
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
    SL Classroom - Teaching Mode (the teacher's own camera, send side)
 
    Optional, teacher only, off by default. While on, the teacher's

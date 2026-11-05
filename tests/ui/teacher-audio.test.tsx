@@ -85,10 +85,12 @@ test("the native Jitsi noise-suppression button is gone from the teacher toolbar
 
   assert.ok(!toolbar.includes("noisesuppression"));
 
+  // "profile", "stats", "shortcuts" and "embedmeeting" were commented out of
+  // the toolbar ("settings" stays; custom.js hides it on wide desktop only).
   for (const button of ["microphone", "camera", "desktop", "hangup", "fullscreen", "settings", "videoquality",
     "select-background", "videobackgroundblur", "mute-everyone", "security", "whiteboard", "breakoutrooms",
-    "livestreaming", "etherpad", "calendar", "closedcaptions", "profile", "feedback", "help", "speakerstats",
-    "stats", "shortcuts", "download"]) {
+    "livestreaming", "etherpad", "calendar", "closedcaptions", "feedback", "help", "speakerstats",
+    "download", "fodeviceselection", "toggle-camera"]) {
     assert.ok(toolbar.includes(button), button);
   }
 });
