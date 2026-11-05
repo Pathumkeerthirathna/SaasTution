@@ -133,6 +133,13 @@ type MeetingCardProps = {
    * menu). Omitted: the header is exactly as before.
    */
   profileMenu?: ReactNode;
+
+  /**
+   * Shown in the header's controls just before the Fullscreen button (the
+   * screen-sharing availability notice, both roles). It renders nothing on
+   * browsers that can share a screen or once dismissed.
+   */
+  screenShareNotice?: ReactNode;
 };
 
 export default function MeetingCard({
@@ -167,6 +174,7 @@ export default function MeetingCard({
   isMobile = false,
   onEnterFullscreen,
   profileMenu,
+  screenShareNotice,
 }: MeetingCardProps) {
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [isStoppingRecording, setIsStoppingRecording] = useState(false);
@@ -581,6 +589,11 @@ export default function MeetingCard({
               content in this spot for the student. onEnterFullscreen runs the
               same handler as the desktop floating button in JitsiClassroom.tsx:
               real fullscreen where allowed, the CSS fallback otherwise. */}
+          {/* Screen-sharing notice (both roles): an inline header item before
+              Fullscreen, so it wraps with the other controls instead of
+              covering them or the meeting. */}
+          {screenShareNotice}
+
           {isMobile && (
             <button
               type="button"

@@ -8,6 +8,7 @@ import useJoinSession from "./hooks/useJoinSession";
 import MeetingCard from "./classroom/meeting/MeetingCard";
 import StudentProfileMenu from "./classroom/student/StudentProfileMenu";
 import OrientationHint from "./classroom/meeting/OrientationHint";
+import ScreenShareNotice from "./classroom/meeting/ScreenShareNotice";
 import RightSidebar from "./classroom/sidebar/RightSidebar";
 import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
@@ -2069,6 +2070,10 @@ const [classStudents, setClassStudents] =
         onEndSession={handleEndSessionForEveryone}
         isMobile={viewport.isTouchLayout}
         onEnterFullscreen={() => void handleEnterFullscreen()}
+        // Teacher + student, same rule: shown only where the browser has no
+        // getDisplayMedia. Keyed by session so a dismissal lasts for this
+        // classroom session and a different session starts fresh.
+        screenShareNotice={<ScreenShareNotice key={joinInfo.session.id} />}
         // Student only: their Jitsi name and, read-only, their registered
         // name (the server-built join info of the logged-in student).
         profileMenu={
