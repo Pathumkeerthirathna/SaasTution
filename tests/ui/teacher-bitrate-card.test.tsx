@@ -145,7 +145,7 @@ test("not duplicated: the Camera Monitoring panel no longer has the selector", (
   assert.match(html, /Receiving/);
 });
 
-test("the bitrate change leaves codec choice, capture, FPS and simulcast settings in useJitsi as they were", () => {
+test("the bitrate change leaves capture, FPS and simulcast settings in useJitsi as they were; codec settings come only from the flagged codec-order helper", () => {
   const jitsi = source("hooks", "useJitsi.ts");
 
   assert.match(jitsi, /resolution: 720,/);
@@ -153,9 +153,43 @@ test("the bitrate change leaves codec choice, capture, FPS and simulcast setting
   assert.match(jitsi, /constraints: \{\s*video: \{\s*height: \{\s*ideal: 720,\s*max: 1080,\s*min: 240,\s*\},\s*\},\s*\},/);
   assert.match(jitsi, /disableSimulcast: false,/);
   assert.match(jitsi, /p2p: \{\s*enabled: false,\s*\}/);
+  // No codec key is hard-coded in useJitsi: the codec order is only added by
+  // buildCodecPreferenceConfig (jitsi-codec-preferences.mjs), and nothing
+  // forces or disables a codec.
   assert.doesNotMatch(jitsi, /codecPreferenceOrder|preferredCodec|disabledCodec/);
   // Only the dotted per-codec keys come from the bitrate helper.
   assert.match(jitsi, /\.\.\.buildTeacherBitrateConfig\(\s*role,\s*parseStoredTeacherBitrate\(readStorage\(TEACHER_BITRATE_STORAGE_KEY\)\)\s*\)/);
+});
+
+test("codec order: added only behind NEXT_PUBLIC_SL_ROLE_CODEC_ORDER, after the bitrate keys, off by default", async () => {
+  const jitsi = source("hooks", "useJitsi.ts");
+  const helper = source("jitsi-codec-preferences.mjs");
+
+  // The build-time flag: on only for the exact string "true".
+  assert.match(jitsi, /const SL_ROLE_CODEC_ORDER_ENABLED =\s*process\.env\.NEXT_PUBLIC_SL_ROLE_CODEC_ORDER === "true";/);
+  // One spread, for both roles, gated by that flag, inside configOverwrite
+  // right after the bitrate keys (so neither replaces the other).
+  assert.equal((jitsi.match(/buildCodecPreferenceConfig\(/g) || []).length, 1);
+  assert.match(
+    jitsi,
+    /\.\.\.buildTeacherBitrateConfig\(\s*role,\s*parseStoredTeacherBitrate\(readStorage\(TEACHER_BITRATE_STORAGE_KEY\)\)\s*\),[\s\S]{0,600}?\.\.\.buildCodecPreferenceConfig\(role, SL_ROLE_CODEC_ORDER_ENABLED\),\s*\},\s*interfaceConfigOverwrite:/
+  );
+  // The helper only orders codecs: it never forces or disables one.
+  assert.doesNotMatch(helper, /preferredCodec|disabledCodec/);
+
+  const { buildCodecPreferenceConfig } = await import("../../components/Jitsi/jitsi-codec-preferences.mjs");
+
+  // Off: nothing at all reaches configOverwrite, for either role.
+  assert.deepEqual(buildCodecPreferenceConfig("teacher", false), {});
+  assert.deepEqual(buildCodecPreferenceConfig("student", false), {});
+  // On: dotted videoQuality keys only, never a whole videoQuality object
+  // (which would drop the bitrate keys).
+  for (const role of ["teacher", "student"]) {
+    const keys = Object.keys(buildCodecPreferenceConfig(role, true));
+
+    assert.ok(keys.length > 0, role);
+    keys.forEach((key) => assert.match(key, /^videoQuality\.[A-Za-z]+$/));
+  }
 });
 
 test("camera quality: the settings menu offers only the shared list (720p highest), no hard-coded 1080p", () => {
