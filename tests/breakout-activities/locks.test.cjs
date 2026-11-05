@@ -79,7 +79,7 @@ test("breakout code starts transactions only through runBreakoutTransaction", ()
     }
   };
   walk(path.join(root, "lib", "breakout-activities"));
-  walk(path.join(root, "app", "api", "sessions", "[id]", "breakout"));
+  walk(path.join(root, "app", "api", "sessions", "[id]", "breakout-activities"));
   if (fs.existsSync(path.join(root, "services"))) {
     for (const name of fs.readdirSync(path.join(root, "services"))) {
       if (/^breakout-.*\.(ts|mjs|js)$/.test(name)) files.push(path.join(root, "services", name));
@@ -102,13 +102,13 @@ test("refused on the top-level client (it has $transaction)", async () => {
   assert.equal(client.calls.length, 0, "nothing was sent, not even SET LOCAL");
 });
 
-test("shared session lock: lock_timeout first, then SELECT ... FOR SHARE with a bound id", async () => {
+test("shared session lock: lock_timeout first, then SELECT ... FOR KEY SHARE with a bound id", async () => {
   const tx = fakeTx([LIVE]);
   const row = await locks.lockSessionShared(tx, SESSION);
   assert.deepEqual(row, LIVE);
   assert.equal(tx.calls.length, 2);
   assert.deepEqual(tx.calls[0], { kind: "unsafe", sql: "SET LOCAL lock_timeout = '3000ms'", values: [] });
-  assert.equal(tx.calls[1].sql, 'SELECT "id", "classId", "isActive" FROM "ClassSession" WHERE "id" = ? FOR SHARE');
+  assert.equal(tx.calls[1].sql, 'SELECT "id", "classId", "isActive" FROM "ClassSession" WHERE "id" = ? FOR KEY SHARE');
   assert.deepEqual(tx.calls[1].values, [SESSION]);
 });
 
@@ -127,7 +127,7 @@ test("missing session: null; empty id refused before any query", async () => {
   assert.equal(tx.calls.length, 0);
 });
 
-test("requireActiveSessionShared: 404 SESSION_NOT_FOUND / 409 SESSION_ENDED / a frozen lock", async () => {
+test("requireActiveSessionShared: 404 SESSION_NOT_FOUND / 409 SESSION_NOT_ACTIVE / a frozen lock", async () => {
   await assert.rejects(locks.requireActiveSessionShared(fakeTx([]), SESSION), (e) => {
     assert.ok(e instanceof AppError);
     assert.equal(e.statusCode, 404);
@@ -136,7 +136,7 @@ test("requireActiveSessionShared: 404 SESSION_NOT_FOUND / 409 SESSION_ENDED / a 
   });
   await assert.rejects(locks.requireActiveSessionShared(fakeTx([{ ...LIVE, isActive: false }]), SESSION), (e) => {
     assert.equal(e.statusCode, 409);
-    assert.equal(e.code, "SESSION_ENDED");
+    assert.equal(e.code, "SESSION_NOT_ACTIVE");
     return true;
   });
   const lock = await locks.requireActiveSessionShared(fakeTx([LIVE]), SESSION);
@@ -159,7 +159,7 @@ test("submission lock: namespaced key, bound as a parameter, pg_advisory_xact_lo
     tx.calls.map((c) => c.sql),
     [
       "SET LOCAL lock_timeout = '3000ms'",
-      'SELECT "id", "classId", "isActive" FROM "ClassSession" WHERE "id" = ? FOR SHARE',
+      'SELECT "id", "classId", "isActive" FROM "ClassSession" WHERE "id" = ? FOR KEY SHARE',
       "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
     ],
     "the session lock (and its lock_timeout) always come first"
@@ -186,8 +186,11 @@ test("lock order enforced at run time: no lock, a forged lock or another transac
     ["another transaction's lock", otherLock],
   ]) {
     await assert.rejects(locks.lockSubmissionSlot(tx, session, "a1", "s1"), /Take the session lock/, label);
+    await assert.rejects(locks.lockActivityForUpdate(tx, session, "assignment", "a1"), /Take the session lock/, label);
+    await assert.rejects(locks.lockInProgressAttemptsForUpdate(tx, session, "q1"), /Take the session lock/, label);
+    await assert.rejects(locks.lockQuizAttemptForUpdate(tx, session, "q1", "sub1"), /Take the session lock/, label);
   }
-  assert.equal(tx.calls.length, sent, "no advisory lock was requested");
+  assert.equal(tx.calls.length, sent, "no level 2-4 lock was requested");
 
   const client = { ...fakeTx([LIVE]), $transaction: async () => {} };
   await assert.rejects(locks.lockSubmissionSlot(client, otherLock, "a1", "s1"), /inside an interactive transaction/);
@@ -200,7 +203,7 @@ test("lock order enforced at compile time (tests/breakout-activities/lock-order.
   // calls must then be a compile error, proving each line really is rejected.
   const source = fs.readFileSync(fixture, "utf8");
   const expected = (source.match(/^\s*\/\/ @ts-expect-error/gm) || []).length;
-  assert.equal(expected, 5);
+  assert.equal(expected, 10);
   // Served from memory next to the fixture (same module resolution); never written to disk.
   const unguarded = path.join(path.dirname(fixture), "lock-order.unguarded.virtual.ts");
   const unguardedSource = source.replace(/^\s*\/\/ @ts-expect-error.*$/gm, "");
@@ -240,8 +243,14 @@ test("lock timeout is internal: not exported, and no caller can change it", asyn
   assert.equal("setBreakoutLockTimeout" in locks, false, "not part of the module's API");
   const lockFunctions = Object.entries(locks).filter(([, v]) => typeof v === "function").map(([k]) => k).sort();
   assert.deepEqual(lockFunctions, [
+    "lockActivityForUpdate",
+    "lockActivityShared",
+    "lockInProgressAttemptsForUpdate",
+    "lockOwnQuizAttemptForUpdate",
+    "lockQuizAttemptForUpdate",
     "lockSessionExclusive",
     "lockSessionShared",
+    "lockStudentSubmissionSlot",
     "lockSubmissionSlot",
     "requireActiveSessionShared",
     "runBreakoutTransaction",
@@ -260,14 +269,82 @@ test("lock timeout is internal: not exported, and no caller can change it", asyn
   }
 });
 
+// ---- Activity and attempt row locks (levels 2 and 4) -------------------------
+
+/** A fake transaction answering each raw query by its SQL. */
+function routedTx(route) {
+  const tx = fakeTx();
+  tx.$queryRaw = async (strings, ...values) => {
+    const sql = strings.join("?").replace(/\s+/g, " ").trim();
+    tx.calls.push({ kind: "query", sql, values });
+    return sql.includes('FROM "ClassSession"') ? [LIVE] : route(sql, values);
+  };
+  return tx;
+}
+
+test("activity lock: FOR UPDATE on the row of THIS session only, per kind, state as text", async () => {
+  for (const [kind, table] of [["assignment", "BreakoutAssignment"], ["quiz", "BreakoutQuiz"]]) {
+    const tx = routedTx(() => [{ id: "act-1", state: "DRAFT", status: 0 }]);
+    const session = await locks.requireActiveSessionShared(tx, SESSION);
+    const row = await locks.lockActivityForUpdate(tx, session, kind, "act-1");
+    assert.deepEqual(row, { id: "act-1", state: "DRAFT", status: 0 });
+    const last = tx.calls.at(-1);
+    assert.equal(last.sql, `SELECT "id", "state"::text AS "state", "status" FROM "${table}" WHERE "id" = ? AND "classSessionId" = ? FOR UPDATE`);
+    assert.deepEqual(last.values, ["act-1", SESSION], "scoped to the locked session");
+  }
+  const tx = routedTx(() => []);
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  assert.equal(await locks.lockActivityForUpdate(tx, session, "quiz", "elsewhere"), null, "not in this session: null");
+  await assert.rejects(locks.lockActivityForUpdate(tx, session, "lecture", "a1"), TypeError);
+  await assert.rejects(locks.lockActivityForUpdate(tx, session, "quiz", ""), TypeError);
+});
+
+test("in-progress attempts lock: this quiz in this session, IN_PROGRESS only, id order", async () => {
+  const tx = routedTx(() => [{ id: "s1" }, { id: "s2" }]);
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  assert.deepEqual(await locks.lockInProgressAttemptsForUpdate(tx, session, "q1"), ["s1", "s2"]);
+  const last = tx.calls.at(-1);
+  assert.equal(
+    last.sql,
+    `SELECT "id" FROM "BreakoutQuizSubmission" WHERE "quizId" = ? AND "classSessionId" = ? AND "attemptStatus" = 'IN_PROGRESS' ORDER BY "id" FOR UPDATE`
+  );
+  assert.deepEqual(last.values, ["q1", SESSION]);
+  await assert.rejects(locks.lockInProgressAttemptsForUpdate(tx, session, ""), TypeError);
+});
+
+test("one attempt lock: scoped by attempt, quiz and session; null when it does not match", async () => {
+  const tx = routedTx((sql, values) => (values[0] === "sub1" ? [{ id: "sub1" }] : []));
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  assert.deepEqual(await locks.lockQuizAttemptForUpdate(tx, session, "q1", "sub1"), { id: "sub1" });
+  const last = tx.calls.at(-1);
+  assert.equal(last.sql, 'SELECT "id" FROM "BreakoutQuizSubmission" WHERE "id" = ? AND "quizId" = ? AND "classSessionId" = ? FOR UPDATE');
+  assert.deepEqual(last.values, ["sub1", "q1", SESSION]);
+  assert.equal(await locks.lockQuizAttemptForUpdate(tx, session, "q1", "other"), null);
+  await assert.rejects(locks.lockQuizAttemptForUpdate(tx, session, "q1", ""), TypeError);
+});
+
 test("every lock operation is bounded by exactly BREAKOUT_LOCK_TIMEOUT_MS, set before it locks", async () => {
-  const LOCK_SQL = /FOR SHARE|FOR UPDATE|pg_advisory_xact_lock/;
+  const LOCK_SQL = /FOR KEY SHARE|FOR UPDATE|pg_advisory_xact_lock/;
   const expected = `SET LOCAL lock_timeout = '${locks.BREAKOUT_LOCK_TIMEOUT_MS}ms'`;
   const runs = {
     lockSessionShared: (tx) => locks.lockSessionShared(tx, SESSION),
     lockSessionExclusive: (tx) => locks.lockSessionExclusive(tx, SESSION),
     requireActiveSessionShared: (tx) => locks.requireActiveSessionShared(tx, SESSION),
     lockSubmissionSlot: async (tx) => locks.lockSubmissionSlot(tx, await locks.requireActiveSessionShared(tx, SESSION), "a1", "s1"),
+    lockActivityForUpdate: async (tx) => locks.lockActivityForUpdate(tx, await locks.requireActiveSessionShared(tx, SESSION), "quiz", "q1"),
+    lockInProgressAttemptsForUpdate: async (tx) =>
+      locks.lockInProgressAttemptsForUpdate(tx, await locks.requireActiveSessionShared(tx, SESSION), "q1"),
+    lockQuizAttemptForUpdate: async (tx) =>
+      locks.lockQuizAttemptForUpdate(tx, await locks.requireActiveSessionShared(tx, SESSION), "q1", "sub1"),
+    lockActivityShared: async (tx) => locks.lockActivityShared(tx, await locks.requireActiveSessionShared(tx, SESSION), "quiz", "q1"),
+    lockStudentSubmissionSlot: async (tx) => {
+      const session = await locks.requireActiveSessionShared(tx, SESSION);
+      return locks.lockStudentSubmissionSlot(tx, await locks.lockActivityShared(tx, session, "assignment", "a1"), "s1");
+    },
+    lockOwnQuizAttemptForUpdate: async (tx) => {
+      const session = await locks.requireActiveSessionShared(tx, SESSION);
+      return locks.lockOwnQuizAttemptForUpdate(tx, await locks.lockActivityShared(tx, session, "quiz", "q1"), "s1");
+    },
   };
   for (const [name, run] of Object.entries(runs)) {
     const tx = fakeTx([LIVE]);
@@ -281,4 +358,84 @@ test("every lock operation is bounded by exactly BREAKOUT_LOCK_TIMEOUT_MS, set b
     }
     assert.ok(locks.BREAKOUT_LOCK_TIMEOUT_MS < locks.BREAKOUT_TRANSACTION_OPTIONS.timeout);
   }
+});
+
+// ---- Student writes: activity share lock, then advisory / own attempt (D4) ----
+
+/** A fake transaction whose activity rows carry the target-room fields. */
+function studentTx(activity = { id: "act-1", classSessionId: SESSION, state: "PUBLISHED", status: 0, targetRoomType: "MAIN", targetRoomId: null }) {
+  const tx = fakeTx();
+  tx.$queryRaw = async (strings, ...values) => {
+    const sql = strings.join("?").replace(/\s+/g, " ").trim();
+    tx.calls.push({ kind: "query", sql, values });
+    if (sql.includes('FROM "ClassSession"')) return [LIVE];
+    if (sql.includes('FROM "BreakoutQuizSubmission"')) return values[1] === "s-has-attempt" ? [{ id: "att-1" }] : [];
+    return activity && values[0] === activity.id ? [activity] : [];
+  };
+  return tx;
+}
+
+test("student share lock: FOR KEY SHARE on the row of THIS session, per kind, with the room fields; frozen", async () => {
+  for (const [kind, table] of [["assignment", "BreakoutAssignment"], ["quiz", "BreakoutQuiz"]]) {
+    const tx = studentTx();
+    const session = await locks.requireActiveSessionShared(tx, SESSION);
+    const lock = await locks.lockActivityShared(tx, session, kind, "act-1");
+    assert.deepEqual({ ...lock }, { kind, id: "act-1", classSessionId: SESSION, state: "PUBLISHED", status: 0, targetRoomType: "MAIN", targetRoomId: null });
+    assert.ok(Object.isFrozen(lock));
+    const last = tx.calls.at(-1);
+    assert.equal(
+      last.sql,
+      `SELECT "id", "classSessionId", "state"::text AS "state", "status", "targetRoomType"::text AS "targetRoomType", "targetRoomId" FROM "${table}" WHERE "id" = ? AND "classSessionId" = ? FOR KEY SHARE`
+    );
+    assert.deepEqual(last.values, ["act-1", SESSION]);
+  }
+  const tx = studentTx();
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  assert.equal(await locks.lockActivityShared(tx, session, "quiz", "elsewhere"), null);
+  await assert.rejects(locks.lockActivityShared(tx, session, "lecture", "a"), TypeError);
+  await assert.rejects(locks.lockActivityShared(tx, { ...session }, "quiz", "act-1"), /Take the session lock/);
+});
+
+test("student order: assignment share lock -> advisory (same key as lockSubmissionSlot)", async () => {
+  const tx = studentTx();
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  const assignment = await locks.lockActivityShared(tx, session, "assignment", "act-1");
+  await locks.lockStudentSubmissionSlot(tx, assignment, "s1");
+  assert.deepEqual(tx.calls.map((c) => c.sql.replace(/FROM "BreakoutAssignment" .*$/, 'FROM "BreakoutAssignment" …')), [
+    "SET LOCAL lock_timeout = '3000ms'",
+    'SELECT "id", "classId", "isActive" FROM "ClassSession" WHERE "id" = ? FOR KEY SHARE',
+    'SELECT "id", "classSessionId", "state"::text AS "state", "status", "targetRoomType"::text AS "targetRoomType", "targetRoomId" FROM "BreakoutAssignment" …',
+    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+  ]);
+  assert.deepEqual(tx.calls.at(-1).values, [locks.submissionLockKey("act-1", "s1")]);
+});
+
+test("student order: quiz share lock -> own attempt FOR UPDATE, scoped to quiz, student and session", async () => {
+  const tx = studentTx();
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  const quiz = await locks.lockActivityShared(tx, session, "quiz", "act-1");
+  assert.deepEqual(await locks.lockOwnQuizAttemptForUpdate(tx, quiz, "s-has-attempt"), { id: "att-1" });
+  const last = tx.calls.at(-1);
+  assert.equal(last.sql, 'SELECT "id" FROM "BreakoutQuizSubmission" WHERE "quizId" = ? AND "studentId" = ? AND "classSessionId" = ? FOR UPDATE');
+  assert.deepEqual(last.values, ["act-1", "s-has-attempt", SESSION]);
+  assert.equal(await locks.lockOwnQuizAttemptForUpdate(tx, quiz, "s-without"), null, "no attempt yet");
+  await assert.rejects(locks.lockOwnQuizAttemptForUpdate(tx, quiz, ""), TypeError);
+});
+
+test("student order enforced at run time: the advisory / attempt locks need the right share lock of THIS transaction", async () => {
+  const tx = studentTx();
+  const other = studentTx();
+  const session = await locks.requireActiveSessionShared(tx, SESSION);
+  const assignment = await locks.lockActivityShared(tx, session, "assignment", "act-1");
+  const quiz = await locks.lockActivityShared(tx, session, "quiz", "act-1");
+  const otherQuiz = await locks.lockActivityShared(other, await locks.requireActiveSessionShared(other, SESSION), "quiz", "act-1");
+  const sent = tx.calls.length;
+  const badForAttempt = [["none", undefined], ["the session lock", session], ["an assignment lock", assignment], ["a copy", { ...quiz }], ["another transaction's", otherQuiz]];
+  for (const [label, lock] of badForAttempt) {
+    await assert.rejects(locks.lockOwnQuizAttemptForUpdate(tx, lock, "s1"), /Take the quiz share lock/, label);
+  }
+  for (const [label, lock] of [["none", null], ["the session lock", session], ["a quiz lock", quiz], ["a copy", { ...assignment }]]) {
+    await assert.rejects(locks.lockStudentSubmissionSlot(tx, lock, "s1"), /Take the assignment share lock/, label);
+  }
+  assert.equal(tx.calls.length, sent, "nothing was locked");
 });

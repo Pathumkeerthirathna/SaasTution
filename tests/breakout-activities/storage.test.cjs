@@ -145,22 +145,21 @@ test("write: no temporary file is left behind; two writes never share a name", a
   assert.deepEqual(fs.readdirSync(path.dirname(a.absolutePath)).filter((n) => n.endsWith(".tmp")), []);
 });
 
-test("write: re-checks the bytes (empty, too large, not a PDF)", async () => {
+test("write: re-checks the bytes (empty or not a PDF: 400 INVALID_PDF; too large: 413 FILE_TOO_LARGE)", async () => {
   const { storageRoot } = sandbox();
-  const code = async (bytes) => {
+  const result = async (bytes) => {
     try {
       await write(storageRoot, { bytes });
       return "written";
     } catch (e) {
       assert.ok(e instanceof AppError);
-      assert.equal(e.statusCode, 400);
-      return e.code;
+      return `${e.statusCode} ${e.code}`;
     }
   };
-  assert.equal(await code(new Uint8Array(0)), "FILE_EMPTY");
-  assert.equal(await code(new Uint8Array(25 * 1024 * 1024 + 1)), "FILE_TOO_LARGE");
-  assert.equal(await code(Buffer.from("<html>not a pdf</html>")), "FILE_NOT_PDF");
-  assert.equal(await code("%PDF-1.7"), "FILE_EMPTY", "a string is not bytes");
+  assert.equal(await result(new Uint8Array(0)), "400 INVALID_PDF");
+  assert.equal(await result(new Uint8Array(25 * 1024 * 1024 + 1)), "413 FILE_TOO_LARGE");
+  assert.equal(await result(Buffer.from("<html>not a pdf</html>")), "400 INVALID_PDF");
+  assert.equal(await result("%PDF-1.7"), "400 INVALID_PDF", "a string is not bytes");
   assert.deepEqual(fs.readdirSync(storageRoot), [], "nothing was created");
 });
 

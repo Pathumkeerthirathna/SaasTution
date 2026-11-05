@@ -156,9 +156,9 @@ export async function writeBreakoutPdf(input: {
   nowMs?: number;
 }): Promise<StoredBreakoutFile> {
   const { bytes } = input;
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) throw breakoutError("FILE_EMPTY");
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) throw breakoutError("INVALID_PDF");
   if (bytes.byteLength > MAX_BREAKOUT_PDF_BYTES) throw breakoutError("FILE_TOO_LARGE");
-  if (!hasPdfMagic(bytes)) throw breakoutError("FILE_NOT_PDF");
+  if (!hasPdfMagic(bytes)) throw breakoutError("INVALID_PDF");
 
   const storedName = generateStoredFileName(input.nowMs ?? Date.now(), randomFileToken());
   const relativePath = buildBreakoutFilePath({

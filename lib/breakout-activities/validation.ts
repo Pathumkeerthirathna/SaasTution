@@ -9,7 +9,7 @@
 // Limits are the approved V4 contract values.
 
 import { z } from "zod";
-import { normalizeShortAnswer, type QuizAnswers, type QuizDefinition, type QuizQuestion } from "./marking.mjs";
+import { normalizeShortAnswer, type QuizAnswers, type QuizDefinition, type QuizGrading, type QuizQuestion } from "./marking.mjs";
 import { IDEMPOTENCY_KEY_PATTERN, MAX_ANSWER_TEXT_LENGTH } from "./submission-rules.mjs";
 
 export const BREAKOUT_LIMITS = {
@@ -158,6 +158,54 @@ export const storedQuizDefinitionSchema = z
   .refine((d) => new Set(d.questions.map((q) => q.id)).size === d.questions.length, { message: "Duplicate question ids.", path: ["questions"] })
   .transform((d) => d as QuizDefinition);
 
+// ---- Grading: stored (BreakoutQuizSubmission.grading) ---------------------------
+// Written only by the server (marking.mjs), and re-validated whenever it is
+// read before being changed again (teacher overrides; Step 3 results).
+
+const storedGradeOverride = z.strictObject({
+  marks: z.number().finite().min(0).refine(hasAtMostTwoDecimals),
+  teacherId: z.string().min(1).max(64),
+  at: z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Invalid override time."),
+  note: z.string().max(BREAKOUT_LIMITS.overrideNoteMax).optional(),
+});
+
+const storedQuestionGrade = z.strictObject({
+  auto: z.number().finite().min(0).refine(hasAtMostTwoDecimals),
+  result: z.enum(["correct", "partial", "incorrect", "unanswered"]),
+  override: storedGradeOverride.optional(),
+});
+
+export const storedQuizGradingSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    questions: z.record(entityId, storedQuestionGrade),
+  })
+  .transform((g) => g as QuizGrading);
+
+/**
+ * A stored grading that is valid AND belongs to this definition: exactly
+ * one grade per question, and no mark above the question's marks.
+ * Returns null otherwise (the caller decides: a corrupt grading is a server
+ * fault, never silently replaced).
+ */
+export function parseStoredGrading(definition: QuizDefinition, raw: unknown): QuizGrading | null {
+  // Own "__proto__" keys would vanish in parsing instead of failing it.
+  const questionsRaw = raw && typeof raw === "object" ? (raw as { questions?: unknown }).questions : undefined;
+  if (questionsRaw && typeof questionsRaw === "object" && Object.keys(questionsRaw).some((k) => RESERVED_IDS.has(k))) return null;
+  const parsed = storedQuizGradingSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const grades = parsed.data.questions;
+  const ids = Object.keys(grades);
+  if (ids.length !== definition.questions.length) return null;
+  for (const question of definition.questions) {
+    const grade = Object.prototype.hasOwnProperty.call(grades, question.id) ? grades[question.id] : undefined;
+    if (!grade) return null;
+    if (grade.auto > question.marks + 1e-9) return null;
+    if (grade.override && grade.override.marks > question.marks + 1e-9) return null;
+  }
+  return parsed.data;
+}
+
 // ---- Student answers ----------------------------------------------------------
 
 const answerSchema = z.discriminatedUnion("kind", [
@@ -204,6 +252,32 @@ export function validateAnswersAgainstDefinition(definition: QuizDefinition, raw
     answers[questionId] = answer;
   }
   return { ok: true, answers };
+}
+
+/**
+ * Incremental quiz save (approved decision D5): the answers sent replace
+ * those questions only; every other saved answer is kept. The incoming part
+ * is validated against the definition (validateAnswersAgainstDefinition:
+ * known questions, matching kinds, own options, no reserved keys); an empty
+ * save is refused. To clear one answer, send its empty form (single /
+ * true_false: null, multiple: [], short: "").
+ *
+ * The stored answers are re-validated too (the server wrote them); if they
+ * no longer fit the definition the merge is refused rather than silently
+ * dropping a student's answers.
+ */
+export function mergeQuizAnswers(definition: QuizDefinition, stored: unknown, incoming: unknown): AnswerCheck {
+  if (!incoming || typeof incoming !== "object" || Array.isArray(incoming) || Object.keys(incoming).length === 0) {
+    return { ok: false, error: "Nothing to save." };
+  }
+  const next = validateAnswersAgainstDefinition(definition, incoming);
+  if (!next.ok) return next;
+  const current = validateAnswersAgainstDefinition(definition, stored ?? {});
+  if (!current.ok) return { ok: false, error: "Saved answers are invalid." };
+  const merged: QuizAnswers = {};
+  for (const [id, answer] of Object.entries(current.answers)) merged[id] = answer;
+  for (const [id, answer] of Object.entries(next.answers)) merged[id] = answer;
+  return { ok: true, answers: merged };
 }
 
 // ---- Request bodies -----------------------------------------------------------
@@ -271,8 +345,42 @@ export const gradingOverridesSchema = z.strictObject({
     .max(BREAKOUT_LIMITS.overridesMax),
 });
 
+// ---- Teacher updates (PATCH …/assignments/[id], …/quizzes/[id]) -------------
+// A PATCH body is EITHER a state action OR DRAFT field edits, never both
+// (strict objects: a body mixing them matches neither). Whether the activity
+// is still a DRAFT, and the instructions-or-brief rule after an edit, are
+// checked by the service under the activity row lock.
+
+export const activityActionSchema = z.strictObject({ action: z.enum(["publish", "close"]) });
+
+const atLeastOneField = (value: Record<string, unknown>) => Object.values(value).some((v) => v !== undefined);
+
+/** DRAFT edits of an assignment (JSON, or the text fields of a multipart brief replacement). */
+export const assignmentUpdateSchema = z
+  .strictObject({ title: title.optional(), instructions: instructions.optional() })
+  .refine(atLeastOneField, "Nothing to change.");
+
+/** Text fields that may accompany a new brief (multipart PATCH): the brief alone is a valid change. */
+export const assignmentBriefUpdateFieldsSchema = z.strictObject({ title: title.optional(), instructions: instructions.optional() });
+
+/** DRAFT edits of a quiz. New questions replace the whole definition (a DRAFT has no attempts). */
+export const quizUpdateSchema = z
+  .strictObject({
+    title: title.optional(),
+    instructions: instructions.optional(),
+    timeLimitSeconds: timeLimitSecondsSchema.nullable().optional(),
+    questions: quizDefinitionInputSchema.optional(),
+  })
+  .refine(atLeastOneField, "Nothing to change.");
+
+export const assignmentPatchSchema = z.union([activityActionSchema, assignmentUpdateSchema]);
+export const quizPatchSchema = z.union([activityActionSchema, quizUpdateSchema]);
+
 export type AssignmentCreateInput = z.infer<typeof assignmentCreateSchema>;
 export type QuizCreateInput = z.infer<typeof quizCreateSchema>;
 export type DraftSaveInput = z.infer<typeof draftSaveSchema>;
 export type GradingOverridesInput = z.infer<typeof gradingOverridesSchema>;
 export type BreakoutTarget = z.infer<typeof targetSchema>;
+export type ActivityActionInput = z.infer<typeof activityActionSchema>;
+export type AssignmentUpdateInput = z.infer<typeof assignmentUpdateSchema>;
+export type QuizUpdateInput = z.infer<typeof quizUpdateSchema>;

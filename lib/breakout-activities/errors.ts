@@ -3,9 +3,15 @@
 // AppError (lib/error-handler.ts) and handleRouteError turns it into the
 // usual { success: false, message, code } response.
 //
-// The codes returned by the pure Phase 1 modules (submission-rules.mjs,
-// pdf-file.ts, marking.mjs) are listed here too, so their results can be
-// thrown as they are.
+// Aligned with the approved v2 error table, with two later decisions kept:
+// - BREAKOUT_EXPORT_REQUIRED replaces v2's BREAKOUT_ACTIVITIES_PENDING;
+// - while room resolution fails closed (until Phase 2b), a student whose
+//   room cannot be resolved gets 404 NOT_FOUND (room-resolver.ts), not
+//   ROOM_UNKNOWN. ROOM_UNKNOWN and NOT_IN_TARGET_ROOM are listed for Phase 2b.
+//
+// The pure Phase 1 modules keep their own result codes: submission-rules.mjs
+// and marking.mjs codes are API codes as they are; pdf-file.ts check codes
+// map through pdfCheckError().
 
 import { AppError } from "@/lib/error-handler";
 
@@ -20,12 +26,22 @@ export const BREAKOUT_ERRORS = {
   QUIZ_NOT_FOUND: { status: 404, message: "Quiz not found." },
   FILE_NOT_FOUND: { status: 404, message: "The file is not available." },
 
+  // Room (Phase 2b; see the header).
+  ROOM_UNKNOWN: { status: 409, message: "Your breakout room could not be determined. Please wait a moment and try again." },
+  NOT_IN_TARGET_ROOM: { status: 403, message: "This activity is for another room." },
+
   // State conflicts.
-  SESSION_ENDED: { status: 409, message: "This class session has ended." },
+  SESSION_NOT_ACTIVE: { status: 409, message: "This class session is not active." },
+  ACTIVITY_NOT_PUBLISHED: { status: 409, message: "This activity is not published." },
+  // Editing or deleting a PUBLISHED activity (approved decision). On a
+  // CLOSED one, ASSIGNMENT_CLOSED / QUIZ_CLOSED apply instead.
+  ACTIVITY_NOT_DRAFT: { status: 409, message: "Only draft activities can be changed or deleted." },
   ASSIGNMENT_CLOSED: { status: 409, message: "This assignment is closed." },
   QUIZ_CLOSED: { status: 409, message: "This quiz is closed." },
   QUIZ_ALREADY_SUBMITTED: { status: 409, message: "This quiz has already been submitted." },
-  QUIZ_TIME_EXPIRED: { status: 409, message: "The time for this quiz is over." },
+  // Grading override on an attempt that is still IN_PROGRESS (approved decision).
+  QUIZ_NOT_SUBMITTED: { status: 409, message: "This attempt has not been submitted yet." },
+  QUIZ_TIME_UP: { status: 409, message: "The time for this quiz is over." },
   REVISION_CONFLICT: { status: 409, message: "This was changed somewhere else. Reload and try again." },
   SUBMISSION_LIMIT_REACHED: { status: 409, message: "The maximum number of submissions has been reached." },
   BREAKOUT_BUSY: { status: 409, message: "Another change is in progress. Please try again." },
@@ -40,14 +56,13 @@ export const BREAKOUT_ERRORS = {
     message: "Breakout activity results changed since you reviewed them. Review them again before ending the session.",
   },
 
-  // Invalid input.
+  // Invalid input. (A missing or malformed idempotency key is
+  // VALIDATION_ERROR, as the approved v3 contract says.)
   VALIDATION_ERROR: { status: 400, message: "Invalid request payload." },
-  INVALID_IDEMPOTENCY_KEY: { status: 400, message: "Invalid submission key." },
   SUBMISSION_EMPTY: { status: 400, message: "Write an answer or attach a PDF." },
   ANSWER_TEXT_TOO_LONG: { status: 400, message: "The answer is too long." },
-  FILE_EMPTY: { status: 400, message: "The file is empty." },
-  FILE_TOO_LARGE: { status: 400, message: "PDF file exceeds size limit of 25 MB." },
-  FILE_NOT_PDF: { status: 400, message: "Only PDF files are allowed." },
+  INVALID_PDF: { status: 400, message: "Only valid, non-empty PDF files are allowed." },
+  FILE_TOO_LARGE: { status: 413, message: "PDF file exceeds size limit of 25 MB." },
 
   // Marking (BreakoutMarkingError codes).
   INVALID_MARKS: { status: 400, message: "Invalid marks." },
@@ -68,6 +83,11 @@ export function isBreakoutErrorCode(value: unknown): value is BreakoutErrorCode 
 export function breakoutError(code: BreakoutErrorCode, message?: string, details?: unknown): AppError {
   const spec = BREAKOUT_ERRORS[code];
   return new AppError(message ?? spec.message, spec.status, code, details);
+}
+
+/** pdf-file.ts check codes (validatePdfUpload) -> the API error. */
+export function pdfCheckError(code: "FILE_EMPTY" | "FILE_TOO_LARGE" | "FILE_NOT_PDF"): AppError {
+  return breakoutError(code === "FILE_TOO_LARGE" ? "FILE_TOO_LARGE" : "INVALID_PDF");
 }
 
 // PostgreSQL SQLSTATEs that mean "try again": lock_not_available

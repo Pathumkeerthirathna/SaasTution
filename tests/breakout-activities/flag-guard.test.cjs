@@ -5,7 +5,7 @@
  * because data created while the flag was on must still be handled after it
  * is turned off.
  *
- * Static check: only breakout API routes (app/api/sessions/[id]/breakout/**)
+ * Static check: only breakout API routes (app/api/sessions/[id]/breakout-activities/**)
  * and instrumentation.ts may import lib/breakout-activities/flag. The session
  * service, the session end / start / restart routes and every other module
  * must not.
@@ -30,7 +30,7 @@ const SOURCE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 const FLAG_IMPORT = /(?:from\s*|require\s*\(\s*|import\s*\(\s*)["'](?:[^"']*breakout-activities\/flag|\.\/flag)(?:\.ts)?["']/;
 
 const ALLOWED = [
-  /^app\/api\/sessions\/\[id\]\/breakout\//,
+  /^app\/api\/sessions\/\[id\]\/breakout-activities\//,
   /^instrumentation\.ts$/,
   /^lib\/breakout-activities\/flag\.ts$/,
 ];
@@ -75,6 +75,13 @@ test("the import pattern recognizes every import form", () => {
     assert.match(line, FLAG_IMPORT, line);
   }
   assert.doesNotMatch('import { x } from "@/lib/breakout-activities/flags-other";', FLAG_IMPORT);
+});
+
+test("the allowed route prefix is the approved base path only", () => {
+  assert.equal(ALLOWED[0].test("app/api/sessions/[id]/breakout-activities/assignments/route.ts"), true);
+  assert.equal(ALLOWED[0].test("app/api/sessions/[id]/breakout/route.ts"), false);
+  assert.equal(ALLOWED[0].test("app/api/sessions/[id]/breakout-activitiesX/route.ts"), false);
+  assert.equal(ALLOWED[0].test("app/api/sessions/[id]/end/route.ts"), false);
 });
 
 test("only breakout API routes and instrumentation.ts import the flag", () => {
