@@ -23,6 +23,9 @@
 # error logs (lib/error-logging): never committed
 /logs/
 
+# breakout activity files (briefs and student submissions): never committed
+/storage/breakout-activities/
+
 # misc
 .DS_Store
 *.pem

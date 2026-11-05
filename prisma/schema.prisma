@@ -55,6 +55,9 @@ model Teacher {
 
   subscriptions TeacherSubscription[]
 
+  breakoutAssignments BreakoutAssignment[]
+  breakoutQuizzes     BreakoutQuiz[]
+
   @@index([createdAt])
 }
 
@@ -582,6 +585,9 @@ model Student {
   quizSubmissions               QuizSubmission[]
   classPaperSubmissions         ClassPaperStudent[]
   noteViews                     NoteStudent[]
+  breakoutAssignmentDrafts      BreakoutAssignmentDraft[]
+  breakoutAssignmentSubmissions BreakoutAssignmentSubmission[]
+  breakoutQuizSubmissions       BreakoutQuizSubmission[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
 
   @@index([teacherId])
@@ -1045,6 +1051,11 @@ model ClassSession {
   /// after the session ended without a fence) or start (a start found it).
   jibriStopOrigin               String?
   attendance                    Attendance[]
+  breakoutAssignments           BreakoutAssignment[]
+  breakoutAssignmentDrafts      BreakoutAssignmentDraft[]
+  breakoutAssignmentSubmissions BreakoutAssignmentSubmission[]
+  breakoutQuizzes               BreakoutQuiz[]
+  breakoutQuizSubmissions       BreakoutQuizSubmission[]
   class                         Class                   @relation(fields: [classId], references: [id])
   lecture                       Lecture?                @relation(fields: [lectureId], references: [id])
 
@@ -1732,4 +1743,164 @@ enum PaymentMessageSender {
 enum StudentClassAction {
   ASSIGNED
   UNASSIGNED
+}
+
+// ---------------------------------------------------------------------------
+// Breakout Room Activities (live-class assignments and quizzes for breakout
+// rooms). Separate from the lecture Assignment / Quiz models above. All rows
+// belong to one ClassSession and are removed when it ends (after the teacher
+// is offered an export). Files live in storage/breakout-activities/<sessionId>/.
+// ---------------------------------------------------------------------------
+
+enum BreakoutTargetRoomType {
+  MAIN
+  BREAKOUT
+}
+
+enum BreakoutActivityState {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum BreakoutQuizAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+}
+
+model BreakoutAssignment {
+  id             String                 @id @default(uuid())
+  classSessionId String
+  teacherId      String
+  publishGroupId String?
+  targetRoomType BreakoutTargetRoomType
+  targetRoomId   String?
+  targetRoomName String                 @db.VarChar(120)
+  title          String                 @db.VarChar(200)
+  instructions   String
+  briefFileName  String?                @db.VarChar(200)
+  briefFilePath  String?
+  briefFileSize  Int?
+  state          BreakoutActivityState  @default(DRAFT)
+  publishedAt    DateTime?
+  closedAt       DateTime?
+  status         Int                    @default(0)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  classSession ClassSession                   @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  teacher      Teacher                        @relation(fields: [teacherId], references: [id])
+  drafts       BreakoutAssignmentDraft[]
+  submissions  BreakoutAssignmentSubmission[]
+
+  @@index([classSessionId, targetRoomType, targetRoomId, state])
+  @@index([classSessionId, createdAt])
+  @@index([publishGroupId])
+}
+
+model BreakoutAssignmentDraft {
+  id             String   @id @default(uuid())
+  assignmentId   String
+  classSessionId String
+  studentId      String
+  answerText     String   @default("")
+  revision       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignment   BreakoutAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  classSession ClassSession       @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  student      Student            @relation(fields: [studentId], references: [id])
+
+  @@unique([assignmentId, studentId])
+  @@index([classSessionId])
+}
+
+model BreakoutAssignmentSubmission {
+  id             String   @id @default(uuid())
+  assignmentId   String
+  classSessionId String
+  studentId      String
+  version        Int
+  /// At most one true per (assignment, student): enforced by the partial
+  /// unique index "BreakoutAssignmentSubmission_one_latest_key" (migration SQL;
+  /// Prisma 5.22 cannot declare partial indexes). See
+  /// docs/breakout-activities-migrations.md before editing any migration.
+  isLatest       Boolean  @default(true)
+  answerText     String?
+  fileName       String?  @db.VarChar(200)
+  filePath       String?
+  fileSize       Int?
+  idempotencyKey String   @db.VarChar(64)
+  submittedAt    DateTime @default(now())
+
+  assignment   BreakoutAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  classSession ClassSession       @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  student      Student            @relation(fields: [studentId], references: [id])
+
+  @@unique([assignmentId, studentId, version])
+  @@unique([assignmentId, studentId, idempotencyKey])
+  @@index([assignmentId, isLatest])
+  @@index([classSessionId])
+}
+
+model BreakoutQuiz {
+  id               String                 @id @default(uuid())
+  classSessionId   String
+  teacherId        String
+  publishGroupId   String?
+  targetRoomType   BreakoutTargetRoomType
+  targetRoomId     String?
+  targetRoomName   String                 @db.VarChar(120)
+  title            String                 @db.VarChar(200)
+  instructions     String?
+  /// BreakoutQuizDefinition (lib/breakout-activities/validation.ts). Holds
+  /// the answer keys: never sent to students as-is (quiz-projection.mjs).
+  questions        Json
+  totalMarks       Decimal                @db.Decimal(7, 2)
+  timeLimitSeconds Int?
+  state            BreakoutActivityState  @default(DRAFT)
+  publishedAt      DateTime?
+  closedAt         DateTime?
+  status           Int                    @default(0)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  classSession ClassSession             @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  teacher      Teacher                  @relation(fields: [teacherId], references: [id])
+  submissions  BreakoutQuizSubmission[]
+
+  @@index([classSessionId, targetRoomType, targetRoomId, state])
+  @@index([classSessionId, createdAt])
+  @@index([publishGroupId])
+}
+
+model BreakoutQuizSubmission {
+  id             String                    @id @default(uuid())
+  quizId         String
+  classSessionId String
+  studentId      String
+  attemptStatus  BreakoutQuizAttemptStatus @default(IN_PROGRESS)
+  answers        Json                      @default("{}")
+  revision       Int                       @default(0)
+  startedAt      DateTime                  @default(now())
+  deadlineAt     DateTime?
+  lastSavedAt    DateTime?
+  submittedAt    DateTime?
+  /// BreakoutQuizGrading (lib/breakout-activities/marking.mjs).
+  grading        Json?
+  autoScore      Decimal?                  @db.Decimal(7, 2)
+  finalScore     Decimal?                  @db.Decimal(7, 2)
+  overriddenAt   DateTime?
+  updatedAt      DateTime                  @updatedAt
+
+  quiz         BreakoutQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  classSession ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id])
+
+  @@unique([quizId, studentId])
+  @@index([quizId, attemptStatus])
+  @@index([classSessionId])
+  @@index([attemptStatus, deadlineAt])
 }
