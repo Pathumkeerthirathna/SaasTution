@@ -19,6 +19,11 @@ export type JoinInfo = {
     id: string;
     name: string;
     schedule: string;
+    /**
+     * Teacher join info only: the class's teacher ID, which keys that
+     * teacher's own saved classroom preferences.
+     */
+    teacherId?: string;
   };
 
   /** e.g. "Mr. Pathum Kumara (Teacher)" — same value for teacher and students. */

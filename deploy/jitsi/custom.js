@@ -1,4 +1,4 @@
-const SL_CUSTOM_JS_VERSION = 1024;
+const SL_CUSTOM_JS_VERSION = 1026;
 
 console.log("======== CUSTOM JS VERSION " + SL_CUSTOM_JS_VERSION + " ========");
 
@@ -11071,6 +11071,259 @@ const SL_DEVICE_STATUS_GAP = 8;
 
     // Follow every store change: the conference / bridge connection
     // (reconnect), the local camera, the local role.
+    const waitForStore = setInterval(() => {
+        if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
+            return;
+        }
+
+        clearInterval(waitForStore);
+
+        APP.store.subscribe(sync);
+        sync();
+    }, 500);
+
+})();
+
+
+
+/* ==========================================================
+   SL Classroom - Screen-Share Frame Rate (teacher, next share)
+
+   Teacher only. The teacher's page owns the screen-sharing frame
+   rate (5 / 15 / 30 fps); Jitsi's own Settings dialog (which held
+   the same choice) is hidden. This section sets it through Jitsi's
+   OWN supported path, the action its Settings dialog dispatches:
+     { type: "SET_SCREENSHARE_CAPTURE_FRAME_RATE", captureFrameRate }
+   Jitsi's screen-share middleware then calls
+   conference.setDesktopSharingFrameRate(fps), which in lib-jitsi-meet
+   (build 9442):
+     - sets the getDisplayMedia frameRate { max: fps } used by the
+       NEXT screen capture (never the camera: only screen capture
+       reads it; the camera's frame rate is Teaching Mode's);
+     - picks the screen-share encoder mode (5 fps: sharp text /
+       maintain-resolution; 15 / 30: maintain-framerate) and the
+       video type the bridge is told (desktop / desktop_high_fps).
+   Jitsi re-applies the stored value itself on every conference
+   join (reconnect, breakout room). config.desktopSharingFrameRate
+   must stay UNSET: when set, it overrides this at capture time.
+
+   A share in progress is never stopped, restarted or re-constrained:
+   a change made while the teacher is sharing is held and dispatched
+   once that share ends, so it applies to the next one. Screen-share
+   audio is untouched (only the frame rate is set; the echo guard
+   below still handles getDisplayMedia's audio).
+
+   Cheap by design: no polling, no media tracks. It runs on store
+   changes, does nothing until the page has sent a frame rate, and
+   dispatches only when Jitsi's stored value differs from the wanted
+   one and no share is running (never twice for the same value).
+
+   Runs ONLY for the local moderator (teacher), only once the page
+   sends:
+     { type: "SL_SCREENSHARE_FPS", v: 1, epoch, fps }
+     fps  5 | 15 | 30
+   (resent by the page after SL_RECEIVE_READY; the same epoch is
+   accepted, an older one ignored). Reports, whenever it changes:
+     { type: "SL_SCREENSHARE_FPS_STATUS", v: 1, fps, applied, sharing,
+       pending, shareFps, trackFps }
+     fps       the requested frame rate
+     applied   Jitsi's stored frame rate (what the next share uses),
+               or null before the first dispatch
+     sharing   the teacher is sharing a screen now
+     pending   sharing and fps !== applied (applies on the next share)
+     shareFps  the stored frame rate when the current share started
+               (what Jitsi captured it with), or null
+     trackFps  the current share's frame rate as the browser reports
+               it (getSettings), or null
+========================================================== */
+
+(function () {
+
+    const SL_SSF_ACTION = "SET_SCREENSHARE_CAPTURE_FRAME_RATE";
+    const SL_SSF_ALLOWED = [5, 15, 30];
+
+    let wanted = { epoch: 0, fps: null };
+    // Nothing is done or posted before the teacher's page has sent one.
+    let heard = false;
+    // Guards against re-entry: dispatch notifies the store's subscribers
+    // (this section included) synchronously.
+    let dispatching = false;
+    // The local screen track being shared and the stored frame rate when
+    // it was first seen (the rate its capture was started with).
+    let shareTrack = null;
+    let shareFps = null;
+    let lastKey = "";
+    let lastStatus = "";
+
+    function getState() {
+        return window.APP && APP.store ? APP.store.getState() : null;
+    }
+
+    function isLocalModerator(store) {
+        return store?.["features/base/participants"]?.local?.role === "moderator";
+    }
+
+    function storedFps(store) {
+        const value = store?.["features/screen-share"]?.captureFrameRate;
+
+        return typeof value === "number" && Number.isFinite(value) ? value : null;
+    }
+
+    // The local, unmuted screen-share MediaStreamTrack (never the camera),
+    // or null while the teacher is not sharing.
+    function getLocalScreenTrack(store) {
+        const tracks = store?.["features/base/tracks"];
+        const entry = (Array.isArray(tracks) ? tracks : []).find(track =>
+            track && track.local && track.videoType === "desktop" && track.jitsiTrack && track.muted !== true);
+
+        if (!entry || typeof entry.jitsiTrack.getTrack !== "function") {
+            return null;
+        }
+
+        try {
+            const mediaTrack = entry.jitsiTrack.getTrack();
+
+            return mediaTrack && mediaTrack.readyState !== "ended" ? mediaTrack : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function readTrackFps(track) {
+        try {
+            const fps = track && typeof track.getSettings === "function" ? track.getSettings()?.frameRate : null;
+
+            return typeof fps === "number" && Number.isFinite(fps) ? Math.round(fps * 10) / 10 : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function reportStatus(store, track) {
+        const applied = storedFps(store);
+        const status = {
+            type: "SL_SCREENSHARE_FPS_STATUS",
+            v: 1,
+            fps: wanted.fps,
+            applied,
+            sharing: Boolean(track),
+            pending: Boolean(track) && applied !== wanted.fps,
+            shareFps: track ? shareFps : null,
+            trackFps: track ? readTrackFps(track) : null
+        };
+        const signature = JSON.stringify(status);
+
+        if (signature !== lastStatus) {
+            lastStatus = signature;
+            slPostToParent(status);
+        }
+    }
+
+    // Runs on every store change: a few property reads, then nothing unless
+    // the sharing state, the stored rate or the wanted rate changed.
+    function sync() {
+        if (!heard || dispatching) {
+            return;
+        }
+
+        const store = getState();
+
+        if (!isLocalModerator(store)) {
+            return;
+        }
+
+        const track = getLocalScreenTrack(store);
+
+        if (track !== shareTrack) {
+            shareTrack = track;
+            // A new share was captured with the rate stored at its start.
+            shareFps = track ? storedFps(store) : null;
+        }
+
+        // Not sharing: the wanted rate goes to Jitsi now (once). While
+        // sharing it is held: the live capture is never changed.
+        if (!track && storedFps(store) !== wanted.fps) {
+            dispatching = true;
+
+            try {
+                APP.store.dispatch({ type: SL_SSF_ACTION, captureFrameRate: wanted.fps });
+            } catch (error) {
+                console.warn("[SL Classroom] Screen-share frame rate not set:",
+                    (error && (error.name || error.message)) || String(error));
+            } finally {
+                dispatching = false;
+            }
+        }
+
+        const latest = getState();
+        const key = [wanted.fps, storedFps(latest), track ? "share" : "none", shareFps].join("|");
+
+        if (key !== lastKey) {
+            lastKey = key;
+            reportStatus(latest, track);
+        }
+    }
+
+    window.addEventListener("message", function (event) {
+
+        // Only the SL Classroom page that embeds this iframe may control it.
+        if (event.source !== window.parent
+            || !SL_ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
+            return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.type !== "SL_SCREENSHARE_FPS") {
+            return;
+        }
+
+        if (data.v !== 1
+            || typeof data.epoch !== "number"
+            || !Number.isFinite(data.epoch)
+            || !SL_SSF_ALLOWED.includes(data.fps)) {
+            console.warn("[SL Classroom] Ignored malformed screen-share frame rate", data);
+
+            return;
+        }
+
+        // An older message must never overwrite a newer one. The same epoch
+        // is accepted: the page resends it after SL_RECEIVE_READY.
+        if (data.epoch < wanted.epoch) {
+            return;
+        }
+
+        wanted = { epoch: data.epoch, fps: data.fps };
+        heard = true;
+        // The page gets the current status for every message it sends.
+        lastKey = "";
+        lastStatus = "";
+
+        sync();
+    });
+
+    // ---------------------------------------------------------------------
+    // TESTING ONLY - from the Jitsi iframe's DevTools console:
+    //   __slScreenShareFpsTest.state()   what is wanted / stored / shared
+    // ---------------------------------------------------------------------
+    window.__slScreenShareFpsTest = {
+        state: () => {
+            const store = getState();
+            const track = getLocalScreenTrack(store);
+
+            return {
+                customJsVersion: typeof SL_CUSTOM_JS_VERSION === "number" ? SL_CUSTOM_JS_VERSION : null,
+                wanted: wanted.fps,
+                epoch: wanted.epoch,
+                applied: storedFps(store),
+                sharing: Boolean(track),
+                shareFps: track ? shareFps : null,
+                trackFps: track ? readTrackFps(track) : null,
+                trackConstraints: track && typeof track.getConstraints === "function" ? track.getConstraints() : null
+            };
+        }
+    };
+
     const waitForStore = setInterval(() => {
         if (!window.APP || !APP.store || typeof APP.store.subscribe !== "function") {
             return;

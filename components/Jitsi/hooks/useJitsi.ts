@@ -31,10 +31,13 @@ import {
 import {
   buildTeacherBitrateConfig,
   buildTeacherBitrateMessage,
+  buildScreenShareFrameRateMessage,
   buildTeachingModeMessage,
   createVideoQualityController,
+  isScreenShareFrameRate,
   isTeacherBitrate,
   isTeachingFrameRate,
+  parseScreenShareFrameRateStatus,
   parseStoredTeacherBitrate,
   parseTeacherBitrateStatus,
   readStorage,
@@ -214,6 +217,16 @@ export type JitsiControls = BreakoutControls & {
   setTeacherBitrate: (maxBitrate: number) => void;
 
   /**
+   * Teacher only: the screen-sharing frame rate (5 / 15 / 30 fps) through
+   * custom.js (SL_SCREENSHARE_FPS), which sets it with Jitsi's own
+   * SET_SCREENSHARE_CAPTURE_FRAME_RATE. Screen sharing only, never the
+   * webcam; a share in progress keeps its rate, the new one applies to the
+   * next share. An unchanged value sends nothing. What Jitsi holds comes back
+   * through `onScreenShareFrameRateStatus`.
+   */
+  setScreenShareFrameRate: (fps: number) => void;
+
+  /**
    * Teacher only: video diagnostics in the teacher's own Jitsi iframe
    * (custom.js): what the teacher's camera is really sent at and what each
    * student really receives, from WebRTC stats. Read-only; the results come
@@ -221,6 +234,9 @@ export type JitsiControls = BreakoutControls & {
    */
   setVideoTelemetry: (enabled: boolean) => void;
 };
+
+/** custom.js's report on the screen-sharing frame rate (SL_SCREENSHARE_FPS_STATUS). */
+export type ScreenShareFrameRateStatus = NonNullable<ReturnType<typeof parseScreenShareFrameRateStatus>>;
 
 /** custom.js's report on the teacher's live bitrate cap (SL_TEACHER_BITRATE_STATUS). */
 export type TeacherBitrateStatus = NonNullable<ReturnType<typeof parseTeacherBitrateStatus>>;
@@ -710,6 +726,9 @@ type UseJitsiProps = {
   /** Teacher only: whether the chosen bitrate cap is on the live camera (from custom.js). */
   onTeacherBitrateStatus?: (status: TeacherBitrateStatus) => void;
 
+  /** Teacher only: the screen-sharing frame rate Jitsi holds (from custom.js). */
+  onScreenShareFrameRateStatus?: (status: ScreenShareFrameRateStatus) => void;
+
   /** Teacher only: video diagnostics snapshots (from custom.js, every ~5 s while on). */
   onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
 
@@ -746,6 +765,7 @@ export default function useJitsi({
   onTeacherTilesSettings,
   onTeachingModeStatus,
   onTeacherBitrateStatus,
+  onScreenShareFrameRateStatus,
   onVideoTelemetry,
   isFullscreen = false,
   devices = null,
@@ -853,6 +873,9 @@ export default function useJitsi({
 
   const onTeacherBitrateStatusRef = useRef(onTeacherBitrateStatus);
   onTeacherBitrateStatusRef.current = onTeacherBitrateStatus;
+
+  const onScreenShareFrameRateStatusRef = useRef(onScreenShareFrameRateStatus);
+  onScreenShareFrameRateStatusRef.current = onScreenShareFrameRateStatus;
 
   const onVideoTelemetryRef = useRef(onVideoTelemetry);
   onVideoTelemetryRef.current = onVideoTelemetry;
@@ -1289,6 +1312,29 @@ export default function useJitsi({
     frameWindow.postMessage(message, SL_JITSI_ORIGIN);
   };
 
+  // Screen-sharing frame rate: kept and resent on SL_RECEIVE_READY, like the
+  // bitrate cap. JitsiClassroom sends it on every conference join; an
+  // unchanged value is not sent again (custom.js and Jitsi keep it).
+  const screenShareFpsEpochRef = useRef(0);
+  const screenShareFpsRef = useRef<ReturnType<typeof buildScreenShareFrameRateMessage> | null>(null);
+
+  const postScreenShareFps = () => {
+    const message = screenShareFpsRef.current;
+
+    if (!message || roleRef.current !== "teacher") {
+      return;
+    }
+
+    const frameWindow = apiRef.current?.getIFrame?.()?.contentWindow as Window | null | undefined;
+
+    if (!frameWindow) {
+      // Sent again on SL_RECEIVE_READY once the iframe and custom.js are up.
+      return;
+    }
+
+    frameWindow.postMessage(message, SL_JITSI_ORIGIN);
+  };
+
   // Video diagnostics: kept and resent on SL_RECEIVE_READY, like Teaching
   // Mode. Nothing is sent until the teacher turns it on (off by default).
   const videoTelemetryEpochRef = useRef(0);
@@ -1683,6 +1729,23 @@ export default function useJitsi({
         postTeacherBitrate();
       },
 
+      setScreenShareFrameRate: (fps) => {
+        if (roleRef.current !== "teacher" || !isScreenShareFrameRate(fps)) {
+          return;
+        }
+
+        // Unchanged: nothing to send (SL_RECEIVE_READY still resends the
+        // current one to a reloaded iframe).
+        if (screenShareFpsRef.current?.fps === fps) {
+          return;
+        }
+
+        screenShareFpsEpochRef.current += 1;
+        screenShareFpsRef.current = buildScreenShareFrameRateMessage(screenShareFpsEpochRef.current, fps);
+
+        postScreenShareFps();
+      },
+
       setVideoTelemetry: (enabled) => {
         if (roleRef.current !== "teacher") {
           return;
@@ -1740,6 +1803,7 @@ export default function useJitsi({
         postTeacherTiles();
         postTeachingMode();
         postTeacherBitrate();
+        postScreenShareFps();
         postVideoTelemetry();
         postToolbarView();
         return;
@@ -1751,6 +1815,17 @@ export default function useJitsi({
       if (videoTelemetry) {
         if (roleRef.current === "teacher") {
           onVideoTelemetryRef.current?.(videoTelemetry);
+        }
+
+        return;
+      }
+
+      // Screen-sharing frame rate: what Jitsi holds for the next share.
+      const screenShareFpsStatus = parseScreenShareFrameRateStatus(event.data);
+
+      if (screenShareFpsStatus) {
+        if (roleRef.current === "teacher") {
+          onScreenShareFrameRateStatusRef.current?.(screenShareFpsStatus);
         }
 
         return;

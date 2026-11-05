@@ -13,19 +13,23 @@ import useParticipants from "./hooks/useParticipants";
 import useBreakoutRooms from "./hooks/useBreakoutRooms";
 import useCameraMonitoring from "./hooks/useCameraMonitoring";
 import useTeacherTiles from "./hooks/useTeacherTiles";
-import type { TeacherBitrateStatus, TeacherTilesNavAction, TeacherTilesSettingsChange, TeachingModeSettings, TeachingModeStatus, VideoTelemetryStatus } from "./hooks/useJitsi";
+import type { ScreenShareFrameRateStatus, TeacherBitrateStatus, TeacherTilesNavAction, TeacherTilesSettingsChange, TeachingModeSettings, TeachingModeStatus, VideoTelemetryStatus } from "./hooks/useJitsi";
 import {
   buildDiagnosticsExport,
   createTelemetryHistory,
   resolveStudentLabel,
 } from "./video-telemetry.mjs";
 import {
+  DEFAULT_SCREEN_SHARE_FRAME_RATE,
+  isScreenShareFrameRate,
   isTeacherBitrate,
   isTeachingFrameRate,
   parseStoredBoolean,
   parseStoredFrameRate,
+  parseStoredScreenShareFrameRate,
   parseStoredTeacherBitrate,
   readStorage,
+  screenShareFrameRateStorageKey,
   TEACHER_BITRATE_STORAGE_KEY,
   TEACHING_DETAIL_HINT_STORAGE_KEY,
   TEACHING_FRAME_RATE_STORAGE_KEY,
@@ -1333,6 +1337,45 @@ const [classStudents, setClassStudents] =
     jitsiMeetingRef.current?.setTeacherBitrate(maxBitrate);
   }, []);
 
+  // Teacher only: the screen-sharing frame rate (screen sharing only, never
+  // the webcam). Saved per teacher (keyed by the class's teacher ID, so two
+  // teachers on one browser keep their own), read once the join info names
+  // the teacher, written only when the teacher picks a value. Sent on every
+  // conference join (useJitsi skips an unchanged value and resends it when
+  // custom.js reports ready); a share in progress keeps its rate.
+  const screenShareFpsStorageKey =
+    role === "teacher" ? screenShareFrameRateStorageKey(joinInfo?.class.teacherId) : null;
+  const [screenShareFps, setScreenShareFps] = useState<number>(DEFAULT_SCREEN_SHARE_FRAME_RATE);
+  const screenShareFpsRef = useRef(screenShareFps);
+  const [screenShareFpsStatus, setScreenShareFpsStatus] = useState<ScreenShareFrameRateStatus | null>(null);
+
+  useEffect(() => {
+    if (!screenShareFpsStorageKey) {
+      return;
+    }
+
+    const saved = parseStoredScreenShareFrameRate(readStorage(screenShareFpsStorageKey));
+
+    screenShareFpsRef.current = saved;
+    setScreenShareFps(saved);
+    jitsiMeetingRef.current?.setScreenShareFrameRate(saved);
+  }, [screenShareFpsStorageKey]);
+
+  const handleSetScreenShareFps = useCallback((fps: number) => {
+    if (!isScreenShareFrameRate(fps) || fps === screenShareFpsRef.current) {
+      return;
+    }
+
+    screenShareFpsRef.current = fps;
+    setScreenShareFps(fps);
+
+    if (screenShareFpsStorageKey) {
+      writeStorage(screenShareFpsStorageKey, String(fps));
+    }
+
+    jitsiMeetingRef.current?.setScreenShareFrameRate(fps);
+  }, [screenShareFpsStorageKey]);
+
   // Teacher only: Jitsi's model-based noise suppression (RNNoise) on the
   // teacher's own microphone. ON unless the teacher saved OFF (this browser
   // only). Read for every page but only used for the teacher: it is passed
@@ -2070,6 +2113,9 @@ const [classStudents, setClassStudents] =
                 // The bitrate cap too (the new meeting already started with
                 // the saved value; this keeps custom.js's live cap in step).
                 jitsiMeetingRef.current?.setTeacherBitrate(teacherBitrateRef.current);
+                // The screen-sharing frame rate (Jitsi itself re-applies it on
+                // a rejoin; this covers a recreated meeting component).
+                jitsiMeetingRef.current?.setScreenShareFrameRate(screenShareFpsRef.current);
               }
               // Video diagnostics too (read-only).
               if (role === "teacher" && videoDiagnosticsRef.current) {
@@ -2084,6 +2130,7 @@ const [classStudents, setClassStudents] =
             onTeacherTilesSettings={role === "teacher" ? handleTeacherTilesSettings : undefined}
             onTeachingModeStatus={role === "teacher" ? setTeachingModeStatus : undefined}
             onTeacherBitrateStatus={role === "teacher" ? setTeacherBitrateStatus : undefined}
+            onScreenShareFrameRateStatus={role === "teacher" ? setScreenShareFpsStatus : undefined}
             onVideoTelemetry={role === "teacher" ? handleVideoTelemetry : undefined}
             joinInfo={joinInfo}
             role={role}
@@ -2331,6 +2378,9 @@ const [classStudents, setClassStudents] =
           cameraMonitoring={role === "teacher" ? cameraMonitoring : undefined}
           teacherBitrate={role === "teacher"
             ? { value: teacherBitrate, status: teacherBitrateStatus, onChange: handleSetTeacherBitrate }
+            : undefined}
+          screenShareFps={role === "teacher"
+            ? { value: screenShareFps, status: screenShareFpsStatus, onChange: handleSetScreenShareFps }
             : undefined}
           currentStudentId={role === "student" ? joinInfo.student?.id : undefined}
           // Teacher-only controls: students never get them (Jitsi itself also

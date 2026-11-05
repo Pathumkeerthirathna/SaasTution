@@ -777,6 +777,9 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
           id: true,
           name: true,
           schedule: true,
+          // The class's own teacher: keys the teacher's per-browser
+          // classroom preferences (e.g. the screen-sharing frame rate).
+          teacherId: true,
 
           teacher: {
             select: {

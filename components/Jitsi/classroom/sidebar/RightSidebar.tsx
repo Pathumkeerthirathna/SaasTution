@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
-import type { TeacherBitrateControl } from "./SidebarNav";
+import type { ScreenShareFpsControl, TeacherBitrateControl } from "./SidebarNav";
 import WhiteboardPanel from "./WhiteboardPanel";
 import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
@@ -78,6 +78,8 @@ type RightSidebarProps = {
   cameraMonitoring?: CameraMonitoringController;
   /** Teacher only: the camera bitrate cap selector in the settings menu (SidebarNav). */
   teacherBitrate?: TeacherBitrateControl;
+  /** Teacher only: the screen-sharing frame rate selector in the settings menu (SidebarNav). */
+  screenShareFps?: ScreenShareFpsControl;
   onMuteEveryone?: () => void;
   onMuteParticipant?: (participantId: string, muted: boolean) => void;
   chatMessages?: ChatMessage[];
@@ -614,6 +616,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           teachingDetailHint={props.teachingDetailHint}
           onSetTeachingDetailHint={isTeacher ? props.onSetTeachingDetailHint : undefined}
           teacherBitrate={isTeacher ? props.teacherBitrate : undefined}
+          screenShareFps={isTeacher ? props.screenShareFps : undefined}
           videoDiagnostics={props.videoDiagnostics}
           videoTelemetry={props.videoTelemetry}
           videoTelemetryLabel={props.videoTelemetryLabel}

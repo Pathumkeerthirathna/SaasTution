@@ -28,6 +28,7 @@ import useJitsi, {
   JitsiControls,
   type TeacherTilesNavAction,
   type TeacherTilesSettingsChange,
+  type ScreenShareFrameRateStatus,
   type TeacherBitrateStatus,
   type TeachingModeSettings,
   type TeachingModeStatus,
@@ -159,6 +160,9 @@ type JitsiMeetingProps = {
   /** Teacher only: whether the chosen bitrate cap is on the live camera (see useJitsi). */
   onTeacherBitrateStatus?: (status: TeacherBitrateStatus) => void;
 
+  /** Teacher only: the screen-sharing frame rate Jitsi holds (see useJitsi). */
+  onScreenShareFrameRateStatus?: (status: ScreenShareFrameRateStatus) => void;
+
   /** Teacher only: video diagnostics snapshots (see useJitsi). */
   onVideoTelemetry?: (status: VideoTelemetryStatus) => void;
 
@@ -191,6 +195,7 @@ const JitsiMeeting = forwardRef<
     onTeacherTilesSettings,
     onTeachingModeStatus,
     onTeacherBitrateStatus,
+    onScreenShareFrameRateStatus,
     onVideoTelemetry,
   },
   ref
@@ -336,6 +341,10 @@ const JitsiMeeting = forwardRef<
         controlsRef.current?.setTeacherBitrate(maxBitrate);
       },
 
+      setScreenShareFrameRate: (fps: number) => {
+        controlsRef.current?.setScreenShareFrameRate(fps);
+      },
+
       setVideoTelemetry: (enabled: boolean) => {
         controlsRef.current?.setVideoTelemetry(enabled);
       },
@@ -421,6 +430,7 @@ const JitsiMeeting = forwardRef<
     onTeacherTilesSettings,
     onTeachingModeStatus,
     onTeacherBitrateStatus,
+    onScreenShareFrameRateStatus,
     onVideoTelemetry,
     isFullscreen,
     devices: selectedDevices,

@@ -184,6 +184,142 @@ export function describeTeacherBitrateStatus(status, selected) {
   return `Applied to your camera${codec}: up to ${formatBitrate(selected)}.${smaller}`;
 }
 
+/**
+ * Screen-sharing frame rates (Jitsi build 9442's own choices); custom.js
+ * accepts exactly these. Screen sharing only: never the webcam.
+ */
+export const SCREEN_SHARE_FRAME_RATES = Object.freeze([5, 15, 30]);
+/**
+ * The teacher's default until they pick one (a saved choice always wins).
+ *
+ * What Jitsi (build 9442) does with each choice, through
+ * SET_SCREENSHARE_CAPTURE_FRAME_RATE -> setDesktopSharingFrameRate(fps):
+ *   - capture: getDisplayMedia is asked for frameRate { max: fps };
+ *   - encoder: 5 fps selects Jitsi's low-fps screen-share mode (full
+ *     resolution capture, "detail" hint, maintain-resolution, L1T3);
+ *     15 / 30 fps use "motion" and maintain-framerate.
+ *
+ * With nothing chosen (config.desktopSharingFrameRate unset and no
+ * dispatch, as for students), Jitsi uses its low-fps ENCODER mode but puts
+ * NO frame-rate constraint on the capture: the browser picks the capture
+ * rate. Jitsi's Settings dialog merely displays "5" in that case.
+ */
+export const DEFAULT_SCREEN_SHARE_FRAME_RATE = 15;
+const SCREEN_SHARE_FRAME_RATE_STORAGE_PREFIX = "sl-classroom-teacher-screenshare-fps:";
+
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+export function isScreenShareFrameRate(value) {
+  return typeof value === "number" && SCREEN_SHARE_FRAME_RATES.includes(value);
+}
+
+/**
+ * The teacher's own storage key, so teachers sharing a browser never
+ * overwrite each other's choice. Null without a teacher ID: the choice then
+ * lasts for this page only (never a shared key).
+ *
+ * @param {string | null | undefined} teacherId
+ * @returns {string | null}
+ */
+export function screenShareFrameRateStorageKey(teacherId) {
+  return typeof teacherId === "string" && teacherId.trim() !== ""
+    ? `${SCREEN_SHARE_FRAME_RATE_STORAGE_PREFIX}${teacherId.trim()}`
+    : null;
+}
+
+/**
+ * A stored frame rate ("15"), else the default.
+ *
+ * @param {string | null | undefined} raw
+ * @returns {number}
+ */
+export function parseStoredScreenShareFrameRate(raw) {
+  const value = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null;
+
+  return isScreenShareFrameRate(value) ? value : DEFAULT_SCREEN_SHARE_FRAME_RATE;
+}
+
+/**
+ * The message for custom.js (SL_SCREENSHARE_FPS).
+ *
+ * @param {number} epoch
+ * @param {number} fps
+ * @returns {{ type: "SL_SCREENSHARE_FPS", v: 1, epoch: number, fps: number }}
+ */
+export function buildScreenShareFrameRateMessage(epoch, fps) {
+  return {
+    type: "SL_SCREENSHARE_FPS",
+    v: 1,
+    epoch,
+    fps: isScreenShareFrameRate(fps) ? fps : DEFAULT_SCREEN_SHARE_FRAME_RATE,
+  };
+}
+
+/**
+ * custom.js's report (SL_SCREENSHARE_FPS_STATUS), or null when malformed.
+ *
+ * @param {unknown} data
+ */
+export function parseScreenShareFrameRateStatus(data) {
+  const message = /** @type {Record<string, unknown> | null} */ (data);
+  const fpsOrNull = (/** @type {unknown} */ value) =>
+    value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 240);
+
+  if (
+    !message ||
+    message.type !== "SL_SCREENSHARE_FPS_STATUS" ||
+    message.v !== 1 ||
+    !isScreenShareFrameRate(message.fps) ||
+    !(message.applied === null || isScreenShareFrameRate(message.applied)) ||
+    typeof message.sharing !== "boolean" ||
+    typeof message.pending !== "boolean" ||
+    !(message.shareFps === null || isScreenShareFrameRate(message.shareFps)) ||
+    !fpsOrNull(message.trackFps)
+  ) {
+    return null;
+  }
+
+  return {
+    fps: /** @type {number} */ (message.fps),
+    applied: /** @type {number | null} */ (message.applied),
+    sharing: /** @type {boolean} */ (message.sharing),
+    pending: /** @type {boolean} */ (message.pending),
+    shareFps: /** @type {number | null} */ (message.shareFps),
+    trackFps: /** @type {number | null} */ (message.trackFps),
+  };
+}
+
+/**
+ * One line under the screen-sharing buttons.
+ *
+ * @param {{ fps: number, applied: number | null, sharing: boolean, pending: boolean, shareFps: number | null, trackFps: number | null } | null | undefined} status
+ * @param {number} selected
+ * @returns {string}
+ */
+export function describeScreenShareFrameRateStatus(status, selected) {
+  if (!status || status.fps !== selected) {
+    return "Not confirmed by the meeting yet.";
+  }
+
+  if (status.sharing && status.pending) {
+    return `You are sharing now: ${selected} fps applies the next time you start screen sharing. Your current share is not interrupted.`;
+  }
+
+  if (status.sharing) {
+    const reported = status.trackFps !== null ? ` (browser reports ${Math.round(status.trackFps)} fps)` : "";
+
+    return `Sharing at up to ${status.shareFps ?? selected} fps${reported}.`;
+  }
+
+  if (status.applied === selected) {
+    return `Your next screen share uses up to ${selected} fps.`;
+  }
+
+  return "Applying…";
+}
+
 export const VIDEO_QUALITY_STORAGE_KEY = "sl-classroom-teacher-video-quality";
 export const TEACHING_FRAME_RATE_STORAGE_KEY = "sl-classroom-teacher-teaching-fps";
 export const TEACHING_DETAIL_HINT_STORAGE_KEY = "sl-classroom-teacher-teaching-detail-hint";

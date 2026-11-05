@@ -27,7 +27,7 @@ const CUSTOM_JS_UNDER_TEST = path.resolve(process.env.SL_CUSTOM_JS
     || path.join(__dirname, "..", "..", "deploy", "jitsi", "custom.js"));
 // SL_CUSTOM_JS_VERSION expected for each known copy; update with every bump.
 const EXPECTED_CUSTOM_JS_VERSIONS = {
-    "deploy/jitsi/custom.js": 1024,
+    "deploy/jitsi/custom.js": 1026,
     "deploy/jitsi/server-custom.js": 1018
 };
 

@@ -15,17 +15,19 @@ import {
   ScanEye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { TeacherBitrateStatus, TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
+import type { ScreenShareFrameRateStatus, TeacherBitrateStatus, TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
 import VideoDiagnosticsSection from "./VideoDiagnosticsSection";
 import { closeSettings, settingsKeyDown, toggleSettings } from "../../video-diagnostics-controls.mjs";
 import {
   DEFAULT_TEACHER_VIDEO_QUALITY,
   DEFAULT_TEACHING_FRAME_RATE,
   describeFrameRateStatus,
+  describeScreenShareFrameRateStatus,
   describeTeacherBitrateStatus,
   formatBitrate,
   parseStoredVideoQuality,
   readStorage,
+  SCREEN_SHARE_FRAME_RATES,
   TEACHER_BITRATE_PRESETS,
   TEACHER_VIDEO_QUALITY_HEIGHTS,
   TEACHING_FRAME_RATES,
@@ -45,6 +47,15 @@ export type TeacherBitrateControl = {
   /** custom.js's report for the live camera; null: none (yet). */
   status: TeacherBitrateStatus | null;
   onChange: (maxBitrate: number) => void;
+};
+
+/** Teacher only: the screen-sharing frame rate (owned by JitsiClassroom). */
+export type ScreenShareFpsControl = {
+  /** The selected frame rate (one of SCREEN_SHARE_FRAME_RATES). */
+  value: number;
+  /** custom.js's report of what Jitsi holds; null: none (yet). */
+  status: ScreenShareFrameRateStatus | null;
+  onChange: (fps: number) => void;
 };
 
 type SidebarNavProps = {
@@ -86,6 +97,8 @@ type SidebarNavProps = {
   onSetTeachingDetailHint?: (enabled: boolean) => void;
   /** Teacher only: the Teacher Video Bitrate selector in the settings menu's Camera section. */
   teacherBitrate?: TeacherBitrateControl;
+  /** Teacher only: the screen-sharing frame rate (its own section, below Camera). */
+  screenShareFps?: ScreenShareFpsControl;
   /** Video diagnostics (read-only WebRTC stats): on / off and the latest snapshot. */
   videoDiagnostics?: boolean;
   videoTelemetry?: VideoTelemetryStatus | null;
@@ -222,6 +235,53 @@ export function TeacherBitrateSection({ bitrate }: { bitrate: TeacherBitrateCont
   );
 }
 
+/**
+ * Teacher only: the screen-sharing frame rate (5 / 15 / 30 fps), in its own
+ * settings-menu section below the Camera section. Screen sharing only: the
+ * webcam keeps the Teaching Mode frame rate.
+ */
+export function ScreenShareFpsSection({ screenShare }: { screenShare: ScreenShareFpsControl }) {
+  return (
+    <>
+      <div className="my-3 h-px bg-[#1E293B]" />
+
+      <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+        Screen sharing
+      </p>
+      <div className="px-3">
+        <p className="pb-1 text-[10px] text-[#94A3B8]">Screen-sharing frame rate</p>
+        <div className="grid grid-cols-3 gap-1" role="group" aria-label="Screen-sharing frame rate">
+          {SCREEN_SHARE_FRAME_RATES.map((fps) => (
+            <button
+              key={fps}
+              type="button"
+              aria-pressed={screenShare.value === fps}
+              data-screenshare-fps={fps}
+              onClick={() => screenShare.onChange(fps)}
+              className={`rounded-lg px-2 py-1.5 text-xs transition ${
+                screenShare.value === fps
+                  ? "bg-[#3B82F6]/15 text-[#F8FAFC] ring-1 ring-[#3B82F6]/60"
+                  : "text-[#CBD5E1] hover:bg-[#1E293B]"
+              }`}
+            >
+              {fps} fps
+            </button>
+          ))}
+        </div>
+        <p role="status" className="pt-1 text-[10px] leading-snug text-[#94A3B8]">
+          {describeScreenShareFrameRateStatus(screenShare.status, screenShare.value)}
+        </p>
+        <p className="pt-1 text-[10px] leading-snug text-[#64748B]">
+          Controls screen sharing only, not your webcam. 15 fps (default) suits most lessons;
+          5 fps keeps text and slides sharpest and uses the least data; 30 fps is smoothest for
+          video and animation. Higher rates may look softer on a slow connection. A change
+          applies the next time you start sharing.
+        </p>
+      </div>
+    </>
+  );
+}
+
 export default function SidebarNav({
   activePanel,
   onPanelChange,
@@ -242,6 +302,7 @@ export default function SidebarNav({
   teachingDetailHint = true,
   onSetTeachingDetailHint,
   teacherBitrate,
+  screenShareFps,
   videoDiagnostics = false,
   videoTelemetry = null,
   videoTelemetryLabel,
@@ -584,6 +645,8 @@ export default function SidebarNav({
                 {teacherBitrate ? <TeacherBitrateSection bitrate={teacherBitrate} /> : null}
               </>
             ) : null}
+
+            {screenShareFps ? <ScreenShareFpsSection screenShare={screenShareFps} /> : null}
 
             {onSetNoiseSuppression ? (
             <>
