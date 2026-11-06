@@ -209,13 +209,14 @@ test("webcam FPS and screen-sharing FPS stay separate (own values, own keys, own
 
 /* -------------------------------- toolbar -------------------------------- */
 
-test("both role toolbars still list Settings (custom.js hides it on wide desktop only); other controls stay", () => {
-  assert.ok(teacherToolbar.includes("settings"));
-  assert.ok(studentToolbar.includes("settings"));
+test("Settings is intentionally not in either role's toolbar (nor Video quality for teachers); other controls stay", () => {
+  assert.ok(!teacherToolbar.includes("settings"));
+  assert.ok(!studentToolbar.includes("settings"));
+  assert.ok(!teacherToolbar.includes("videoquality"));
 
   // The mic / camera buttons carry the device menus (mic, speakers, noise
   // suppression, camera, virtual background, mirror).
-  for (const button of ["microphone", "camera", "desktop", "select-background", "videobackgroundblur", "videoquality", "hangup"]) {
+  for (const button of ["microphone", "camera", "desktop", "select-background", "videobackgroundblur", "hangup"]) {
     assert.ok(teacherToolbar.includes(button), `teacher ${button}`);
   }
 

@@ -40,27 +40,27 @@ const baseTeacherToolbar = [
   // device controls and SLClassroom's settings menu holds the screen-sharing
   // frame rate. Android / iOS and narrow layouts (under 512 px) have no such
   // menus, so Settings stays there (and stays everywhere without custom.js).
-  "settings",
-  "videoquality",
+  // "settings",
+  // "videoquality",
   "select-background",
   "videobackgroundblur",
   // "noisesuppression": the SLClassroom Audio toggle (settings menu) is the
   // single noise-suppression control for teachers.
   "mute-everyone",
   "security",
-  "whiteboard",
-  "breakoutrooms",
+  // "whiteboard",
+  // "breakoutrooms",
   // "recording",
-  "livestreaming",
+  // "livestreaming",
   // "sharedvideo",
   "etherpad",
   //"invite",
-  "calendar",
+  // "calendar",
   "closedcaptions",
   // "profile",
   "feedback",
   "help",
-  "speakerstats",
+  // "speakerstats",
   // "stats",
   // "shortcuts",
   "download",
@@ -79,7 +79,7 @@ const baseStudentToolbar = [
   // participant grid (their receive policy does not fetch other cameras).
   "fullscreen",
   // Settings: shown / hidden by custom.js as for the teacher (see above).
-  "settings",
+  // "settings",
   "videoquality",
   "shortcuts",
   "hangup",
