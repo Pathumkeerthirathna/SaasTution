@@ -41,6 +41,8 @@ export const BREAKOUT_ERRORS = {
   QUIZ_ALREADY_SUBMITTED: { status: 409, message: "This quiz has already been submitted." },
   // Grading override on an attempt that is still IN_PROGRESS (approved decision).
   QUIZ_NOT_SUBMITTED: { status: 409, message: "This attempt has not been submitted yet." },
+  // Saving or submitting answers before starting the attempt (approved decision Q2).
+  QUIZ_NOT_STARTED: { status: 409, message: "Start the quiz first." },
   QUIZ_TIME_UP: { status: 409, message: "The time for this quiz is over." },
   REVISION_CONFLICT: { status: 409, message: "This was changed somewhere else. Reload and try again." },
   SUBMISSION_LIMIT_REACHED: { status: 409, message: "The maximum number of submissions has been reached." },

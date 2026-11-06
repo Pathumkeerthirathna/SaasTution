@@ -148,6 +148,33 @@ test("D5 merge: sent answers replace those questions only; the rest is kept; val
   ]) {
     const result = v.mergeQuizAnswers(def, stored, incoming);
     assert.equal(result.ok, false, label);
+    assert.equal(result.reason, "INVALID_ANSWERS", label);
   }
-  assert.equal(v.mergeQuizAnswers(def, { qffffffffffffffff: { kind: "true_false", value: true } }, { [tf.id]: { kind: "true_false", value: true } }).ok, false, "corrupt stored answers are refused, never silently dropped");
+  const corrupt = v.mergeQuizAnswers(def, { qffffffffffffffff: { kind: "true_false", value: true } }, { [tf.id]: { kind: "true_false", value: true } });
+  assert.equal(corrupt.ok, false, "corrupt stored answers are refused, never silently dropped");
+  assert.equal(corrupt.reason, "STORED_ANSWERS_CORRUPT");
+});
+
+test("merge failure reasons are stable codes, distinct for the request and for the stored answers", () => {
+  const def = v.assignServerIds([question]);
+  const [tf] = def.questions;
+  const valid = { [tf.id]: { kind: "true_false", value: true } };
+  const corruptStored = { qffffffffffffffff: { kind: "true_false", value: false } };
+  const badIncoming = { qeeeeeeeeeeeeeeee: { kind: "true_false", value: true } };
+
+  assert.deepEqual(v.mergeQuizAnswers(def, {}, valid), { ok: true, answers: valid });
+  assert.equal(v.mergeQuizAnswers(def, {}, badIncoming).reason, "INVALID_ANSWERS");
+  assert.equal(v.mergeQuizAnswers(def, corruptStored, valid).reason, "STORED_ANSWERS_CORRUPT");
+  // Both wrong: the request is reported first (a client error), as before.
+  assert.equal(v.mergeQuizAnswers(def, corruptStored, badIncoming).reason, "INVALID_ANSWERS");
+  // Stored values that are not even an object are corrupt too.
+  for (const stored of ["text", [1], 7]) {
+    assert.equal(v.mergeQuizAnswers(def, stored, valid).reason, "STORED_ANSWERS_CORRUPT", JSON.stringify(stored));
+  }
+  // The reason, not the message, is the contract: every failure carries both.
+  for (const result of [v.mergeQuizAnswers(def, {}, {}), v.mergeQuizAnswers(def, corruptStored, valid)]) {
+    assert.equal(result.ok, false);
+    assert.ok(["INVALID_ANSWERS", "STORED_ANSWERS_CORRUPT"].includes(result.reason));
+    assert.equal(typeof result.error, "string");
+  }
 });

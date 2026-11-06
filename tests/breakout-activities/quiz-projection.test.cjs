@@ -108,3 +108,64 @@ test("after CLOSED without grading: everything unanswered, 0 awarded", async () 
   assert.equal(r.finalScore, null);
   assert.ok(r.review.every((q) => q.result === "unanswered" && q.awarded === 0 && q.answer === null));
 });
+
+// ---- L2: the shown result follows a teacher override ---------------------------------
+
+const overrideOn = (questionId, auto, result, marks, note) => {
+  const s = submission();
+  s.grading = structuredClone(s.grading);
+  s.grading.questions[questionId] = { auto, result, override: { marks, teacherId: "t-1", at: "2026-11-05T08:00:00.000Z", ...(note ? { note } : {}) } };
+  return s;
+};
+const reviewOf = async (s) => {
+  const { buildStudentResult } = await load();
+  return buildStudentResult({ quizState: "CLOSED", definition, totalMarks: 5, submission: s }).review;
+};
+
+test("L2: a full-mark override shows correct (was incorrect / unanswered), awarded = the override", async () => {
+  // q2: 2 marks, auto 0 "incorrect" -> override 2
+  let q = (await reviewOf(overrideOn("q2", 0, "incorrect", 2))).find((x) => x.id === "q2");
+  assert.equal(q.result, "correct");
+  assert.equal(q.awarded, 2);
+  // q3: 1 mark, never answered -> override 1
+  q = (await reviewOf(overrideOn("q3", 0, "unanswered", 1))).find((x) => x.id === "q3");
+  assert.equal(q.result, "correct");
+  assert.equal(q.awarded, 1);
+});
+
+test("L2: a partial-mark override shows partial, from either direction", async () => {
+  let q = (await reviewOf(overrideOn("q2", 0, "incorrect", 0.5))).find((x) => x.id === "q2");
+  assert.deepEqual([q.result, q.awarded], ["partial", 0.5]);
+  q = (await reviewOf(overrideOn("q1", 1, "correct", 0.25))).find((x) => x.id === "q1");
+  assert.deepEqual([q.result, q.awarded], ["partial", 0.25], "a correct answer marked down");
+  // The existing fixture: q4 (1 mark) auto 0 incorrect, override 0.5 -> partial.
+  q = (await reviewOf(submission())).find((x) => x.id === "q4");
+  assert.deepEqual([q.result, q.awarded, q.note], ["partial", 0.5, "Half"]);
+  // Hundredths: 1.99 of 2 is partial, not rounded up to correct.
+  q = (await reviewOf(overrideOn("q2", 2, "correct", 1.99))).find((x) => x.id === "q2");
+  assert.equal(q.result, "partial");
+});
+
+test("L2: a zero-mark override shows incorrect; an unanswered question overridden to 0 stays unanswered", async () => {
+  let q = (await reviewOf(overrideOn("q1", 1, "correct", 0, "Copied"))).find((x) => x.id === "q1");
+  assert.deepEqual([q.result, q.awarded, q.note], ["incorrect", 0, "Copied"]);
+  q = (await reviewOf(overrideOn("q2", 1, "partial", 0))).find((x) => x.id === "q2");
+  assert.deepEqual([q.result, q.awarded], ["incorrect", 0]);
+  q = (await reviewOf(overrideOn("q3", 0, "unanswered", 0))).find((x) => x.id === "q3");
+  assert.deepEqual([q.result, q.awarded], ["unanswered", 0]);
+});
+
+test("L2: without an override the stored automatic result is shown unchanged; the grading object is not modified or sent", async () => {
+  const s = submission();
+  const before = structuredClone(s.grading);
+  const review = await reviewOf(s);
+  assert.deepEqual(review.map((x) => x.result), ["correct", "unanswered", "unanswered", "partial"]);
+  assert.deepEqual(s.grading, before, "the stored grading is untouched (automatic result kept)");
+  const text = JSON.stringify(review);
+  assert.equal(text.includes("t-1") || text.includes('"override"') || text.includes('"auto"') || text.includes('"grading"'), false);
+});
+
+test("L2: a malformed stored override falls back to the stored automatic result (no crash)", async () => {
+  const q = (await reviewOf(overrideOn("q1", 1, "correct", "abc"))).find((x) => x.id === "q1");
+  assert.equal(q.result, "correct");
+});

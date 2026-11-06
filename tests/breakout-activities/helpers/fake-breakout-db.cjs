@@ -29,6 +29,13 @@ const TABLES = [
 // Tables whose model has an @updatedAt column (BreakoutAssignmentSubmission has none).
 const HAS_UPDATED_AT = new Set(["breakoutAssignment", "breakoutAssignmentDraft", "breakoutQuiz", "breakoutQuizSubmission"]);
 
+// The schema's unique constraints, enforced by createMany (and its skipDuplicates).
+const UNIQUE_KEYS = {
+  breakoutQuizSubmission: [["quizId", "studentId"]],
+  breakoutAssignmentDraft: [["assignmentId", "studentId"]],
+  breakoutAssignmentSubmission: [["assignmentId", "studentId", "version"], ["assignmentId", "studentId", "idempotencyKey"]],
+};
+
 function clone(value) {
   return structuredClone(value);
 }
@@ -148,6 +155,25 @@ function createFakeBreakoutDb({ appNow = () => new Date("1999-01-01T00:00:00.000
           const row = { ...(DEFAULTS[table] ?? {}), ...(HAS_UPDATED_AT.has(table) ? { updatedAt: now() } : {}), ...clone(args.data) };
           tables[table].push(row);
           return pick(row, args.select);
+        },
+        // INSERT ... ON CONFLICT DO NOTHING with skipDuplicates, like Prisma on
+        // PostgreSQL; without it a duplicate is the unique-violation error.
+        createMany: async (args) => {
+          record("createMany", args);
+          maybeFail(`${table}.createMany`);
+          const rows = Array.isArray(args.data) ? args.data : [args.data];
+          let count = 0;
+          for (const data of rows) {
+            const keys = UNIQUE_KEYS[table] ?? [];
+            const duplicate = keys.some((fields) => tables[table].some((r) => fields.every((f) => r[f] === data[f])));
+            if (duplicate) {
+              if (args.skipDuplicates) continue;
+              throw Object.assign(new Error(`Unique constraint failed on ${table}`), { name: "PrismaClientKnownRequestError", code: "P2002" });
+            }
+            tables[table].push({ ...(DEFAULTS[table] ?? {}), ...(HAS_UPDATED_AT.has(table) ? { updatedAt: now() } : {}), ...clone(data) });
+            count += 1;
+          }
+          return { count };
         },
         updateMany: async (args) => {
           record("updateMany", args);

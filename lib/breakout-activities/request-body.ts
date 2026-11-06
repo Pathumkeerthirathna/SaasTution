@@ -151,3 +151,23 @@ export async function formPdf(form: FormData, name: string): Promise<UploadedPdf
   if (!check.ok) throw pdfCheckError(check.code);
   return { bytes, displayName: sanitizeDisplayName(value.name), sizeBytes: bytes.byteLength };
 }
+
+export type RawFileUpload = { bytes: Uint8Array; fileName: string; mimeType: string };
+
+/**
+ * A file field taken as received (student submissions): only its size is
+ * checked here (413 FILE_TOO_LARGE above the PDF limit, before its bytes are
+ * read); its type and content are NOT, because a submission retry must still
+ * be answered with the original submission whatever it carries. The student
+ * submission service checks the PDF (type, %PDF- header, empty) after its
+ * idempotency lookup, and sanitizes the name. Absent, or the empty part of an
+ * unused file input: null. formPdf() is the validating variant.
+ */
+export async function formFileUpload(form: FormData, name: string): Promise<RawFileUpload | null> {
+  const value = single(form, name);
+  if (value === null || value === "") return null;
+  if (typeof value === "string") throw breakoutError("VALIDATION_ERROR", `The field "${name}" must be a file.`);
+  if (value.size === 0 && value.name === "") return null;
+  if (value.size > MAX_BREAKOUT_PDF_BYTES) throw breakoutError("FILE_TOO_LARGE");
+  return { bytes: new Uint8Array(await value.arrayBuffer()), fileName: value.name, mimeType: value.type };
+}

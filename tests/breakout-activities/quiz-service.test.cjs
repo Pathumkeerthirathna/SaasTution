@@ -448,3 +448,39 @@ test("F5: a valid stored grading is used; a corrupt or mismatched one refuses th
   assert.equal(regraded.autoScore, 3.5);
   assert.equal(regraded.finalScore, 4.5);
 });
+
+// ---- Audit fix L3: submittedAt of attempts auto-submitted by the close ------------------
+
+test("L3 close: submittedAt = min(close time, deadlineAt + 5 s); untimed = close time; updatedAt = close time", async () => {
+  const quizId = await publishedQuiz();
+  const answers = answersFor(quizId, { tf: true });
+  const notYet = addAttempt(quizId, ST1, "IN_PROGRESS", answers, { deadlineAt: new Date("2026-11-05T10:20:00.000Z") });
+  const expired = addAttempt(quizId, ST2, "IN_PROGRESS", answers, { deadlineAt: new Date("2026-11-05T10:00:00.000Z") });
+  const untimed = addAttempt(quizId, ST3, "IN_PROGRESS", answers, { deadlineAt: null });
+  clock = new Date("2026-11-05T10:15:00.000Z"); // before ST1's deadline, long after ST2's
+  assert.equal((await setQuizState(quizId, "close")).autoSubmitted, 3);
+  assert.equal(attempt(notYet).submittedAt.toISOString(), clock.toISOString(), "cut short by the close: the close time");
+  assert.equal(attempt(expired).submittedAt.toISOString(), "2026-11-05T10:00:05.000Z", "already expired: deadline + 5 s");
+  assert.equal(attempt(untimed).submittedAt.toISOString(), clock.toISOString(), "untimed: the close time");
+  for (const id of [notYet, expired, untimed]) {
+    assert.equal(attempt(id).attemptStatus, "AUTO_SUBMITTED");
+    assert.equal(attempt(id).updatedAt.toISOString(), clock.toISOString(), "updatedAt: the database clock of the write");
+  }
+  assert.equal(quizRow(quizId).closedAt.toISOString(), clock.toISOString());
+});
+
+test("L3 close boundary: a close at exactly deadline + 5 s records it; 1 ms later is capped at deadline + 5 s", async () => {
+  const deadline = new Date("2026-11-05T10:20:00.000Z");
+  const quizA = await publishedQuiz();
+  const inGrace = addAttempt(quizA, ST1, "IN_PROGRESS", {}, { deadlineAt: deadline });
+  clock = new Date(deadline.getTime() + 5_000);
+  await setQuizState(quizA, "close");
+  assert.equal(attempt(inGrace).submittedAt.toISOString(), "2026-11-05T10:20:05.000Z");
+
+  const quizB = await publishedQuiz();
+  const late = addAttempt(quizB, ST2, "IN_PROGRESS", {}, { deadlineAt: deadline });
+  clock = new Date(deadline.getTime() + 5_001);
+  await setQuizState(quizB, "close");
+  assert.equal(attempt(late).submittedAt.toISOString(), "2026-11-05T10:20:05.000Z", "capped, not 10:20:05.001");
+  assert.equal(attempt(late).updatedAt.toISOString(), "2026-11-05T10:20:05.001Z");
+});

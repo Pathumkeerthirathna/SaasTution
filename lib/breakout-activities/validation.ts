@@ -255,6 +255,16 @@ export function validateAnswersAgainstDefinition(definition: QuizDefinition, raw
 }
 
 /**
+ * Why a merge failed, as a stable code (never match on `error`, which is a
+ * human message): INVALID_ANSWERS = the request's answers (a client error,
+ * 400); STORED_ANSWERS_CORRUPT = the attempt's saved answers no longer fit
+ * the definition (a server fault: refuse, never overwrite).
+ */
+export type MergeFailureReason = "INVALID_ANSWERS" | "STORED_ANSWERS_CORRUPT";
+
+export type MergeCheck = { ok: true; answers: QuizAnswers } | { ok: false; reason: MergeFailureReason; error: string };
+
+/**
  * Incremental quiz save (approved decision D5): the answers sent replace
  * those questions only; every other saved answer is kept. The incoming part
  * is validated against the definition (validateAnswersAgainstDefinition:
@@ -266,14 +276,14 @@ export function validateAnswersAgainstDefinition(definition: QuizDefinition, raw
  * no longer fit the definition the merge is refused rather than silently
  * dropping a student's answers.
  */
-export function mergeQuizAnswers(definition: QuizDefinition, stored: unknown, incoming: unknown): AnswerCheck {
+export function mergeQuizAnswers(definition: QuizDefinition, stored: unknown, incoming: unknown): MergeCheck {
   if (!incoming || typeof incoming !== "object" || Array.isArray(incoming) || Object.keys(incoming).length === 0) {
-    return { ok: false, error: "Nothing to save." };
+    return { ok: false, reason: "INVALID_ANSWERS", error: "Nothing to save." };
   }
   const next = validateAnswersAgainstDefinition(definition, incoming);
-  if (!next.ok) return next;
+  if (!next.ok) return { ok: false, reason: "INVALID_ANSWERS", error: next.error };
   const current = validateAnswersAgainstDefinition(definition, stored ?? {});
-  if (!current.ok) return { ok: false, error: "Saved answers are invalid." };
+  if (!current.ok) return { ok: false, reason: "STORED_ANSWERS_CORRUPT", error: "Saved answers are invalid." };
   const merged: QuizAnswers = {};
   for (const [id, answer] of Object.entries(current.answers)) merged[id] = answer;
   for (const [id, answer] of Object.entries(next.answers)) merged[id] = answer;

@@ -41,6 +41,7 @@ test("aligned with the approved v2 error table (and the later decisions)", () =>
     // Approved decisions (no v2 codes for these cases):
     ACTIVITY_NOT_DRAFT: 409,
     QUIZ_NOT_SUBMITTED: 409,
+    QUIZ_NOT_STARTED: 409,
     ASSIGNMENT_CLOSED: 409,
     QUIZ_CLOSED: 409,
     QUIZ_TIME_UP: 409,

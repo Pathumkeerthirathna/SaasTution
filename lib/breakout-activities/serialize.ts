@@ -308,3 +308,42 @@ export function serializeAttemptForStudent(input: {
     },
   });
 }
+
+/**
+ * A quiz without its questions (approved decision Q1): what a student sees
+ * before starting an attempt, and of a CLOSED quiz they never attempted.
+ * Title, instructions, total marks, time limit and the number of questions.
+ */
+export function serializeQuizSummaryForStudent(row: StudentQuizRow, questionCount: number) {
+  if (!Number.isInteger(questionCount) || questionCount < 0) throw new RangeError("Invalid question count.");
+  return {
+    ...studentActivityFields(row),
+    instructions: row.instructions ?? null,
+    totalMarks: toNumber(row.totalMarks),
+    timeLimitSeconds: row.timeLimitSeconds ?? null,
+    questionCount,
+  };
+}
+
+/**
+ * The student's own attempt in a list: its status and times, and the total
+ * score once submitted. Never answers, a review or raw grading (those come
+ * with the single quiz, serializeAttemptForStudent).
+ */
+export function serializeAttemptSummaryForStudent(attempt: StudentAttemptRow | null, totalMarks: DecimalLike) {
+  if (!attempt) return { attemptStatus: null };
+  if (attempt.attemptStatus === "IN_PROGRESS") {
+    return {
+      attemptStatus: "IN_PROGRESS" as const,
+      startedAt: toIso(attempt.startedAt),
+      deadlineAt: toIso(attempt.deadlineAt),
+      lastSavedAt: toIso(attempt.lastSavedAt),
+    };
+  }
+  return {
+    attemptStatus: attempt.attemptStatus,
+    finalScore: toNumber(attempt.finalScore),
+    totalMarks: toNumber(totalMarks),
+    submittedAt: toIso(attempt.submittedAt),
+  };
+}

@@ -34,10 +34,17 @@
 //
 // Writes are atomic: the bytes go to a temporary file in the same folder,
 // renamed to the final name, so a reader never sees half a file. A failed
-// write leaves nothing behind. A file whose database transaction fails
-// afterwards is removed by the caller (removeBreakoutFile); anything left
-// over goes with the session's folder when the session ends
-// (removeBreakoutSessionDir).
+// write leaves nothing behind.
+//
+// A file written successfully whose database transaction then fails is NOT
+// deleted by the caller (approved decision F2): the error can be ambiguous
+// (the transaction may have committed before the failure reached the app),
+// and deleting the file would then break a committed row. Callers never
+// call removeBreakoutFile() on a newly written file in a transaction-error
+// catch; such orphans stay inside the session's folder and go with it in
+// the planned Step 5 session cleanup (removeBreakoutSessionDir).
+// removeBreakoutFile() is only for files a COMMITTED change no longer
+// refers to (e.g. a replaced brief, after the commit).
 
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";

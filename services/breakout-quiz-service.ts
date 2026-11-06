@@ -21,8 +21,9 @@
 // (Step 3).
 //
 // Timestamps (mandatory for every breakout write, including Step 3):
-// createdAt, updatedAt, publishedAt, closedAt, submittedAt (auto-submit) and
-// overriddenAt are passed EXPLICITLY from the database clock (serverNow()
+// createdAt, updatedAt, publishedAt, closedAt, submittedAt (auto-submit:
+// min(now, deadlineAt + 5 s), quiz-deadline.ts) and overriddenAt are passed
+// EXPLICITLY from the database clock (serverNow()
 // once before the transaction, then serverNowSync()), never left to database
 // defaults or to Prisma's @updatedAt (this server's own clock).
 //
@@ -38,6 +39,7 @@ import { prisma } from "@/lib/prisma";
 import { serverNow, serverNowSync } from "@/lib/server-clock";
 import { breakoutError } from "@/lib/breakout-activities/errors";
 import { lockActivityForUpdate, lockInProgressAttemptsForUpdate, lockQuizAttemptForUpdate } from "@/lib/breakout-activities/locks";
+import { autoSubmittedAt } from "@/lib/breakout-activities/quiz-deadline";
 import { applyOverrides, computeScores, computeTotalMarks, gradeAttempt, type QuizDefinition, type QuizGrading } from "@/lib/breakout-activities/marking.mjs";
 import {
   serializeQuizAttemptForTeacher,
@@ -178,14 +180,16 @@ export async function setQuizState(input: QuizStateInput) {
           const quiz = await tx.breakoutQuiz.findUniqueOrThrow({ where: { id: quizId }, select: { questions: true } });
           const definition = storedDefinition(quiz.questions);
           for (const attemptId of attemptIds) {
-            const attempt = await tx.breakoutQuizSubmission.findUniqueOrThrow({ where: { id: attemptId }, select: { answers: true } });
+            const attempt = await tx.breakoutQuizSubmission.findUniqueOrThrow({ where: { id: attemptId }, select: { answers: true, deadlineAt: true } });
             const grading = gradeAttempt(definition, attempt.answers as never);
             const scores = computeScores(grading);
             await tx.breakoutQuizSubmission.update({
               where: { id: attemptId },
               data: {
                 attemptStatus: "AUTO_SUBMITTED",
-                submittedAt: now,
+                // When the attempt ended (quiz-deadline.ts): the close, or
+                // deadlineAt + 5 s if its time had already run out.
+                submittedAt: autoSubmittedAt(attempt.deadlineAt, now),
                 grading: asJson(grading),
                 autoScore: scores.autoScore,
                 finalScore: scores.finalScore,
