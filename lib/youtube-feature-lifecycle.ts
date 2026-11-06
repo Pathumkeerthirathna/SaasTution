@@ -158,11 +158,16 @@ async function closeRow(
 
 /**
  * YouTube's explicit refusal to complete a broadcast that cannot make that
- * transition (it never went live): HTTP 403, reason "invalidTransition".
- * Anything else is not taken as a refusal.
+ * transition (it never went live): HTTP 403, reason "invalidTransition", or
+ * "errorStreamInactive" when its bound stream never received data (e.g. Jibri
+ * refused the start: all streamers busy). Anything else is not taken as a
+ * refusal. Callers still require a ready / created lookup, and the removal
+ * still looks the broadcast up afresh (cleanUpNeverLiveBroadcast).
  */
 const isNeverLiveRefusal = (error: unknown) =>
-  error instanceof YouTubeApiError && error.status === 403 && error.reason === "invalidTransition";
+  error instanceof YouTubeApiError &&
+  error.status === 403 &&
+  (error.reason === "invalidTransition" || error.reason === "errorStreamInactive");
 
 /** States in which a broadcast is (still, or now) running: never deleted. */
 const STARTED_LIFECYCLES = new Set(["live", "liveStarting", "testing", "testStarting"]);

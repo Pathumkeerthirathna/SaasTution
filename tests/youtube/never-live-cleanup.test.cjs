@@ -600,3 +600,129 @@ test("21. completeRequestedAt: set before the refused `complete`, kept while the
     assert.equal(row.completeRequestedAt, null);
     assert.ok(!yt.broadcasts.has(row.broadcastId));
 });
+
+// ---- 403 errorStreamInactive: the never-live refusal when the stream never received data -----
+//
+// When Jibri refuses a start (e.g. all streamers busy), nothing is ever sent to
+// the teacher's reusable stream, and YouTube may refuse `complete` for the
+// ready broadcast with 403 errorStreamInactive instead of invalidTransition.
+// It is the same never-live refusal: the guarded removal applies, with every
+// safeguard unchanged (ready / created at the first lookup, a fresh lookup,
+// delete only while ready / created).
+
+// YouTube refuses `complete` with 403 `reason` while the broadcast is in one of
+// `when`; then (optionally) reports `after` (it started meanwhile).
+function refusesCompleteWith(reason, { when = ["ready", "created"], after } = {}) {
+    return around("transitionYouTubeLiveBroadcast", async (original, token, id, to) => {
+        if (to === "complete" && when.includes(yt.broadcasts.get(id)?.lifecycle)) {
+            if (after) yt.broadcasts.get(id).lifecycle = after;
+            throw yt.apiError(403, reason);
+        }
+        return original(token, id, to);
+    });
+}
+
+test("22. failed start, errorStreamInactive on a ready broadcast: looked up again, deleted ONCE, the row closes (cleanup confirmed)", async () => {
+    reset();
+    const row = await neverLiveRecording();
+    const id = row.broadcastId;
+    const restore = refusesCompleteWith("errorStreamInactive");
+    let result;
+
+    try {
+        result = await abort("recording", row);
+    } finally {
+        restore();
+    }
+
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.success, true);
+    assert.equal(result.data.aborted, true);
+    assert.equal(result.data.broadcastCompleted, false, "never went live: not reported as completed");
+    assert.equal(deletes(id).length, 1, "deleted exactly once");
+    assert.ok(!yt.broadcasts.has(id), "gone from the channel");
+    assert.equal(row.status, "REVOKED", "closed as for any failed start");
+    assert.ok(lookups(id).length >= 2, "looked up again after the refusal");
+    assert.equal(row.completeRequestedAt, null, "deletion confirmed: protection cleared");
+});
+
+for (const lifecycleStatus of ["live", "liveStarting", "testing", "testStarting"]) {
+    test(`23. errorStreamInactive, then the fresh lookup reports "${lifecycleStatus}" (it started meanwhile): NOT deleted, nothing closes`, async () => {
+        reset();
+        const row = await neverLiveRecording();
+        const restore = refusesCompleteWith("errorStreamInactive", { after: lifecycleStatus });
+        let result;
+
+        try {
+            result = await abort("recording", row);
+        } finally {
+            restore();
+        }
+
+        assert.equal(result.status, 503, JSON.stringify(result.data));
+        assert.equal(result.data.code, "YOUTUBE_BROADCAST_STOP_FAILED");
+        assert.equal(deletes().length, 0, "never deleted");
+        assert.equal(active([row]).length, 1, "the row stays active");
+        assert.ok(yt.broadcasts.has(row.broadcastId));
+    });
+}
+
+test("24. errorStreamInactive while the first lookup already reports live: NOT deleted (503), nothing closes", async () => {
+    reset();
+    const row = await neverLiveRecording();
+
+    yt.broadcasts.get(row.broadcastId).lifecycle = "live";
+    const restore = refusesCompleteWith("errorStreamInactive", { when: ["live"] });
+    let result;
+
+    try {
+        result = await abort("recording", row);
+    } finally {
+        restore();
+    }
+
+    assert.equal(result.status, 503, JSON.stringify(result.data));
+    assert.equal(result.data.code, "YOUTUBE_BROADCAST_STOP_FAILED");
+    assert.equal(deletes().length, 0, "a started broadcast is never deleted");
+    assert.equal(active([row]).length, 1);
+    assert.equal(yt.broadcasts.get(row.broadcastId).lifecycle, "live");
+});
+
+test("25. any other 403 reason on a ready broadcast is still refused: NOT deleted (503), nothing closes", async () => {
+    reset();
+    const row = await neverLiveRecording();
+    const restore = refusesCompleteWith("errorExecutingTransition");
+    let result;
+
+    try {
+        result = await abort("recording", row);
+    } finally {
+        restore();
+    }
+
+    assert.equal(result.status, 503, JSON.stringify(result.data));
+    assert.equal(result.data.code, "YOUTUBE_BROADCAST_STOP_FAILED");
+    assert.equal(deletes().length, 0);
+    assert.equal(active([row]).length, 1);
+    assert.ok(yt.broadcasts.has(row.broadcastId));
+});
+
+test("26. departure, errorStreamInactive on a never-live broadcast: deleted, closed with NO stop reason", async () => {
+    reset();
+    const row = await neverLiveRecording();
+    const restore = refusesCompleteWith("errorStreamInactive");
+    let result;
+
+    try {
+        await departedAgo(20_000);
+        result = await departure();
+    } finally {
+        restore();
+    }
+
+    assert.equal(result.status, "done", JSON.stringify(result));
+    assert.equal(deletes(row.broadcastId).length, 1);
+    assert.equal(row.status, "COMPLETE");
+    assert.equal(row.stopReason ?? null, null, "never went live: not TEACHER_LEFT");
+    assert.equal(row.completeRequestedAt, null);
+});
