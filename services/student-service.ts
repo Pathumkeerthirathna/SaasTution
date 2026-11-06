@@ -66,22 +66,113 @@ function buildShortCode(value: string, maxLength: number) {
   return normalizedWords.join("").slice(0, maxLength);
 }
 
-export async function generateStudentRegistrationNumber(teacherName: string,teacherId:string) {
-  const year = new Date().getFullYear();
-  const teacherCode = buildShortCode(teacherName, 3);
-  const prefix = `${teacherCode}-${year}`;
+// ---------------------------------------------------------------------------
+// Registration numbers: {TEACHER_SHORT_CODE}-{YEAR}-{SEQUENCE}, e.g. PAT-2026-001.
+//
+// A registration number is unique across ALL teachers among students that are
+// not deleted (status 0 active / 1 inactive). A deleted student (status 2)
+// keeps its number on its own row (history stays attached to its id), but the
+// number is free for a new student. The database enforces the same rule with
+// the partial unique index "Student_registrationNumber_not_deleted_key"
+// (migration 20261106150000_student_registration_number_not_deleted_unique).
+// ---------------------------------------------------------------------------
 
-  const currentCount = await prisma.student.count({
+const DELETED_STUDENT_STATUS = 2;
+
+/** The one stored form of a registration number: trimmed, upper case. */
+export function normalizeRegistrationNumber(value: string) {
+  return value.trim().toUpperCase();
+}
+
+/** True when the database rejected a write because the registration number is taken. */
+export function isRegistrationNumberConflict(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+
+  const target = error.meta?.target;
+  const text = Array.isArray(target) ? target.map((value) => String(value)).join(",") : String(target ?? "");
+  return text.includes("registrationNumber");
+}
+
+function registrationNumberTakenError() {
+  return new AppError("Registration number already exists.", 409, "DUPLICATE_REGISTRATION_NUMBER");
+}
+
+/**
+ * Whether a non-deleted student of ANY teacher already holds this number
+ * (compared case-insensitively). `excludeStudentId` skips the student being
+ * edited, so keeping one's own number is not a clash.
+ */
+export async function isRegistrationNumberTaken(registrationNumber: string, excludeStudentId?: string) {
+  const normalized = normalizeRegistrationNumber(registrationNumber);
+
+  if (!normalized) {
+    return false;
+  }
+
+  const holder = await prisma.student.findFirst({
     where: {
-      // registrationNumber: {
-      //   startsWith: `${prefix}-`,
-      // },
-      teacherId:teacherId
+      registrationNumber: { equals: normalized, mode: "insensitive" },
+      status: { not: DELETED_STUDENT_STATUS },
+      ...(excludeStudentId ? { NOT: { id: excludeStudentId } } : {}),
     },
+    select: { id: true },
   });
 
-  const sequence = String(currentCount + 1).padStart(3, "0");
-  return `${prefix}-${sequence}`;
+  return Boolean(holder);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The `count` lowest free registration numbers for this teacher's prefix and
+ * the current year, starting from 001. A sequence is taken when any
+ * non-deleted student of any teacher holds it, or when it is in `reserved`
+ * (numbers already chosen elsewhere in the same request, e.g. a CSV file).
+ */
+export async function generateAvailableRegistrationNumbers(
+  teacherName: string,
+  count: number,
+  reserved: Iterable<string> = []
+) {
+  const prefix = `${buildShortCode(teacherName, 3)}-${new Date().getFullYear()}`;
+
+  const holders = await prisma.student.findMany({
+    where: {
+      registrationNumber: { startsWith: `${prefix}-`, mode: "insensitive" },
+      status: { not: DELETED_STUDENT_STATUS },
+    },
+    select: { registrationNumber: true },
+  });
+
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+  const usedSequences = new Set<number>();
+
+  for (const value of [...holders.map((holder) => holder.registrationNumber ?? ""), ...reserved]) {
+    const match = pattern.exec(normalizeRegistrationNumber(value));
+    if (match) {
+      usedSequences.add(Number(match[1]));
+    }
+  }
+
+  const numbers: string[] = [];
+
+  for (let sequence = 1; numbers.length < count; sequence += 1) {
+    if (!usedSequences.has(sequence)) {
+      numbers.push(`${prefix}-${String(sequence).padStart(3, "0")}`);
+    }
+  }
+
+  return numbers;
+}
+
+/** The next free registration number for this teacher (shown in the Add Student form). */
+export async function generateStudentRegistrationNumber(teacherName: string) {
+  const [registrationNumber] = await generateAvailableRegistrationNumbers(teacherName, 1);
+  return registrationNumber;
 }
 
 export async function createStudent(teacherId: string, input: CreateStudentInput) {
@@ -100,22 +191,14 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     throw new AppError("Teacher not found.", 404, "TEACHER_NOT_FOUND");
   }
 
-  const existingRegistrationNumber =
-    await prisma.student.findFirst({
-      where: {
-        registrationNumber: input.registrationNumber,
-      },
-      select: {
-        id: true,
-      },
-    });
+  // Unique across every teacher's non-deleted students; a deleted student's
+  // number may be reused.
+  const requestedRegistrationNumber = input.registrationNumber
+    ? normalizeRegistrationNumber(input.registrationNumber)
+    : undefined;
 
-  if (existingRegistrationNumber) {
-    throw new AppError(
-      "Registration number already exists.",
-      409,
-      "DUPLICATE_REGISTRATION_NUMBER"
-    );
+  if (requestedRegistrationNumber && (await isRegistrationNumberTaken(requestedRegistrationNumber))) {
+    throw registrationNumberTakenError();
   }
 
   const existingStudent =
@@ -124,6 +207,8 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
         teacherId: teacher.id,
         name: input.name,
         gradeId: input.gradeId,
+        // A deleted student's name does not block a new student.
+        status: { not: 2 },
       },
       select: {
         id: true,
@@ -143,13 +228,13 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const registrationNumber = await generateStudentRegistrationNumber(teacher.name,teacher.id);
+    const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
     const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
 
     try {
       const student = await prisma.student.create({
         data: {
-          registrationNumber:input.registrationNumber??registrationNumber,
+          registrationNumber:requestedRegistrationNumber??registrationNumber,
           name: input.name,
           gradeId: input.gradeId,
           password: passwordHash,
@@ -197,14 +282,14 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
       return student;
 
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        const target = Array.isArray(error.meta?.target)
-          ? error.meta?.target.map((value) => String(value)).join(",")
-          : String(error.meta?.target ?? "");
-
-        if (target.includes("registrationNumber")) {
-          continue;
+      if (isRegistrationNumberConflict(error)) {
+        // Taken by a concurrent registration after the check above. The
+        // teacher's chosen number is reported as taken (the form shows it);
+        // only a generated number is retried.
+        if (requestedRegistrationNumber) {
+          throw registrationNumberTakenError();
         }
+        continue;
       }
 
       throw error;
@@ -833,19 +918,11 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
     throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
   }
 
-  const duplicateRegistrationNumber =
-    await prisma.student.findFirst({
-      where: {
-        registrationNumber: input.registrationNumber,
-        teacherId,
-        NOT: {
-          id: studentId,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
+  const registrationNumber = normalizeRegistrationNumber(input.registrationNumber);
+
+  // Checked across every teacher's non-deleted students (not only this
+  // teacher's); keeping the student's own number is not a clash.
+  const duplicateRegistrationNumber = await isRegistrationNumberTaken(registrationNumber, studentId);
 
   if (duplicateRegistrationNumber) {
     throw new AppError(
@@ -861,6 +938,8 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
         name: input.name,
         gradeId: input.gradeId,
         teacherId,
+        // A deleted student's name does not block this one.
+        status: { not: 2 },
         NOT: {
           id: studentId,
         },
@@ -885,7 +964,7 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       id: studentId,
     },
     data: {
-      registrationNumber: input.registrationNumber,
+      registrationNumber,
       name: input.name,
       gradeId: input.gradeId,
       contact: input.contact01,
@@ -905,6 +984,12 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       registrationNumber: true,
       createdAt: true,
     },
+  }).catch((error: unknown) => {
+    // Taken by a concurrent registration after the check above.
+    if (isRegistrationNumberConflict(error)) {
+      throw registrationNumberTakenError();
+    }
+    throw error;
   });
 
   return student;
@@ -1902,6 +1987,8 @@ export async function RegisterStudentViaPublicClasses(
       where: {
         teacherId: cls.teacherId,
         email: { equals: emailValue, mode: "insensitive" },
+        // Deleted students (status 2) no longer hold their email.
+        status: { not: 2 },
       },
       select: { id: true },
     });
@@ -1921,66 +2008,80 @@ export async function RegisterStudentViaPublicClasses(
     where: { id: cls.teacherId },
   });
 
-  const regNo = await generateStudentRegistrationNumber(
-    teacher?.name ?? "",
-    teacher?.id ?? ""
-  );
+  // The lowest free number; if a concurrent registration takes it between
+  // generating and saving (database unique index), generate again.
+  let regNo = "";
+  let student: Awaited<ReturnType<typeof prisma.student.create>> | null = null;
 
-  const student = await prisma.$transaction(async (tx) => {
-    const student = await tx.student.create({
-      data: {
-        name: request.studentName,
-        registrationNumber: regNo,
-        teacherId: cls.teacherId,
-        contact: request.mobileNumber,
-        contact01: request.mobileNumber,
-        contact02: request.parentMobileNumber,
-        gradeId: request.gradeId,
-        email: emailValue ? emailValue.toLowerCase() : "",
+  for (let attempt = 0; attempt < 3 && !student; attempt += 1) {
+    regNo = await generateStudentRegistrationNumber(teacher?.name ?? "");
 
-        registrationSource: "PUBLIC_CLASS",
-        publicClassId: cls.id,
+    try {
+      student = await prisma.$transaction(async (tx) => {
+        const student = await tx.student.create({
+          data: {
+            name: request.studentName,
+            registrationNumber: regNo,
+            teacherId: cls.teacherId,
+            contact: request.mobileNumber,
+            contact01: request.mobileNumber,
+            contact02: request.parentMobileNumber,
+            gradeId: request.gradeId,
+            email: emailValue ? emailValue.toLowerCase() : "",
 
-        confirmationStatus: "PENDING",
+            registrationSource: "PUBLIC_CLASS",
+            publicClassId: cls.id,
 
-      },
-    });
+            confirmationStatus: "PENDING",
 
-    const assignedAt = nowInSriLanka();
+          },
+        });
 
-    const classStudentRecord = await tx.classStudent.create({
-      data: {
-        classId: cls.id,
-        studentId: student.id,
-        assignedAt,
-      },
-    });
+        const assignedAt = nowInSriLanka();
 
-    await tx.classStudentHistory.create({
-      data: {
-        classId: cls.id,
-        studentId: student.id,
-        action: "ASSIGNED",
-        actionDate: assignedAt,
-      },
-    });
+        const classStudentRecord = await tx.classStudent.create({
+          data: {
+            classId: cls.id,
+            studentId: student.id,
+            assignedAt,
+          },
+        });
 
-    // Same transaction: if this registration rolls back, this fee row rolls
-    // back with it. Reuses the exact amount/due-date calculation the
-    // teacher's Fee Sheet already uses — see class-student-fee-service.ts.
-    await ensureCurrentMonthFeeForClassStudent(tx, classStudentRecord.id);
+        await tx.classStudentHistory.create({
+          data: {
+            classId: cls.id,
+            studentId: student.id,
+            action: "ASSIGNED",
+            actionDate: assignedAt,
+          },
+        });
 
-    // await sendStudentRegistrationEmail({
-    //   to: request.email!,
-    //   studentName: student.name,
-    //   registrationNumber: regNo,
-    //   teacherName: teacher?.name ?? "",
-    //   className: cls.name,
-    //   registrationDate: new Date().toLocaleDateString(),
-    // });
+        // Same transaction: if this registration rolls back, this fee row rolls
+        // back with it. Reuses the exact amount/due-date calculation the
+        // teacher's Fee Sheet already uses — see class-student-fee-service.ts.
+        await ensureCurrentMonthFeeForClassStudent(tx, classStudentRecord.id);
 
-    return student;
-  });
+        // await sendStudentRegistrationEmail({
+        //   to: request.email!,
+        //   studentName: student.name,
+        //   registrationNumber: regNo,
+        //   teacherName: teacher?.name ?? "",
+        //   className: cls.name,
+        //   registrationDate: new Date().toLocaleDateString(),
+        // });
+
+        return student;
+      });
+    } catch (error) {
+      if (!isRegistrationNumberConflict(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (!student) {
+    throw new AppError("Failed to generate registration number. Please retry.", 500, "REGISTRATION_NUMBER_GENERATION_FAILED");
+  }
 
   try {
     await sendStudentRegistrationEmail({
@@ -2009,30 +2110,16 @@ export async function RegisterStudentViaPublicClasses(
   };
 }
 
+/**
+ * The Add / Edit Student form's live check. Same rule as saving: any teacher's
+ * non-deleted student holding the number makes it taken.
+ */
 export async function checkIfRegNoExists(
   registrationNumber: string,
-  studentId: string | undefined,
-  teacherId: string
+  studentId: string | undefined
 ) {
-  const student = await prisma.student.findFirst({
-    where: {
-      teacherId,
-      registrationNumber,
-      ...(studentId
-        ? {
-            NOT: {
-              id: studentId,
-            },
-          }
-        : {}),
-    },
-    select: {
-      id: true,
-    },
-  });
-
   return {
-    exists: !!student,
+    exists: await isRegistrationNumberTaken(registrationNumber, studentId),
   };
 }
 
@@ -2080,6 +2167,8 @@ export async function checkIfNameExists(
       },
       // A name is only a clash within the same grade.
       ...(gradeId ? { gradeId } : {}),
+      // Active and inactive students hold their name; deleted ones do not.
+      status: { not: 2 },
       ...(studentId && {
         NOT: {
           id: studentId,

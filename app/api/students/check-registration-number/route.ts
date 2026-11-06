@@ -14,14 +14,14 @@ if (!registrationNumber) {
   );
 }
 
-const teacher = await requireTeacherSession();
+// Teachers only; the check itself spans every teacher's students.
+await requireTeacherSession();
 
-const studentId = searchParams.get("studentId") ?? undefined;
+const studentId = searchParams.get("studentId") || undefined;
 
 const result = await checkIfRegNoExists(
   registrationNumber,
-  studentId,
-  teacher.teacherId
+  studentId
 );
 
   return NextResponse.json(result);

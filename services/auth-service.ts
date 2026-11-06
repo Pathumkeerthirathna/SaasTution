@@ -76,6 +76,9 @@ export async function findStudentByRegistrationNumber(registrationNumber: string
   return prisma.student.findFirst({
     where: {
       registrationNumber: registrationNumber.toUpperCase(),
+      // A deleted student's number may be reused by a new student: the
+      // lookup must reach the current holder, never the deleted record.
+      status: { not: 2 },
     },
   });
 }
@@ -193,7 +196,9 @@ export async function loginStudent(registrationNumber: string, password: string)
 
   const student = await findStudentByRegistrationNumber(registrationNumber);
 
-  if (!student || !student.password) {
+  // A deleted student (status 2) is treated exactly like an unknown one: same
+  // generic error, before any password check, so deletion isn't revealed.
+  if (!student || !student.password || student.status === 2) {
     throw new AppError("Invalid registration number or password. If you are new click forogt password and reset the password first", 401, "INVALID_CREDENTIALS");
   }
 
@@ -456,6 +461,10 @@ export async function requestPasswordReset(loginId: string, appBaseUrl?: string)
 
   const student = await prisma.student.findFirst({
     where: {
+      // Deleted students (status 2) are never eligible for a reset, by
+      // registration number or by email; a reused email therefore reaches the
+      // current student, not the deleted record that still carries it.
+      status: { not: 2 },
       OR: [
         {
           registrationNumber: normalized.toUpperCase(),
@@ -515,10 +524,15 @@ export async function confirmPasswordReset(token: string, newPassword: string) {
         data: { password: passwordHash },
       });
     } else if (resetRecord.role === "STUDENT") {
-      await tx.student.update({
-        where: { id: resetRecord.userId },
+      // A link issued before the student was deleted must not work afterwards.
+      const updated = await tx.student.updateMany({
+        where: { id: resetRecord.userId, status: { not: 2 } },
         data: { password: passwordHash },
       });
+
+      if (updated.count === 0) {
+        throw new AppError("Reset link is invalid or expired.", 400, "INVALID_RESET_TOKEN");
+      }
     } else if (resetRecord.role === "GUARDIAN") {
       await tx.guardian.update({
         where: { id: resetRecord.userId },

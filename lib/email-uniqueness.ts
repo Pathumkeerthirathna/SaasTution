@@ -42,6 +42,9 @@ export async function assertEmailAvailable(
   };
   if (context.type === "STUDENT") {
     studentWhere.teacherId = context.teacherId;
+    // A deleted student (status 2) no longer holds their email, so the
+    // teacher may give it to another student. Inactive (1) still holds it.
+    studentWhere.status = { not: 2 };
     if (context.excludeStudentId) {
       studentWhere.NOT = { id: context.excludeStudentId };
     }

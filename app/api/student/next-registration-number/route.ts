@@ -18,7 +18,7 @@ export async function GET() {
 
   const registrationNumber =
     await generateStudentRegistrationNumber(
-      teacher?.name ?? "Unknown",teacher?.id ?? "Unknown"
+      teacher?.name ?? "Unknown"
     );
 
   return NextResponse.json({

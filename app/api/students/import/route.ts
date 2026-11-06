@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
+import {
+    generateAvailableRegistrationNumbers,
+    isRegistrationNumberConflict,
+    normalizeRegistrationNumber,
+} from "@/services/student-service";
 
 type ImportStudentRow = {
     registrationNumber?: string;
@@ -62,7 +67,7 @@ export async function POST(request: Request) {
             student.registrationNumber.trim()
         ) {
             const reg =
-            student.registrationNumber.trim();
+            normalizeRegistrationNumber(student.registrationNumber);
 
             if (registrationMap.has(reg)) {
             errors.push({
@@ -230,9 +235,11 @@ export async function POST(request: Request) {
     // DB Duplicate Validation
     // ----------------------------------
 
+    // Registration numbers are unique across every teacher's non-deleted
+    // students; a deleted student's number may be reused.
     const registrationNumbers = students
     .map((s) =>
-        s.registrationNumber?.trim()
+        s.registrationNumber?.trim() ? normalizeRegistrationNumber(s.registrationNumber) : ""
     )
     .filter(Boolean) as string[];
 
@@ -242,6 +249,10 @@ export async function POST(request: Request) {
         where: {
             registrationNumber: {
             in: registrationNumbers,
+            mode: "insensitive",
+            },
+            status: {
+            not: 2,
             },
         },
         select: {
@@ -249,7 +260,7 @@ export async function POST(request: Request) {
         },
         });
 
-    const existingSet = new Set(existingStudents.map((s) => s.registrationNumber)
+    const existingSet = new Set(existingStudents.map((s) => normalizeRegistrationNumber(s.registrationNumber ?? ""))
 );
 
     students.forEach((student, index) => {
@@ -258,7 +269,7 @@ export async function POST(request: Request) {
             if (
                 student.registrationNumber?.trim() &&
                 existingSet.has(
-                    student.registrationNumber.trim()
+                    normalizeRegistrationNumber(student.registrationNumber)
                 )
             ) {
             errors.push({
@@ -376,6 +387,8 @@ export async function POST(request: Request) {
                     in: uploadedEmails,
                     mode: "insensitive",
                 },
+                // Deleted students (status 2) no longer hold their email.
+                status: { not: 2 },
                 },
                 select: { email: true },
             }),
@@ -438,40 +451,27 @@ export async function POST(request: Request) {
     // Prepare Students
     // ----------------------------------
 
-    const year = new Date().getFullYear();
-
-    const teacherCode = session.name
-    .trim()
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 3);
-
-    const prefix = `${teacherCode}-${year}`;
-
-    const currentCount = await prisma.student.count({
-    where: {
-        registrationNumber: {
-        startsWith: `${prefix}-`,
-        },
-    },
+    // Rows without a number get the lowest free numbers for this teacher's
+    // prefix (the same generator as the Add Student form), skipping numbers
+    // typed in other rows of this file.
+    const teacher = await prisma.teacher.findUnique({
+        where: { id: session.teacherId },
+        select: { name: true },
     });
 
-    let nextSequence = currentCount + 1;
+    const generatedNumbers = await generateAvailableRegistrationNumbers(
+        teacher?.name ?? session.name,
+        students.filter((s) => !s.registrationNumber?.trim()).length,
+        registrationNumbers
+    );
 
     const studentsToCreate = [];
 
     for (const student of students) {
-    let registrationNumber =
-        student.registrationNumber?.trim();
-
-    if (!registrationNumber) {
-    registrationNumber =
-        `${prefix}-${String(
-        nextSequence++
-        ).padStart(3, "0")}`;
-    }
+    const registrationNumber =
+        student.registrationNumber?.trim()
+        ? normalizeRegistrationNumber(student.registrationNumber)
+        : generatedNumbers.shift()!;
 
     studentsToCreate.push({
         registrationNumber,
@@ -510,9 +510,34 @@ export async function POST(request: Request) {
     // Save All Or Nothing
     // ----------------------------------
 
-    await prisma.student.createMany({
-        data: studentsToCreate,
-    });
+    try {
+        await prisma.student.createMany({
+            data: studentsToCreate,
+        });
+    } catch (error) {
+        // A number was taken by a concurrent registration after the checks
+        // above (database unique index). Nothing was saved.
+        if (isRegistrationNumberConflict(error)) {
+            return NextResponse.json(
+                {
+                success: false,
+                errors: [
+                    {
+                    row: 0,
+                    field: "registrationNumber",
+                    message:
+                        "A registration number was taken by another registration while importing. Nothing was imported; please try again.",
+                    },
+                ],
+                },
+                {
+                status: 409,
+                }
+            );
+        }
+
+        throw error;
+    }
 
     return NextResponse.json({
     success: true,

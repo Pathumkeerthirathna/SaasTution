@@ -5,6 +5,7 @@ import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
+import { getDeviceDecisionEmail, DeviceDecisionEmailProps } from "@/emails/DeviceDecisionEmail";
 import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
 import { getGuardianRegistrationEmail, GuardianRegistrationEmailProps } from "@/emails/GuardianRegistrationEmail";
 
@@ -19,6 +20,7 @@ export type EmailPurpose =
   | "PasswordReset"
   | "EmailVerificationCode"
   | "DeviceApproval"
+  | "DeviceDecision"
   | "Announcement"
   | "LiveSessionInvite"
   | "ClassStartedNotification";
@@ -524,6 +526,36 @@ Requested At: ${input.requestedAt}
 
 Review and confirm this device here: ${input.reviewLink}`,
     "DeviceApproval"
+  );
+}
+
+export async function sendDeviceDecisionEmail(
+  input: DeviceDecisionEmailProps & { to: string }
+) {
+  const approved = input.decision === "approved";
+  const reason = input.reason?.trim();
+  const lines = [
+    `Hi ${input.studentName},`,
+    "",
+    approved
+      ? "Your teacher has approved your device. You can now sign in to SLClassroom from it."
+      : "Your teacher has rejected sign-in to SLClassroom from your device. If you think this is a mistake, please contact your teacher or request approval again from the login screen.",
+    "",
+    `Device: ${input.deviceName}`,
+    `Browser: ${input.browser}`,
+    `Operating System: ${input.os}`,
+    ...(reason ? [`${approved ? "Teacher's note" : "Reason"}: ${reason}`] : []),
+    ...(approved ? ["", `Sign in here: ${input.loginLink}`] : []),
+  ];
+
+  return sendEmail(
+    input.to,
+    approved
+      ? "Your device has been approved on SLClassroom"
+      : "Your device was not approved on SLClassroom",
+    getDeviceDecisionEmail(input),
+    lines.join("\n"),
+    "DeviceDecision"
   );
 }
 

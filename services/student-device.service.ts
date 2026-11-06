@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { StudentDeviceStatus } from "@prisma/client";
 import {
   buildDeviceApprovalReviewLink,
+  buildTeacherLoginLink,
   sendDeviceApprovalRequestEmail,
+  sendDeviceDecisionEmail,
 } from "@/lib/mailer";
 
 async function notifyTeacherOfPendingDevice(
@@ -407,11 +409,61 @@ async function assertDeviceBelongsToTeacher(
 ) {
   const owned = await prisma.studentDevice.findFirst({
     where: { id: deviceId, student: { teacherId } },
-    select: { id: true },
+    select: { id: true, status: true },
   });
 
   if (!owned) {
     throw new AppError("Device not found.", 404, "DEVICE_NOT_FOUND");
+  }
+
+  return owned;
+}
+
+/**
+ * Emails the student the teacher's approve / reject decision on one of their
+ * devices. Called only after the status update has succeeded and only when the
+ * status actually changed. Never throws: an email failure must not undo or fail
+ * the decision itself.
+ */
+async function notifyStudentOfDeviceDecision(
+  device: {
+    studentId: string;
+    deviceName: string | null;
+    deviceModel: string | null;
+    browser: string | null;
+    browserVersion: string | null;
+    os: string | null;
+    osVersion: string | null;
+  },
+  decision: "approved" | "rejected",
+  reason?: string | null
+) {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: device.studentId },
+      select: { name: true, email: true },
+    });
+
+    if (!student?.email) {
+      return;
+    }
+
+    await sendDeviceDecisionEmail({
+      to: student.email,
+      decision,
+      studentName: student.name,
+      deviceName: device.deviceName || device.deviceModel || "Unknown device",
+      browser:
+        [device.browser, device.browserVersion].filter(Boolean).join(" ") ||
+        "Unknown browser",
+      os:
+        [device.os, device.osVersion].filter(Boolean).join(" ") ||
+        "Unknown OS",
+      reason,
+      loginLink: buildTeacherLoginLink(),
+    });
+  } catch (error) {
+    console.error(`Failed to email student about ${decision} device:`, error);
   }
 }
 
@@ -483,9 +535,9 @@ export async function approveStudentDevice(
   teacherId: string,
   reason?: string
 ) {
-  await assertDeviceBelongsToTeacher(deviceId, teacherId);
+  const previous = await assertDeviceBelongsToTeacher(deviceId, teacherId);
 
-  return prisma.studentDevice.update({
+  const device = await prisma.studentDevice.update({
     where: {
       id: deviceId,
     },
@@ -498,6 +550,12 @@ export async function approveStudentDevice(
       rejectedReason: null,
     },
   });
+
+  if (previous.status !== StudentDeviceStatus.APPROVED) {
+    await notifyStudentOfDeviceDecision(device, "approved", reason);
+  }
+
+  return device;
 }
 
 export async function rejectStudentDevice(
@@ -505,9 +563,9 @@ export async function rejectStudentDevice(
   teacherId: string,
   reason?: string
 ) {
-  await assertDeviceBelongsToTeacher(deviceId, teacherId);
+  const previous = await assertDeviceBelongsToTeacher(deviceId, teacherId);
 
-  return prisma.studentDevice.update({
+  const device = await prisma.studentDevice.update({
     where: {
       id: deviceId,
     },
@@ -520,6 +578,12 @@ export async function rejectStudentDevice(
       approvedReason: null,
     },
   });
+
+  if (previous.status !== StudentDeviceStatus.BLOCKED) {
+    await notifyStudentOfDeviceDecision(device, "rejected", reason);
+  }
+
+  return device;
 }
 
 export async function requestApprovalAgain(
