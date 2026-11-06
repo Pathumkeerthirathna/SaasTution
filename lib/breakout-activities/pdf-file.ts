@@ -133,6 +133,20 @@ export function resolveBreakoutFilePath(storageRoot: string, relativePath: strin
   return absolute;
 }
 
+/**
+ * <storageRoot>/breakout-activities/<sessionId>/<briefs|submissions>/<activityId>:
+ * the folder of ONE activity id (Group Activities session-end purge). Both
+ * ids must be UUIDs; the result is always inside that session's folder.
+ */
+export function resolveBreakoutActivityDir(storageRoot: string, sessionId: string, kind: BreakoutFileKind, activityId: string): string {
+  const sessionDir = resolveBreakoutSessionDir(storageRoot, sessionId);
+  const id = requireUuid(activityId, "activityId");
+  if (kind !== "brief" && kind !== "submission") throw new RangeError("Unknown file kind.");
+  const dir = path.resolve(sessionDir, kind === "brief" ? "briefs" : "submissions", id);
+  if (!isInside(sessionDir, dir)) throw new RangeError("Invalid activity folder.");
+  return dir;
+}
+
 /** <storageRoot>/breakout-activities/<sessionId>: the folder removed when the session ends. */
 export function resolveBreakoutSessionDir(storageRoot: string, sessionId: string): string {
   const id = requireUuid(sessionId, "sessionId");

@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { showYoutubeCleanupWarning } from "@/components/youtube-cleanup-warning";
+import { endSessionWithGroupDecision, showGroupCleanupWarning, useGroupEndDecision } from "@/components/session-end/group-end-decision";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
@@ -432,6 +433,8 @@ export function LectureManagementPanel() {
   const [loadingSessionsFor, setLoadingSessionsFor] = useState<Set<string>>(new Set());
   const [creatingSessionFor, setCreatingSessionFor] = useState<Set<string>>(new Set());
   const [endingSessionFor, setEndingSessionFor] = useState<Set<string>>(new Set());
+  // Group Activities keep / delete choice at End Session (only when the session has GROUP activities).
+  const groupEndDecision = useGroupEndDecision();
   const [endSessionConfirm, setEndSessionConfirm] = useState<
     { sessionId: string; lectureId: string; roomName: string } | null
   >(null);
@@ -1158,13 +1161,14 @@ export function LectureManagementPanel() {
     setEndingSessionFor((prev) => new Set(prev).add(sessionId));
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/end`, {
-        method: "POST",
-      });
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: { youtubeCleanup?: { status?: string; reason?: string } };
-      };
+      // Group Activities: asks keep / delete only when the session has GROUP
+      // activities (otherwise the same single POST as before).
+      const ended = await endSessionWithGroupDecision(sessionId, groupEndDecision.ask);
+
+      // Cancelled in the Group Activities dialog: the session keeps running.
+      if (!ended) return;
+
+      const { response, data: payload } = ended;
 
       if (!response.ok || !payload.success) {
         throw new Error(readApiError(payload, "Failed to end session."));
@@ -1172,6 +1176,7 @@ export function LectureManagementPanel() {
 
       toast.success("Live session ended.");
       showYoutubeCleanupWarning(payload.data?.youtubeCleanup, "end");
+      showGroupCleanupWarning(payload);
       await loadSessionsForLecture(lectureId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to end session.");
@@ -2138,6 +2143,8 @@ export function LectureManagementPanel() {
           </div>
         </div>
       </article>
+
+      {groupEndDecision.dialog}
 
       {endSessionConfirm ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">

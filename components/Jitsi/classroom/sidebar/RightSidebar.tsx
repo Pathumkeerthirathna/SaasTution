@@ -14,12 +14,14 @@ import {
   ScanEye,
   Maximize2,
   Minimize2,
+  Handshake,
 } from "lucide-react";
 
 import SidebarNav from "./SidebarNav";
 import type { ScreenShareFpsControl, TeacherBitrateControl } from "./SidebarNav";
 import WhiteboardPanel from "./WhiteboardPanel";
 import BreakoutRoomsPanel from "./BreakoutRoomsPanel";
+import GroupActivitiesPanel, { groupActivitiesTitle, useGroupActivitiesAvailable } from "./group-activities/GroupActivitiesPanel";
 import type { BreakoutController } from "../../hooks/useBreakoutRooms";
 import type { CameraMonitoringController } from "../../hooks/useCameraMonitoring";
 import type { TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
@@ -127,6 +129,9 @@ export default function RightSidebar(props: RightSidebarProps) {
   const isMonitoringPanel = showMonitoring && activePanel === "monitoring";
   const isChatPanel = activePanel === "chat";
   const isBreakoutPanel = Boolean(props.breakout) && activePanel === "breakoutRooms";
+  // Group Activities: only when the server has the breakout feature on (one probe per page).
+  const groupActivitiesAvailable = useGroupActivitiesAvailable(props.sessionId, props.role);
+  const isGroupPanel = groupActivitiesAvailable && Boolean(props.sessionId) && activePanel === "groupActivities";
   // The whiteboard needs the lecture (saved boards belong to it) and the session
   // (live updates), exactly like the other lecture tools it sits beside.
   const isWhiteboardPanel = hasLecture && activePanel === "whiteboard";
@@ -294,7 +299,7 @@ export default function RightSidebar(props: RightSidebarProps) {
   // full-screen overlay) open their own modals outside this container — don't
   // collapse the sidebar when the teacher interacts with them. Camera Monitoring
   // stays open too: it is a working panel the teacher keeps beside the meeting.
-  if (isLectureToolPanel || isClassRegister || isWhiteboardPanel || isMonitoringPanel) {
+  if (isLectureToolPanel || isClassRegister || isWhiteboardPanel || isMonitoringPanel || isGroupPanel) {
     return;
   }
 
@@ -323,7 +328,7 @@ export default function RightSidebar(props: RightSidebarProps) {
       );
     };
 
-  }, [activePanel, isLectureToolPanel, isClassRegister, isWhiteboardPanel, isMonitoringPanel]);
+  }, [activePanel, isLectureToolPanel, isClassRegister, isWhiteboardPanel, isMonitoringPanel, isGroupPanel]);
 
 
 
@@ -343,7 +348,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           ${
             isWhiteboardPanel
               ? "sl-panel--xwide sl-panel--tall"
-              : isLectureToolPanel
+              : isLectureToolPanel || isGroupPanel
                 ? "sl-panel--wide sl-panel--tall"
                 : isClassRegister || isStudentParticipants || isAttendancePanel || isBreakoutPanel
                   ? "sl-panel--wide"
@@ -401,6 +406,9 @@ export default function RightSidebar(props: RightSidebarProps) {
             {activePanel === "breakoutRooms" && (
               <UsersRound size={18} className={chrome.iconAccent} />
             )}
+            {isGroupPanel && (
+              <Handshake size={18} className={chrome.iconAccent} />
+            )}
 
             <div className="min-w-0">
               <h2 className={`text-base font-semibold ${chrome.title}`}>
@@ -413,6 +421,8 @@ export default function RightSidebar(props: RightSidebarProps) {
                 {activePanel === "whiteboard" && "Whiteboard"}
 
                 {activePanel === "breakoutRooms" && "Breakout Rooms"}
+
+                {isGroupPanel && groupActivitiesTitle(props.role)}
 
                 {activePanel === "chat" && "Chat"}
 
@@ -472,7 +482,7 @@ export default function RightSidebar(props: RightSidebarProps) {
                 ? "overflow-y-auto scrollbar-thin bg-emerald-50/40"
                 : isWhiteboardPanel
                   ? "overflow-hidden bg-white p-2 text-slate-900"
-                : isMonitoringPanel
+                : isMonitoringPanel || isGroupPanel
                   ? "overflow-y-auto scrollbar-thin bg-white p-3 text-slate-900"
                 : isClassRegister || isAttendancePanel || isChatPanel || isStudentParticipants || isBreakoutPanel
                   ? "overflow-hidden bg-white p-3 text-slate-900"
@@ -512,6 +522,16 @@ export default function RightSidebar(props: RightSidebarProps) {
               controller={props.breakout}
               studentNameByParticipantId={props.breakoutStudentNames}
               displayNameByParticipantId={props.breakoutDisplayNames}
+            />
+          )}
+
+          {isGroupPanel && props.sessionId && (
+            <GroupActivitiesPanel
+              role={props.role}
+              sessionId={props.sessionId}
+              breakout={props.breakout}
+              studentLocations={props.studentLocations}
+              students={props.ClassroomStudents}
             />
           )}
 
@@ -602,6 +622,7 @@ export default function RightSidebar(props: RightSidebarProps) {
           showLectureTools={showLectureTools}
           showAttendance={isTeacher}
           showMonitoring={showMonitoring && SHOW_CAMERA_MONITORING_TAB}
+          groupActivitiesLabel={groupActivitiesAvailable ? groupActivitiesTitle(props.role) : undefined}
           chatUnread={chatUnread}
           variant={isStudent ? "student" : "teacher"}
           showSettings={isTeacher}

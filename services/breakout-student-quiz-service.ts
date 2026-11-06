@@ -56,6 +56,7 @@ import { requireRouteId } from "@/lib/breakout-activities/teacher-access";
 import { computeScores, gradeAttempt, type QuizDefinition } from "@/lib/breakout-activities/marking.mjs";
 import { mergeQuizAnswers, storedQuizDefinitionSchema } from "@/lib/breakout-activities/validation";
 import { autoSubmittedAt, isPastGrace, QUIZ_DEADLINE_GRACE_MS } from "@/lib/breakout-activities/quiz-deadline";
+import { assertNotGroupActivity, INDIVIDUAL_ONLY } from "@/lib/breakout-activities/groups/work-mode";
 
 import { inBreakoutTransaction } from "./breakout-assignment-service";
 
@@ -115,7 +116,7 @@ export async function listQuizzesForStudent(input: { studentId: string; sessionI
   const { sessionId, room } = await resolveAccessAndRoom(input.studentId, input.sessionId, options);
   const rows = (
     await prisma.breakoutQuiz.findMany({
-      where: { classSessionId: sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, ...roomFilter(room) },
+      where: { classSessionId: sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, workMode: INDIVIDUAL_ONLY, ...roomFilter(room) },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: QUIZ_STUDENT_SELECT,
     })
@@ -161,7 +162,7 @@ export async function getQuizForStudent(input: { studentId: string; sessionId: s
   const { sessionId, room } = await resolveAccessAndRoom(input.studentId, input.sessionId, options);
   const quizId = requireRouteId(input.quizId, "QUIZ_NOT_FOUND");
   const row = await prisma.breakoutQuiz.findFirst({
-    where: { id: quizId, classSessionId: sessionId, status: 0, state: { in: [...VISIBLE_STATES] } },
+    where: { id: quizId, classSessionId: sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, workMode: INDIVIDUAL_ONLY },
     select: QUIZ_STUDENT_SELECT,
   });
   if (!row || !activityTargetsRoom(row, room)) throw breakoutError("QUIZ_NOT_FOUND");
@@ -218,6 +219,7 @@ export async function getQuizForStudent(input: { studentId: string; sessionId: s
  */
 export async function startQuizAttempt(input: { studentId: string; sessionId: string; quizId: string }, options: StudentQuizServiceOptions = {}) {
   const quizId = requireRouteId(input.quizId, "QUIZ_NOT_FOUND");
+  await assertNotGroupActivity("quiz", quizId, "QUIZ_NOT_FOUND");
   await serverNow();
   const result = await inBreakoutTransaction(async (tx) => {
     const session = await lockEnrolledActiveSession(tx, input.studentId, input.sessionId);
@@ -369,6 +371,7 @@ export type SaveQuizAnswersInput = {
 export async function saveQuizAnswers(input: SaveQuizAnswersInput, options: StudentQuizServiceOptions = {}) {
   const quizId = requireRouteId(input.quizId, "QUIZ_NOT_FOUND");
   if (!Number.isInteger(input.revision) || input.revision < 0) throw breakoutError("VALIDATION_ERROR", "Invalid revision.");
+  await assertNotGroupActivity("quiz", quizId, "QUIZ_NOT_FOUND");
   await serverNow();
 
   const outcome = await inBreakoutTransaction(async (tx) => {
@@ -452,6 +455,7 @@ export type SubmitQuizAttemptInput = {
 export async function submitQuizAttempt(input: SubmitQuizAttemptInput, options: StudentQuizServiceOptions = {}) {
   const quizId = requireRouteId(input.quizId, "QUIZ_NOT_FOUND");
   if (!Number.isInteger(input.revision) || input.revision < 0) throw breakoutError("VALIDATION_ERROR", "Invalid revision.");
+  await assertNotGroupActivity("quiz", quizId, "QUIZ_NOT_FOUND");
   await serverNow();
 
   return inBreakoutTransaction(async (tx) => {

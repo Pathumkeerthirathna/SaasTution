@@ -49,6 +49,7 @@ import {
 } from "@/lib/breakout-activities/serialize";
 import { resolveTargets } from "@/lib/breakout-activities/target-rooms";
 import { requireRouteId, requireTeacherSessionAccess } from "@/lib/breakout-activities/teacher-access";
+import { INDIVIDUAL_ONLY } from "@/lib/breakout-activities/groups/work-mode";
 import {
   assignServerIds,
   parseStoredGrading,
@@ -98,6 +99,8 @@ export type CreateQuizzesInput = {
   questions: QuizDefinitionInput;
   targets: BreakoutTarget[];
   publish: boolean;
+  /** Group Activities only (services/breakout-group-quiz-service.ts); omitted: the column default, INDIVIDUAL. */
+  workMode?: "GROUP";
 };
 
 /**
@@ -134,6 +137,7 @@ export async function createQuizzes(input: CreateQuizzesInput, options: Breakout
             timeLimitSeconds: input.timeLimitSeconds ?? null,
             state: input.publish ? "PUBLISHED" : "DRAFT",
             publishedAt: input.publish ? now : null,
+            ...(input.workMode === "GROUP" ? { workMode: "GROUP" as const } : {}),
             createdAt: now,
             updatedAt: now,
           },
@@ -348,7 +352,8 @@ export async function overrideQuizGrading(input: OverrideGradingInput) {
 export async function listQuizzesForTeacher(teacherId: string, sessionId: string) {
   const access = await requireTeacherSessionAccess(prisma, teacherId, sessionId);
   const rows = await prisma.breakoutQuiz.findMany({
-    where: { classSessionId: access.sessionId, status: 0 },
+    // Individual activities only: GROUP ones are listed by GET .../groups (their counts are not these).
+    where: { classSessionId: access.sessionId, status: 0, workMode: INDIVIDUAL_ONLY },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: QUIZ_VIEW_SELECT,
   });

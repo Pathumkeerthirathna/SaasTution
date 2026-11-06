@@ -80,8 +80,8 @@ const baseStudentToolbar = [
   "fullscreen",
   // Settings: shown / hidden by custom.js as for the teacher (see above).
   // "settings",
-  "videoquality",
-  "shortcuts",
+  // "videoquality",
+  // "shortcuts",
   "hangup",
   "desktop",
   // Front/back camera switch: Jitsi shows it only in mobile browsers with

@@ -10,6 +10,7 @@ import {
 } from "@/lib/teacher-presence";
 import { checkLectureForDepartedTeacher, TEACHER_DEPARTURE_SWEEP_INTERVAL_MS } from "@/lib/teacher-departure-sweep";
 import { getLiveSnapshot, type LiveSnapshotAudience } from "@/lib/youtube-live-snapshot";
+import { groupChangeForClient, groupChangeVisibleTo, subscribeGroupChanges } from "@/lib/breakout-activities/groups/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +58,8 @@ export async function GET(
     // `?role=teacher` without a teacher session that owns this class fails
     // below, it never grants the teacher view.
     let audience: LiveSnapshotAudience;
+    // Group Activities notifications (below): which student this stream is for.
+    let groupViewerStudentId = "";
 
     if (role === "teacher") {
       const teacherSession = await requireTeacherSession();
@@ -93,6 +96,7 @@ export async function GET(
 
       // Students never receive a PRIVATE broadcast or one that is not live.
       audience = "student";
+      groupViewerStudentId = studentSession.studentId;
     }
 
     const { classId, lectureId } = classSession;
@@ -149,6 +153,17 @@ export async function GET(
           getLiveSnapshot(lectureId, audience)
             .then((snapshot) => send("live-status", snapshot))
             .catch(() => {});
+        });
+
+        // Group Activities (lib/breakout-activities/groups/events.ts): "this
+        // group's work changed, refetch". Ids and a revision only; sent to the
+        // class's teacher and to the group's confirmed members, never to other
+        // students. Emitted only by the Group Activities write routes, which
+        // answer 404 while the breakout feature flag is off, so nothing is sent
+        // then. Never changes what this stream sends otherwise.
+        const unsubscribeGroups = subscribeGroupChanges(sessionId, (payload) => {
+          const viewer = audience === "teacher" ? { role: "teacher" as const } : { role: "student" as const, studentId: groupViewerStudentId };
+          if (groupChangeVisibleTo(payload, viewer)) send("breakout-group", groupChangeForClient(payload));
         });
 
         const keepAliveIntervalId = setInterval(() => {
@@ -208,6 +223,7 @@ export async function GET(
           }
 
           unsubscribe();
+          unsubscribeGroups();
           request.signal.removeEventListener("abort", cleanup);
           controller.close();
         };

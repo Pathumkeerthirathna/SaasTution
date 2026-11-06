@@ -47,6 +47,7 @@ import {
 import { readBreakoutFile, removeBreakoutFile, writeBreakoutPdf } from "@/lib/breakout-activities/storage";
 import { resolveTargets, type TeacherRoomDirectory } from "@/lib/breakout-activities/target-rooms";
 import { assertTeacherOwnsLockedSession, requireRouteId, requireTeacherSessionAccess } from "@/lib/breakout-activities/teacher-access";
+import { INDIVIDUAL_ONLY } from "@/lib/breakout-activities/groups/work-mode";
 import type { BreakoutTarget } from "@/lib/breakout-activities/validation";
 
 type Tx = Prisma.TransactionClient;
@@ -126,6 +127,8 @@ export type CreateAssignmentsInput = {
   targets: BreakoutTarget[];
   publish: boolean;
   brief: UploadedPdf | null;
+  /** Group Activities only (services/breakout-group-assignment-service.ts); omitted: the column default, INDIVIDUAL. */
+  workMode?: "GROUP";
 };
 
 /**
@@ -179,6 +182,7 @@ export async function createAssignments(input: CreateAssignmentsInput, options: 
               briefFileSize: brief?.fileSize ?? null,
               state: input.publish ? "PUBLISHED" : "DRAFT",
               publishedAt: input.publish ? now : null,
+              ...(input.workMode === "GROUP" ? { workMode: "GROUP" as const } : {}),
               createdAt: now,
               updatedAt: now,
             },
@@ -349,7 +353,8 @@ export async function deleteAssignment(input: DeleteAssignmentInput) {
 export async function listAssignmentsForTeacher(teacherId: string, sessionId: string) {
   const access = await requireTeacherSessionAccess(prisma, teacherId, sessionId);
   const rows = await prisma.breakoutAssignment.findMany({
-    where: { classSessionId: access.sessionId, status: 0 },
+    // Individual activities only: GROUP ones are listed by GET .../groups (their counts are not these).
+    where: { classSessionId: access.sessionId, status: 0, workMode: INDIVIDUAL_ONLY },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: ASSIGNMENT_VIEW_SELECT,
   });

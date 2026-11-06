@@ -61,6 +61,7 @@ import {
   MAX_BREAKOUT_PDF_BYTES,
   PDF_MIME_TYPE,
   randomFileToken,
+  resolveBreakoutActivityDir,
   resolveBreakoutFilePath,
   resolveBreakoutSessionDir,
   sanitizeDisplayName,
@@ -274,6 +275,45 @@ export async function removeBreakoutSessionDir(
       return { removed: false };
     }
     console.error("Failed to remove a breakout session folder:", { sessionId, error });
+    return { removed: false };
+  }
+}
+
+/**
+ * Removes the folder of ONE activity id inside a session's breakout folder
+ * (<sessionId>/<briefs|submissions>/<activityId>): the Group Activities
+ * session-end purge (services/breakout-group-session-end.ts). Never the
+ * session folder, never another session's. A folder that does not exist
+ * counts as removed. Same safety rules as removeBreakoutSessionDir: the
+ * chain must be real folders, and rm never follows a symlink inside it.
+ * Never throws: `removed: false` (logged) when the ids are invalid, the
+ * path is unsafe, or the removal failed, so the caller can retry later.
+ */
+export async function removeBreakoutActivityDir(
+  sessionId: string,
+  kind: BreakoutFileKind,
+  activityId: string,
+  storageRoot: string = breakoutStorageRoot()
+): Promise<{ removed: boolean }> {
+  try {
+    const root = await resolveRoot(storageRoot, false);
+    if (!root) return { removed: true };
+    let dir: string;
+    try {
+      dir = resolveBreakoutActivityDir(root, sessionId, kind, activityId);
+    } catch {
+      console.error("Breakout activity folder removal refused an invalid id.", { sessionId });
+      return { removed: false };
+    }
+    if (!(await checkDirectoryChain(root, dir))) return { removed: true };
+    await rm(dir, { recursive: true, force: true });
+    return { removed: true };
+  } catch (error) {
+    if (error instanceof UnsafeStoragePathError) {
+      logRefused("activity folder removal", sessionId);
+      return { removed: false };
+    }
+    console.error("Failed to remove a breakout activity folder:", { sessionId, error });
     return { removed: false };
   }
 }

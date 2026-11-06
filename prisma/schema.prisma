@@ -588,6 +588,7 @@ model Student {
   breakoutAssignmentDrafts      BreakoutAssignmentDraft[]
   breakoutAssignmentSubmissions BreakoutAssignmentSubmission[]
   breakoutQuizSubmissions       BreakoutQuizSubmission[]
+  breakoutRoomMemberships       BreakoutRoomMember[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
 
   @@index([teacherId])
@@ -1056,6 +1057,9 @@ model ClassSession {
   breakoutAssignmentSubmissions BreakoutAssignmentSubmission[]
   breakoutQuizzes               BreakoutQuiz[]
   breakoutQuizSubmissions       BreakoutQuizSubmission[]
+  breakoutRoomMembers           BreakoutRoomMember[]
+  breakoutGroupAssignmentWorks  BreakoutGroupAssignmentWork[]
+  breakoutGroupQuizAttempts     BreakoutGroupQuizAttempt[]
   class                         Class                   @relation(fields: [classId], references: [id])
   lecture                       Lecture?                @relation(fields: [lectureId], references: [id])
 
@@ -1769,6 +1773,15 @@ enum BreakoutQuizAttemptStatus {
   AUTO_SUBMITTED
 }
 
+/// Group Activities: INDIVIDUAL (each student's own work: the existing
+/// drafts / submissions / attempts) or GROUP (one shared work, attempt and
+/// final submission per breakout-room group: BreakoutGroupAssignmentWork /
+/// BreakoutGroupQuizAttempt). Every existing row is INDIVIDUAL.
+enum BreakoutWorkMode {
+  INDIVIDUAL
+  GROUP
+}
+
 model BreakoutAssignment {
   id             String                 @id @default(uuid())
   classSessionId String
@@ -1786,6 +1799,7 @@ model BreakoutAssignment {
   publishedAt    DateTime?
   closedAt       DateTime?
   status         Int                    @default(0)
+  workMode       BreakoutWorkMode       @default(INDIVIDUAL)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -1793,6 +1807,7 @@ model BreakoutAssignment {
   teacher      Teacher                        @relation(fields: [teacherId], references: [id])
   drafts       BreakoutAssignmentDraft[]
   submissions  BreakoutAssignmentSubmission[]
+  groupWork    BreakoutGroupAssignmentWork?
 
   @@index([classSessionId, targetRoomType, targetRoomId, state])
   @@index([classSessionId, createdAt])
@@ -1864,12 +1879,14 @@ model BreakoutQuiz {
   publishedAt      DateTime?
   closedAt         DateTime?
   status           Int                    @default(0)
+  workMode         BreakoutWorkMode       @default(INDIVIDUAL)
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
   classSession ClassSession             @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
   teacher      Teacher                  @relation(fields: [teacherId], references: [id])
   submissions  BreakoutQuizSubmission[]
+  groupAttempt BreakoutGroupQuizAttempt?
 
   @@index([classSessionId, targetRoomType, targetRoomId, state])
   @@index([classSessionId, createdAt])
@@ -1903,4 +1920,96 @@ model BreakoutQuizSubmission {
   @@index([quizId, attemptStatus])
   @@index([classSessionId])
   @@index([attemptStatus, deadlineAt])
+}
+
+// ---------------------------------------------------------------------------
+// Breakout Group Activities. A group is the students the teacher confirmed
+// for one breakout room of a session (BreakoutRoomMember); a GROUP-mode
+// assignment / quiz row targets exactly one room, so it has exactly one
+// group, one shared work / attempt and one final submission. Access to group
+// work is decided by confirmed membership only (never by live Jitsi state).
+// ---------------------------------------------------------------------------
+
+/// Teacher-confirmed membership of one breakout room (Group Activities
+/// authorization only; never used by the existing breakout-room features).
+/// status 0 = active, 1 = removed (soft delete). At most one ACTIVE row per
+/// (classSessionId, studentId): enforced by the partial unique index
+/// "BreakoutRoomMember_one_active_key" (migration SQL; Prisma 5.22 cannot
+/// declare partial indexes). See docs/breakout-activities-migrations.md.
+model BreakoutRoomMember {
+  id                   String    @id @default(uuid())
+  classSessionId       String
+  /// The Jitsi breakout room id, as the teacher's classroom page lists it.
+  roomId               String    @db.VarChar(255)
+  roomName             String    @db.VarChar(120)
+  studentId            String
+  confirmedByTeacherId String
+  confirmedAt          DateTime
+  removedAt            DateTime?
+  status               Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  classSession ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id])
+
+  @@index([classSessionId, roomId, status])
+  @@index([classSessionId, studentId])
+}
+
+/// The shared workspace of one GROUP-mode assignment, and its single final
+/// submission (submittedAt set = final; no versions).
+model BreakoutGroupAssignmentWork {
+  id                    String    @id @default(uuid())
+  assignmentId          String    @unique
+  classSessionId        String
+  answerText            String    @default("")
+  revision              Int       @default(0)
+  lastEditedByStudentId String?
+  lastEditedAt          DateTime?
+  submittedAt           DateTime?
+  submittedByStudentId  String?
+  /// Student ids of the confirmed members at submission time.
+  memberStudentIds      Json?
+  fileName              String?   @db.VarChar(200)
+  filePath              String?
+  fileSize              Int?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  assignment   BreakoutAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  classSession ClassSession       @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+
+  @@index([classSessionId])
+}
+
+/// The shared attempt of one GROUP-mode quiz (answers in the same shape as
+/// BreakoutQuizSubmission, graded by the same marking.mjs).
+model BreakoutGroupQuizAttempt {
+  id                   String                    @id @default(uuid())
+  quizId               String                    @unique
+  classSessionId       String
+  attemptStatus        BreakoutQuizAttemptStatus @default(IN_PROGRESS)
+  answers              Json                      @default("{}")
+  revision             Int                       @default(0)
+  startedAt            DateTime                  @default(now())
+  startedByStudentId   String
+  deadlineAt           DateTime?
+  lastSavedAt          DateTime?
+  lastSavedByStudentId String?
+  submittedAt          DateTime?
+  submittedByStudentId String?
+  /// Student ids of the confirmed members at submission time.
+  memberStudentIds     Json?
+  /// BreakoutQuizGrading (lib/breakout-activities/marking.mjs).
+  grading              Json?
+  autoScore            Decimal?                  @db.Decimal(7, 2)
+  finalScore           Decimal?                  @db.Decimal(7, 2)
+  overriddenAt         DateTime?
+  updatedAt            DateTime                  @updatedAt
+
+  quiz         BreakoutQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  classSession ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+
+  @@index([classSessionId])
 }

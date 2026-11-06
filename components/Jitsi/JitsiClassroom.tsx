@@ -67,6 +67,8 @@ import {
   studentIdByParticipantId,
 } from "./participant-identity.mjs";
 import { roomLabelByParticipantId } from "./breakout-utils";
+import { dispatchGroupSync } from "./classroom/sidebar/group-activities/group-sync";
+import { endSessionWithGroupDecision, showGroupCleanupWarning, useGroupEndDecision } from "@/components/session-end/group-end-decision";
 import usePresenceGrace from "./hooks/usePresenceGrace";
 import useSessionVisitHistory from "./hooks/useSessionVisitHistory";
 import { SL_TEACHER_FILMSTRIP_ENABLED } from "./hooks/useJitsi";
@@ -421,6 +423,8 @@ const [classStudents, setClassStudents] =
   // Responsive layout (see .sl-classroom in globals.css): which mode we are in, and the
   // on-screen keyboard height for the phone bottom sheets.
   const viewport = useClassroomViewport();
+  // Group Activities keep / delete choice at End Session (only when the session has GROUP activities).
+  const groupEndDecision = useGroupEndDecision();
   useVisualViewportVars();
 
   // Fullscreen "immersive" mode: the header and the right rail are hidden and
@@ -892,7 +896,13 @@ const [classStudents, setClassStudents] =
       source.addEventListener("session-ended", handleSessionEnded);
     }
 
+    // Group Activities: "this group's work changed" pings on this same stream,
+    // handed to the Group Activities panels (group-sync.ts). Nothing else.
+    const handleBreakoutGroup = (event: MessageEvent) => dispatchGroupSync(event.data);
+    source.addEventListener("breakout-group", handleBreakoutGroup);
+
     return () => {
+      source.removeEventListener("breakout-group", handleBreakoutGroup);
       source.removeEventListener("live-status", handleLiveStatus);
       if (handleSessionEnded) {
         source.removeEventListener("session-ended", handleSessionEnded);
@@ -1920,11 +1930,14 @@ const [classStudents, setClassStudents] =
     console.log("🛑 END SESSION BUTTON CLICKED (teacher)");
 
     try {
-      const response = await fetch(`/api/sessions/${joinInfo.session.id}/end`, {
-        method: "POST",
-      });
+      // Group Activities: asks keep / delete only when the session has GROUP
+      // activities (otherwise the same single POST as before).
+      const ended = await endSessionWithGroupDecision(joinInfo.session.id, groupEndDecision.ask);
 
-      const data = await response.json();
+      // Cancelled in the Group Activities dialog: the session keeps running.
+      if (!ended) return;
+
+      const { response, data } = ended;
 
       if (!response.ok || !data.success) {
         throw new Error(data.error?.message ?? "Unable to end the session.");
@@ -1932,6 +1945,7 @@ const [classStudents, setClassStudents] =
 
       // YouTube cleanup the server could not confirm: said, not hidden.
       showYoutubeCleanupWarning(data.data?.youtubeCleanup, "end");
+      showGroupCleanupWarning(data);
     } catch (error) {
       console.error("❌ Failed to end session:", error);
 
@@ -1993,6 +2007,9 @@ const [classStudents, setClassStudents] =
           : "grid h-full min-h-0 w-full grid-cols-1"
       }
     >
+
+      {/* Group Activities keep / delete choice at End Session (portal; nothing otherwise). */}
+      {groupEndDecision.dialog}
 
       {/* <button
         type="button"

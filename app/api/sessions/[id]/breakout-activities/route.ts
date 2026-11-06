@@ -1,6 +1,7 @@
 // GET /api/sessions/[id]/breakout-activities
 // Teacher: every assignment and quiz of the session (not deleted), with
 // counts. No answer keys, no file paths. (The student view is Step 3.)
+// INDIVIDUAL activities only: GROUP activities are listed by GET .../groups.
 
 import { apiSuccess } from "@/lib/api-response";
 import { handleRouteError } from "@/lib/error-handler";

@@ -62,6 +62,7 @@ import {
   MAX_ANSWER_TEXT_LENGTH,
 } from "@/lib/breakout-activities/submission-rules.mjs";
 import { requireRouteId } from "@/lib/breakout-activities/teacher-access";
+import { assertNotGroupActivity, INDIVIDUAL_ONLY } from "@/lib/breakout-activities/groups/work-mode";
 
 import { inBreakoutTransaction } from "./breakout-assignment-service";
 
@@ -115,7 +116,7 @@ async function requireVisibleAssignment(studentId: string, sessionId: string, as
   const room = await requireStudentRoom({ sessionId: access.sessionId, studentId }, options.roomResolver ?? defaultStudentRoomResolver);
   const id = requireRouteId(assignmentId, "ASSIGNMENT_NOT_FOUND");
   const assignment = await prisma.breakoutAssignment.findFirst({
-    where: { id, classSessionId: access.sessionId, status: 0, state: { in: [...VISIBLE_STATES] } },
+    where: { id, classSessionId: access.sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, workMode: INDIVIDUAL_ONLY },
     select: { ...ASSIGNMENT_STUDENT_SELECT, briefFilePath: true },
   });
   if (!assignment || !activityTargetsRoom(assignment, room)) throw notVisible();
@@ -131,7 +132,7 @@ export async function listAssignmentsForStudent(input: { studentId: string; sess
   const room = await requireStudentRoom({ sessionId: access.sessionId, studentId: input.studentId }, options.roomResolver ?? defaultStudentRoomResolver);
   const rows = (
     await prisma.breakoutAssignment.findMany({
-      where: { classSessionId: access.sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, ...roomFilter(room) },
+      where: { classSessionId: access.sessionId, status: 0, state: { in: [...VISIBLE_STATES] }, workMode: INDIVIDUAL_ONLY, ...roomFilter(room) },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: ASSIGNMENT_STUDENT_SELECT,
     })
@@ -249,6 +250,7 @@ export async function saveDraftForStudent(input: SaveDraftInput, options: Studen
   if (!Number.isInteger(input.revision) || input.revision < 0) throw breakoutError("VALIDATION_ERROR", "Invalid revision.");
   if (typeof input.answerText !== "string") throw breakoutError("VALIDATION_ERROR", "Invalid answer text.");
   if (input.answerText.length > MAX_ANSWER_TEXT_LENGTH) throw breakoutError("ANSWER_TEXT_TOO_LONG");
+  await assertNotGroupActivity("assignment", assignmentId, "ASSIGNMENT_NOT_FOUND");
   await serverNow();
   const draft = await inBreakoutTransaction(async (tx) => {
     const { session, assignment } = await lockWritableAssignment(tx, input.studentId, input.sessionId, assignmentId, options);
@@ -332,6 +334,7 @@ export async function submitAssignmentForStudent(input: SubmitAssignmentInput, o
     }
     if (input.file.bytes.byteLength > MAX_BREAKOUT_PDF_BYTES) throw breakoutError("FILE_TOO_LARGE");
   }
+  await assertNotGroupActivity("assignment", assignmentId, "ASSIGNMENT_NOT_FOUND");
   await serverNow();
 
   const written: { path?: string; sessionId?: string } = {};

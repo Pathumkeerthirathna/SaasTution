@@ -262,6 +262,10 @@ const prisma = {
             return { count: 0 };
         }
     },
+    // End Session asks whether the session has GROUP breakout activities
+    // (services/breakout-group-session-end.ts): these sessions have none.
+    breakoutAssignment: { count: async () => 0 },
+    breakoutQuiz: { count: async () => 0 },
     class: {
         findFirst: async ({ where }) =>
             where.id === CLASS && where.teacherId === TEACHER ? { id: CLASS, name: "Physics", schedule: null } : null

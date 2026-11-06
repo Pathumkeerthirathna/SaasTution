@@ -183,6 +183,10 @@ const fakePrisma = {
             return { count: rows.length };
         }
     },
+    // End Session asks whether the session has GROUP breakout activities
+    // (services/breakout-group-session-end.ts): this session has none.
+    breakoutAssignment: { count: async () => 0 },
+    breakoutQuiz: { count: async () => 0 },
     $transaction: async fn => fn(fakePrisma)
 };
 

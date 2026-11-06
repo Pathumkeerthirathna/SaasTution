@@ -13,6 +13,7 @@ import {
   PenTool,
   UsersRound,
   ScanEye,
+  Handshake,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ScreenShareFrameRateStatus, TeacherBitrateStatus, TeachingModeStatus, VideoTelemetryStatus } from "../../hooks/useJitsi";
@@ -67,6 +68,8 @@ type SidebarNavProps = {
   showAttendance?: boolean;
   /** Show the Camera Monitoring tool (teacher only). */
   showMonitoring?: boolean;
+  /** Group Activities: the rail button label; no button when absent (feature off). */
+  groupActivitiesLabel?: string;
   /** Unread chat message count shown as a badge on the Chat button. */
   chatUnread?: number;
   /** Rail color scheme: navy/blue for the teacher, green for the student. */
@@ -288,6 +291,7 @@ export default function SidebarNav({
   showLectureTools = false,
   showAttendance = false,
   showMonitoring = false,
+  groupActivitiesLabel,
   chatUnread = 0,
   variant = "teacher",
   showSettings = false,
@@ -449,6 +453,9 @@ export default function SidebarNav({
         badge={chatUnread}
       />
       <RailButton panel="breakoutRooms" label="Breakout Rooms" icon={UsersRound} />
+      {groupActivitiesLabel ? (
+        <RailButton panel="groupActivities" label={groupActivitiesLabel} icon={Handshake} />
+      ) : null}
 
       {showLectureTools ? (
         <>

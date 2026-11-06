@@ -82,3 +82,19 @@ When upgrading Prisma:
 1. Read the release notes for index or drift changes.
 2. Run the drift check above.
 3. If partial indexes become supported in the schema, declare this index there with the same name and definition. The schema then describes it and the drift risk ends. Update this document and the guard test at the same time.
+
+## Group Activities: the second manual partial index
+
+Migration `prisma/migrations/20261106120000_add_breakout_group_activities/migration.sql` adds a second hand-written partial unique index. It follows every rule above.
+
+```sql
+CREATE UNIQUE INDEX "BreakoutRoomMember_one_active_key"
+  ON "BreakoutRoomMember" ("classSessionId", "studentId")
+  WHERE "status" = 0;
+```
+
+- **What it enforces:** a student has at most one **active** (`status = 0`) Group Activities membership per class session, so they belong to one breakout-room group at a time. Removed memberships (`status = 1`) stay as history and are not constrained.
+- **Where it lives:** only in that migration's SQL, at the end, added by hand. Never in `schema.prisma`; the `BreakoutRoomMember` model comment names it.
+- **The column stays as it is:** `status` is `Int @default(0)`, NOT NULL. Moving a student to another group sets the old row to `status = 1` before the new active row is inserted, in one transaction.
+- **Guard:** `tests/breakout-activities/group-migration-guard.test.cjs` fails if the statement is missing or changed, if any migration drops or alters it, or if the migration stops being additive.
+- **Drift:** the drift check above also applies. Expect no `DROP INDEX "BreakoutRoomMember_one_active_key"`.

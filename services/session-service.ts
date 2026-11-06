@@ -12,6 +12,13 @@ import {
   reconcileYouTubeFeaturesForNewSession,
   type YouTubeSessionCleanupResult,
 } from "@/lib/youtube-feature-lifecycle";
+import {
+  endSessionAndMarkGroupActivitiesForPurge,
+  purgeGroupActivitiesSafely,
+  requireGroupSessionEndDecision,
+  summarizeGroupActivitiesForSessionEnd,
+  type GroupSessionEndDecision,
+} from "@/services/breakout-group-session-end";
 
 type NotifyChannels = {
   email: boolean;
@@ -1207,7 +1214,11 @@ export async function listAttendanceByClassForTeacher(params: {
   };
 }
 
-export async function endClassSessionForTeacher(teacherId: string, sessionId: string) {
+export async function endClassSessionForTeacher(
+  teacherId: string,
+  sessionId: string,
+  options: { groupActivities?: GroupSessionEndDecision } = {}
+) {
   await ensureSessionAccessForTeacher(teacherId, sessionId);
 
   const endedAt = new Date();
@@ -1216,21 +1227,36 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
     where: {
       id: sessionId,
     },
-    select: { classId: true, lectureId: true, endedAt: true },
+    select: { classId: true, lectureId: true, endedAt: true, isActive: true },
   });
 
-  // Ends the session only while it is active, once (a concurrent second End
-  // Session finds it already ended).
-  const { count: endedNow } = await prisma.classSession.updateMany({
-    where: {
-      id: sessionId,
-      isActive: true,
-    },
-    data: {
-      isActive: false,
-      endedAt,
-    },
-  });
+  // Group Activities (services/breakout-group-session-end.ts): an active
+  // session with GROUP breakout activities needs the teacher's decision
+  // (409 GROUP_ACTIVITIES_DECISION_REQUIRED, nothing changed, otherwise).
+  // Without GROUP activities, or with "preserve", the session ends exactly as
+  // before; "delete" ends it under the session lock and marks them for purge.
+  const groupDecision = session?.isActive
+    ? requireGroupSessionEndDecision(await summarizeGroupActivitiesForSessionEnd(sessionId), options.groupActivities)
+    : null;
+
+  let endedNow: number;
+  if (groupDecision === "delete") {
+    const marked = await endSessionAndMarkGroupActivitiesForPurge({ teacherId, sessionId, endedAt });
+    endedNow = marked.ended ? 1 : 0;
+  } else {
+    // Ends the session only while it is active, once (a concurrent second End
+    // Session finds it already ended).
+    ({ count: endedNow } = await prisma.classSession.updateMany({
+      where: {
+        id: sessionId,
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+        endedAt,
+      },
+    }));
+  }
 
   await prisma.attendance.updateMany({
     where: {
@@ -1248,6 +1274,11 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
     // no YouTube cleanup, so the class's current session and its features
     // are never affected. (Attendance still open for it was closed above, as
     // before.)
+    // A repeated "delete" request only retries a pending Group Activities
+    // purge of this ended session; it never applies a new deletion.
+    const retriedPurge =
+      options.groupActivities === "delete" && session ? await purgeGroupActivitiesSafely(sessionId) : null;
+
     return {
       sessionId,
       endedAt: session?.endedAt ?? endedAt,
@@ -1257,6 +1288,9 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
         closed: 0,
         reason: "session already ended",
       } satisfies YouTubeSessionCleanupResult,
+      ...(retriedPurge && retriedPurge.status !== "none"
+        ? { groupActivities: { decision: "delete" as const, cleanup: retriedPurge } }
+        : {}),
     };
   }
 
@@ -1269,10 +1303,22 @@ export async function endClassSessionForTeacher(teacherId: string, sessionId: st
     ? await endYouTubeFeaturesAfterSessionEnd(teacherId, session.lectureId, [sessionId])
     : { status: "none", closed: 0 };
 
+  // "delete": the files, then the rows (never fails the end: "pending" is retried later).
+  const groupActivities = groupDecision
+    ? {
+        decision: groupDecision,
+        cleanup:
+          groupDecision === "delete"
+            ? await purgeGroupActivitiesSafely(sessionId)
+            : { status: "none" as const, assignments: 0, quizzes: 0 },
+      }
+    : null;
+
   return {
     sessionId,
     endedAt,
     alreadyEnded: false,
     youtubeCleanup,
+    ...(groupActivities ? { groupActivities } : {}),
   };
 }

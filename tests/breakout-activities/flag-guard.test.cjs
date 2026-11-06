@@ -39,6 +39,7 @@ const ALLOWED = [
 const SAFETY_CRITICAL = [
   "services/session-service.ts",
   "services/breakout-session-data.ts",
+  "services/breakout-group-session-end.ts",
   "app/api/sessions/[id]/end/route.ts",
   "app/api/sessions/[id]/restart/route.ts",
   "app/api/classes/[id]/sessions/start/route.ts",
