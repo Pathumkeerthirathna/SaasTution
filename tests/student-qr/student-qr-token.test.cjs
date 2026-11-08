@@ -12,6 +12,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
+require("../helpers/server-only.cjs");
 require("tsx/cjs/api").register();
 
 const root = path.resolve(__dirname, "..", "..");
@@ -337,4 +338,20 @@ test("errors never echo secret material", () => {
     assert.ok(!String(error.message).includes("bad-nonce-value"));
     assert.ok(!String(error.message).includes(ROW_A));
   }
+});
+
+test("server-only: the module imports it, and without Next's server resolution the import throws", () => {
+  const source = fs.readFileSync(path.join(root, "lib", "student-qr-token.ts"), "utf8");
+  assert.match(source, /^import "server-only";$/m);
+
+  // A fresh Node process (no stub, default export condition, as a client
+  // bundle would resolve it) must refuse to load the QR secret code.
+  const { spawnSync } = require("node:child_process");
+  const child = spawnSync(
+    process.execPath,
+    ["-e", `require("tsx/cjs/api").register(); require(${JSON.stringify(path.join(root, "lib", "student-qr-token.ts"))});`],
+    { cwd: root, encoding: "utf8", env: { ...process.env, STUDENT_QR_SECRET: "" } }
+  );
+  assert.notEqual(child.status, 0);
+  assert.match(child.stderr, /cannot be imported from a Client Component module/);
 });

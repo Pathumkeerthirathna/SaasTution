@@ -13,11 +13,15 @@
  * secret, tokens, nonces or hashes.
  */
 
+// Build-time guard: importing this module from a Client Component fails the
+// Next.js build (the package resolves to an empty module only for server code).
+import "server-only";
+
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 if (typeof window !== "undefined") {
-  // Defence in depth: the secret is never NEXT_PUBLIC_, so a client bundle
-  // could not read it anyway; refuse to run in a browser at all.
+  // Runtime defence in depth: the secret is never NEXT_PUBLIC_, so a client
+  // bundle could not read it anyway; refuse to run in a browser at all.
   throw new Error("lib/student-qr-token is server-only.");
 }
 

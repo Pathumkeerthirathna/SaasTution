@@ -11,6 +11,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const Module = require("node:module");
 
+require("../../helpers/server-only.cjs");
 require("tsx/cjs/api").register();
 
 const root = path.resolve(__dirname, "..", "..", "..");

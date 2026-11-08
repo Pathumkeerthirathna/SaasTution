@@ -43,6 +43,7 @@ process.env.STUDENT_QR_SECRET = SECRET_A;
 let svc;
 let prisma;
 if (!skip) {
+  require("../helpers/server-only.cjs");
   require("tsx/cjs/api").register();
   const root = path.resolve(__dirname, "..", "..");
   ({ prisma } = require(path.join(root, "lib", "prisma.ts")));
