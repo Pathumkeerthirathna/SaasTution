@@ -125,3 +125,31 @@ QR — printed or downloaded — stops working**. Therefore:
   `QR_TOKEN_UNVERIFIABLE` and is never reissued automatically.
 - Database errors on token writes are replaced by a generic error so the
   PostgreSQL row detail (nonce, tokenHash) cannot reach route logs; the shared Prisma client (`lib/prisma.ts`) logs only sanitized one-line summaries (`formatPrismaLogEvent`).
+
+## Student APIs and Settings UI
+
+Routes (student session only; the student always comes from the session,
+never from the URL or body):
+
+| Route | Response |
+|---|---|
+| `GET /api/students/me/qr/status` | `{ configured, hasActiveToken, regenerationLimit, regenerationsRemaining, nextRegenerationAt }` |
+| `GET /api/students/me/qr` | PNG (512 px, error correction M), issuing the first QR on first view. `?download=1` only switches to `Content-Disposition: attachment` |
+| `POST /api/students/me/qr/regenerate` | Same-origin only. New status JSON; 429 + `Retry-After` + `{ limit, retryAfterSeconds, retryAt }` at the limit |
+
+- All responses: `Cache-Control: private, no-store, max-age=0`, `Pragma: no-cache`,
+  `Expires: 0`, `Vary: Cookie`. No JSON ever contains a token, nonce or hash.
+- Missing / invalid `STUDENT_QR_SECRET`: image and regeneration answer 503
+  (`STUDENT_QR_NOT_CONFIGURED`); status answers `configured: false`. The
+  server prints `[student-qr] QR codes are unavailable: <problem>` at most
+  every 10 minutes (never the value).
+- **CSRF** (`lib/same-origin.ts`): `Sec-Fetch-Site`, when sent, must be
+  `same-origin`, and `Origin` must equal `APP_URL` or `NEXT_PUBLIC_APP_URL`
+  (whole origin). Host / X-Forwarded-Host are not trusted. With neither
+  variable set, regeneration is refused (403) and a warning is printed:
+  **production must set `APP_URL` (or `NEXT_PUBLIC_APP_URL`) to its public
+  origin, e.g. `https://slclassroom.live`.**
+- UI: Student Settings → **My QR Identity**
+  (`components/student-portal/student-qr-panel.tsx`). The PNG is fetched
+  and shown through an in-memory `blob:` URL; download and print reuse it.
+  The token never appears in a URL, in browser storage or in the HTML.
