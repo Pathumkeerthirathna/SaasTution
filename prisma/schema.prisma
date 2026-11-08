@@ -594,12 +594,59 @@ model Student {
   breakoutAssignmentSubmissions BreakoutAssignmentSubmission[]
   breakoutQuizSubmissions       BreakoutQuizSubmission[]
   breakoutRoomMemberships       BreakoutRoomMember[]
+  qrTokens                      StudentQrToken[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
 
   @@index([teacherId])
   @@index([registrationSource])
   @@index([confirmationStatus])
   @@index([publicClassId])
+}
+
+/// Why a StudentQrToken row was created.
+enum StudentQrTokenReason {
+  /// First token of a student (issued lazily on first QR view).
+  ISSUE
+  /// Replacement requested by the student or the owning teacher (limited).
+  REGENERATE
+  /// Replacement made by an explicit administrative operation (e.g. after a
+  /// STUDENT_QR_SECRET rotation). Never created during normal QR rendering.
+  SYSTEM_REISSUE
+}
+
+/// A student's QR identity token (docs/student-qr-identity.md).
+///
+/// The QR token itself is NEVER stored. It is derived on demand as
+/// HMAC-SHA256(STUDENT_QR_SECRET, "slc-student-qr:v1:" + id + ":" + nonce)
+/// and only its SHA-256 hash is kept, for lookups. At most one active
+/// (revokedAt IS NULL) token per student, enforced by a hand-written partial
+/// unique index in the migration. createdAt / revokedAt are written by the
+/// application as real UTC instants (no database default).
+model StudentQrToken {
+  id            String               @id @default(uuid())
+  studentId     String
+  /// Random per-token value (base64url, 32 bytes) used in the derivation.
+  nonce         String
+  /// SHA-256 (hex) of the derived token.
+  tokenHash     String               @unique
+  reason        StudentQrTokenReason
+  createdAt     DateTime
+  /// STUDENT | TEACHER | SYSTEM (CHECK constraint in the migration).
+  createdByRole String
+  createdById   String?
+  revokedAt     DateTime?
+  /// Revocation audit: all three are NULL while active and set together with
+  /// revokedAt (CHECK constraints in the migration).
+  /// STUDENT | TEACHER | SYSTEM.
+  revokedByRole String?
+  /// Required unless revokedByRole = SYSTEM.
+  revokedById   String?
+  /// REGENERATE (by STUDENT / TEACHER) | SYSTEM_REISSUE (by SYSTEM).
+  revokedReason String?
+  student       Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+  @@index([studentId, revokedAt])
 }
 
 model StudentDevice {
