@@ -561,6 +561,11 @@ model Student {
   confirmedById String?
   confirmedBy   Teacher?  @relation("ConfirmedStudents", fields: [confirmedById], references: [id])
 
+  /// First transition to APPROVED (real UTC instant). Set once; never
+  /// cleared or overwritten by a rejection or a later re-approval.
+  /// Used by the automatic joining fee waiver (services/class-fee-waiver-service.ts).
+  approvedAt DateTime?
+
   // Email ownership confirmation via a one-time code. A student cannot log
   // in until this is true.
   emailConfirmed   Boolean   @default(false)
@@ -763,6 +768,7 @@ model Class {
   messages             Message[]
   paperSupportMessages PaperSupportMessage[]
   classPapers          ClassPaper[]
+  feeWaiverRules       ClassFeeWaiverRule[]
 
   publicRegistrations Student[] @relation("PublicClassRegistration")
 
@@ -1190,8 +1196,61 @@ model ClassStudentFee {
   classStudent ClassStudent   @relation(fields: [classStudentId], references: [id], onDelete: Cascade)
   payments     ClassPayment[]
 
+  /// The teacher entered lateJoinDeduct by hand: automatic joining-waiver
+  /// calculation never overwrites it (only an explicit reset clears this).
+  lateJoinDeductManual     Boolean            @default(false)
+  /// Automatic joining waiver applied to lateJoinDeduct: a nullable reference
+  /// to the rule plus a snapshot that explanations rely on.
+  joinWaiverRuleId         String?
+  joinWaiverRule           ClassFeeWaiverRule? @relation(fields: [joinWaiverRuleId], references: [id], onDelete: SetNull)
+  joinWaiverSequence       Int?
+  joinWaiverType           FeeWaiverType?
+  joinWaiverValue          Int?
+  joinWaiverLecturesBefore Int?
+  /// Real UTC instant the student's enrolment counted from.
+  joinWaiverEnrolledAt     DateTime?
+  /// The fee the deduction was taken from.
+  joinWaiverBaseAmount     Int?
+  /// Real UTC instant of the calculation.
+  joinWaiverComputedAt     DateTime?
+
   @@unique([classStudentId, year, month])
   @@index([classStudentId, year, month])
+}
+
+enum FeeWaiverType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+/// Sequential automatic joining-waiver rules of a class: rule N applies when N
+/// COMPLETED lectures of the billing month were held before the student
+/// joined (the last rule when there are more). Soft delete via status (0
+/// active, 1 removed). Active sequences are unique per class through a
+/// hand-written partial index (see docs/fee-waiver-rules.md).
+model ClassFeeWaiverRule {
+  id        String            @id @default(uuid())
+  classId   String
+  sequence  Int
+  type      FeeWaiverType
+  value     Int
+  status    Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  class     Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
+  fees      ClassStudentFee[]
+
+  @@index([classId, status, sequence])
+}
+
+/// Single row (id "default"): the first Sri Lankan billing month with
+/// automatic joining waivers. Written by the migration that introduced the
+/// feature (the first full Asia/Colombo month after it was applied).
+model FeeWaiverSettings {
+  id         String   @id @default("default")
+  startYear  Int
+  startMonth Int
+  createdAt  DateTime @default(now())
 }
 
 model ClassStudentHistory {

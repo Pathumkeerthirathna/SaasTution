@@ -1,6 +1,7 @@
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { emitStudentDataChange } from "@/lib/session-events";
+import { readLectureWaiverState, recalculateAfterLectureChange } from "@/services/fee-waiver-events";
 import type {
   CreateAssignmentInput,
   CreateLectureInput,
@@ -216,8 +217,9 @@ export async function createLectureForTeacher(teacherId: string, input: CreateLe
 
 export async function updateLectureForTeacher(teacherId: string, lectureId: string, input: UpdateLectureInput) {
   await assertTeacherOwnsLecture(teacherId, lectureId);
+  const waiverBefore = await readLectureWaiverState(lectureId);
 
-  return prisma.lecture.update({
+  const lecture = await prisma.lecture.update({
     where: {
       id: lectureId,
     },
@@ -240,6 +242,12 @@ export async function updateLectureForTeacher(teacherId: string, lectureId: stri
       },
     },
   });
+
+  // Automatic joining waivers: a COMPLETED lecture moving date or billing
+  // month. After the update, outside it; never fails the lecture update.
+  await recalculateAfterLectureChange(waiverBefore, waiverBefore && { ...waiverBefore, date: lecture.date });
+
+  return lecture;
 }
 
 export async function updateLectureClassStatusForTeacher(
@@ -248,8 +256,9 @@ export async function updateLectureClassStatusForTeacher(
   classStatus: "COMPLETED" | "CANCELLED"
 ) {
   await assertTeacherOwnsLecture(teacherId, lectureId);
+  const waiverBefore = await readLectureWaiverState(lectureId);
 
-  return prisma.lecture.update({
+  const lecture = await prisma.lecture.update({
     where: {
       id: lectureId,
     },
@@ -271,10 +280,20 @@ export async function updateLectureClassStatusForTeacher(
       },
     },
   });
+
+  // Automatic joining waivers: entering or leaving COMPLETED. After the
+  // update, outside it; never fails the status change.
+  await recalculateAfterLectureChange(
+    waiverBefore,
+    waiverBefore && { ...waiverBefore, classStatus: lecture.classStatus }
+  );
+
+  return lecture;
 }
 
 export async function deleteLectureForTeacher(teacherId: string, lectureId: string) {
   const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
+  const waiverBefore = await readLectureWaiverState(lectureId);
 
   // Soft delete: status 1 hides the lecture (and, via lecture.status filters, its
   // notes / assignments / quizzes) from every view while keeping history intact.
@@ -288,6 +307,10 @@ export async function deleteLectureForTeacher(teacherId: string, lectureId: stri
   });
 
   emitStudentDataChange({ classId: lecture.classId });
+
+  // Automatic joining waivers: a removed COMPLETED lecture no longer counts.
+  // After the update, outside it; never fails the deletion.
+  await recalculateAfterLectureChange(waiverBefore, waiverBefore && { ...waiverBefore, status: 1 });
 }
 
 export async function listLecturesForTeacher(params: {

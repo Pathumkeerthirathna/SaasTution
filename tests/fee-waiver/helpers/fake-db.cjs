@@ -1,0 +1,341 @@
+/*
+ * In-memory stand-in for the parts of PrismaClient the fee-waiver code uses.
+ *
+ * Generic where evaluation (scalars, Date equality, in / gt / gte / lt / lte /
+ * not, AND / OR / NOT, to-one relation filters and to-many some / none /
+ * every), select / include projection, orderBy, the two unique constraints
+ * that matter here (ClassStudentFee per month, one active rule per position),
+ * an updatedAt that changes on every write, and a hook to simulate a
+ * concurrent write landing between a read and a conditional write.
+ */
+
+"use strict";
+
+const { Prisma } = require("@prisma/client");
+
+const MODELS = {
+  student: "Student",
+  class: "Class",
+  classStudent: "ClassStudent",
+  classStudentFee: "ClassStudentFee",
+  classPayment: "ClassPayment",
+  lecture: "Lecture",
+  classFeeWaiverRule: "ClassFeeWaiverRule",
+  feeWaiverSettings: "FeeWaiverSettings",
+  classFee: "ClassFee",
+};
+
+const RELATIONS = {
+  Student: { classStudents: ["ClassStudent", "studentId", "many"] },
+  Class: {
+    students: ["ClassStudent", "classId", "many"],
+    lectures: ["Lecture", "classId", "many"],
+    teacher: null,
+  },
+  ClassStudent: {
+    student: ["Student", "studentId"],
+    class: ["Class", "classId"],
+    fees: ["ClassStudentFee", "classStudentId", "many"],
+  },
+  ClassStudentFee: {
+    classStudent: ["ClassStudent", "classStudentId"],
+    payments: ["ClassPayment", "classStudentFeeId", "many"],
+    joinWaiverRule: ["ClassFeeWaiverRule", "joinWaiverRuleId"],
+  },
+  ClassPayment: {},
+  Lecture: { class: ["Class", "classId"] },
+  ClassFeeWaiverRule: {},
+  FeeWaiverSettings: {},
+  ClassFee: {},
+};
+
+const FEE_DEFAULTS = {
+  discount: 0,
+  lateJoinDeduct: 0,
+  waiverAmount: 0,
+  status: 0,
+  dueDate: null,
+  lateJoinDeductManual: false,
+  joinWaiverRuleId: null,
+  joinWaiverSequence: null,
+  joinWaiverType: null,
+  joinWaiverValue: null,
+  joinWaiverLecturesBefore: null,
+  joinWaiverEnrolledAt: null,
+  joinWaiverBaseAmount: null,
+  joinWaiverComputedAt: null,
+};
+
+function createFakeDb() {
+  const tables = Object.fromEntries(Object.values(MODELS).map((m) => [m, []]));
+  let idCounter = 0;
+  let tick = 0;
+  const writes = [];
+  const hooks = { beforeUpdateMany: null, failOn: null };
+
+  const nextTick = () => new Date(Date.UTC(2030, 0, 1) + ++tick);
+  const nextId = (model) => `${model.toLowerCase()}-${++idCounter}`;
+
+  // ---- where -------------------------------------------------------------------
+  const isPlainObject = (v) => v !== null && typeof v === "object" && !(v instanceof Date) && !Array.isArray(v);
+  const eq = (a, b) =>
+    a instanceof Date || b instanceof Date
+      ? a instanceof Date && b instanceof Date && a.getTime() === b.getTime()
+      : (a ?? null) === (b ?? null);
+  const cmp = (a, b) => (a instanceof Date ? a.getTime() : a) - (b instanceof Date ? b.getTime() : b);
+
+  function matchScalar(value, cond) {
+    if (!isPlainObject(cond)) return eq(value, cond);
+    for (const [op, arg] of Object.entries(cond)) {
+      if (op === "equals" && !eq(value, arg)) return false;
+      if (op === "in" && !arg.some((x) => eq(value, x))) return false;
+      if (op === "notIn" && arg.some((x) => eq(value, x))) return false;
+      if (op === "not" && (isPlainObject(arg) ? matchScalar(value, arg) : eq(value, arg))) return false;
+      if (op === "gt" && !(value !== null && value !== undefined && cmp(value, arg) > 0)) return false;
+      if (op === "gte" && !(value !== null && value !== undefined && cmp(value, arg) >= 0)) return false;
+      if (op === "lt" && !(value !== null && value !== undefined && cmp(value, arg) < 0)) return false;
+      if (op === "lte" && !(value !== null && value !== undefined && cmp(value, arg) <= 0)) return false;
+    }
+    return true;
+  }
+
+  function related(model, row, name) {
+    const rel = RELATIONS[model][name];
+    const [target, fk, many] = rel;
+    if (many) return tables[target].filter((r) => r[fk] === row.id);
+    return tables[target].find((r) => r.id === row[fk]) ?? null;
+  }
+
+  function matches(model, row, where = {}) {
+    for (const [key, cond] of Object.entries(where ?? {})) {
+      if (cond === undefined) continue;
+      if (key === "AND") { if (![].concat(cond).every((w) => matches(model, row, w))) return false; continue; }
+      if (key === "OR") { if (!cond.some((w) => matches(model, row, w))) return false; continue; }
+      if (key === "NOT") { if ([].concat(cond).some((w) => matches(model, row, w))) return false; continue; }
+      const rel = RELATIONS[model][key];
+      if (rel) {
+        const [target, , many] = rel;
+        if (many) {
+          const list = related(model, row, key);
+          if (cond.some && !list.some((r) => matches(target, r, cond.some))) return false;
+          if (cond.none && list.some((r) => matches(target, r, cond.none))) return false;
+          if (cond.every && !list.every((r) => matches(target, r, cond.every))) return false;
+        } else {
+          const one = related(model, row, key);
+          if (!one || !matches(target, one, cond)) return false;
+        }
+        continue;
+      }
+      if (rel === null) continue; // relation not modelled (e.g. Class.teacher)
+      if (!matchScalar(row[key], cond)) return false;
+    }
+    return true;
+  }
+
+  // ---- projection ----------------------------------------------------------------
+  const scalars = (row) => ({ ...row });
+
+  function project(model, row, args = {}) {
+    if (!row) return null;
+    const { select, include } = args;
+    if (!select && !include) return scalars(row);
+    const out = select ? {} : scalars(row);
+    for (const [key, spec] of Object.entries(select ?? include)) {
+      if (!spec) continue;
+      const rel = RELATIONS[model][key];
+      if (rel) {
+        const [target, , many] = rel;
+        const sub = spec === true ? {} : spec;
+        if (many) {
+          let list = related(model, row, key).filter((r) => matches(target, r, sub.where));
+          list = sortRows(list, sub.orderBy);
+          if (sub.take) list = list.slice(0, sub.take);
+          out[key] = list.map((r) => project(target, r, sub));
+        } else {
+          out[key] = project(target, related(model, row, key), sub);
+        }
+      } else if (select) {
+        out[key] = row[key];
+      }
+    }
+    return out;
+  }
+
+  function sortRows(list, orderBy) {
+    if (!orderBy) return list;
+    const keys = [].concat(orderBy);
+    return [...list].sort((a, b) => {
+      for (const entry of keys) {
+        const [field, dir] = Object.entries(entry)[0];
+        if (typeof dir !== "string") continue;
+        const av = a[field];
+        const bv = b[field];
+        const c = av instanceof Date ? av.getTime() - bv.getTime() : av < bv ? -1 : av > bv ? 1 : 0;
+        if (c !== 0) return dir === "desc" ? -c : c;
+      }
+      return 0;
+    });
+  }
+
+  // ---- constraints ---------------------------------------------------------------
+  function uniqueError(target) {
+    return new Prisma.PrismaClientKnownRequestError(`Unique constraint failed on ${target}`, {
+      code: "P2002",
+      clientVersion: "5.22.0",
+    });
+  }
+
+  function checkUnique(model, row, selfId) {
+    if (model === "ClassStudentFee") {
+      if (tables.ClassStudentFee.some((r) => r.id !== selfId && r.classStudentId === row.classStudentId && r.year === row.year && r.month === row.month)) {
+        throw uniqueError("ClassStudentFee_classStudentId_year_month_key");
+      }
+    }
+    if (model === "ClassFeeWaiverRule" && row.status === 0) {
+      if (tables.ClassFeeWaiverRule.some((r) => r.id !== selfId && r.status === 0 && r.classId === row.classId && r.sequence === row.sequence)) {
+        throw uniqueError("ClassFeeWaiverRule_active_sequence_key");
+      }
+    }
+  }
+
+  function withDefaults(model, data) {
+    const base = { id: nextId(model), createdAt: new Date(Date.UTC(2026, 0, 1)), updatedAt: nextTick() };
+    if (model === "ClassStudentFee") return { ...base, ...FEE_DEFAULTS, ...data, updatedAt: nextTick() };
+    if (model === "ClassFeeWaiverRule") return { ...base, status: 0, ...data };
+    return { ...base, ...data };
+  }
+
+  function applyData(row, data) {
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined) continue;
+      if (isPlainObject(value) && "increment" in value) row[key] = (row[key] ?? 0) + value.increment;
+      else row[key] = value;
+    }
+    row.updatedAt = nextTick();
+  }
+
+  function fail(model, method) {
+    if (hooks.failOn && hooks.failOn(model, method)) {
+      throw new Error(`simulated failure: ${model}.${method}`);
+    }
+  }
+
+  // ---- model delegates -----------------------------------------------------------
+  function delegate(model) {
+    const table = () => tables[model];
+    return {
+      async findMany(args = {}) {
+        fail(model, "findMany");
+        let rows = table().filter((r) => matches(model, r, args.where));
+        rows = sortRows(rows, args.orderBy);
+        if (args.take) rows = rows.slice(0, args.take);
+        return rows.map((r) => project(model, r, args));
+      },
+      async findFirst(args = {}) {
+        fail(model, "findFirst");
+        const rows = sortRows(table().filter((r) => matches(model, r, args.where)), args.orderBy);
+        return project(model, rows[0] ?? null, args);
+      },
+      async findUnique(args) {
+        fail(model, "findUnique");
+        return project(model, table().find((r) => matches(model, r, args.where)) ?? null, args);
+      },
+      async findUniqueOrThrow(args) {
+        const row = table().find((r) => matches(model, r, args.where));
+        if (!row) throw new Error(`${model} not found`);
+        return project(model, row, args);
+      },
+      async count(args = {}) {
+        return table().filter((r) => matches(model, r, args.where)).length;
+      },
+      async create(args) {
+        fail(model, "create");
+        if (hooks.beforeCreate) hooks.beforeCreate(model, args);
+        const row = withDefaults(model, args.data);
+        checkUnique(model, row);
+        table().push(row);
+        writes.push({ model, method: "create", id: row.id });
+        return project(model, row, args);
+      },
+      async createMany(args) {
+        let count = 0;
+        for (const data of args.data) {
+          const row = withDefaults(model, data);
+          try {
+            checkUnique(model, row);
+          } catch (error) {
+            if (args.skipDuplicates) continue;
+            throw error;
+          }
+          table().push(row);
+          count += 1;
+        }
+        writes.push({ model, method: "createMany", count });
+        return { count };
+      },
+      async update(args) {
+        fail(model, "update");
+        const row = table().find((r) => matches(model, r, args.where));
+        if (!row) throw new Error(`${model} to update not found`);
+        const next = { ...row };
+        applyData(next, args.data);
+        checkUnique(model, next, row.id);
+        Object.assign(row, next);
+        writes.push({ model, method: "update", id: row.id, data: args.data });
+        return project(model, row, args);
+      },
+      async updateMany(args) {
+        fail(model, "updateMany");
+        if (hooks.beforeUpdateMany) {
+          const hook = hooks.beforeUpdateMany;
+          hooks.beforeUpdateMany = null; // one simulated concurrent write
+          hook(model, args, api);
+        }
+        let count = 0;
+        for (const row of table().filter((r) => matches(model, r, args.where))) {
+          applyData(row, args.data);
+          count += 1;
+          writes.push({ model, method: "updateMany", id: row.id, data: args.data });
+        }
+        return { count };
+      },
+    };
+  }
+
+  const client = {};
+  for (const [prop, model] of Object.entries(MODELS)) client[prop] = delegate(model);
+  client.$transaction = async (arg) => (typeof arg === "function" ? arg(client) : Promise.all(arg));
+  client.$queryRaw = async () => [];
+
+  // ---- test API ------------------------------------------------------------------
+  const api = {
+    client,
+    tables,
+    writes,
+    hooks,
+    insert(model, data) {
+      const row = withDefaults(model, data);
+      tables[model].push(row);
+      return row;
+    },
+    row(model, id) {
+      return tables[model].find((r) => r.id === id);
+    },
+    touch(model, id, data) {
+      const row = api.row(model, id);
+      applyData(row, data);
+      return row;
+    },
+    reset() {
+      for (const key of Object.keys(tables)) tables[key].length = 0;
+      writes.length = 0;
+      hooks.beforeUpdateMany = null;
+      hooks.beforeCreate = null;
+      hooks.failOn = null;
+    },
+  };
+
+  return api;
+}
+
+module.exports = { createFakeDb };

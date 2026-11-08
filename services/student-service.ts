@@ -9,6 +9,7 @@ import { emitStudentDataChange } from "@/lib/session-events";
 import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
 import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
+import { recalculateAfterStudentDecision } from "@/services/fee-waiver-events";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 import { requireTeacherSession } from "@/lib/auth-session";
@@ -2209,30 +2210,73 @@ export async function confirmStudent(teacherId: string, studentId: string) {
     throw new Error("Student is already confirmed.");
   }
 
-  await prisma.student.update({
-    where: {
-      id: studentId,
-    },
-    data: {
-      confirmationStatus: StudentConfirmationStatus.APPROVED,
-      confirmedAt: new Date(),
-    },
-  });
+  const decidedAt = new Date();
+
+  await prisma.$transaction([
+    prisma.student.update({
+      where: {
+        id: studentId,
+      },
+      data: {
+        confirmationStatus: StudentConfirmationStatus.APPROVED,
+        confirmedAt: decidedAt,
+      },
+    }),
+    // approvedAt records the FIRST approval only: a re-approval after a
+    // rejection never overwrites it.
+    prisma.student.updateMany({
+      where: { id: studentId, approvedAt: null },
+      data: { approvedAt: decidedAt },
+    }),
+  ]);
+
+  // Automatic joining waivers of this month's unpaid invoices (after the
+  // approval, outside it; a failure is logged and never fails the approval).
+  await recalculateAfterStudentDecision(studentId);
 }
 
 export async function confirmAllPendingStudents(teacherId: string) {
-  const result = await prisma.student.updateMany({
-    where: {
-      teacherId,
-      confirmationStatus: StudentConfirmationStatus.PENDING,
-    },
-    data: {
-      confirmationStatus: StudentConfirmationStatus.APPROVED,
-      confirmedAt: new Date(),
-    },
+  const decidedAt = new Date();
+
+  const { ids: approvedIds, count } = await prisma.$transaction(async (tx) => {
+    const pending = await tx.student.findMany({
+      where: {
+        teacherId,
+        confirmationStatus: StudentConfirmationStatus.PENDING,
+      },
+      select: { id: true },
+    });
+    const ids = pending.map((entry) => entry.id);
+
+    if (ids.length === 0) {
+      return { ids, count: 0 };
+    }
+
+    // First approval only (see confirmStudent).
+    await tx.student.updateMany({
+      where: { id: { in: ids }, approvedAt: null },
+      data: { approvedAt: decidedAt },
+    });
+
+    const result = await tx.student.updateMany({
+      where: {
+        id: { in: ids },
+        confirmationStatus: StudentConfirmationStatus.PENDING,
+      },
+      data: {
+        confirmationStatus: StudentConfirmationStatus.APPROVED,
+        confirmedAt: decidedAt,
+      },
+    });
+
+    return { ids, count: result.count };
   });
 
-  return result.count;
+  for (const studentId of approvedIds) {
+    await recalculateAfterStudentDecision(studentId);
+  }
+
+  return count;
 }
 
 
@@ -2256,6 +2300,7 @@ export async function declineStudent(teacherId: string, studentId: string) {
     throw new Error("Student is already confirmed.");
   }
 
+  // approvedAt is deliberately left unchanged (first approval is kept).
   await prisma.student.update({
     where: {
       id: studentId,
@@ -2265,6 +2310,13 @@ export async function declineStudent(teacherId: string, studentId: string) {
       confirmedAt: new Date(),
     },
   });
+
+  // APPROVED -> REJECTED: remove automatic joining waivers that no longer
+  // apply to this month's unpaid invoices (after the decline; a failure is
+  // logged and never fails it).
+  if (student.confirmationStatus === StudentConfirmationStatus.APPROVED) {
+    await recalculateAfterStudentDecision(studentId);
+  }
 }
 
 

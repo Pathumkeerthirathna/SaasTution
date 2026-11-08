@@ -3,6 +3,7 @@ import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/l
 import { emitLiveChange, emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
+import { recalculateAfterLectureChange } from "@/services/fee-waiver-events";
 import { generateJitsiToken } from "@/lib/jitsi-auth";
 import { StudentSession } from "@/lib/auth-session";
 import { formatTeacherClassroomName, formatTeacherFullName } from "@/lib/teacher-title";
@@ -85,6 +86,7 @@ async function assertTeacherOwnsLectureInClass(teacherId: string, classId: strin
       title: true,
       date: true,
       classId: true,
+      classStatus: true,
     },
   });
 
@@ -228,6 +230,14 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
     where: { id: lecture.id },
     data: { classStatus: "LIVE" },
   });
+
+  // Automatic joining waivers: a COMPLETED lecture going LIVE again stops
+  // counting. Background only, so starting the classroom is never delayed or
+  // failed by it.
+  if (lecture.classStatus === "COMPLETED") {
+    const waiverBefore = { classId: lecture.classId, date: lecture.date, classStatus: lecture.classStatus, status: 0 };
+    void recalculateAfterLectureChange(waiverBefore, { ...waiverBefore, classStatus: "LIVE" }).catch(() => {});
+  }
 
   emitLiveChange({ classId, kind: "jitsi", event: "started", sessionId: session.id });
 

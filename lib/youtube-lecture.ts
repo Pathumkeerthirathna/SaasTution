@@ -26,6 +26,7 @@ import {
     type YouTubeFeature,
 } from "@/lib/youtube-feature-state";
 import { serverNow } from "@/lib/server-clock";
+import { recalculateAfterLectureChange } from "@/services/fee-waiver-events";
 import { assertNoJibriShutdownInProgress } from "@/lib/jibri-shutdown-gate";
 import { forgetPolledYouTubeBroadcast, getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
 import {
@@ -761,6 +762,13 @@ async function startYouTubeLectureInternal(
         where: { id: lecture.id },
         data: { classStatus: "LIVE" },
     });
+
+    // Automatic joining waivers: a COMPLETED lecture going LIVE again stops
+    // counting. Background only; never delays or fails the YouTube start.
+    if (lecture.classStatus === "COMPLETED") {
+        const waiverBefore = { classId: lecture.classId, date: lecture.date, classStatus: lecture.classStatus, status: lecture.status };
+        void recalculateAfterLectureChange(waiverBefore, { ...waiverBefore, classStatus: "LIVE" }).catch(() => {});
+    }
 
     // 2. Get teacher's YouTube connection
     const connection =

@@ -2,9 +2,21 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
+import {
+  type BillingMonth,
+  type JoinWaiverResult,
+  isWaiverMonth,
+  joinWaiverColumns,
+} from "@/lib/fee-waiver";
 import { getPaymentDueStatus } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
-import { nowInSriLanka } from "@/lib/time";
+import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
+import {
+  type ClassMonthWaiverContext,
+  getFeeWaiverStart,
+  joinWaiverFor,
+  loadClassMonthWaiverContext,
+} from "@/services/class-fee-waiver-service";
 
 /**
  * Anything that can run the model queries this file needs — either the plain
@@ -32,6 +44,18 @@ export type FeePaymentDetail = {
   confirmedAt: string | null;
 };
 
+/** Snapshot of the automatic joining waiver applied to a fee row. */
+export type JoinWaiverSnapshot = {
+  sequence: number;
+  type: "PERCENTAGE" | "FIXED_AMOUNT";
+  value: number;
+  lecturesBefore: number;
+  /** Real UTC instant the enrolment counted from. */
+  enrolledAt: string;
+  baseAmount: number;
+  computedAt: string | null;
+};
+
 export type MonthlyFeeRow = {
   feeId: string | null;
   classStudentId: string;
@@ -48,6 +72,10 @@ export type MonthlyFeeRow = {
   amount: number;
   discount: number;
   lateJoinDeduct: number;
+  /** lateJoinDeduct was entered by the teacher (automatic calculation keeps it). */
+  lateJoinDeductManual: boolean;
+  /** The automatic joining waiver behind lateJoinDeduct, if any. */
+  joinWaiver: JoinWaiverSnapshot | null;
   waiverAmount: number;
   finalAmount: number;
   dueDate: string | null;
@@ -76,6 +104,8 @@ export type MonthlyFeeSheet = {
   dueDate: string;
   isPastDue: boolean;
   isDueSoon: boolean;
+  /** Automatic joining waivers apply to this month (on/after the launch month). */
+  joinWaiversActive: boolean;
   rows: MonthlyFeeRow[];
 };
 
@@ -86,6 +116,113 @@ function computeFinalAmount(
   waiverAmount: number
 ) {
   return Math.max(0, amount - discount - lateJoinDeduct - waiverAmount);
+}
+
+// ---- Automatic joining waiver helpers (see lib/fee-waiver.ts) -------------------
+
+/** Columns read to compare a row's current waiver with a recalculated one. */
+const WAIVER_STATE_SELECT = {
+  lateJoinDeductManual: true,
+  joinWaiverRuleId: true,
+  joinWaiverSequence: true,
+  joinWaiverType: true,
+  joinWaiverValue: true,
+  joinWaiverLecturesBefore: true,
+  joinWaiverEnrolledAt: true,
+  joinWaiverBaseAmount: true,
+} as const;
+
+type WaiverState = {
+  lateJoinDeduct: number;
+  joinWaiverRuleId: string | null;
+  joinWaiverSequence: number | null;
+  joinWaiverType: string | null;
+  joinWaiverValue: number | null;
+  joinWaiverLecturesBefore: number | null;
+  joinWaiverEnrolledAt: Date | null;
+  joinWaiverBaseAmount: number | null;
+};
+
+type WaiverColumns = ReturnType<typeof joinWaiverColumns>;
+
+function sameWaiver(row: WaiverState, next: WaiverColumns) {
+  return (
+    row.lateJoinDeduct === next.lateJoinDeduct &&
+    row.joinWaiverRuleId === next.joinWaiverRuleId &&
+    row.joinWaiverSequence === next.joinWaiverSequence &&
+    row.joinWaiverType === next.joinWaiverType &&
+    row.joinWaiverValue === next.joinWaiverValue &&
+    row.joinWaiverLecturesBefore === next.joinWaiverLecturesBefore &&
+    (row.joinWaiverEnrolledAt?.getTime() ?? null) === (next.joinWaiverEnrolledAt?.getTime() ?? null) &&
+    row.joinWaiverBaseAmount === next.joinWaiverBaseAmount
+  );
+}
+
+/** Columns that clear an automatic waiver snapshot (manual entry). */
+const CLEARED_WAIVER_SNAPSHOT = {
+  joinWaiverRuleId: null,
+  joinWaiverSequence: null,
+  joinWaiverType: null,
+  joinWaiverValue: null,
+  joinWaiverLecturesBefore: null,
+  joinWaiverEnrolledAt: null,
+  joinWaiverBaseAmount: null,
+  joinWaiverComputedAt: null,
+} as const;
+
+/**
+ * Loads (and caches per class+month) the waiver context, or null when the
+ * month is before the launch month (then no waiver column is ever written).
+ */
+function createWaiverContextCache(db: Db, start: BillingMonth | null) {
+  const cache = new Map<string, Promise<ClassMonthWaiverContext>>();
+
+  return async (classId: string, month: BillingMonth, studentIds?: string[]) => {
+    if (!isWaiverMonth(start, month)) {
+      return null;
+    }
+    const key = `${classId}|${month.year}-${month.month}|${studentIds?.join(",") ?? "*"}`;
+    let context = cache.get(key);
+    if (!context) {
+      context = loadClassMonthWaiverContext(db, classId, month, studentIds);
+      cache.set(key, context);
+    }
+    return context;
+  };
+}
+
+/** Waiver columns for a NEW fee row (all zero / empty when not applicable). */
+function newRowWaiverColumns(
+  context: ClassMonthWaiverContext | null,
+  studentId: string,
+  classStudentId: string,
+  amount: number
+): Partial<WaiverColumns> {
+  if (!context) return {};
+  const result: JoinWaiverResult = joinWaiverFor(context, studentId, classStudentId, amount);
+  return result.kind === "AUTO" ? joinWaiverColumns(result, new Date()) : {};
+}
+
+/**
+ * Writes an automatic-waiver update only if the row is still automatic and
+ * unpaid — and, with `updatedAt`, unchanged since it was read. A concurrent
+ * manual adjustment or payment confirmation always wins (nothing written).
+ */
+async function writeAutomaticWaiver(
+  db: Db,
+  row: { id: string; updatedAt?: Date },
+  data: Prisma.ClassStudentFeeUpdateManyMutationInput
+) {
+  const { count } = await db.classStudentFee.updateMany({
+    where: {
+      id: row.id,
+      ...(row.updatedAt ? { updatedAt: row.updatedAt } : {}),
+      lateJoinDeductManual: false,
+      payments: { none: { status: "CONFIRMED" } },
+    },
+    data,
+  });
+  return count > 0;
 }
 
 /**
@@ -104,7 +241,7 @@ function isCurrentPeriod(year: number, month: number) {
   return now.getUTCFullYear() === year && now.getUTCMonth() + 1 === month;
 }
 
-async function assertTeacherOwnsClass(teacherId: string, classId: string) {
+export async function assertTeacherOwnsClass(teacherId: string, classId: string) {
   const classInfo = await prisma.class.findFirst({
     where: { id: classId, teacherId, status: 0 },
     select: { id: true, name: true, monthlyFee: true, paymentDueWeek: true },
@@ -209,6 +346,7 @@ export async function ensureCurrentMonthFeeForClassStudent(
     select: {
       id: true,
       classId: true,
+      studentId: true,
       class: { select: { monthlyFee: true, paymentDueWeek: true } },
     },
   });
@@ -238,6 +376,16 @@ export async function ensureCurrentMonthFeeForClassStudent(
 
   const dueDate = computeDueDate(year, month, classStudent.class.paymentDueWeek);
 
+  // Automatic joining waiver, calculated in the caller's transaction (the
+  // enrolment being created is visible to it). Nothing for pre-launch months.
+  const waiverContext = await createWaiverContextCache(db, await getFeeWaiverStart(db))(
+    classStudent.classId,
+    { year, month },
+    [classStudent.studentId]
+  );
+  const waiver = newRowWaiverColumns(waiverContext, classStudent.studentId, classStudentId, currentFee);
+  const lateJoinDeduct = waiver.lateJoinDeduct ?? 0;
+
   await db.classStudentFee.create({
     data: {
       classStudentId,
@@ -247,7 +395,8 @@ export async function ensureCurrentMonthFeeForClassStudent(
       discount: 0,
       lateJoinDeduct: 0,
       waiverAmount: 0,
-      finalAmount: computeFinalAmount(currentFee, 0, 0, 0),
+      ...waiver,
+      finalAmount: computeFinalAmount(currentFee, 0, lateJoinDeduct, 0),
       dueDate,
       status: 0,
       createdAt: now,
@@ -276,7 +425,7 @@ async function processCurrentMonthFees(params: {
 
   const activeStudents = await prisma.classStudent.findMany({
     where: { classId, isActive: true, student: { status: 0 } },
-    select: { id: true },
+    select: { id: true, studentId: true },
   });
 
   if (activeStudents.length === 0) {
@@ -284,6 +433,13 @@ async function processCurrentMonthFees(params: {
   }
 
   const classStudentIds = activeStudents.map((entry) => entry.id);
+  const studentIdByEnrolment = new Map(activeStudents.map((entry) => [entry.id, entry.studentId]));
+
+  // Automatic joining waivers: null before the launch month (nothing written).
+  const waiverContext = await createWaiverContextCache(prisma, await getFeeWaiverStart())(classId, {
+    year,
+    month,
+  });
 
   const existing = await prisma.classStudentFee.findMany({
     where: { classStudentId: { in: classStudentIds }, year, month },
@@ -300,19 +456,28 @@ async function processCurrentMonthFees(params: {
 
   if (missing.length > 0) {
     await prisma.classStudentFee.createMany({
-      data: missing.map((classStudentId) => ({
-        classStudentId,
-        year,
-        month,
-        amount: currentFee,
-        discount: 0,
-        lateJoinDeduct: 0,
-        waiverAmount: 0,
-        finalAmount: computeFinalAmount(currentFee, 0, 0, 0),
-        dueDate,
-        status: 0,
-        createdAt: now,
-      })),
+      data: missing.map((classStudentId) => {
+        const waiver = newRowWaiverColumns(
+          waiverContext,
+          studentIdByEnrolment.get(classStudentId)!,
+          classStudentId,
+          currentFee
+        );
+        return {
+          classStudentId,
+          year,
+          month,
+          amount: currentFee,
+          discount: 0,
+          lateJoinDeduct: 0,
+          waiverAmount: 0,
+          ...waiver,
+          finalAmount: computeFinalAmount(currentFee, 0, waiver.lateJoinDeduct ?? 0, 0),
+          dueDate,
+          status: 0,
+          createdAt: now,
+        };
+      }),
       skipDuplicates: true,
     });
   }
@@ -323,7 +488,29 @@ async function processCurrentMonthFees(params: {
       : false;
     const paid = row.payments.some((p) => p.status === "CONFIRMED");
 
+    // The existing automatic due-date freeze also freezes the waiver.
     if (rowDueDatePassed || classDueDatePassed || paid) {
+      continue;
+    }
+
+    // Automatic rows also get their joining waiver recalculated (against the
+    // current fee). Written only if still automatic, unpaid and unchanged.
+    if (waiverContext && !row.lateJoinDeductManual) {
+      const next = joinWaiverColumns(
+        joinWaiverFor(waiverContext, studentIdByEnrolment.get(row.classStudentId)!, row.classStudentId, currentFee),
+        new Date()
+      );
+      const nextFinalWithWaiver = computeFinalAmount(currentFee, row.discount, next.lateJoinDeduct, row.waiverAmount);
+
+      if (row.amount === currentFee && row.finalAmount === nextFinalWithWaiver && sameWaiver(row, next)) {
+        continue;
+      }
+
+      await writeAutomaticWaiver(prisma, row, {
+        amount: currentFee,
+        finalAmount: nextFinalWithWaiver,
+        ...next,
+      });
       continue;
     }
 
@@ -368,7 +555,7 @@ async function processPastMonthFees(params: {
       assignedAt: { lte: end },
       OR: [{ removedAt: null }, { removedAt: { gte: start } }],
     },
-    select: { id: true },
+    select: { id: true, studentId: true },
   });
 
   if (enrolments.length === 0) {
@@ -392,20 +579,37 @@ async function processPastMonthFees(params: {
   const dueDate = computeDueDate(year, month, paymentDueWeek);
   const now = nowInSriLanka();
 
+  // Only NEW past rows get their automatic joining waiver; existing past rows
+  // are never touched here (only an explicit Reprocess recalculates them).
+  const studentIdByEnrolment = new Map(enrolments.map((entry) => [entry.id, entry.studentId]));
+  const waiverContext = await createWaiverContextCache(prisma, await getFeeWaiverStart())(classId, {
+    year,
+    month,
+  });
+
   await prisma.classStudentFee.createMany({
-    data: missing.map((classStudentId) => ({
-      classStudentId,
-      year,
-      month,
-      amount: periodFee,
-      discount: 0,
-      lateJoinDeduct: 0,
-      waiverAmount: 0,
-      finalAmount: computeFinalAmount(periodFee, 0, 0, 0),
-      dueDate,
-      status: 0,
-      createdAt: now,
-    })),
+    data: missing.map((classStudentId) => {
+      const waiver = newRowWaiverColumns(
+        waiverContext,
+        studentIdByEnrolment.get(classStudentId)!,
+        classStudentId,
+        periodFee
+      );
+      return {
+        classStudentId,
+        year,
+        month,
+        amount: periodFee,
+        discount: 0,
+        lateJoinDeduct: 0,
+        waiverAmount: 0,
+        ...waiver,
+        finalAmount: computeFinalAmount(periodFee, 0, waiver.lateJoinDeduct ?? 0, 0),
+        dueDate,
+        status: 0,
+        createdAt: now,
+      };
+    }),
     skipDuplicates: true,
   });
 }
@@ -459,10 +663,18 @@ export async function reprocessMonthlyFees(params: {
         assignedAt: { lte: end },
         OR: [{ removedAt: null }, { removedAt: { gte: start } }],
       },
-      select: { id: true },
+      select: { id: true, studentId: true },
     });
 
     const classStudentIds = enrolments.map((entry) => entry.id);
+    const studentIdByEnrolment = new Map(enrolments.map((entry) => [entry.id, entry.studentId]));
+
+    // Explicit Reprocess recalculates automatic joining waivers of unpaid rows
+    // (past or current, regardless of the due date); never before the launch month.
+    const waiverContext = await createWaiverContextCache(prisma, await getFeeWaiverStart())(classId, {
+      year,
+      month,
+    });
 
     const existing = await prisma.classStudentFee.findMany({
       where: { classStudentId: { in: classStudentIds }, year, month },
@@ -472,6 +684,7 @@ export async function reprocessMonthlyFees(params: {
         discount: true,
         lateJoinDeduct: true,
         waiverAmount: true,
+        ...WAIVER_STATE_SELECT,
         payments: { select: { status: true } },
       },
     });
@@ -481,19 +694,28 @@ export async function reprocessMonthlyFees(params: {
 
     if (missing.length > 0) {
       await prisma.classStudentFee.createMany({
-        data: missing.map((classStudentId) => ({
-          classStudentId,
-          year,
-          month,
-          amount: periodFee,
-          discount: 0,
-          lateJoinDeduct: 0,
-          waiverAmount: 0,
-          finalAmount: computeFinalAmount(periodFee, 0, 0, 0),
-          dueDate,
-          status: 0,
-          createdAt: now,
-        })),
+        data: missing.map((classStudentId) => {
+          const waiver = newRowWaiverColumns(
+            waiverContext,
+            studentIdByEnrolment.get(classStudentId)!,
+            classStudentId,
+            periodFee
+          );
+          return {
+            classStudentId,
+            year,
+            month,
+            amount: periodFee,
+            discount: 0,
+            lateJoinDeduct: 0,
+            waiverAmount: 0,
+            ...waiver,
+            finalAmount: computeFinalAmount(periodFee, 0, waiver.lateJoinDeduct ?? 0, 0),
+            dueDate,
+            status: 0,
+            createdAt: now,
+          };
+        }),
         skipDuplicates: true,
       });
     }
@@ -501,11 +723,52 @@ export async function reprocessMonthlyFees(params: {
     for (const row of existing) {
       const paid = row.payments.some((p) => p.status === "CONFIRMED");
 
+      if (!paid && waiverContext && !row.lateJoinDeductManual) {
+        const next = joinWaiverColumns(
+          joinWaiverFor(waiverContext, studentIdByEnrolment.get(row.classStudentId)!, row.classStudentId, periodFee),
+          new Date()
+        );
+
+        // Same write as below plus the waiver; skipped (not overwritten) if the
+        // row became manual or paid in the meantime.
+        const written = await writeAutomaticWaiver(prisma, { id: row.id }, {
+          amount: periodFee,
+          finalAmount: computeFinalAmount(periodFee, row.discount, next.lateJoinDeduct, row.waiverAmount),
+          dueDate,
+          status: 0,
+          ...next,
+        });
+
+        if (written) {
+          continue;
+        }
+
+        // Changed meanwhile (now manual or paid): fall through to the existing
+        // write below with fresh values, so a concurrent edit is not undone.
+        const fresh = await prisma.classStudentFee.findUnique({
+          where: { id: row.id },
+          select: {
+            discount: true,
+            lateJoinDeduct: true,
+            waiverAmount: true,
+            payments: { select: { status: true } },
+          },
+        });
+
+        if (!fresh) {
+          continue;
+        }
+
+        Object.assign(row, fresh);
+      }
+
+      const paidNow = row.payments.some((p) => p.status === "CONFIRMED");
+
       // A paid row is frozen: only its status is refreshed, the money is left
       // exactly as the student paid against it.
       await prisma.classStudentFee.update({
         where: { id: row.id },
-        data: paid
+        data: paidNow
           ? { status: 1 }
           : {
               amount: periodFee,
@@ -615,6 +878,8 @@ async function buildMonthlyFeeSheet(params: {
       amount: true,
       discount: true,
       lateJoinDeduct: true,
+      ...WAIVER_STATE_SELECT,
+      joinWaiverComputedAt: true,
       waiverAmount: true,
       finalAmount: true,
       dueDate: true,
@@ -694,6 +959,8 @@ async function buildMonthlyFeeSheet(params: {
         amount: fee.amount,
         discount: fee.discount,
         lateJoinDeduct: fee.lateJoinDeduct,
+        lateJoinDeductManual: fee.lateJoinDeductManual,
+        joinWaiver: toJoinWaiverSnapshot(fee),
         waiverAmount: fee.waiverAmount,
         finalAmount: fee.finalAmount,
         dueDate: fee.dueDate ? fee.dueDate.toISOString() : null,
@@ -717,6 +984,7 @@ async function buildMonthlyFeeSheet(params: {
     .sort((a, b) => a.studentName.localeCompare(b.studentName));
 
   const dueDate = computeDueDate(year, month, classInfo.paymentDueWeek);
+  const joinWaiversActive = isWaiverMonth(await getFeeWaiverStart(), { year, month });
 
   return {
     class: {
@@ -735,7 +1003,41 @@ async function buildMonthlyFeeSheet(params: {
     dueDate: dueDate.toISOString(),
     isPastDue: now.getTime() > dueDate.getTime(),
     isDueSoon: getPaymentDueStatus(dueDate, now) === "DUE_SOON",
+    joinWaiversActive,
     rows,
+  };
+}
+
+function toJoinWaiverSnapshot(fee: {
+  lateJoinDeductManual: boolean;
+  joinWaiverSequence: number | null;
+  joinWaiverType: "PERCENTAGE" | "FIXED_AMOUNT" | null;
+  joinWaiverValue: number | null;
+  joinWaiverLecturesBefore: number | null;
+  joinWaiverEnrolledAt: Date | null;
+  joinWaiverBaseAmount: number | null;
+  joinWaiverComputedAt: Date | null;
+}): JoinWaiverSnapshot | null {
+  if (
+    fee.lateJoinDeductManual ||
+    fee.joinWaiverSequence === null ||
+    fee.joinWaiverType === null ||
+    fee.joinWaiverValue === null ||
+    fee.joinWaiverLecturesBefore === null ||
+    fee.joinWaiverEnrolledAt === null ||
+    fee.joinWaiverBaseAmount === null
+  ) {
+    return null;
+  }
+
+  return {
+    sequence: fee.joinWaiverSequence,
+    type: fee.joinWaiverType,
+    value: fee.joinWaiverValue,
+    lecturesBefore: fee.joinWaiverLecturesBefore,
+    enrolledAt: fee.joinWaiverEnrolledAt.toISOString(),
+    baseAmount: fee.joinWaiverBaseAmount,
+    computedAt: fee.joinWaiverComputedAt ? fee.joinWaiverComputedAt.toISOString() : null,
   };
 }
 
@@ -785,9 +1087,14 @@ export async function setMonthlyFeeAmount(params: {
     where,
     select: {
       id: true,
+      year: true,
+      month: true,
+      classStudentId: true,
+      classStudent: { select: { studentId: true } },
       discount: true,
       lateJoinDeduct: true,
       waiverAmount: true,
+      ...WAIVER_STATE_SELECT,
       payments: { select: { status: true } },
     },
   });
@@ -814,10 +1121,43 @@ export async function setMonthlyFeeAmount(params: {
 
   const targets = allTargets.filter((row) => !paidIds.has(row.id));
 
+  // Automatic joining waivers follow the new amount (a percentage changes with
+  // it). Calculated before the batch; manual rows keep the existing write.
+  const waiverContextFor = createWaiverContextCache(prisma, await getFeeWaiverStart());
+  const nextWaivers = new Map<string, WaiverColumns>();
+
+  for (const row of targets) {
+    if (row.lateJoinDeductManual) continue;
+    const context = await waiverContextFor(classId, { year: row.year, month: row.month });
+    if (!context) continue;
+    nextWaivers.set(
+      row.id,
+      joinWaiverColumns(joinWaiverFor(context, row.classStudent.studentId, row.classStudentId, amount), new Date())
+    );
+  }
+
   if (targets.length > 0) {
     await prisma.$transaction(
-      targets.map((row) =>
-        prisma.classStudentFee.update({
+      targets.map((row) => {
+        const next = nextWaivers.get(row.id);
+
+        if (next) {
+          // Written only while still automatic and unpaid.
+          return prisma.classStudentFee.updateMany({
+            where: {
+              id: row.id,
+              lateJoinDeductManual: false,
+              payments: { none: { status: "CONFIRMED" } },
+            },
+            data: {
+              amount,
+              finalAmount: computeFinalAmount(amount, row.discount, next.lateJoinDeduct, row.waiverAmount),
+              ...next,
+            },
+          });
+        }
+
+        return prisma.classStudentFee.update({
           where: { id: row.id },
           data: {
             amount,
@@ -828,8 +1168,8 @@ export async function setMonthlyFeeAmount(params: {
               row.waiverAmount
             ),
           },
-        })
-      )
+        });
+      })
     );
 
     // Realtime: the affected students' payment pages should reflect the new amount.
@@ -936,14 +1276,26 @@ export async function updateStudentFeeAdjustment(params: {
     waiverAmount
   );
 
+  // A teacher-entered late-join deduction becomes manual: automatic joining
+  // waivers never overwrite it (only an explicit reset makes it automatic).
+  const lateJoinEnteredByTeacher =
+    params.lateJoinDeduct !== undefined && lateJoinDeduct !== fee.lateJoinDeduct;
+
   const updated = await prisma.classStudentFee.update({
     where: { id: fee.id },
-    data: { discount, lateJoinDeduct, waiverAmount, finalAmount },
+    data: {
+      discount,
+      lateJoinDeduct,
+      waiverAmount,
+      finalAmount,
+      ...(lateJoinEnteredByTeacher ? { lateJoinDeductManual: true, ...CLEARED_WAIVER_SNAPSHOT } : {}),
+    },
     select: {
       id: true,
       amount: true,
       discount: true,
       lateJoinDeduct: true,
+      lateJoinDeductManual: true,
       waiverAmount: true,
       finalAmount: true,
     },
@@ -953,4 +1305,203 @@ export async function updateStudentFeeAdjustment(params: {
   emitStudentDataChange({ classId: fee.classStudent.classId });
 
   return updated;
+}
+
+// ---- Automatic joining waiver: explicit events and reset ---------------------------
+
+/**
+ * Recalculates the automatic joining waivers of one class's billing month
+ * after an explicit event (student approval / decline, a lecture entering or
+ * leaving COMPLETED, or a COMPLETED lecture moving). Bypasses the automatic
+ * due-date freeze, but only touches UNPAID rows whose late-join deduction is
+ * automatic; each write is conditional on the row being unchanged since it
+ * was read, so a concurrent manual adjustment or payment always wins.
+ * Never touches months before the launch month. `studentIds` limits the rows.
+ */
+export async function recalculateJoinWaiversForClassMonth(params: {
+  classId: string;
+  month: BillingMonth;
+  studentIds?: string[];
+}): Promise<{ updated: number }> {
+  const { classId, month, studentIds } = params;
+  const context = await createWaiverContextCache(prisma, await getFeeWaiverStart())(classId, month, studentIds);
+
+  if (!context) {
+    return { updated: 0 };
+  }
+
+  const rows = await prisma.classStudentFee.findMany({
+    where: {
+      year: month.year,
+      month: month.month,
+      lateJoinDeductManual: false,
+      payments: { none: { status: "CONFIRMED" } },
+      classStudent: { classId, ...(studentIds ? { studentId: { in: studentIds } } : {}) },
+    },
+    select: {
+      id: true,
+      updatedAt: true,
+      classStudentId: true,
+      classStudent: { select: { studentId: true } },
+      amount: true,
+      discount: true,
+      lateJoinDeduct: true,
+      waiverAmount: true,
+      finalAmount: true,
+      ...WAIVER_STATE_SELECT,
+    },
+  });
+
+  let updated = 0;
+
+  for (const row of rows) {
+    const next = joinWaiverColumns(
+      joinWaiverFor(context, row.classStudent.studentId, row.classStudentId, row.amount),
+      new Date()
+    );
+    const finalAmount = computeFinalAmount(row.amount, row.discount, next.lateJoinDeduct, row.waiverAmount);
+
+    if (sameWaiver(row, next) && row.finalAmount === finalAmount) {
+      continue;
+    }
+
+    if (await writeAutomaticWaiver(prisma, row, { finalAmount, ...next })) {
+      updated += 1;
+    }
+  }
+
+  if (updated > 0) {
+    emitStudentDataChange({ classId });
+  }
+
+  return { updated };
+}
+
+/**
+ * After a student's approval or decline: recalculates that student's
+ * automatic joining waivers for the CURRENT Sri Lankan billing month, in
+ * every class (same protections as recalculateJoinWaiversForClassMonth).
+ */
+export async function recalculateStudentCurrentMonthJoinWaivers(studentId: string) {
+  const { year, month } = sriLankaCalendarParts(new Date());
+
+  const rows = await prisma.classStudentFee.findMany({
+    where: { year, month, classStudent: { studentId } },
+    select: { classStudent: { select: { classId: true } } },
+  });
+
+  const classIds = Array.from(new Set(rows.map((row) => row.classStudent.classId)));
+  let updated = 0;
+
+  for (const classId of classIds) {
+    updated += (await recalculateJoinWaiversForClassMonth({ classId, month: { year, month }, studentIds: [studentId] })).updated;
+  }
+
+  return { updated };
+}
+
+/**
+ * Explicit "Reset to automatic" for a manually entered late-join deduction.
+ * Writes only lateJoinDeduct, finalAmount, the manual flag and the waiver
+ * snapshot — never discount, waiverAmount, amount or payments — and only if,
+ * at write time, the row is still manual, unpaid and unchanged since read.
+ */
+export async function resetLateJoinDeductToAutomatic(params: { teacherId: string; feeId: string }) {
+  const { teacherId, feeId } = params;
+
+  const fee = await prisma.classStudentFee.findFirst({
+    where: { id: feeId, classStudent: { class: { teacherId } } },
+    select: {
+      id: true,
+      updatedAt: true,
+      year: true,
+      month: true,
+      amount: true,
+      discount: true,
+      waiverAmount: true,
+      lateJoinDeductManual: true,
+      classStudentId: true,
+      classStudent: { select: { classId: true, studentId: true } },
+      payments: { select: { status: true } },
+    },
+  });
+
+  if (!fee) {
+    throw new AppError("Fee record not found.", 404, "NOT_FOUND");
+  }
+
+  if (fee.payments.some((p) => p.status === "CONFIRMED")) {
+    throw new AppError("This fee is locked because the student has already paid.", 409, "FEE_LOCKED");
+  }
+
+  if (!fee.lateJoinDeductManual) {
+    throw new AppError("This late-join deduction is already automatic.", 409, "NOT_MANUAL");
+  }
+
+  const month = { year: fee.year, month: fee.month };
+  const context = await createWaiverContextCache(prisma, await getFeeWaiverStart())(
+    fee.classStudent.classId,
+    month,
+    [fee.classStudent.studentId]
+  );
+
+  if (!context) {
+    throw new AppError(
+      "Automatic joining waivers do not apply to this month.",
+      409,
+      "WAIVER_NOT_ACTIVE_FOR_MONTH"
+    );
+  }
+
+  const next = joinWaiverColumns(
+    joinWaiverFor(context, fee.classStudent.studentId, fee.classStudentId, fee.amount),
+    new Date()
+  );
+
+  const { count } = await prisma.classStudentFee.updateMany({
+    where: {
+      id: fee.id,
+      updatedAt: fee.updatedAt,
+      lateJoinDeductManual: true,
+      payments: { none: { status: "CONFIRMED" } },
+    },
+    data: {
+      ...next,
+      lateJoinDeductManual: false,
+      finalAmount: computeFinalAmount(fee.amount, fee.discount, next.lateJoinDeduct, fee.waiverAmount),
+    },
+  });
+
+  if (count === 0) {
+    // Someone changed it meanwhile: the newer data wins, nothing was written.
+    const current = await prisma.classStudentFee.findUnique({
+      where: { id: fee.id },
+      select: { payments: { select: { status: true } } },
+    });
+
+    if (current?.payments.some((p) => p.status === "CONFIRMED")) {
+      throw new AppError("This fee is locked because the student has already paid.", 409, "FEE_LOCKED");
+    }
+
+    throw new AppError(
+      "This fee was changed by someone else. Reload and try again.",
+      409,
+      "FEE_CHANGED"
+    );
+  }
+
+  emitStudentDataChange({ classId: fee.classStudent.classId });
+
+  return prisma.classStudentFee.findUniqueOrThrow({
+    where: { id: fee.id },
+    select: {
+      id: true,
+      amount: true,
+      discount: true,
+      lateJoinDeduct: true,
+      lateJoinDeductManual: true,
+      waiverAmount: true,
+      finalAmount: true,
+    },
+  });
 }

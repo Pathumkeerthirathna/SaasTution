@@ -22,7 +22,15 @@ import {
   ExternalLink,
   CheckCircle2,
   MessageCircleWarning,
+  Info,
+  ListOrdered,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 
 import {
@@ -70,6 +78,8 @@ type FeeRow = {
   amount: number;
   discount: number;
   lateJoinDeduct: number;
+  lateJoinDeductManual: boolean;
+  joinWaiver: JoinWaiverSnapshot | null;
   waiverAmount: number;
   finalAmount: number;
   dueDate: string | null;
@@ -78,6 +88,43 @@ type FeeRow = {
   paymentStatus: "PAID" | "PENDING" | "UNPAID";
   payments: FeePaymentDetail[];
 };
+
+type WaiverRuleType = "PERCENTAGE" | "FIXED_AMOUNT";
+
+type JoinWaiverSnapshot = {
+  sequence: number;
+  type: WaiverRuleType;
+  value: number;
+  lecturesBefore: number;
+  enrolledAt: string;
+  baseAmount: number;
+  computedAt: string | null;
+};
+
+type WaiverRule = {
+  id: string;
+  sequence: number;
+  type: WaiverRuleType;
+  value: number;
+};
+
+const MAX_WAIVER_RULES = 20;
+
+function describeRule(rule: { type: WaiverRuleType; value: number }) {
+  return rule.type === "PERCENTAGE" ? `${rule.value}%` : `Rs. ${rule.value.toLocaleString()}`;
+}
+
+// Real UTC instants shown as Sri Lankan time, whatever the browser's timezone.
+function formatSriLankaDateTime(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", {
+    timeZone: "Asia/Colombo",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 type FeeSheet = {
   class: { id: string; name: string; paymentDueWeek: number };
@@ -92,6 +139,7 @@ type FeeSheet = {
   dueDate: string;
   isPastDue: boolean;
   isDueSoon: boolean;
+  joinWaiversActive: boolean;
   rows: FeeRow[];
 };
 
@@ -132,6 +180,8 @@ export function ClassFeeSheetPanel() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [classesError, setClassesError] = useState<string | null>(null);
   const [classesLoading, setClassesLoading] = useState(true);
+  const [isWaiverRulesOpen, setIsWaiverRulesOpen] = useState(false);
+  const selectedClass = classes.find((c) => c.id === classId) ?? null;
 
   // Each mounted ClassFeeSheetDetail reports its own expected total here, so
   // the header can show a combined sum across every class currently shown.
@@ -216,13 +266,26 @@ export function ClassFeeSheetPanel() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] px-3 py-2 text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
-              {classId ? "Expected total" : "Expected total · all classes"}
-            </p>
-            <p className="text-lg font-bold text-[#1a3049]">
-              {rupees(combinedExpectedTotal)}
-            </p>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setIsWaiverRulesOpen(true)}
+              disabled={!selectedClass}
+              title={selectedClass ? "Automatic joining waiver rules" : "Select a class first"}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#b9cfe3] bg-white px-3 text-xs font-semibold text-[#264867] transition hover:bg-[#eef3f8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ListOrdered size={14} />
+              Waiver Rules
+            </button>
+
+            <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] px-3 py-2 text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
+                {classId ? "Expected total" : "Expected total · all classes"}
+              </p>
+              <p className="text-lg font-bold text-[#1a3049]">
+                {rupees(combinedExpectedTotal)}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -404,6 +467,14 @@ export function ClassFeeSheetPanel() {
           )}
         </div>
       ) : null}
+
+      {isWaiverRulesOpen && selectedClass ? (
+        <FeeWaiverRulesPanel
+          classId={selectedClass.id}
+          className={selectedClass.name}
+          onClose={() => setIsWaiverRulesOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -430,6 +501,9 @@ function ClassFeeSheetDetail({
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const [isReprocessing, setIsReprocessing] = useState(false);
   const [feeHistory, setFeeHistory] = useState<ClassFeeHistoryEntry[]>([]);
+  // Late-join deduction explanation (and its explicit reset to automatic).
+  const [explainFeeId, setExplainFeeId] = useState<string | null>(null);
+  const [isResettingLateJoin, setIsResettingLateJoin] = useState(false);
 
   const nowYear = now.getFullYear();
   const nowMonth = now.getMonth() + 1;
@@ -599,6 +673,7 @@ function ClassFeeSheetDetail({
         data?: {
           discount: number;
           lateJoinDeduct: number;
+          lateJoinDeductManual: boolean;
           waiverAmount: number;
           finalAmount: number;
         };
@@ -613,7 +688,14 @@ function ClassFeeSheetDetail({
         return {
           ...current,
           rows: current.rows.map((r) =>
-            r.feeId === row.feeId ? { ...r, ...payload.data! } : r
+            r.feeId === row.feeId
+              ? {
+                  ...r,
+                  ...payload.data!,
+                  // A manual late-join deduction replaces any automatic one.
+                  joinWaiver: payload.data!.lateJoinDeductManual ? null : r.joinWaiver,
+                }
+              : r
           ),
         };
       });
@@ -627,6 +709,44 @@ function ClassFeeSheetDetail({
       setSavingFeeId(null);
     }
   }
+
+  async function resetLateJoinToAutomatic(row: FeeRow) {
+    if (!row.feeId || isResettingLateJoin) return;
+
+    const confirmed = window.confirm(
+      `Reset ${row.studentName}'s late-join deduction to the automatic calculation? The manually entered amount will be replaced.`
+    );
+    if (!confirmed) return;
+
+    setIsResettingLateJoin(true);
+
+    try {
+      const response = await fetch(`/api/payments/fees/${row.feeId}/reset-late-join`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { success: boolean };
+
+      if (!response.ok || !payload.success) {
+        throw new Error(readApiError(payload, "Failed to reset the late-join deduction."));
+      }
+
+      toast.success("Late-join deduction reset to automatic.");
+      setExplainFeeId(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to reset the late-join deduction."
+      );
+    } finally {
+      setIsResettingLateJoin(false);
+      // Reload either way: shows the new automatic values, or the newer data
+      // that won a conflict.
+      void loadSheet();
+    }
+  }
+
+  const explainRow = explainFeeId
+    ? sheet?.rows.find((r) => r.feeId === explainFeeId) ?? null
+    : null;
 
   const totals = useMemo(() => {
     const rows = sheet?.rows ?? [];
@@ -900,13 +1020,17 @@ function ClassFeeSheetDetail({
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                             Late deduct
                           </p>
-                          <div className="mt-0.5">
+                          <div className="mt-0.5 flex items-center gap-1">
                             <AdjustInput
                               defaultValue={row.lateJoinDeduct}
                               disabled={locked}
                               onCommit={(value) =>
                                 void saveAdjustment(row, "lateJoinDeduct", value)
                               }
+                            />
+                            <LateJoinInfoButton
+                              row={row}
+                              onOpen={() => row.feeId && setExplainFeeId(row.feeId)}
                             />
                           </div>
                         </div>
@@ -1054,13 +1178,19 @@ function ClassFeeSheetDetail({
                           />
                         </td>
                         <td className="px-3 py-2" onClick={stop}>
-                          <AdjustInput
-                            defaultValue={row.lateJoinDeduct}
-                            disabled={locked}
-                            onCommit={(value) =>
-                              void saveAdjustment(row, "lateJoinDeduct", value)
-                            }
-                          />
+                          <div className="flex items-center gap-1">
+                            <AdjustInput
+                              defaultValue={row.lateJoinDeduct}
+                              disabled={locked}
+                              onCommit={(value) =>
+                                void saveAdjustment(row, "lateJoinDeduct", value)
+                              }
+                            />
+                            <LateJoinInfoButton
+                              row={row}
+                              onOpen={() => row.feeId && setExplainFeeId(row.feeId)}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-2" onClick={stop}>
                           <AdjustInput
@@ -1119,6 +1249,15 @@ function ClassFeeSheetDetail({
           </>
         ) : null}
 
+      {explainRow && sheet ? (
+        <LateJoinExplanation
+          row={explainRow}
+          joinWaiversActive={sheet.joinWaiversActive}
+          isResetting={isResettingLateJoin}
+          onReset={() => void resetLateJoinToAutomatic(explainRow)}
+          onClose={() => setExplainFeeId(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1543,5 +1682,493 @@ function AdjustInput({
       }}
       className="h-8 w-24 rounded-md border border-slate-200 px-2 text-xs text-slate-700 outline-none transition focus:border-[#3d6690] disabled:cursor-not-allowed disabled:bg-slate-50"
     />
+  );
+}
+
+// ---- Automatic joining waiver UI ---------------------------------------------------
+
+/** Small button beside a Late deduct input: opens its explanation. */
+function LateJoinInfoButton({ row, onOpen }: { row: FeeRow; onOpen: () => void }) {
+  const label = row.lateJoinDeductManual
+    ? "Manual late-join deduction"
+    : row.joinWaiver
+      ? `Automatic: rule ${row.joinWaiver.sequence}`
+      : "Late-join deduction details";
+
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      disabled={!row.feeId}
+      title={label}
+      aria-label={label}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        row.lateJoinDeductManual
+          ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+          : row.joinWaiver
+            ? "border-[#b9cfe3] bg-[#eef3f8] text-[#264867] hover:bg-[#dce7f1]"
+            : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
+      }`}
+    >
+      <Info size={13} />
+    </button>
+  );
+}
+
+/** Explanation of a row's late-join deduction (automatic, manual or none). */
+function LateJoinExplanation({
+  row,
+  joinWaiversActive,
+  isResetting,
+  onReset,
+  onClose,
+}: {
+  row: FeeRow;
+  joinWaiversActive: boolean;
+  isResetting: boolean;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const paid = row.paymentStatus === "PAID";
+  const waiver = row.joinWaiver;
+
+  // Portalled to <body>: inside the sheet's space-y containers the overlay
+  // would inherit a top margin and leave a strip of the page uncovered.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-3 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="late-join-explanation-title"
+        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 id="late-join-explanation-title" className="text-sm font-semibold text-slate-900">
+              Late-join deduction
+            </h3>
+            <p className="truncate text-xs text-slate-500">
+              {row.studentName}
+              {row.registrationNumber ? ` (${row.registrationNumber})` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {row.lateJoinDeductManual ? (
+          <div className="mt-3 space-y-3">
+            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+              Manual
+            </span>
+            <p className="text-xs leading-relaxed text-slate-600">
+              Entered manually by the teacher: <strong>{rupees(row.lateJoinDeduct)}</strong>. Automatic
+              joining waivers never change a manual deduction.
+            </p>
+            {paid ? (
+              <p className="text-xs text-slate-500">This invoice is paid, so it can no longer change.</p>
+            ) : !joinWaiversActive ? (
+              <p className="text-xs text-slate-500">
+                Automatic joining waivers do not apply to this month, so it cannot be reset.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={onReset}
+                disabled={isResetting}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#b9cfe3] bg-white px-3 text-xs font-semibold text-[#264867] transition hover:bg-[#eef3f8] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isResetting ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                Reset to automatic
+              </button>
+            )}
+          </div>
+        ) : waiver ? (
+          <div className="mt-3 space-y-3">
+            <span className="inline-flex rounded-full bg-[#dce7f1] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
+              Automatic
+            </span>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+              <dt className="text-slate-500">Rule applied</dt>
+              <dd className="font-semibold text-slate-900">
+                Rule {waiver.sequence} · {describeRule(waiver)}
+                {waiver.type === "PERCENTAGE" ? " (percentage)" : " (fixed amount)"}
+              </dd>
+              <dt className="text-slate-500">Joined</dt>
+              <dd className="text-slate-900">{formatSriLankaDateTime(waiver.enrolledAt)} (Sri Lanka)</dd>
+              <dt className="text-slate-500">Completed lectures before joining</dt>
+              <dd className="text-slate-900">{waiver.lecturesBefore}</dd>
+              <dt className="text-slate-500">Original fee</dt>
+              <dd className="text-slate-900">{rupees(waiver.baseAmount)}</dd>
+              <dt className="text-slate-500">Deducted</dt>
+              <dd className="font-semibold text-slate-900">{rupees(row.lateJoinDeduct)}</dd>
+            </dl>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Only one rule applies: rule {waiver.sequence} for {waiver.lecturesBefore} completed
+              lecture{waiver.lecturesBefore === 1 ? "" : "s"} held this month before the student joined.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+              No automatic waiver
+            </span>
+            <p className="text-xs leading-relaxed text-slate-600">
+              {joinWaiversActive
+                ? "No joining waiver applies: the student did not join this month after completed lectures, or the class has no waiver rules."
+                : "Automatic joining waivers do not apply to this month."}
+            </p>
+            {row.lateJoinDeduct > 0 ? (
+              <p className="text-xs text-slate-600">Current deduction: {rupees(row.lateJoinDeduct)}</p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Side panel: the selected class's sequential joining-waiver rules. */
+function FeeWaiverRulesPanel({
+  classId,
+  className,
+  onClose,
+}: {
+  classId: string;
+  className: string;
+  onClose: () => void;
+}) {
+  const [rules, setRules] = useState<WaiverRule[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [newType, setNewType] = useState<WaiverRuleType>("PERCENTAGE");
+  const [newValue, setNewValue] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editType, setEditType] = useState<WaiverRuleType>("PERCENTAGE");
+  const [editValue, setEditValue] = useState("");
+
+  const endpoint = `/api/classes/${classId}/fee-waiver-rules`;
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setIsLoading(true);
+      setErrorMessage(null);
+      try {
+        const response = await fetch(endpoint, { cache: "no-store" });
+        const payload = (await response.json()) as { success: boolean; data?: { rules: WaiverRule[] } };
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(readApiError(payload, "Failed to load waiver rules."));
+        }
+        if (!cancelled) setRules(payload.data.rules);
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(error instanceof Error ? error.message : "Failed to load waiver rules.");
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint]);
+
+  async function send(url: string, method: "POST" | "PUT" | "DELETE", body?: unknown) {
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { rules: WaiverRule[] };
+        message?: string;
+      };
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(readApiError(payload, "Failed to save the waiver rules."));
+      }
+      setRules(payload.data.rules);
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to save the waiver rules.");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function addRule() {
+    if (await send(endpoint, "POST", { type: newType, value: Number(newValue) })) {
+      setNewValue("");
+      toast.success("Waiver rule added.");
+    }
+  }
+
+  async function saveEdit(ruleId: string) {
+    if (await send(`${endpoint}/${ruleId}`, "PUT", { type: editType, value: Number(editValue) })) {
+      setEditingId(null);
+      toast.success("Waiver rule updated.");
+    }
+  }
+
+  async function removeRule(rule: WaiverRule) {
+    const confirmed = window.confirm(
+      `Remove rule ${rule.sequence} (${describeRule(rule)})? Later rules move up one position. Existing invoices keep the rule they already used.`
+    );
+    if (!confirmed) return;
+    if (await send(`${endpoint}/${rule.id}`, "DELETE")) {
+      toast.success("Waiver rule removed.");
+    }
+  }
+
+  const atLimit = rules.length >= MAX_WAIVER_RULES;
+
+  // Portalled to <body> (see LateJoinExplanation).
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fee-waiver-rules-title"
+        className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+          <div className="min-w-0">
+            <h3 id="fee-waiver-rules-title" className="text-sm font-semibold text-slate-900">
+              Waiver Rules
+            </h3>
+            <p className="truncate text-xs text-slate-500">{className}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <p className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] p-3 text-[11px] leading-relaxed text-[#264867]">
+            Rule N applies when N completed lectures of the billing month were held before the student
+            joined. Only one rule applies, and rules are never added together. If more lectures were
+            held than there are rules, the last rule applies. The current month updates automatically
+            until its due date; use Reprocess for later or past months.
+          </p>
+
+          {errorMessage ? (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {errorMessage}
+            </p>
+          ) : null}
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rules</p>
+              <p className="text-[10px] font-semibold text-slate-400">
+                {rules.length} / {MAX_WAIVER_RULES}
+              </p>
+            </div>
+
+            {isLoading ? (
+              <p className="flex items-center gap-1.5 text-xs text-slate-400">
+                <Loader2 size={12} className="animate-spin" />
+                Loading rules...
+              </p>
+            ) : rules.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500">
+                No rules: no automatic joining waiver applies to this class.
+              </p>
+            ) : (
+              <ol className="space-y-1.5">
+                {rules.map((rule) => (
+                  <li key={rule.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                    {editingId === rule.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-700">Rule {rule.sequence}</span>
+                        <RuleValueInputs
+                          type={editType}
+                          value={editValue}
+                          onTypeChange={setEditType}
+                          onValueChange={setEditValue}
+                          disabled={isSaving}
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void saveEdit(rule.id)}
+                            disabled={isSaving || !editValue.trim()}
+                            className="h-8 rounded-md bg-[#32598A] px-3 text-xs font-semibold text-white transition hover:bg-[#264867] disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            disabled={isSaving}
+                            className="h-8 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-slate-700">
+                          <span className="font-semibold">Rule {rule.sequence}</span>
+                          <span className="text-slate-400"> · </span>
+                          {rule.sequence} completed lecture{rule.sequence === 1 ? "" : "s"} before joining
+                          <span className="text-slate-400"> → </span>
+                          <span className="font-semibold text-[#264867]">{describeRule(rule)}</span>
+                        </p>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(rule.id);
+                              setEditType(rule.type);
+                              setEditValue(String(rule.value));
+                            }}
+                            disabled={isSaving}
+                            aria-label={`Edit rule ${rule.sequence}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removeRule(rule)}
+                            disabled={isSaving}
+                            aria-label={`Remove rule ${rule.sequence}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-rose-500 transition hover:bg-rose-50"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Add rule {rules.length + 1}
+            </p>
+            {atLimit ? (
+              <p className="text-xs text-slate-500">A class can have at most {MAX_WAIVER_RULES} rules.</p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <RuleValueInputs
+                  type={newType}
+                  value={newValue}
+                  onTypeChange={setNewType}
+                  onValueChange={setNewValue}
+                  disabled={isSaving || isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => void addRule()}
+                  disabled={isSaving || isLoading || !newValue.trim()}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#32598A] px-3 text-xs font-semibold text-white transition hover:bg-[#264867] disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                  Add
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>,
+    document.body
+  );
+}
+
+function RuleValueInputs({
+  type,
+  value,
+  onTypeChange,
+  onValueChange,
+  disabled,
+}: {
+  type: WaiverRuleType;
+  value: string;
+  onTypeChange: (type: WaiverRuleType) => void;
+  onValueChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={type}
+        onChange={(event) => onTypeChange(event.target.value as WaiverRuleType)}
+        disabled={disabled}
+        aria-label="Waiver type"
+        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-[#3d6690]"
+      >
+        <option value="PERCENTAGE">Percentage</option>
+        <option value="FIXED_AMOUNT">Fixed amount</option>
+      </select>
+      <div className="relative">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={type === "PERCENTAGE" ? 100 : undefined}
+          step={1}
+          value={value}
+          onChange={(event) => onValueChange(event.target.value)}
+          disabled={disabled}
+          aria-label={type === "PERCENTAGE" ? "Percentage" : "Amount in rupees"}
+          placeholder={type === "PERCENTAGE" ? "10" : "500"}
+          className="h-8 w-24 rounded-md border border-slate-200 py-0 pl-2 pr-7 text-xs text-slate-700 outline-none focus:border-[#3d6690]"
+        />
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">
+          {type === "PERCENTAGE" ? "%" : "Rs"}
+        </span>
+      </div>
+    </div>
   );
 }
