@@ -11,6 +11,8 @@ const PROTECTED_ROUTES = [
   "/api/auth/password/update",
   "/api/classes",
   "/api/students",
+  // Teacher-only student profile data (each route also checks ownership).
+  "/api/student/Profile",
   "/api/guardians",
   "/api/messages",
   "/api/lectures",
@@ -116,6 +118,7 @@ export const config = {
     "/api/auth/password/update",
     "/api/classes/:path*",
     "/api/students/:path*",
+    "/api/student/Profile/:path*",
     "/api/guardians/:path*",
     "/api/messages/:path*",
     "/api/lectures/:path*",

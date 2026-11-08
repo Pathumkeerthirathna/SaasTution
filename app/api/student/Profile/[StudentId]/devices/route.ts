@@ -1,24 +1,21 @@
-import { NextRequest } from "next/server";
-
 import { apiSuccess } from "@/lib/api-response";
-import { getStudentDevicesByStudentId } from "@/services/student-device.service";
 import { handleRouteError } from "@/lib/error-handler";
-type RouteContext = {
-  params: Promise<{
-    studentId: string;
-  }>;
-};
+import { requireTeacherOwnedStudent } from "@/lib/teacher-student-access";
+import { getStudentDevicesByStudentId } from "@/services/student-device.service";
 
+export const dynamic = "force-dynamic";
+
+// Teacher-only (/dashboard/students/[id]): the signed-in teacher's own student
+// (401 without a teacher session, 404 for an unknown or another teacher's student).
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ StudentId: string }> }
 ) {
   try {
     const { StudentId } = await params;
+    const { studentId } = await requireTeacherOwnedStudent(StudentId);
 
-    console.log(StudentId);
-
-    const devices = await getStudentDevicesByStudentId(StudentId);
+    const devices = await getStudentDevicesByStudentId(studentId);
 
     return apiSuccess(devices);
   } catch (error) {

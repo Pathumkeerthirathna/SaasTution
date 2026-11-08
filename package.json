@@ -14,6 +14,7 @@
     "test:errors": "node --test tests/error-logging/error-logging.test.cjs tests/error-logging/review-fixes.test.cjs",
     "test:devices": "node --test tests/devices/device-decision-email.test.cjs",
     "test:students": "node --test tests/students/email-reuse.test.cjs tests/students/registration-number.test.cjs tests/students/registration-number-migration-guard.test.cjs tests/students/student-name.test.cjs tests/students/resend-registration-emails.test.cjs",
+    "test:security": "node --test tests/security/student-profile-routes.test.cjs",
     "test:fee-waiver": "node --test tests/fee-waiver/fee-waiver-calc.test.cjs tests/fee-waiver/fee-waiver-migration-guard.test.cjs tests/fee-waiver/fee-waiver-integration.test.cjs",
     "test:time": "node --test tests/time/sri-lanka-lecture-time.test.cjs",
     "test:codec": "tsx --test tests/codec-test/arms.test.ts tests/codec-test/token.test.ts tests/codec-test/stats.test.ts tests/codec-test/cli.test.ts tests/codec-test/time.test.ts",
