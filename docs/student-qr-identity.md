@@ -5,9 +5,8 @@ token** only — never a database ID, registration number, name or other
 personal data.
 
 Status: database model, token crypto, service, student and teacher APIs and
-UI are implemented. Not implemented yet: the QR **scanner** and the
-administrative **reissue operation** used for secret rotation (see
-[Secret rotation](#secret-rotation-explicit-administrative-operation-only)).
+UI, and the operator tool for secret rotation are implemented. Not
+implemented yet: the QR **scanner**.
 
 | Layer | File |
 |---|---|
@@ -18,6 +17,7 @@ administrative **reissue operation** used for secret rotation (see
 | Student routes | `app/api/students/me/qr/**` |
 | Teacher routes | `app/api/students/[id]/qr/**` |
 | UI | `components/qr/qr-identity-card.tsx` (shared), `components/student-portal/student-qr-panel.tsx`, `app/student/Components/StudentQrIdentity.tsx` |
+| Secret rotation (operator CLI only) | `scripts/student-qr-reissue.ts`, `services/student-qr-reissue-service.ts` |
 
 ## API endpoints
 
@@ -106,8 +106,11 @@ drawn inside a PNG.
    never matches again. A scanned revoked QR is `INVALID_QR_PAYLOAD`.
 5. **Resolve** (`resolveQrPayload`, for the future scanner) returns only
    `studentId`, `teacherId`, `name`, `registrationNumber`, `isActive`.
-6. **System reissue** (`reason = SYSTEM_REISSUE`, revoker `SYSTEM`) is reserved
-   for the administrative reissue operation — **not implemented yet**.
+6. **System reissue** — only by the operator CLI during a secret rotation:
+   the active token is revoked by `SYSTEM` (`revokedReason = SYSTEM_REISSUE`,
+   `revokedById` NULL) and replaced by a `SYSTEM_REISSUE` row
+   (`createdByRole = SYSTEM`, `createdById` NULL) derived with the new
+   secret. Not counted towards the regeneration limit.
 
 ## Storage model (`StudentQrToken`)
 
@@ -214,34 +217,125 @@ imported by the API routes and `lib/student-qr-http.ts`.
 ## Secret rotation (explicit administrative operation only)
 
 Changing `STUDENT_QR_SECRET` changes every derived token, so **every existing
-QR — printed or downloaded — stops working**.
+QR — printed or downloaded — stops working** and every active token must be
+reissued under the new secret.
 
 1. Rotation is **never automatic**. Normal QR rendering **never** creates new
    tokens, and neither do issuing or resolving: a stored QR that does not
    verify under the current secret fails as `QR_TOKEN_UNVERIFIABLE` (503), and
    the rows stay untouched.
-2. Rotate only on a confirmed or suspected compromise of the secret, with
-   approval.
-3. **Current limitation:** the administrative reissue operation (revoke every
-   active token as `SYSTEM` / `SYSTEM_REISSUE` and create a `SYSTEM_REISSUE`
-   replacement, not counted towards the limit) is **not implemented yet**.
-   Until it exists, a rotation leaves every student's QR unverifiable, and the
-   Settings / profile UI cannot repair it (the Regenerate button needs a
-   working image). The only recovery today is a same-origin
-   `POST .../qr/regenerate` per student, which counts towards that student's
-   limit. **Do not rotate in production until the reissue operation is
-   implemented**, except in an emergency.
+2. Rotate only on a confirmed or suspected compromise of the secret (or a
+   planned key change), with approval.
+3. Reissuance is done **only** by the operator CLI
+   `scripts/student-qr-reissue.ts` (`npm run qr:reissue`). There is no HTTP
+   endpoint; no route, page, middleware or startup code imports it (a test
+   enforces this).
 
-Procedure once the reissue operation exists:
+### What the tool does
 
-1. Announce the change (students and teachers will need new QR codes).
-2. Generate the new value (`openssl rand -base64 48`); keep the old value
-   until the procedure is complete.
-3. Set `STUDENT_QR_SECRET` to the new value on every server; restart.
-4. Run the reissue operation once, then verify with the status routes that
-   QR images load again.
-5. Students and teachers download / print the new QR codes.
-6. Destroy the old value.
+- Reads the secrets **only** from the environment —
+  `STUDENT_QR_SECRET_OLD` (the secret the application uses now) and
+  `STUDENT_QR_SECRET_NEW` — never from arguments or files. Unknown arguments
+  are rejected without being echoed.
+- Validates both with the normal rules (≥ 32 random bytes, not `JWT_SECRET`)
+  and refuses identical secrets (also the same key in another encoding).
+- Classifies every active token by re-deriving it: verifies with the **old**
+  secret → to be reissued; with the **new** secret → already reissued (left
+  alone); with **neither** → the whole run **refuses** and changes nothing
+  (tokens are never skipped silently).
+- **Dry run** (default): that classification inside a `READ ONLY`
+  transaction — no locks, no writes.
+- **Execute**: one transaction, all or nothing. It locks every `Student` row
+  (`FOR NO KEY UPDATE`, the lock QR issuance and regeneration take; foreign-key
+  inserts such as attendance are not blocked), reads the active tokens, revokes
+  each old-secret token (`revokedAt` = one application UTC instant,
+  `revokedByRole = SYSTEM`, `revokedById` NULL, `revokedReason = SYSTEM_REISSUE`)
+  and inserts its replacement (new row id and nonce, `reason = SYSTEM_REISSUE`,
+  `createdByRole = SYSTEM`, `createdById` NULL, same `createdAt`; only nonce
+  and hash stored), then re-verifies everything before committing. QR issuance
+  and regeneration requests that arrive meanwhile wait (lock timeout 30 s for
+  the tool) and run after the commit.
+- Re-running is safe: already reissued tokens are recognised by the new
+  secret; no duplicates are ever created.
+- Output: the target `host:port/database` and counts only — never a secret,
+  token, nonce, hash, credential or row contents. Exit codes: 0 done / nothing
+  to do, 1 refused or failed, 2 usage error.
+
+### Procedure
+
+Run on the production server (the tool uses `DATABASE_URL`, which Prisma also
+loads from the project `.env`). Plan a short window: QR images are unavailable
+from step 5 until step 6 completes.
+
+1. **Announce** the change: students and teachers must download / print their
+   new QR codes afterwards.
+2. **Generate the replacement secret** on a trusted machine and store it in the
+   team's password manager **before** using it (losing it after the rotation
+   means rotating again):
+
+   ```sh
+   openssl rand -base64 48
+   ```
+
+3. **Load both secrets into the shell environment** without putting them in
+   the shell history, a file or the command line (bash):
+
+   ```sh
+   read -rs STUDENT_QR_SECRET_OLD && export STUDENT_QR_SECRET_OLD   # paste the CURRENT secret, Enter
+   read -rs STUDENT_QR_SECRET_NEW && export STUDENT_QR_SECRET_NEW   # paste the NEW secret, Enter
+   ```
+
+4. **Dry run** (no writes):
+
+   ```sh
+   npm run qr:reissue
+   ```
+
+   Check the target database line and the counts. "verify with neither" must
+   be 0; otherwise `STUDENT_QR_SECRET_OLD` is not the secret in use (see
+   Recovery).
+5. **Execute** (`<database>` = the database name shown as the target):
+
+   ```sh
+   npm run qr:reissue -- --execute --confirm-reissue-all-student-qr --confirm-database=<database>
+   ```
+
+   From the commit on, the still-running application (old secret) answers
+   `QR_TOKEN_UNVERIFIABLE` (503, shown as "not available") for every reissued
+   QR — expected until step 6.
+6. **Switch the application to the new secret** immediately: set
+   `STUDENT_QR_SECRET` to the new value in the application's environment
+   (production `.env` / PM2 environment) and restart the app so it loads it
+   (e.g. `pm2 restart <app> --update-env`).
+7. **Catch-up run**: repeat step 5. It reissues the few tokens the old
+   application may have created between steps 5 and 6 (a first issue or a
+   regeneration made in that window used the old secret). Repeat the dry run
+   until it reports 0 to reissue and 0 unverifiable.
+8. **Verify**: as a student and as a teacher, open a QR (it loads and
+   decodes); an old printed QR no longer resolves.
+9. `unset STUDENT_QR_SECRET_OLD STUDENT_QR_SECRET_NEW`, close the shell, and
+   destroy the old secret everywhere.
+
+### Availability impact
+
+- Old printed / downloaded QR codes stop working permanently at step 5.
+- Between step 5 and the restart in step 6, every student with a QR sees
+  "QR codes are not available right now" (503) in Settings and on the teacher
+  profile. Keep the window short (minutes).
+- During the execute transaction itself (seconds), QR issuance and
+  regeneration requests wait for it; attendance and other writes are not
+  blocked.
+- Regeneration quotas are unaffected (`SYSTEM_REISSUE` is never counted).
+
+### Recovery
+
+| Situation | State | What to do |
+|---|---|---|
+| Refused: invalid / identical secrets, "verify with neither" > 0, missing confirmation | **Nothing changed** | Fix the input. "Neither" usually means `STUDENT_QR_SECRET_OLD` is not the secret the app uses — check the application environment. If some tokens still fail with the right secret, stop and investigate (corrupted rows or an earlier, unfinished rotation with a third secret); do not force anything. |
+| Execute failed (database error, lock timeout, connection lost, killed) | **Rolled back completely** — one transaction; the app keeps working with the old secret | Fix the cause (e.g. retry outside peak time), then run the dry run and execute again. |
+| Execute succeeded, app not switched yet / restart failed | QR images unavailable (503) | Complete step 6. To abandon the rotation instead, run the tool **reversed** (`STUDENT_QR_SECRET_OLD` = the new secret, `STUDENT_QR_SECRET_NEW` = the old one): it reissues everything back under the old secret. The QR codes change again either way. |
+| Some QRs still unavailable after the switch | Tokens created by the old app in the window | Catch-up run (step 7). |
+| New secret lost after execute | Reissued tokens cannot be verified | Rotate again to a fresh secret: with neither secret known the tool refuses, so this needs developer help. Prevent it with step 2. |
 
 ## Deployment prerequisites
 
@@ -277,4 +371,4 @@ include `nonce` / `tokenHash`) never reach stdout or the error log.
 | Command | Covers |
 |---|---|
 | `npm run test:student-qr` | Migration guard, token crypto (incl. server-only), student + teacher routes (in-memory) |
-| `STUDENT_QR_TEST_DATABASE_URL=postgresql://user@127.0.0.1:<port>/qr_<name> npm run test:student-qr-db` | Service against a **throwaway local** PostgreSQL that already has the migration (refuses non-local hosts and other database names) |
+| `STUDENT_QR_TEST_DATABASE_URL=postgresql://user@127.0.0.1:<port>/qr_<name> npm run test:student-qr-db` | Service and secret rotation (incl. the CLI) against a **throwaway local** PostgreSQL that already has the migration (refuses non-local hosts, other database names and — for the rotation tests — databases holding active tokens they did not create) |
