@@ -134,6 +134,16 @@ function fmtDate(value: string) {
   });
 }
 
+// Lecture dates are Sri Lankan dates, whatever the browser's timezone.
+function fmtSriLankaDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Colombo",
+  });
+}
+
 function fmtDateTime(value: string) {
   return new Date(value).toLocaleString(undefined, {
     day: "numeric",
@@ -389,7 +399,7 @@ function StudentQuizzesPageInner() {
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <CalendarDays size={11} />
-                          {fmtDate(quiz.lectureDate)}
+                          {fmtSriLankaDate(quiz.lectureDate)}
                         </span>
                         <span className="text-slate-400">· {quiz.className}</span>
                       </p>

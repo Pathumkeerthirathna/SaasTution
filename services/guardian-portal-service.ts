@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { sriLankaDigitsToInstant } from "@/lib/time";
 import {
   getStudentAttendanceAnalytics,
   getStudentPaymentSummary,
@@ -199,8 +200,14 @@ export async function getGuardianStudentAssignments(
   studentId: string,
   filters: RangeFilter = {}
 ) {
-  const fromDate = filters.from ? new Date(`${filters.from}T00:00:00.000`) : undefined;
-  const toDate = filters.to ? new Date(`${filters.to}T23:59:59.999`) : undefined;
+  // Sri Lankan calendar days as real instants (dueDate is a real instant),
+  // whatever the server's timezone.
+  const fromDate = filters.from
+    ? sriLankaDigitsToInstant(new Date(`${filters.from}T00:00:00.000Z`))
+    : undefined;
+  const toDate = filters.to
+    ? sriLankaDigitsToInstant(new Date(`${filters.to}T23:59:59.999Z`))
+    : undefined;
 
   const assignments = await prisma.assignment.findMany({
     where: {

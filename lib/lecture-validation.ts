@@ -24,6 +24,9 @@ const lectureDate = z.preprocess((value) => {
   return value;
 }, z.coerce.date());
 
+/** Assignment due date: exactly the same Sri Lankan rule as lecture dates. */
+const assignmentDueDate = lectureDate;
+
 export const createLectureSchema = z.object({
   classId: uuid,
   title: z
@@ -80,7 +83,7 @@ export const createAssignmentSchema = z.object({
     .trim()
     .min(5, "Assignment description must be at least 5 characters long.")
     .max(2000, "Assignment description must be at most 2000 characters long."),
-  dueDate: z.coerce.date(),
+  dueDate: assignmentDueDate,
 });
 
 export const updateAssignmentSchema = z
@@ -97,7 +100,7 @@ export const updateAssignmentSchema = z
       .min(5, "Assignment description must be at least 5 characters long.")
       .max(2000, "Assignment description must be at most 2000 characters long.")
       .optional(),
-    dueDate: z.coerce.date().optional(),
+    dueDate: assignmentDueDate.optional(),
   })
   .refine(
     (value) => value.title !== undefined || value.description !== undefined || value.dueDate !== undefined,

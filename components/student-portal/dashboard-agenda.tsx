@@ -120,6 +120,17 @@ function fmtDay(iso: string) {
   return parseDay(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
+// Assignment due dates are Sri Lankan time, whatever the browser's timezone.
+function fmtSriLankaDateTime(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Colombo",
+  });
+}
+
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
@@ -494,7 +505,7 @@ export function DashboardAgenda() {
                         </p>
                         <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 text-[11px] font-medium">
                           <CalendarClock size={10} className="text-slate-400" />
-                          <span className="text-slate-500">Due {fmtDateTime(a.dueDate)}</span>
+                          <span className="text-slate-500">Due {fmtSriLankaDateTime(a.dueDate)}</span>
                           {a.submitted ? (
                             <span className="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
                               Submitted

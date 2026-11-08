@@ -388,10 +388,185 @@ test("metrics: response structure and the other counts are unchanged", async () 
   assert.deepEqual(metrics.lectures, { scheduled: 0, total: 1 });
   assert.deepEqual(metrics.events, { pending: 0, total: 0 });
   assert.deepEqual(metrics.materials, { pendingToSend: 0, total: 0 });
-  // Only the lecture query changed: every other window is still the original from/to.
+  // Lecture dates and assignment due dates use Sri Lankan day boundaries as
+  // real instants (section 11); events still use the original from/to.
   const assignmentWhere = calls.find((c) => c.model === "assignment").args.where;
-  assert.equal(assignmentWhere.dueDate.gte, MON_FROM);
-  assert.equal(assignmentWhere.dueDate.lte, MON_TO);
+  assert.equal(iso(assignmentWhere.dueDate.gte), "2026-11-08T18:30:00.000Z");
+  assert.equal(iso(assignmentWhere.dueDate.lte), "2026-11-09T18:29:59.999Z");
   const eventWhere = calls.find((c) => c.model === "teacherCalendarEvent").args.where;
   assert.equal(eventWhere.startDateTime.gte, MON_FROM);
+  assert.equal(eventWhere.startDateTime.lte, MON_TO);
+});
+
+// ---- 11. Assignment due dates (Sri Lankan time) ------------------------------
+
+const { createAssignmentSchema, updateAssignmentSchema } = require(path.join(root, "lib", "lecture-validation.ts"));
+
+const createDue = (dueDate) =>
+  createAssignmentSchema.safeParse({ title: "Essay", description: "Write an essay.", dueDate });
+const updateDue = (dueDate) => updateAssignmentSchema.safeParse({ dueDate });
+
+test("assignment due 6:00 PM Sri Lankan time is 12:30 UTC, winter and summer (create and edit)", () => {
+  assert.equal(iso(createDue("2026-11-08T18:00").data.dueDate), "2026-11-08T12:30:00.000Z");
+  assert.equal(iso(createDue("2026-07-08T18:00").data.dueDate), "2026-07-08T12:30:00.000Z");
+  assert.equal(iso(updateDue("2026-11-08T18:00").data.dueDate), "2026-11-08T12:30:00.000Z");
+  assert.equal(iso(updateDue("2026-07-08T18:00").data.dueDate), "2026-07-08T12:30:00.000Z");
+});
+
+test("assignment late-night, month, year and Berlin DST due dates", () => {
+  const late = createDue("2026-11-08T23:59").data.dueDate;
+  assert.equal(iso(late), "2026-11-08T18:29:00.000Z");
+  assert.equal(time.sriLankaDateKey(late), "2026-11-08");
+  assert.equal(iso(createDue("2026-11-30T23:30").data.dueDate), "2026-11-30T18:00:00.000Z");
+  assert.equal(time.sriLankaDateKey(createDue("2026-12-01T00:15").data.dueDate), "2026-12-01");
+  assert.equal(iso(createDue("2026-12-31T23:59").data.dueDate), "2026-12-31T18:29:00.000Z");
+  assert.equal(time.sriLankaDateKey(createDue("2027-01-01T00:00").data.dueDate), "2027-01-01");
+  assert.equal(iso(createDue("2026-03-29T02:30").data.dueDate), "2026-03-28T21:00:00.000Z");
+  assert.equal(iso(createDue("2026-10-25T02:30").data.dueDate), "2026-10-24T21:00:00.000Z");
+});
+
+test("assignment ISO inputs with Z or explicit offsets are unchanged; invalid input rejected", () => {
+  assert.equal(iso(createDue("2026-11-08T12:30:00.000Z").data.dueDate), "2026-11-08T12:30:00.000Z");
+  assert.equal(iso(createDue("2026-11-08T18:00:00+05:30").data.dueDate), "2026-11-08T12:30:00.000Z");
+  assert.equal(iso(updateDue("2026-11-08T18:00:00+01:00").data.dueDate), "2026-11-08T17:00:00.000Z");
+  for (const bad of ["2026-02-30T10:00", "2026-11-08T24:00", "nope", ""]) {
+    assert.equal(createDue(bad).success, false, `create accepted ${JSON.stringify(bad)}`);
+    assert.equal(updateDue(bad).success, false, `update accepted ${JSON.stringify(bad)}`);
+  }
+  assert.equal(createAssignmentSchema.safeParse({ title: "Essay", description: "Write an essay." }).success, false);
+  assert.equal(updateAssignmentSchema.safeParse({ title: "Only the title" }).success, true);
+});
+
+test("quiz start/end times keep their existing parsing (not part of this change)", () => {
+  const src = fs.readFileSync(path.join(root, "lib", "lecture-validation.ts"), "utf8");
+  assert.match(src, /startDateTime: z\.coerce\.date\(\),\s*endDateTime: z\.coerce\.date\(\),/);
+});
+
+test("assignment create then edit without changing the time keeps the exact instant", () => {
+  for (const typed of ["2026-11-08T18:00", "2026-11-08T23:30", "2026-12-31T23:59", "2026-07-08T06:05"]) {
+    const stored = createDue(typed).data.dueDate;
+    const shownInEditForm = time.toSriLankaDateTimeLocal(new Date(iso(stored)));
+    assert.equal(shownInEditForm, typed);
+    assert.equal(iso(updateDue(shownInEditForm).data.dueDate), iso(stored));
+  }
+});
+
+test("overdue stays a plain instant comparison (unchanged) against the real due instant", () => {
+  const due = createDue("2026-11-08T18:00").data.dueDate; // 12:30Z
+  assert.equal(due < new Date("2026-11-08T12:29:59.999Z"), false, "not overdue a moment before 18:00 SL");
+  assert.equal(due < new Date("2026-11-08T12:30:00.001Z"), true, "overdue right after 18:00 SL");
+  const button = fs.readFileSync(path.join(root, "components", "student-portal", "assignment-submit-button.tsx"), "utf8");
+  assert.match(button, /const isOverdue = dueDate < new Date\(\);/);
+  const page = fs.readFileSync(path.join(root, "app", "student", "assignments", "page.tsx"), "utf8");
+  assert.match(page, /const overdue = !sub && dueDate\.getTime\(\) < now;/);
+});
+
+test("student countdown: assignment due at 18:00 SL counts down to 12:30 UTC", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-08T09:30:00.000Z") }); // 15:00 SL
+  reset();
+  rows["assignment.findMany"] = [
+    {
+      id: "A1",
+      title: "Essay",
+      dueDate: createDue("2026-11-08T18:00").data.dueDate,
+      lectureId: "L1",
+      lecture: { classId: CLASS_ID, class: { name: "Maths" } },
+    },
+  ];
+  const items = await getStudentUpcomingCountdowns("student-1");
+  const item = items.find((i) => i.kind === "ASSIGNMENT");
+  assert.equal(item.startsAt, "2026-11-08T12:30:00.000Z");
+  const where = calls.find((c) => c.model === "assignment").args.where;
+  assert.equal(iso(where.dueDate.gt), "2026-11-08T09:30:00.000Z", "window still starts at the real now");
+});
+
+// Route + services that filter by due-date day boundaries.
+fake("lib/auth-session.ts", {
+  requireStudentSession: async () => ({ role: "STUDENT", studentId: "student-1" }),
+});
+const assignmentsDueRoute = require(path.join(root, "app", "api", "student", "dashboard", "assignments-due", "route.ts"));
+const { getGuardianStudentAssignments } = require(path.join(root, "services", "guardian-portal-service.ts"));
+const { getStudentDashboardCounts } = require(path.join(root, "services", "student-dashboard-counts-service.ts"));
+
+test("assignments-due API: Sri Lankan day boundaries as real instants", async () => {
+  reset();
+  const response = await assignmentsDueRoute.GET(
+    new Request("http://localhost/api/student/dashboard/assignments-due?from=2026-11-01&to=2026-11-30")
+  );
+  assert.equal(response.status, 200);
+  const where = calls.find((c) => c.model === "assignment").args.where;
+  assert.equal(iso(where.dueDate.gte), "2026-10-31T18:30:00.000Z"); // 1 Nov 00:00 SL
+  assert.equal(iso(where.dueDate.lte), "2026-11-30T18:29:59.999Z"); // 30 Nov 23:59:59.999 SL
+  // A due date at 00:15 SL on 1 Nov is inside; 23:59 SL on 31 Oct is not.
+  assert.ok(createDue("2026-11-01T00:15").data.dueDate >= where.dueDate.gte);
+  assert.ok(createDue("2026-10-31T23:59").data.dueDate < where.dueDate.gte);
+  assert.ok(createDue("2026-11-30T23:59").data.dueDate <= where.dueDate.lte);
+});
+
+test("assignments-due API: year boundary, and validation unchanged", async () => {
+  reset();
+  await assignmentsDueRoute.GET(new Request("http://localhost/x?from=2026-12-31&to=2027-01-01"));
+  const where = calls.find((c) => c.model === "assignment").args.where;
+  assert.equal(iso(where.dueDate.gte), "2026-12-30T18:30:00.000Z");
+  assert.equal(iso(where.dueDate.lte), "2027-01-01T18:29:59.999Z");
+  const bad = await assignmentsDueRoute.GET(new Request("http://localhost/x?from=2026-11&to=2026-11-30"));
+  assert.equal(bad.status, 400);
+});
+
+test("guardian assignments filter: Sri Lankan day boundaries", async () => {
+  reset();
+  await getGuardianStudentAssignments("student-1", { from: "2026-11-01", to: "2026-11-30" });
+  const where = calls.find((c) => c.model === "assignment").args.where;
+  assert.equal(iso(where.dueDate.gte), "2026-10-31T18:30:00.000Z");
+  assert.equal(iso(where.dueDate.lte), "2026-11-30T18:29:59.999Z");
+  reset();
+  await getGuardianStudentAssignments("student-1", {});
+  assert.equal(calls.find((c) => c.model === "assignment").args.where.dueDate, undefined, "no range: no filter");
+});
+
+test("student dashboard counts: assignment due dates use Sri Lankan month/quarter/year", async (t) => {
+  // 1 Dec 2026 01:00 in Sri Lanka (still 30 Nov in UTC and Berlin).
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-30T19:30:00.000Z") });
+  const dueWindow = async (range) => {
+    reset();
+    await getStudentDashboardCounts("student-1", range);
+    return calls.find((c) => c.model === "assignment" && c.method === "count").args.where.dueDate;
+  };
+
+  const month = await dueWindow("month");
+  assert.equal(iso(month.gte), "2026-11-30T18:30:00.000Z"); // 1 Dec 00:00 SL
+  assert.equal(iso(month.lte), "2026-12-31T18:29:59.999Z"); // 31 Dec 23:59:59.999 SL
+  const quarter = await dueWindow("quarter");
+  assert.equal(iso(quarter.gte), "2026-09-30T18:30:00.000Z");
+  assert.equal(iso(quarter.lte), "2026-12-31T18:29:59.999Z");
+  const year = await dueWindow("year");
+  assert.equal(iso(year.gte), "2025-12-31T18:30:00.000Z");
+  assert.equal(iso(year.lte), "2026-12-31T18:29:59.999Z");
+  assert.equal(await dueWindow("all"), undefined);
+});
+
+test("assignment due-date displays use Asia/Colombo; requests send the typed value", () => {
+  const read = (...p) => fs.readFileSync(path.join(root, ...p), "utf8");
+  const panel = read("components", "lecture-assignment-panel.tsx");
+  assert.match(panel, /return toSriLankaDateTimeLocal\(new Date\(value\)\);/);
+  assert.match(panel, /dueDate: draft\.dueDate,/);
+  assert.equal((panel.match(/dueDate\)\.toLocaleString\(undefined, SRI_LANKA_TIME_ZONE\)/g) ?? []).length, 3);
+  assert.doesNotMatch(panel, /dueDate\)\.toLocaleString\(\)/);
+
+  const page = read("app", "student", "assignments", "page.tsx");
+  assert.match(page, /fmtSriLankaDate\(item\.dueDate\)/);
+  assert.match(page, /fmtSriLankaDate\(item\.lectureDate\)/);
+  assert.match(page, /fmtDate\(item\.submission!\.submittedAt\)/, "submission time display unchanged");
+  assert.match(read("app", "student", "quizzes", "page.tsx"), /fmtSriLankaDate\(quiz\.lectureDate\)/);
+  assert.match(
+    read("components", "student-portal", "lecture-list-client.tsx"),
+    /dueDate\.toLocaleDateString\(undefined, \{[\s\S]{0,200}timeZone: "Asia\/Colombo"/
+  );
+  const agenda = read("components", "student-portal", "dashboard-agenda.tsx");
+  assert.match(agenda, /Due \{fmtSriLankaDateTime\(a\.dueDate\)\}/);
+  assert.match(agenda, /fmtDateTime\(p\.startTime\)/, "paper times unchanged");
+  assert.match(
+    read("components", "guardian", "GuardianPortal.tsx"),
+    /r\.dueDate\)\.toLocaleDateString\(undefined, \{[\s\S]{0,240}timeZone: "Asia\/Colombo"/
+  );
 });

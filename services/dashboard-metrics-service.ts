@@ -144,7 +144,8 @@ export async function getTeacherDashboardMetrics(
       where: {
         status: 0,
         lecture: { status: 0, class: { teacherId, status: 0 } },
-        dueDate: { gte: from, lte: to },
+        // Sri Lankan day boundaries as real instants (dueDate is a real instant).
+        dueDate: { gte: sriLankaDigitsToInstant(from), lte: sriLankaDigitsToInstant(to) },
       },
       select: {
         id: true,

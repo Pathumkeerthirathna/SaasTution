@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { sriLankaCalendarParts, sriLankaDigitsToInstant } from "@/lib/time";
 
 export type CountsRange = "month" | "quarter" | "year" | "all";
 
@@ -31,6 +32,30 @@ function rangeBounds(range: CountsRange): { gte: Date; lte: Date } | null {
   return { gte: new Date(y, now.getMonth(), 1), lte: new Date(y, now.getMonth() + 1, 0, 23, 59, 59, 999) };
 }
 
+/**
+ * The same month / quarter / year as {@link rangeBounds}, but as Sri Lankan
+ * calendar periods (real instants), whatever the server's timezone. Used for
+ * assignment due dates.
+ */
+function sriLankaRangeBounds(range: CountsRange): { gte: Date; lte: Date } | null {
+  if (range === "all") return null;
+  const { year, month } = sriLankaCalendarParts(new Date());
+  const monthIndex = month - 1;
+  const quarterStart = Math.floor(monthIndex / 3) * 3;
+
+  const [startMonth, endMonth] =
+    range === "year"
+      ? [0, 12]
+      : range === "quarter"
+        ? [quarterStart, quarterStart + 3]
+        : [monthIndex, monthIndex + 1];
+
+  return {
+    gte: sriLankaDigitsToInstant(new Date(Date.UTC(year, startMonth, 1))),
+    lte: sriLankaDigitsToInstant(new Date(Date.UTC(year, endMonth, 1) - 1)),
+  };
+}
+
 export async function getStudentDashboardCounts(
   studentId: string,
   range: CountsRange
@@ -53,10 +78,11 @@ export async function getStudentDashboardCounts(
       ...(dateFilter ? { date: dateFilter } : {}),
     },
   };
+  const dueDateBounds = sriLankaRangeBounds(range);
   const assignmentWhere = {
     status: 0,
     lecture: { status: 0, class: enrolled },
-    ...(dateFilter ? { dueDate: dateFilter } : {}),
+    ...(dueDateBounds ? { dueDate: { gte: dueDateBounds.gte, lte: dueDateBounds.lte } } : {}),
   };
   const quizWhere = {
     status: 0,

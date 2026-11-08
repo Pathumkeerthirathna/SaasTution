@@ -958,6 +958,7 @@ export function LectureListClient() {
                                 day: "numeric",
                                 month: "short",
                                 year: "numeric",
+                                timeZone: "Asia/Colombo",
                               })}
                             </p>
                             {a.description ? (

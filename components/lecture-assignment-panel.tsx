@@ -18,6 +18,8 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { toSriLankaDateTimeLocal } from "@/lib/time";
+
 type LectureAssignment = {
   id: string;
   title: string;
@@ -71,14 +73,13 @@ function readApiError(payload: unknown, fallbackMessage: string) {
   return typed.error?.message ?? typed.message ?? fallbackMessage;
 }
 
+// Due dates are Sri Lankan time everywhere, whatever the browser's timezone.
+const SRI_LANKA_TIME_ZONE = { timeZone: "Asia/Colombo" } as const;
+
 function toDateTimeLocal(value: string) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  // The edit form shows (and sends back, unchanged) Sri Lankan wall-clock
+  // time; the server reads a timezone-less value as Sri Lankan time.
+  return toSriLankaDateTimeLocal(new Date(value));
 }
 
 function createEmptyDraft(): AssignmentDraft {
@@ -449,7 +450,7 @@ export function LectureAssignmentPanel(props: {
                 <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{assignment.description}</p>
                 <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
                   <Calendar size={10} />
-                  Due: {new Date(assignment.dueDate).toLocaleString()}
+                  Due: {new Date(assignment.dueDate).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}
                 </p>
               </button>
 
@@ -584,7 +585,7 @@ export function LectureAssignmentPanel(props: {
               ) : null}
               {submissionsData ? (
                 <p className="mt-1 text-[11px] text-slate-600">
-                  Due {new Date(submissionsData.assignment.dueDate).toLocaleString()} • {submissionsData.totalSubmissions}/{submissionsData.assignment.totalEnrolled} submissions
+                  Due {new Date(submissionsData.assignment.dueDate).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)} • {submissionsData.totalSubmissions}/{submissionsData.assignment.totalEnrolled} submissions
                 </p>
               ) : null}
             </div>
@@ -616,7 +617,7 @@ export function LectureAssignmentPanel(props: {
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Due</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-900">{new Date(submissionsData.assignment.dueDate).toLocaleString()}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-900">{new Date(submissionsData.assignment.dueDate).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Status</p>

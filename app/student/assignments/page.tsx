@@ -134,6 +134,16 @@ function fmtDate(value: string) {
   });
 }
 
+// Due dates and lecture dates are Sri Lankan dates, whatever the browser's timezone.
+function fmtSriLankaDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Colombo",
+  });
+}
+
 export default function StudentAssignmentsPage() {
   return (
     <Suspense fallback={null}>
@@ -376,7 +386,7 @@ function StudentAssignmentsPageInner() {
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <CalendarDays size={11} />
-                          {fmtDate(item.lectureDate)}
+                          {fmtSriLankaDate(item.lectureDate)}
                         </span>
                         <span className="text-slate-400">· {item.className}</span>
                       </p>
@@ -390,7 +400,7 @@ function StudentAssignmentsPageInner() {
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
                           <CalendarClock size={10} />
-                          Due {fmtDate(item.dueDate)}
+                          Due {fmtSriLankaDate(item.dueDate)}
                         </span>
                         {sub ? (
                           <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">

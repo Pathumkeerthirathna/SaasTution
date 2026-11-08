@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { sriLankaDigitsToInstant } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,10 @@ export async function GET(request: Request) {
       throw new AppError("`from` and `to` must be YYYY-MM-DD dates.", 400, "VALIDATION_ERROR");
     }
 
-    const fromDate = new Date(`${from}T00:00:00.000`);
-    const toDate = new Date(`${to}T23:59:59.999`);
+    // `from` / `to` are Sri Lankan calendar days; dueDate is a real instant, so
+    // the window is those days' real start / end, whatever the server's timezone.
+    const fromDate = sriLankaDigitsToInstant(new Date(`${from}T00:00:00.000Z`));
+    const toDate = sriLankaDigitsToInstant(new Date(`${to}T23:59:59.999Z`));
 
     const rows = await prisma.assignment.findMany({
       where: {

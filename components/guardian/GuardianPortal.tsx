@@ -828,6 +828,8 @@ function AssignmentsTab({ studentId }: { studentId: string }) {
                       day: "numeric",
                       month: "short",
                       year: "numeric",
+                      // Assignment due dates are Sri Lankan dates.
+                      timeZone: "Asia/Colombo",
                     })}
                   </p>
                 </div>
