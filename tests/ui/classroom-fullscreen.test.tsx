@@ -266,3 +266,73 @@ test("Jitsi's own fullscreen button stays off on mobile (one entry point per dev
 
   assert.match(toolbar, /export const teacherToolbar = isMobile/);
 });
+
+/* ------------------------------ "Fullscreen unavailable" notice ------------------------------ */
+
+// Mirrors handleEnterFullscreen's decision with the real helpers: the notice
+// is shown only when the capability check says "unsupported" and the result
+// is the fallback, at most once per page session.
+async function pressFullscreen(kind: "standard" | "webkit" | "none", state: { shown: boolean; opens: number }, options = {}) {
+  const { doc, element } = fakeDocument(kind, options);
+  const nativeFullscreenSupported = isFullscreenApiEnabled(doc);
+  const mode = await quiet(() => enterClassroomFullscreen(doc, () => requestElementFullscreen(element)));
+
+  if (mode === "fallback" && !nativeFullscreenSupported && !state.shown) {
+    state.shown = true;
+    state.opens += 1;
+  }
+
+  return mode;
+}
+
+test("notice: Android / desktop (native fullscreen) never shows it; refused requests don't either", async () => {
+  const state = { shown: false, opens: 0 };
+
+  assert.equal(await pressFullscreen("standard", state), "native");
+  assert.equal(await pressFullscreen("webkit", state), "native");
+  assert.equal(await pressFullscreen("standard", state, { refuse: true }), "fallback");
+  assert.equal(state.opens, 0);
+});
+
+test("notice: iPhone (API unavailable) shows it with the CSS fallback, once per page session", async () => {
+  const state = { shown: false, opens: 0 };
+
+  assert.equal(await pressFullscreen("none", state), "fallback");
+  assert.equal(await pressFullscreen("none", state), "fallback");
+  assert.equal(await pressFullscreen("none", state), "fallback");
+  assert.equal(state.opens, 1);
+});
+
+test("notice wiring: capability read before the request, fallback unchanged, once-per-session ref", () => {
+  const code = source("components", "Jitsi", "JitsiClassroom.tsx");
+  const handler = code.slice(code.indexOf("const handleEnterFullscreen = async () => {"), code.indexOf("const handleExitFullscreen"));
+
+  assert.match(code, /isFullscreenApiEnabled,\s*\} from "\.\/fullscreen\.mjs";/);
+  // Synchronous capability read, before the (unchanged) request.
+  assert.ok(handler.indexOf("isFullscreenApiEnabled(") < handler.indexOf("await enterClassroomFullscreen("));
+  const handlerCode = handler.replace(/^\s*\/\/.*$/gm, "");
+  assert.equal((handlerCode.match(/\bawait /g) ?? []).length, 1, "no extra await before the fullscreen request");
+  assert.match(handler, /if \(!nativeFullscreenSupported && !fullscreenUnavailableShownRef\.current\) \{\s*fullscreenUnavailableShownRef\.current = true;\s*setShowFullscreenUnavailable\(true\);/);
+  assert.doesNotMatch(handler, /navigator\.userAgent/);
+  // Exit is untouched and doesn't reset the once-per-session flag.
+  const exit = code.slice(code.indexOf("const handleExitFullscreen"), code.indexOf("// In fullscreen the header"));
+  assert.doesNotMatch(exit, /fullscreenUnavailable/);
+});
+
+test("notice dialog: exact text, X and Got it both close it, above the CSS fallback, fallback kept", () => {
+  const code = source("components", "Jitsi", "JitsiClassroom.tsx");
+  const start = code.indexOf("{showFullscreenUnavailable && (");
+  const dialog = code.slice(start, code.indexOf("</main>", start));
+
+  assert.ok(start > 0);
+  assert.match(dialog, /role="dialog"/);
+  assert.match(dialog, /aria-modal="true"/);
+  assert.match(dialog, />\s*Fullscreen unavailable\s*</);
+  assert.match(dialog, /This device&apos;s browsers don&apos;t allow websites to hide the browser address bar\./);
+  assert.match(dialog, /For a better classroom viewing experience, use Safari in portrait mode and allow its browser toolbar to collapse, or add SLClassroom to your Home Screen for an app-like experience\./);
+  assert.match(dialog, />\s*Got it\s*</);
+  assert.match(dialog, /aria-label="Close"[\s\S]*?<X size=\{16\} \/>/);
+  assert.equal((dialog.match(/onClick=\{\(\) => setShowFullscreenUnavailable\(false\)\}/g) ?? []).length, 2);
+  assert.doesNotMatch(dialog, /setIsCssFullscreenFallback/, "closing the notice keeps the fallback");
+  assert.match(dialog, /fixed inset-0 z-\[120\]/, "above the fullscreen wrapper (z-[100])");
+});

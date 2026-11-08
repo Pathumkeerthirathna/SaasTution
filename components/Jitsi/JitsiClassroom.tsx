@@ -59,6 +59,7 @@ import {
   exitElementFullscreen,
   FULLSCREEN_CHANGE_EVENTS,
   getFullscreenElement,
+  isFullscreenApiEnabled,
 } from "./fullscreen.mjs";
 import {
   backoffDelay,
@@ -438,6 +439,11 @@ const [classStudents, setClassStudents] =
   // reflection of the real fullscreenchange event, unchanged.
   const [isCssFullscreenFallback, setIsCssFullscreenFallback] = useState(false);
   const isFullscreenActive = isFullscreen || isCssFullscreenFallback;
+
+  // "Fullscreen unavailable" notice: where the browser has no element
+  // fullscreen at all (iPhone), explains why its bars stay. Once per page session.
+  const [showFullscreenUnavailable, setShowFullscreenUnavailable] = useState(false);
+  const fullscreenUnavailableShownRef = useRef(false);
 
   // The CSS fallback has no browser exit gesture of its own: Escape leaves it
   // (real fullscreen's Escape / Back arrive as fullscreenchange instead).
@@ -1969,6 +1975,12 @@ const [classStudents, setClassStudents] =
   // document.fullscreenEnabled is false) or refuses. Called straight from the
   // click, so the request keeps the user's gesture.
   const handleEnterFullscreen = async () => {
+    // Read synchronously (no await before the request below), using the same
+    // capability check enterClassroomFullscreen uses.
+    const nativeFullscreenSupported = isFullscreenApiEnabled(
+      typeof document === "undefined" ? undefined : document
+    );
+
     const mode = await enterClassroomFullscreen(
       typeof document === "undefined" ? undefined : document,
       () => jitsiMeetingRef.current?.requestFullscreen()
@@ -1976,6 +1988,12 @@ const [classStudents, setClassStudents] =
 
     if (mode === "fallback") {
       setIsCssFullscreenFallback(true);
+
+      // Only when native fullscreen is unsupported (not merely refused).
+      if (!nativeFullscreenSupported && !fullscreenUnavailableShownRef.current) {
+        fullscreenUnavailableShownRef.current = true;
+        setShowFullscreenUnavailable(true);
+      }
     }
   };
 
@@ -2460,6 +2478,57 @@ const [classStudents, setClassStudents] =
       )}
 
     </div>
+
+    {/* Fullscreen unavailable (browsers without element fullscreen, e.g.
+        iPhone): above the CSS fullscreen fallback (z-[100]). Closes with
+        "Got it" or X only; the fallback underneath stays on. */}
+    {showFullscreenUnavailable && (
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sl-fullscreen-unavailable-title"
+          aria-describedby="sl-fullscreen-unavailable-body"
+          className="w-full max-w-sm rounded-[18px] border border-white/[0.08] bg-[#0E2347] p-4 text-left shadow-[0_18px_48px_-12px_rgba(2,6,23,0.7),inset_0_1px_0_rgba(255,255,255,0.04)]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h3
+              id="sl-fullscreen-unavailable-title"
+              className="text-[15px] font-semibold leading-tight tracking-[-0.01em] text-[#F8FAFC]"
+            >
+              Fullscreen unavailable
+            </h3>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setShowFullscreenUnavailable(false)}
+              className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#94A3B8] transition hover:bg-white/10 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div id="sl-fullscreen-unavailable-body" className="mt-2 space-y-2 text-[13px] leading-snug text-[#CBD5E1]">
+            <p>
+              This device&apos;s browsers don&apos;t allow websites to hide the browser address bar.
+            </p>
+            <p>
+              For a better classroom viewing experience, use Safari in portrait mode and allow its browser toolbar to collapse, or add SLClassroom to your Home Screen for an app-like experience.
+            </p>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowFullscreenUnavailable(false)}
+              className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-[#0E2347] transition hover:bg-slate-100"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
   </main>
 );
