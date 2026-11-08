@@ -129,6 +129,7 @@ fake("lib/prisma.ts", { prisma: client });
 const qrRoute = require(path.join(root, "app", "api", "students", "me", "qr", "route.ts"));
 const statusRoute = require(path.join(root, "app", "api", "students", "me", "qr", "status", "route.ts"));
 const regenerateRoute = require(path.join(root, "app", "api", "students", "me", "qr", "regenerate", "route.ts"));
+const issueRoute = require(path.join(root, "app", "api", "students", "me", "qr", "issue", "route.ts"));
 const { middleware } = require(path.join(root, "middleware.ts"));
 
 // ---------------------------------------------------------------- helpers
@@ -170,6 +171,13 @@ const assertNoStore = (response) => {
   assert.equal(response.headers.get("vary"), "Cookie");
 };
 
+/** Explicit, same-origin issuance of the signed-in student's first QR. */
+const issue = async () => {
+  const response = await issueRoute.POST(sameOriginPost("/api/students/me/qr/issue"));
+  assert.equal(response.status, 200, "issue");
+  return response;
+};
+
 const sensitiveValues = () => store.tokens.flatMap((t) => [t.nonce, t.tokenHash]).concat(SECRET);
 
 // Silence the expected operator warnings ([student-qr] ...).
@@ -190,6 +198,7 @@ test("unauthenticated: middleware answers 401 for every QR route (no cookie)", a
     ["/api/students/me/qr", "GET"],
     ["/api/students/me/qr/status", "GET"],
     ["/api/students/me/qr/regenerate", "POST"],
+    ["/api/students/me/qr/issue", "POST"],
   ]) {
     const { NextRequest } = require("next/server");
     const response = await middleware(new NextRequest(`${APP_ORIGIN}${url}`, { method }));
@@ -204,6 +213,7 @@ test("routes themselves answer 401 without a student session (teacher or none), 
       await qrRoute.GET(get("/api/students/me/qr")),
       await statusRoute.GET(get("/api/students/me/qr/status")),
       await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate")),
+      await issueRoute.POST(sameOriginPost("/api/students/me/qr/issue")),
     ]) {
       assert.equal(response.status, 401);
       assertNoStore(response);
@@ -215,7 +225,14 @@ test("routes themselves answer 401 without a student session (teacher or none), 
 
 // ---------------------------------------------------------------- PNG
 
-test("GET /qr: a decodable PNG with the student's SLCQR1 payload, issued once, private no-store", async () => {
+test("GET /qr: 404 before issuance; after POST /issue a decodable PNG, private no-store", async () => {
+  const none = await qrRoute.GET(get("/api/students/me/qr"));
+  assert.equal(none.status, 404);
+  assertNoStore(none);
+  assert.equal((await none.json()).error.code, "QR_TOKEN_NOT_FOUND");
+  assert.equal(store.tokens.length, 0, "GET created nothing");
+
+  await issue();
   const response = await qrRoute.GET(get("/api/students/me/qr"));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "image/png");
@@ -239,6 +256,7 @@ test("GET /qr: a decodable PNG with the student's SLCQR1 payload, issued once, p
 });
 
 test("GET /qr?download=1 is an attachment; the URL never carries the token", async () => {
+  await issue();
   const response = await qrRoute.GET(get("/api/students/me/qr?download=1"));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-disposition"), 'attachment; filename="my-qr-code.png"');
@@ -247,8 +265,10 @@ test("GET /qr?download=1 is an attachment; the URL never carries the token", asy
 });
 
 test("identity comes only from the session: a studentId in the URL or body is ignored", async () => {
+  await issue();
   const mine = await decodeQr(await qrRoute.GET(get(`/api/students/me/qr?studentId=${S2}&id=${S2}`)));
   session = { role: "STUDENT", userId: S2 };
+  await issue();
   const theirs = await decodeQr(await qrRoute.GET(get("/api/students/me/qr")));
   assert.notEqual(mine.text, theirs.text);
   assert.deepEqual(store.tokens.map((t) => t.studentId).sort(), [S1, S2]);
@@ -282,6 +302,9 @@ test("missing or invalid STUDENT_QR_SECRET: 503 fail-closed, nothing issued, no 
 
     const regenerate = await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
     assert.equal(regenerate.status, 503);
+    const issued = await issueRoute.POST(sameOriginPost("/api/students/me/qr/issue"));
+    assert.equal(issued.status, 503);
+    assertNoStore(issued);
 
     const status = await statusRoute.GET(get("/api/students/me/qr/status"));
     assert.equal(status.status, 200);
@@ -303,7 +326,7 @@ test("GET /status returns only safe fields", async () => {
     regenerationsRemaining: 5,
     nextRegenerationAt: null,
   });
-  await qrRoute.GET(get("/api/students/me/qr"));
+  await issue();
   const response = await statusRoute.GET(get("/api/students/me/qr/status"));
   assertNoStore(response);
   body = await response.json();
@@ -316,6 +339,7 @@ test("GET /status returns only safe fields", async () => {
 // ---------------------------------------------------------------- regeneration
 
 test("regeneration: new decodable QR, old one revoked, JSON has status only", async () => {
+  await issue();
   const first = await decodeQr(await qrRoute.GET(get("/api/students/me/qr")));
   const response = await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
   assert.equal(response.status, 200);
@@ -344,7 +368,7 @@ test("regeneration: new decodable QR, old one revoked, JSON has status only", as
 });
 
 test("regeneration limit: the 6th within 24h is 429 with Retry-After and retry details", async () => {
-  await qrRoute.GET(get("/api/students/me/qr"));
+  await issue();
   for (let i = 0; i < 5; i += 1) {
     const ok = await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
     assert.equal(ok.status, 200);
@@ -371,7 +395,7 @@ test("regeneration limit: the 6th within 24h is 429 with Retry-After and retry d
 // ---------------------------------------------------------------- CSRF
 
 test("cross-origin regeneration is rejected before authentication or any write", async () => {
-  await qrRoute.GET(get("/api/students/me/qr"));
+  await issue();
   const tokensBefore = JSON.stringify(store.tokens);
   const sessionCalls = calls.requireStudentSession;
   const cases = [
@@ -407,7 +431,7 @@ test("cross-origin regeneration is rejected before authentication or any write",
 });
 
 test("same-origin check uses only configured origins (APP_URL / NEXT_PUBLIC_APP_URL), failing closed", async () => {
-  await qrRoute.GET(get("/api/students/me/qr"));
+  await issue();
   delete process.env.APP_URL;
   delete process.env.NEXT_PUBLIC_APP_URL;
   const unconfigured = await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
@@ -426,9 +450,16 @@ test("QR routes and helpers never log or echo token material", () => {
     "app/api/students/me/qr/route.ts",
     "app/api/students/me/qr/status/route.ts",
     "app/api/students/me/qr/regenerate/route.ts",
+    "app/api/students/me/qr/issue/route.ts",
+    "app/api/students/[id]/qr/issue/route.ts",
     "lib/student-qr-http.ts",
     "lib/same-origin.ts",
     "components/student-portal/student-qr-panel.tsx",
+    "components/qr/qr-identity-card.tsx",
+    "app/student/Components/StudentQrIdentity.tsx",
+    "app/api/students/[id]/qr/route.ts",
+    "app/api/students/[id]/qr/status/route.ts",
+    "app/api/students/[id]/qr/regenerate/route.ts",
   ]) {
     const code = fs.readFileSync(path.join(root, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
     assert.doesNotMatch(code, /console\.(log|info|debug|error)\(/, file);
@@ -436,7 +467,98 @@ test("QR routes and helpers never log or echo token material", () => {
     // Routes only ever use the payload to draw the PNG; the token never goes into JSON.
     assert.doesNotMatch(code, /qr\.token|token:/, file);
   }
-  const panel = fs.readFileSync(path.join(root, "components/student-portal/student-qr-panel.tsx"), "utf8");
-  assert.match(panel, /URL\.createObjectURL/);
-  assert.doesNotMatch(panel, /student-qr-token|student-qr-service/, "the client never imports server QR code");
+  // The shared card shows the PNG through an in-memory blob: URL.
+  const card = fs.readFileSync(path.join(root, "components/qr/qr-identity-card.tsx"), "utf8");
+  assert.match(card, /URL\.createObjectURL/);
+  for (const file of [
+    "components/qr/qr-identity-card.tsx",
+    "components/student-portal/student-qr-panel.tsx",
+    "app/student/Components/StudentQrIdentity.tsx",
+  ]) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    assert.doesNotMatch(source, /student-qr-token|student-qr-service/, `${file}: the client never imports server QR code`);
+  }
+});
+
+// ---------------------------------------------------------------- explicit issuance (GET is read-only)
+
+test("GET never creates a token: image (inline / download / repeated) and status leave the store empty", async () => {
+  for (const url of ["/api/students/me/qr", "/api/students/me/qr?download=1", "/api/students/me/qr", "/api/students/me/qr?issue=1"]) {
+    const response = await qrRoute.GET(get(url));
+    assert.equal(response.status, 404, url);
+    assertNoStore(response);
+    assert.equal((await response.json()).error.code, "QR_TOKEN_NOT_FOUND");
+  }
+  const status = await (await statusRoute.GET(get("/api/students/me/qr/status"))).json();
+  assert.equal(status.data.hasActiveToken, false);
+  assert.equal(store.tokens.length, 0);
+
+  // After issuance and a regeneration, GET still only reads: no extra rows.
+  await issue();
+  await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
+  const rows = store.tokens.length;
+  for (let i = 0; i < 3; i += 1) assert.equal((await qrRoute.GET(get("/api/students/me/qr"))).status, 200);
+  assert.equal(store.tokens.length, rows);
+});
+
+test("POST /issue: ISSUE row by the student, idempotent, not counted towards the limit, status-only JSON", async () => {
+  const first = await issue();
+  assertNoStore(first);
+  const body = await first.json();
+  assert.deepEqual(body.data, {
+    configured: true,
+    hasActiveToken: true,
+    regenerationLimit: 5,
+    regenerationsRemaining: 5,
+    nextRegenerationAt: null,
+  });
+  assert.equal(store.tokens.length, 1);
+  assert.equal(store.tokens[0].reason, "ISSUE");
+  assert.equal(store.tokens[0].createdByRole, "STUDENT");
+  assert.equal(store.tokens[0].createdById, S1);
+  const text = JSON.stringify(body);
+  for (const value of sensitiveValues()) assert.ok(!text.includes(value));
+
+  const payload = (await decodeQr(await qrRoute.GET(get("/api/students/me/qr")))).text;
+  assert.ok(!text.includes(payload.slice(7)), "no token in the JSON");
+  await issue();
+  await issue();
+  assert.equal(store.tokens.length, 1, "idempotent");
+  assert.equal((await decodeQr(await qrRoute.GET(get("/api/students/me/qr")))).text, payload, "same QR");
+
+  // After a regeneration, issue keeps the current (regenerated) QR.
+  await regenerateRoute.POST(sameOriginPost("/api/students/me/qr/regenerate"));
+  const regenerated = (await decodeQr(await qrRoute.GET(get("/api/students/me/qr")))).text;
+  const again = await (await issue()).json();
+  assert.equal(again.data.regenerationsRemaining, 4, "ISSUE never counts; one REGENERATE does");
+  assert.equal((await decodeQr(await qrRoute.GET(get("/api/students/me/qr")))).text, regenerated);
+  assert.equal(store.tokens.length, 2);
+});
+
+test("POST /issue ignores any studentId in the body", async () => {
+  const response = await issueRoute.POST(
+    sameOriginPost("/api/students/me/qr/issue", { body: JSON.stringify({ studentId: S2 }), headers: { "Content-Type": "application/json" } })
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(store.tokens.map((t) => t.studentId), [S1]);
+});
+
+test("cross-origin issuance is rejected before authentication or any write", async () => {
+  const sessionCalls = calls.requireStudentSession;
+  for (const headers of [
+    { "Sec-Fetch-Site": "cross-site", Origin: APP_ORIGIN },
+    { "Sec-Fetch-Site": "same-site", Origin: APP_ORIGIN },
+    { Origin: "https://evil.example" },
+    { Origin: "http://app.example.test" },
+    { Origin: "null" },
+    {},
+    { Host: "evil.example", Origin: "https://evil.example" },
+  ]) {
+    const response = await issueRoute.POST(new Request(`${APP_ORIGIN}/api/students/me/qr/issue`, { method: "POST", headers }));
+    assert.equal(response.status, 403, JSON.stringify(headers));
+    assertNoStore(response);
+    assert.equal((await response.json()).error.code, "CROSS_ORIGIN_REQUEST_REJECTED");
+  }
+  assert.equal(calls.requireStudentSession, sessionCalls, "rejected before the session was read");
+  assert.equal(store.tokens.length, 0, "no write");
 });

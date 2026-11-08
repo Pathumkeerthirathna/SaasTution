@@ -130,9 +130,32 @@ const ACTIVE_TOKEN_SELECT = { id: true, nonce: true, tokenHash: true, reason: tr
 // ---------------------------------------------------------------- public API
 
 /**
- * The student's active QR token, issuing the first one (reason ISSUE) if the
- * student has none. Idempotent: later calls return the same token. Never
- * replaces an existing token, not even when it fails verification.
+ * READ-ONLY (GET image routes): the student's active QR token, or
+ * QR_TOKEN_NOT_FOUND when none was issued yet. Never writes, never issues,
+ * never reissues (a token that fails verification is QR_TOKEN_UNVERIFIABLE).
+ * Same actor / ownership rules as the writing operations.
+ */
+export async function getActiveToken(studentId: string, actor: StudentQrActor): Promise<ActiveStudentQr> {
+  assertStudentId(studentId);
+  assertActor(actor);
+  const secret = loadSecret();
+
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, status: { not: DELETED_STUDENT_STATUS } },
+    select: { id: true, teacherId: true },
+  });
+  if (!student || !actorMayAct(actor, student)) throw new StudentQrServiceError("STUDENT_NOT_FOUND");
+
+  const active = await findActiveToken(prisma, studentId);
+  if (!active) throw new StudentQrServiceError("QR_TOKEN_NOT_FOUND");
+  return present(secret, active);
+}
+
+/**
+ * Explicit issuance (POST routes): the student's active QR token, issuing the
+ * first one (reason ISSUE) if the student has none. Idempotent: later calls
+ * return the same token. Never replaces an existing token, not even when it
+ * fails verification. ISSUE never counts towards the regeneration limit.
  */
 export async function getOrCreateActiveToken(studentId: string, actor: StudentQrActor): Promise<ActiveStudentQr> {
   assertStudentId(studentId);

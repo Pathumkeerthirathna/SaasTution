@@ -134,7 +134,8 @@ never from the URL or body):
 | Route | Response |
 |---|---|
 | `GET /api/students/me/qr/status` | `{ configured, hasActiveToken, regenerationLimit, regenerationsRemaining, nextRegenerationAt }` |
-| `GET /api/students/me/qr` | PNG (512 px, error correction M), issuing the first QR on first view. `?download=1` only switches to `Content-Disposition: attachment` |
+| `POST /api/students/me/qr/issue` | Same-origin only. Issues the first QR (reason `ISSUE`) if there is none; idempotent; never counted towards the limit. Status JSON |
+| `GET /api/students/me/qr` | PNG (512 px, error correction M). **Read-only**: never issues; without an active QR 404 `QR_TOKEN_NOT_FOUND`. `?download=1` only switches to `Content-Disposition: attachment` |
 | `POST /api/students/me/qr/regenerate` | Same-origin only. New status JSON; 429 + `Retry-After` + `{ limit, retryAfterSeconds, retryAt }` at the limit |
 
 - All responses: `Cache-Control: private, no-store, max-age=0`, `Pragma: no-cache`,
@@ -146,10 +147,32 @@ never from the URL or body):
 - **CSRF** (`lib/same-origin.ts`): `Sec-Fetch-Site`, when sent, must be
   `same-origin`, and `Origin` must equal `APP_URL` or `NEXT_PUBLIC_APP_URL`
   (whole origin). Host / X-Forwarded-Host are not trusted. With neither
-  variable set, regeneration is refused (403) and a warning is printed:
+  variable set, issuance and regeneration are refused (403) and a warning is printed:
   **production must set `APP_URL` (or `NEXT_PUBLIC_APP_URL`) to its public
   origin, e.g. `https://slclassroom.live`.**
 - UI: Student Settings → **My QR Identity**
   (`components/student-portal/student-qr-panel.tsx`). The PNG is fetched
   and shown through an in-memory `blob:` URL; download and print reuse it.
   The token never appears in a URL, in browser storage or in the HTML.
+
+## Teacher APIs and profile tab
+
+| Route | Response |
+|---|---|
+| `GET /api/students/[id]/qr/status` | Same safe status fields as the student route |
+| `POST /api/students/[id]/qr/issue` | Same-origin only. Issues the first QR (`createdByRole = TEACHER`) if there is none; idempotent; not counted. Status JSON |
+| `GET /api/students/[id]/qr` | PNG. **Read-only**: without an active QR 404 `QR_TOKEN_NOT_FOUND`; `?download=1` = attachment |
+| `POST /api/students/[id]/qr/regenerate` | Same-origin only; status JSON; 429 + `Retry-After` at the shared limit |
+
+- Ownership: `requireTeacherOwnedStudent` (T1 guard) — 401 without a teacher
+  session, 404 (`STUDENT_NOT_FOUND`, no student data) for unknown students and
+  other teachers' students. The service re-checks the teacher actor; deleted
+  students (status 2) get no QR (404). Any body is ignored.
+- The regeneration limit (5 per rolling 24 h) is shared between the student
+  and the teacher.
+- UI: `/dashboard/students/[id]` → **QR Identity** tab
+  (`app/student/Components/StudentQrIdentity.tsx`). It loads only when the tab
+  is opened, so browsing a profile never issues a QR. Both portals use the
+  shared `components/qr/qr-identity-card.tsx`, which reads the status and,
+  only when there is no active QR, issues one explicitly (POST `/issue`)
+  before reading the PNG with GET. GET requests never create tokens.

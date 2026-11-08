@@ -15,7 +15,7 @@
     "test:devices": "node --test tests/devices/device-decision-email.test.cjs",
     "test:students": "node --test tests/students/email-reuse.test.cjs tests/students/registration-number.test.cjs tests/students/registration-number-migration-guard.test.cjs tests/students/student-name.test.cjs tests/students/resend-registration-emails.test.cjs",
     "test:security": "node --test tests/security/student-profile-routes.test.cjs",
-    "test:student-qr": "node --test tests/student-qr/student-qr-migration-guard.test.cjs tests/student-qr/student-qr-token.test.cjs tests/student-qr/student-qr-routes.test.cjs",
+    "test:student-qr": "node --test tests/student-qr/student-qr-migration-guard.test.cjs tests/student-qr/student-qr-token.test.cjs tests/student-qr/student-qr-routes.test.cjs tests/student-qr/teacher-qr-routes.test.cjs",
     "test:student-qr-db": "node --test tests/student-qr/student-qr-service.db.test.cjs",
     "test:fee-waiver": "node --test tests/fee-waiver/fee-waiver-calc.test.cjs tests/fee-waiver/fee-waiver-migration-guard.test.cjs tests/fee-waiver/fee-waiver-integration.test.cjs",
     "test:time": "node --test tests/time/sri-lanka-lecture-time.test.cjs",

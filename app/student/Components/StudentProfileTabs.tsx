@@ -9,6 +9,7 @@ import {
   FileText,
   History,
   LayoutDashboard,
+  QrCode,
   Smartphone,
   Users,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { StudentGuardians } from "./StudentGuardians";
 import { StudentHistory } from "./StudentHistory";
 import { StudentPapers } from "./studentPapers";
 import { StudentPayments } from "./StudentPayments";
+import { StudentQrIdentity } from "./StudentQrIdentity";
 import { StudentQuizzes } from "./StudentQuizzes";
 import { StudentDevices } from "./studentdevice";
 import type {
@@ -36,6 +38,8 @@ import type {
 
 interface StudentProfileTabsProps {
   studentId: string;
+  studentName: string;
+  registrationNumber: string | null;
   classes?: StudentClassRow[] | null;
   guardians?: GuardianRow[] | null;
   attendance?: AttendanceRow[] | null;
@@ -50,6 +54,8 @@ interface StudentProfileTabsProps {
 
 export function StudentProfileTabs({
   studentId,
+  studentName,
+  registrationNumber,
   classes = null,
   guardians = null,
   attendance = null,
@@ -68,6 +74,7 @@ export function StudentProfileTabs({
     { id: "classes", label: "Classes", icon: BookOpen, count: classes ? new Set(classes.map((c) => c.class.id)).size : null },
     { id: "guardians", label: "Guardians", icon: Users, count: guardians?.length ?? null },
     { id: "devices", label: "Devices", icon: Smartphone, count: devices?.length ?? null },
+    { id: "qr", label: "QR Identity", icon: QrCode, count: null },
     { id: "attendance", label: "Attendance", icon: CalendarCheck, count: attendance?.length ?? null },
     { id: "payments", label: "Payments", icon: CreditCard, count: payments ? payments.summary.unpaidCount : null },
     { id: "quizzes", label: "Quizzes", icon: ClipboardCheck, count: quiz?.summary?.totalQuizzes ?? null },
@@ -135,6 +142,13 @@ export function StudentProfileTabs({
             studentId={studentId}
             data={devices}
             onChanged={onDevicesChanged}
+          />
+        )}
+        {activeTab === "qr" && (
+          <StudentQrIdentity
+            studentId={studentId}
+            studentName={studentName}
+            registrationNumber={registrationNumber}
           />
         )}
         {activeTab === "attendance" && (

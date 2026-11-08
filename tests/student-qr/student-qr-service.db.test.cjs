@@ -169,6 +169,25 @@ test.describe("student QR service (throwaway PostgreSQL)", { skip }, () => {
     assert.equal(status.hasActiveToken, true);
   });
 
+  test("getActiveToken is read-only: QR_TOKEN_NOT_FOUND before issuance, never writes, same rules", async () => {
+    const s = await newStudent();
+    await rejectsWith(svc.getActiveToken(s, asStudent(s)), "QR_TOKEN_NOT_FOUND");
+    await rejectsWith(svc.getActiveToken(s, asTeacher(T1)), "QR_TOKEN_NOT_FOUND");
+    await rejectsWith(svc.getActiveToken(s, asTeacher(T2)), "STUDENT_NOT_FOUND");
+    await rejectsWith(svc.getActiveToken(s, { role: "ADMIN", id: "x" }), "INVALID_QR_ACTOR");
+    assert.equal((await tokens(s)).length, 0, "nothing was issued");
+
+    const issued = await svc.getOrCreateActiveToken(s, asStudent(s));
+    const read = await svc.getActiveToken(s, asTeacher(T1));
+    assert.equal(read.token, issued.token);
+    await rejectsWith(svc.getActiveToken(s, asTeacher(T2)), "STUDENT_NOT_FOUND");
+
+    process.env.STUDENT_QR_SECRET = SECRET_B;
+    const before = await tokens(s);
+    await rejectsWith(svc.getActiveToken(s, asStudent(s)), "QR_TOKEN_UNVERIFIABLE");
+    assert.deepEqual(await tokens(s), before, "a mismatch is never reissued");
+  });
+
   test("concurrent first views issue exactly one token", async () => {
     const s = await newStudent();
     const results = await Promise.all(

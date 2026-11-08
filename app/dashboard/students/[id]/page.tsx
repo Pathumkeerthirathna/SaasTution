@@ -444,6 +444,8 @@ export default function StudentProfilePage() {
 
       <StudentProfileTabs
         studentId={studentId}
+        studentName={student.name}
+        registrationNumber={student.registrationNumber}
         classes={classes}
         guardians={guardians}
         attendance={attendance}
