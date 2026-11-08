@@ -531,6 +531,7 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
         confirmedAt:true,
         registeredAt:true,
         createdAt: true,
+        emailConfirmed: true,
 
         classes: {
           where: {
@@ -575,6 +576,8 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
       StudentConfirmationStatus:student.confirmationStatus,
       confirmedAt:student.confirmedAt,
       registeredAt:student.registeredAt,
+      // Read-only: lets the page show "Resend Registration Emails".
+      emailConfirmed: student.emailConfirmed,
       classes: student.classes.map((entry) => ({
         id: entry.id,
         name: entry.class.name,

@@ -63,12 +63,23 @@ export type StudentListItem = {
   registrationNumber: string | null;
   StudentRegistrationSource:string;
   StudentConfirmationStatus:string;
+  emailConfirmed?: boolean;
   classes: {
     id: string;
     name: string;
   }[];
   createdAt: string;
 };
+
+/** Mirrors the server's checks (resend-registration-emails); the server re-checks. */
+function canResendRegistrationEmails(student: StudentListItem) {
+  return (
+    student.emailConfirmed === false &&
+    student.status !== 2 &&
+    !!student.email?.trim() &&
+    student.StudentConfirmationStatus !== "REJECTED"
+  );
+}
 
 type ApiError = {
   message?: string;
@@ -239,6 +250,63 @@ export function StudentGuardianManagementPanel() {
   );
   const [deactivateReason, setDeactivateReason] = useState("");
   const [isDeactivating, setIsDeactivating] = useState(false);
+
+  const [resendEmailsStudent, setResendEmailsStudent] =
+    useState<StudentListItem | null>(null);
+  const [isResendingEmails, setIsResendingEmails] = useState(false);
+  const isResendingEmailsRef = useRef(false);
+
+  async function handleResendRegistrationEmails(student: StudentListItem) {
+    // Ignore double clicks before the disabled state renders.
+    if (isResendingEmailsRef.current) {
+      return;
+    }
+
+    isResendingEmailsRef.current = true;
+    setIsResendingEmails(true);
+
+    try {
+      const response = await fetch(
+        `/api/students/${student.id}/resend-registration-emails`,
+        { method: "POST" }
+      );
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || !payload?.success) {
+        if (payload?.error?.code === "EMAIL_ALREADY_VERIFIED") {
+          setStudents((prev) =>
+            prev.map((s) =>
+              s.id === student.id ? { ...s, emailConfirmed: true } : s
+            )
+          );
+        }
+
+        toast.error(
+          payload?.error?.message ?? "Failed to resend registration emails.",
+          { duration: 6000 }
+        );
+        return;
+      }
+
+      if (payload.data?.outcome === "SENT") {
+        toast.success(
+          payload.message ?? "Registration emails resent.",
+          { duration: 6000 }
+        );
+      } else {
+        toast.error(
+          payload.message ?? "Only one registration email could be sent.",
+          { duration: 8000 }
+        );
+      }
+    } catch {
+      toast.error("Unable to resend registration emails right now.");
+    } finally {
+      isResendingEmailsRef.current = false;
+      setIsResendingEmails(false);
+      setResendEmailsStudent(null);
+    }
+  }
 
   function askActivateStudent(
     event: ReactMouseEvent<HTMLButtonElement>,
@@ -1813,6 +1881,22 @@ const handleConfirmAllStudents = async () => {
                           )}
 
                         </div>
+
+                        {/* Own line, so it never widens the Actions column. */}
+                        {canResendRegistrationEmails(student) && (
+                          <div className="mt-1.5 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setResendEmailsStudent(student)}
+                              disabled={isResendingEmails}
+                              title="Email not verified — resend the registration emails"
+                              className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-sky-200 bg-white px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                            >
+                              <Mail size={13} />
+                              Resend Registration Emails
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                     </tr>
@@ -2231,6 +2315,18 @@ const handleConfirmAllStudents = async () => {
                     >
                       <CheckCircle size={13} />
                       Activate
+                    </button>
+                  )}
+
+                  {canResendRegistrationEmails(student) && (
+                    <button
+                      type="button"
+                      onClick={() => setResendEmailsStudent(student)}
+                      disabled={isResendingEmails}
+                      className="col-span-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-white px-2.5 text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50"
+                    >
+                      <Mail size={13} />
+                      Resend Registration Emails
                     </button>
                   )}
 
@@ -3527,6 +3623,74 @@ const handleConfirmAllStudents = async () => {
             </div>
           );
         })()}
+
+      {resendEmailsStudent && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resend-registration-emails-title"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                <Mail size={16} />
+              </span>
+              <div className="min-w-0">
+                <h3
+                  id="resend-registration-emails-title"
+                  className="text-sm font-semibold text-slate-900"
+                >
+                  Resend registration emails?
+                </h3>
+                <p className="mt-0.5 text-[12px] leading-5 text-slate-500">
+                  {resendEmailsStudent.name}&apos;s email address has not been verified yet.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Send to
+              </p>
+              <p className="break-all text-sm font-medium text-slate-900">
+                {resendEmailsStudent.email}
+              </p>
+            </div>
+
+            <p className="mt-3 text-[12px] leading-5 text-slate-600">
+              Both original registration emails will be sent again: the
+              welcome email with the student&apos;s registration details, and
+              the email confirmation code. A new confirmation code replaces
+              any earlier one.
+            </p>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setResendEmailsStudent(null)}
+                disabled={isResendingEmails}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void handleResendRegistrationEmails(resendEmailsStudent)
+                }
+                disabled={isResendingEmails}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+              >
+                {isResendingEmails && (
+                  <Loader2 size={13} className="animate-spin" />
+                )}
+                {isResendingEmails ? "Sending..." : "Resend emails"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

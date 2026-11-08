@@ -579,6 +579,213 @@ Log in here: ${input.loginLink}`,
   );
 }
 
+//////
+// Sender.net transactional API (used when SENDER_API_TOKEN is set)
+//////
+
+const SENDER_API_URL = "https://api.sender.net/v2/message/send";
+const SENDER_TIMEOUT_MS = 15_000;
+
+/**
+ * A failed Sender.net request. A plain Error (like nodemailer's errors), so
+ * callers and handleRouteError treat it exactly as they treat an SMTP failure.
+ * The message never contains the API token or request headers.
+ */
+export class SenderApiError extends Error {
+  readonly status: number | null;
+  readonly code: string;
+
+  constructor(message: string, status: number | null, code: string) {
+    super(message);
+    this.name = "SenderApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+type SenderConfig = { token: string; fromEmail: string; fromName: string };
+
+/** Sender.net is used only when SENDER_API_TOKEN is set; otherwise SMTP. */
+function getSenderConfig(): SenderConfig | null {
+  const token = process.env.SENDER_API_TOKEN?.trim();
+
+  if (!token) {
+    return null;
+  }
+
+  return {
+    token,
+    fromEmail: process.env.SENDER_FROM_EMAIL?.trim() ?? "",
+    fromName: process.env.SENDER_FROM_NAME?.trim() || "SLClassroom",
+  };
+}
+
+async function readSenderErrorMessage(response: Response) {
+  try {
+    const body = (await response.json()) as {
+      message?: unknown;
+      errors?: Record<string, unknown>;
+    };
+    const details = body.errors
+      ? Object.values(body.errors).flat().filter((v) => typeof v === "string")
+      : [];
+    const message = [typeof body.message === "string" ? body.message : "", ...details]
+      .filter(Boolean)
+      .join(" ");
+    return message.slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
+async function sendViaSender(
+  config: SenderConfig,
+  to: string,
+  subject: string,
+  html: string,
+  text: string
+): Promise<{ emailId: string }> {
+  let response: Response;
+
+  try {
+    response = await fetch(SENDER_API_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.token}`,
+      },
+      body: JSON.stringify({
+        from: { email: config.fromEmail, name: config.fromName },
+        to: { email: to },
+        subject,
+        html,
+        text,
+      }),
+      signal: AbortSignal.timeout(SENDER_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new SenderApiError(
+        `Sender.net request timed out after ${SENDER_TIMEOUT_MS / 1000}s.`,
+        null,
+        "SENDER_TIMEOUT"
+      );
+    }
+
+    throw new SenderApiError(
+      `Sender.net request failed: ${getErrorMessage(error)}`,
+      null,
+      "SENDER_NETWORK_ERROR"
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await readSenderErrorMessage(response);
+    const suffix = detail ? `: ${detail}` : "";
+
+    if (response.status === 401 || response.status === 403) {
+      throw new SenderApiError(
+        `Sender.net rejected the API token (HTTP ${response.status})${suffix}`,
+        response.status,
+        "SENDER_AUTH_FAILED"
+      );
+    }
+
+    if (response.status === 422) {
+      throw new SenderApiError(
+        `Sender.net rejected the email (HTTP 422)${suffix}`,
+        422,
+        "SENDER_VALIDATION_FAILED"
+      );
+    }
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new SenderApiError(
+        `Sender.net rate limit reached (HTTP 429)${retryAfter ? `; retry after ${retryAfter}s` : ""}${suffix}`,
+        429,
+        "SENDER_RATE_LIMITED"
+      );
+    }
+
+    throw new SenderApiError(
+      `Sender.net request failed (HTTP ${response.status})${suffix}`,
+      response.status,
+      response.status >= 500 ? "SENDER_SERVER_ERROR" : "SENDER_REQUEST_FAILED"
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    success?: unknown;
+    emailId?: unknown;
+    message?: unknown;
+  } | null;
+
+  if (!body || body.success !== true) {
+    const detail = typeof body?.message === "string" ? `: ${body.message.slice(0, 300)}` : "";
+    throw new SenderApiError(
+      `Sender.net did not confirm the email (HTTP ${response.status})${detail}`,
+      response.status,
+      "SENDER_NOT_CONFIRMED"
+    );
+  }
+
+  return { emailId: typeof body.emailId === "string" ? body.emailId : "" };
+}
+
+async function sendEmailViaSender(
+  config: SenderConfig,
+  to: string,
+  subject: string,
+  html: string,
+  text: string | undefined,
+  purpose: EmailPurpose
+) {
+  const maskedTo = maskEmailForLogging(to);
+  const startedAt = Date.now();
+
+  // Token set but no sender address: a configuration error, not a reason to use SMTP.
+  if (!config.fromEmail) {
+    console.error(
+      `[EMAIL] Send failed\npurpose=${purpose}\nto=${maskedTo}\nprovider=sender\nerror="SENDER_FROM_EMAIL is not set."\ndurationMs=${Date.now() - startedAt}`
+    );
+
+    throw new AppError(
+      "Email service is not configured.",
+      500,
+      "EMAIL_NOT_CONFIGURED"
+    );
+  }
+
+  console.log(
+    `[EMAIL] Sending\npurpose=${purpose}\nto=${maskedTo}\nprovider=sender\nsubject="${subject}"`
+  );
+
+  try {
+    const { emailId } = await sendViaSender(
+      config,
+      to,
+      subject,
+      html,
+      text ?? html.replace(/<[^>]+>/g, "")
+    );
+
+    console.log(
+      `[EMAIL] Sent successfully\npurpose=${purpose}\nto=${maskedTo}\nprovider=sender\nmessageId="${emailId}"\ndurationMs=${Date.now() - startedAt}`
+    );
+
+    return { messageId: emailId };
+  } catch (error) {
+    console.error(
+      `[EMAIL] Send failed\npurpose=${purpose}\nto=${maskedTo}\nprovider=sender\nerror="${getErrorMessage(error)}"\ndurationMs=${Date.now() - startedAt}`
+    );
+    throw error;
+  }
+}
+
 export async function sendEmail(
   to: string,
   subject: string,
@@ -586,6 +793,14 @@ export async function sendEmail(
   text: string | undefined,
   purpose: EmailPurpose
 ) {
+  const sender = getSenderConfig();
+
+  // Sender.net when its token is set. Its failures are thrown, never retried
+  // over SMTP; SMTP below runs only when no Sender token is configured.
+  if (sender) {
+    return sendEmailViaSender(sender, to, subject, html, text, purpose);
+  }
+
   const from =
     process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
 
