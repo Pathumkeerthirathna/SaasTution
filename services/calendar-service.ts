@@ -1,6 +1,7 @@
 import { Weekday } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { sriLankaDateKey, sriLankaDigitsToInstant, sriLankaTimeKey } from "@/lib/time";
 
 const WEEKDAY_INDEX: Record<Weekday, number> = {
   SUNDAY: 0,
@@ -49,6 +50,17 @@ function timeKey(date: Date): string {
   return date.toISOString().slice(11, 16);
 }
 
+/**
+ * `from` / `to` are Sri Lankan calendar-day boundaries written as UTC digits
+ * ("YYYY-MM-DDT00:00:00.000Z"), the same convention as schedules and class
+ * start dates. Lecture.date is a real instant, so the lecture query uses the
+ * real instants of those Sri Lankan boundaries: lectures just after Sri Lankan
+ * midnight on the first day, or late on the last day, are included.
+ */
+function lectureWindow(from: Date, to: Date) {
+  return { gte: sriLankaDigitsToInstant(from), lte: sriLankaDigitsToInstant(to) };
+}
+
 function addUtcDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86400000);
 }
@@ -76,7 +88,7 @@ export async function getTeacherCalendar(
         orderBy: { startTime: "asc" },
       },
       lectures: {
-        where: { status: 0, date: { gte: from, lte: to } },
+        where: { status: 0, date: lectureWindow(from, to) },
         select: { id: true, title: true, classStatus: true, date: true },
         orderBy: { date: "asc" },
       },
@@ -94,7 +106,7 @@ export async function getTeacherCalendar(
     >();
 
     for (const lecture of cls.lectures) {
-      const key = dayKey(lecture.date);
+      const key = sriLankaDateKey(lecture.date);
       const list = lecturesByDay.get(key) ?? [];
       list.push({
         id: lecture.id,
@@ -176,8 +188,8 @@ export async function getTeacherCalendar(
 
       events.push({
         key: `lecture-${lecture.id}`,
-        date: dayKey(lecture.date),
-        startTime: timeKey(lecture.date),
+        date: sriLankaDateKey(lecture.date),
+        startTime: sriLankaTimeKey(lecture.date),
         endTime: null,
         kind: "schedule",
         classId: cls.id,
@@ -313,7 +325,7 @@ export async function getStudentCalendar(
         orderBy: { startTime: "asc" },
       },
       lectures: {
-        where: { status: 0, date: { gte: from, lte: to } },
+        where: { status: 0, date: lectureWindow(from, to) },
         select: { id: true, title: true, classStatus: true, date: true },
         orderBy: { date: "asc" },
       },
@@ -331,7 +343,7 @@ export async function getStudentCalendar(
       { id: string; title: string; classStatus: string }[]
     >();
     for (const lecture of cls.lectures) {
-      const key = dayKey(lecture.date);
+      const key = sriLankaDateKey(lecture.date);
       const list = lecturesByDay.get(key) ?? [];
       list.push({ id: lecture.id, title: lecture.title, classStatus: lecture.classStatus });
       lecturesByDay.set(key, list);
@@ -379,8 +391,8 @@ export async function getStudentCalendar(
       if (usedLectureIds.has(lecture.id)) continue;
       entries.push({
         key: `lecture-${lecture.id}`,
-        date: dayKey(lecture.date),
-        startTime: timeKey(lecture.date),
+        date: sriLankaDateKey(lecture.date),
+        startTime: sriLankaTimeKey(lecture.date),
         endTime: null,
         classId: cls.id,
         className: cls.name,

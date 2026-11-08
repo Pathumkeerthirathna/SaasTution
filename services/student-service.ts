@@ -7,7 +7,7 @@ import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { sendEmailConfirmationCode } from "@/services/auth-service";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
-import { nowInSriLanka } from "@/lib/time";
+import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
@@ -2363,13 +2363,14 @@ export async function getStudentAttendanceAnalytics(
   });
   const classIds = [...new Set(enrolments.map((e) => e.classId))];
 
-  const now = new Date();
+  // Sri Lankan calendar months, whatever the server's timezone.
+  const sriLankaNow = sriLankaCalendarParts(new Date());
   const buckets = Array.from({ length: monthsBack }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1 - i), 1);
+    const d = new Date(Date.UTC(sriLankaNow.year, sriLankaNow.month - 1 - (monthsBack - 1 - i), 1));
     return {
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-      label: MONTH_LABELS[d.getMonth()] ?? String(d.getMonth() + 1),
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      label: MONTH_LABELS[d.getUTCMonth()] ?? String(d.getUTCMonth() + 1),
       attended: 0,
       total: 0,
     };
@@ -2425,8 +2426,8 @@ export async function getStudentAttendanceAnalytics(
   );
 
   for (const lecture of lectures) {
-    const d = new Date(lecture.date);
-    const idx = bucketIndex.get(`${d.getFullYear()}-${d.getMonth() + 1}`);
+    const d = sriLankaCalendarParts(new Date(lecture.date));
+    const idx = bucketIndex.get(`${d.year}-${d.month}`);
     if (idx === undefined) continue;
     buckets[idx].total += 1;
     if (attended(lecture)) buckets[idx].attended += 1;

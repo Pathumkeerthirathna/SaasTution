@@ -49,6 +49,8 @@ function fmtDate(value: string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    // Lecture dates are Sri Lankan dates, whatever the browser's timezone.
+    timeZone: "Asia/Colombo",
   });
 }
 

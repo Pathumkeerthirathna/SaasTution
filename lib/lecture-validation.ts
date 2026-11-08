@@ -1,6 +1,28 @@
 import { z } from "zod";
 
+import { isLocalDateTimeString, parseSriLankaLocalDateTime } from "@/lib/time";
+
 const uuid = z.string().trim().uuid("Invalid id format.");
+
+/**
+ * Lecture date/time. A timezone-less datetime-local value
+ * ("YYYY-MM-DDTHH:MM") is Sri Lankan time, whatever the server's timezone;
+ * anything else (ISO strings with "Z" or an offset, Date objects) is coerced
+ * exactly as before. Malformed values still fail as "Invalid date"; so does a
+ * datetime-local value that is not a real date (e.g. February 30th), instead
+ * of being rolled over and read in the server's timezone.
+ */
+const lectureDate = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (isLocalDateTimeString(trimmed)) {
+      return parseSriLankaLocalDateTime(trimmed) ?? new Date(Number.NaN);
+    }
+  }
+
+  return value;
+}, z.coerce.date());
 
 export const createLectureSchema = z.object({
   classId: uuid,
@@ -9,7 +31,7 @@ export const createLectureSchema = z.object({
     .trim()
     .min(2, "Lecture title must be at least 2 characters long.")
     .max(150, "Lecture title must be at most 150 characters long."),
-  date: z.coerce.date(),
+  date: lectureDate,
 });
 
 export const updateLectureSchema = z
@@ -20,7 +42,7 @@ export const updateLectureSchema = z
       .min(2, "Lecture title must be at least 2 characters long.")
       .max(150, "Lecture title must be at most 150 characters long.")
       .optional(),
-    date: z.coerce.date().optional(),
+    date: lectureDate.optional(),
   })
   .refine((value) => value.title !== undefined || value.date !== undefined, {
     message: "At least one field is required.",

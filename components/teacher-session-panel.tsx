@@ -974,7 +974,7 @@ export function TeacherSessionPanel() {
             <option value="">Select lecture</option>
             {lectures.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.title} ({new Date(item.date).toLocaleDateString()})
+                {item.title} ({new Date(item.date).toLocaleDateString(undefined, { timeZone: "Asia/Colombo" })})
               </option>
             ))}
           </select>
@@ -1005,7 +1005,7 @@ export function TeacherSessionPanel() {
             <p className="text-xs text-muted">Started at {new Date(activeSession.startedAt).toLocaleString()}</p>
             {activeSession.lecture ? (
               <p className="text-xs text-muted">
-                Lecture: {activeSession.lecture.title} ({new Date(activeSession.lecture.date).toLocaleDateString()})
+                Lecture: {activeSession.lecture.title} ({new Date(activeSession.lecture.date).toLocaleDateString(undefined, { timeZone: "Asia/Colombo" })})
               </p>
             ) : null}
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1168,7 +1168,7 @@ export function TeacherSessionPanel() {
                     <div>
                       <p className="text-xl font-semibold">{session.class?.name ?? classes.find((item) => item.id === selectedClassId)?.name ?? "Class"}</p>
                       <p className="mt-1 text-sm text-muted">
-                        Lecture: {session.lecture ? `${session.lecture.title} (${new Date(session.lecture.date).toLocaleDateString()})` : "Not linked"}
+                        Lecture: {session.lecture ? `${session.lecture.title} (${new Date(session.lecture.date).toLocaleDateString(undefined, { timeZone: "Asia/Colombo" })})` : "Not linked"}
                       </p>
                       <p className="mt-1 text-xs text-muted">Room: {session.roomName}</p>
                       <p className="mt-1 text-xs text-muted">Started: {new Date(session.startedAt).toLocaleString()}</p>
@@ -1319,7 +1319,7 @@ export function TeacherSessionPanel() {
               <p className="text-xs text-muted">{sessionPanelData.session.class.schedule}</p>
               {sessionPanelData.session.lecture ? (
                 <p className="mt-1 text-xs text-muted">
-                  Lecture: {sessionPanelData.session.lecture.title} ({new Date(sessionPanelData.session.lecture.date).toLocaleDateString()})
+                  Lecture: {sessionPanelData.session.lecture.title} ({new Date(sessionPanelData.session.lecture.date).toLocaleDateString(undefined, { timeZone: "Asia/Colombo" })})
                 </p>
               ) : null}
             </div>

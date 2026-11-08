@@ -18,7 +18,14 @@ import { Eye } from "lucide-react";
 
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { getCurrentMonthKey, getPaymentDueDate, getPaymentDueStatus } from "@/lib/payment-validation";
-import { formatStoredSriLankaDate, nowInSriLanka } from "@/lib/time";
+import {
+  formatStoredSriLankaDate,
+  nextSriLankaWeeklyOccurrence,
+  nowInSriLanka,
+  sriLankaCalendarParts,
+  sriLankaDateKey,
+  startOfTodaySriLankaUtc,
+} from "@/lib/time";
 import { prisma } from "@/lib/prisma";
 import { formatTeacherFullName } from "@/lib/teacher-title";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
@@ -95,9 +102,10 @@ export default async function DashboardPage() {
   const [currentYearNum, currentMonthNum] = currentMonthKey
     .split("-")
     .map(Number);
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayWeekday = WEEKDAY_NAMES[now.getDay()] as Weekday;
+  // Sri Lankan "today", whatever the server's timezone: its real start instant
+  // (lectures are real instants) and its weekday (class schedules).
+  const todayStart = startOfTodaySriLankaUtc();
+  const todayWeekday = WEEKDAY_NAMES[sriLankaCalendarParts(now).weekday] as Weekday;
 
   // A pending teacher has no real data of their own yet, so the exact same
   // dashboard below is fed sample values instead of live Prisma queries —
@@ -437,28 +445,16 @@ export default async function DashboardPage() {
             }),
           ]);
 
+        // Schedule times are Sri Lankan wall-clock times.
         function nextScheduleOccurrence(dayOfWeek: string, timeStr: string) {
           const targetDow = WEEKDAY_NAMES.indexOf(dayOfWeek as (typeof WEEKDAY_NAMES)[number]);
           if (targetDow < 0) return null;
-          const [h, m] = timeStr.split(":").map(Number);
-          if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-
-          const occ = new Date(now);
-          occ.setHours(0, 0, 0, 0);
-          occ.setDate(occ.getDate() + ((targetDow - occ.getDay() + 7) % 7));
-          occ.setHours(h, m, 0, 0);
-          if (occ.getTime() <= now.getTime()) {
-            occ.setDate(occ.getDate() + 7);
-          }
-          return occ;
+          return nextSriLankaWeeklyOccurrence(now, targetDow, timeStr);
         }
 
+        // Same Sri Lankan calendar day (both are real instants).
         function isSameDay(a: Date, b: Date) {
-          return (
-            a.getFullYear() === b.getFullYear() &&
-            a.getMonth() === b.getMonth() &&
-            a.getDate() === b.getDate()
-          );
+          return sriLankaDateKey(a) === sriLankaDateKey(b);
         }
 
         const items: CountdownItem[] = [];

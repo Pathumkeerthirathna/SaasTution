@@ -39,6 +39,7 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
 import { LectureWhiteboardPanel } from "@/components/lecture-whiteboard-panel";
+import { toSriLankaDateTimeLocal } from "@/lib/time";
 
 type ClassItem = {
   id: string;
@@ -202,14 +203,12 @@ const CLASS_STATUS_META: Record<ClassStatus, { label: string; tone: string; dot:
   CANCELLED: { label: "Cancelled", tone: "bg-rose-100 text-rose-700", dot: "bg-rose-600" },
 };
 
+// Lecture times are Sri Lankan time everywhere, whatever the browser's timezone.
+const SRI_LANKA_TIME_ZONE = { timeZone: "Asia/Colombo" } as const;
+
 function toDateTimeLocal(value: string) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  // The edit form shows (and sends back, unchanged) Sri Lankan wall-clock time.
+  return toSriLankaDateTimeLocal(new Date(value));
 }
 
 type DatePreset =
@@ -806,7 +805,7 @@ export function LectureManagementPanel() {
         // silently switching what they're looking at — just say plainly where
         // the new lecture actually went.
         setSuccessMessage(
-          `Lecture created for ${createdLecture.class.name} on ${lectureDate.toLocaleString()}. ` +
+          `Lecture created for ${createdLecture.class.name} on ${lectureDate.toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}. ` +
             "It doesn't match your current filters, so it isn't shown in this list right now."
         );
       }
@@ -843,7 +842,9 @@ export function LectureManagementPanel() {
         },
         body: JSON.stringify({
           title: nextTitle,
-          date: new Date(editLectureForm.date).toISOString(),
+          // Sent as typed: the server reads a timezone-less value as Sri Lankan
+          // time, the same rule as lecture creation.
+          date: editLectureForm.date,
         }),
       });
       const payload = (await response.json()) as { success: boolean };
@@ -1540,8 +1541,8 @@ export function LectureManagementPanel() {
                     <div>
                       <p className="text-sm font-semibold tracking-tight text-slate-900">{lecture.title}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                        <span className="inline-flex items-center gap-1"><Calendar size={11} />{new Date(lecture.date).toLocaleDateString()}</span>
-                        <span className="inline-flex items-center gap-1"><Clock3 size={11} />{new Date(lecture.date).toLocaleTimeString()}</span>
+                        <span className="inline-flex items-center gap-1"><Calendar size={11} />{new Date(lecture.date).toLocaleDateString(undefined, SRI_LANKA_TIME_ZONE)}</span>
+                        <span className="inline-flex items-center gap-1"><Clock3 size={11} />{new Date(lecture.date).toLocaleTimeString(undefined, SRI_LANKA_TIME_ZONE)}</span>
                         <span className="inline-flex items-center gap-1"><GraduationCap size={11} />{lecture.class.name}</span>
                       </div>
                       <p className="mt-1 text-[11px] text-muted">{lecture.class.schedule}</p>
@@ -2483,7 +2484,7 @@ export function LectureManagementPanel() {
                 <h2 className="text-sm font-semibold text-slate-900">Lecture quizzes</h2>
                 {quizPanelLecture ? (
                   <p className="text-[11px] text-muted">
-                    {quizPanelLecture.title} • {quizPanelLecture.class.name} • {new Date(quizPanelLecture.date).toLocaleString()}
+                    {quizPanelLecture.title} • {quizPanelLecture.class.name} • {new Date(quizPanelLecture.date).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}
                   </p>
                 ) : (
                   <p className="text-[11px] text-muted">Select a lecture card and open Quizzes to manage quiz content.</p>
@@ -2524,7 +2525,7 @@ export function LectureManagementPanel() {
                 <h2 className="text-sm font-semibold text-slate-900">Lecture assignments</h2>
                 {assignmentPanelLecture ? (
                   <p className="text-[11px] text-muted">
-                    {assignmentPanelLecture.title} • {assignmentPanelLecture.class.name} • {new Date(assignmentPanelLecture.date).toLocaleString()}
+                    {assignmentPanelLecture.title} • {assignmentPanelLecture.class.name} • {new Date(assignmentPanelLecture.date).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}
                   </p>
                 ) : (
                   <p className="text-[11px] text-muted">Select a lecture card and open Assignments to manage assignment content.</p>
@@ -2568,7 +2569,7 @@ export function LectureManagementPanel() {
                 <h2 className="text-sm font-semibold text-slate-900">Lecture notes</h2>
                 {notePanelLecture ? (
                   <p className="text-[11px] text-muted">
-                    {notePanelLecture.title} • {notePanelLecture.class.name} • {new Date(notePanelLecture.date).toLocaleString()}
+                    {notePanelLecture.title} • {notePanelLecture.class.name} • {new Date(notePanelLecture.date).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}
                   </p>
                 ) : (
                   <p className="text-[11px] text-muted">Select a lecture card and open Notes to manage files.</p>
@@ -2609,7 +2610,7 @@ export function LectureManagementPanel() {
                 <h2 className="text-sm font-semibold text-slate-900">Lecture whiteboards</h2>
                 {whiteboardPanelLecture ? (
                   <p className="text-[11px] text-muted">
-                    {whiteboardPanelLecture.title} • {whiteboardPanelLecture.class.name} • {new Date(whiteboardPanelLecture.date).toLocaleString()}
+                    {whiteboardPanelLecture.title} • {whiteboardPanelLecture.class.name} • {new Date(whiteboardPanelLecture.date).toLocaleString(undefined, SRI_LANKA_TIME_ZONE)}
                   </p>
                 ) : (
                   <p className="text-[11px] text-muted">Select a lecture card and open Whiteboards to manage saved whiteboards.</p>

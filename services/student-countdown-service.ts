@@ -1,6 +1,7 @@
 import { Weekday } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { nextSriLankaWeeklyOccurrence, sriLankaDateKey } from "@/lib/time";
 
 const WEEKDAY_INDEX: Record<Weekday, number> = {
   SUNDAY: 0,
@@ -35,8 +36,9 @@ export type StudentCountdown = {
   href: string;
 };
 
+// Sri Lankan calendar day of a real instant, whatever the server's timezone.
 function ymd(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return sriLankaDateKey(d);
 }
 
 /**
@@ -191,15 +193,9 @@ export async function getStudentUpcomingCountdowns(studentId: string): Promise<S
   }
 
   for (const s of schedules) {
-    const targetDow = WEEKDAY_INDEX[s.dayOfWeek];
-    const [h, m] = s.startTime.split(":").map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
-
-    const occ = new Date(now);
-    occ.setHours(0, 0, 0, 0);
-    occ.setDate(occ.getDate() + ((targetDow - occ.getDay() + 7) % 7));
-    occ.setHours(h, m, 0, 0);
-    if (occ.getTime() <= now.getTime()) occ.setDate(occ.getDate() + 7);
+    // Schedule times are Sri Lankan wall-clock times.
+    const occ = nextSriLankaWeeklyOccurrence(now, WEEKDAY_INDEX[s.dayOfWeek], s.startTime);
+    if (!occ) continue;
 
     if (occ.getTime() > windowEnd.getTime()) continue;
     if (lectureDayKeys.has(`${s.classId}|${ymd(occ)}`)) continue;

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { startOfTodaySriLankaUtc } from "@/lib/time";
+import { sriLankaDateKey, sriLankaDigitsToInstant, startOfTodaySriLankaUtc } from "@/lib/time";
 
 const WEEKDAY_NAMES = [
   "SUNDAY",
@@ -73,7 +73,9 @@ export async function getTeacherDashboardMetrics(
       where: {
         status: 0,
         class: { teacherId, status: 0 },
-        date: { gte: from, lte: to },
+        // `from` / `to` are Sri Lankan day boundaries written as UTC digits;
+        // Lecture.date is a real instant (same window as the calendar).
+        date: { gte: sriLankaDigitsToInstant(from), lte: sriLankaDigitsToInstant(to) },
       },
       select: { classId: true, date: true },
     }),
@@ -156,8 +158,10 @@ export async function getTeacherDashboardMetrics(
   ]);
 
   // ── schedule occurrences in range: with vs. without a lecture added ─────
+  // Lectures by their Sri Lankan day; schedule occurrences below keep the
+  // UTC-digit day keys of `from` / `to`, which already are Sri Lankan days.
   const lectureDayKeys = new Set(
-    rangeLectures.map((l) => `${l.classId}|${dayKey(l.date)}`)
+    rangeLectures.map((l) => `${l.classId}|${sriLankaDateKey(l.date)}`)
   );
 
   let schedulesPending = 0;
