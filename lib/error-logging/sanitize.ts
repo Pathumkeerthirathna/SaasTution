@@ -145,6 +145,88 @@ function isPrismaError(error: unknown, name: string) {
   return typeof candidate?.clientVersion === "string" && typeof candidate.code === "string" && /^P\d{4}$/.test(candidate.code);
 }
 
+const SQL_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
+
+/** "prisma.student.create()", "tx.studentQrToken.update()", "prisma.$executeRaw()". */
+function prismaOperation(message: string): string | undefined {
+  return /Invalid `([A-Za-z_$][A-Za-z0-9_$]{0,30}(?:\.[A-Za-z0-9_$]{1,64}){1,2}\(\))` invocation/.exec(message)?.[1];
+}
+
+/**
+ * Removes data values from one database / Prisma problem statement while
+ * keeping its shape and the SQL identifiers that locate it:
+ *   Key (email)=(a@b.c) already exists.        -> Key (email)=(…) already exists.
+ *   violates check constraint "X" ... "value"  -> constraint "X" kept, other quoted text -> "…"
+ *   invalid input syntax for type uuid: "abc"  -> ... uuid: "…"
+ * Then the usual scrubText rules (tokens, emails, phones) and a length limit.
+ */
+function scrubDatabaseText(text: string): string {
+  let line = text.length > 600 ? text.slice(0, 600) : text;
+  // Key (col, col)=(values) / (col)=(value): the values go.
+  line = line.replace(/\(([A-Za-z0-9_, "]{1,200})\)=\([^\n]{0,500}?\)(?= already exists| is not present| conflicts| is still referenced|[.,;]|$)/g, "($1)=(…)");
+  line = line.replace(/=\([^)\n]{0,500}\)/g, "=(…)");
+  // Double-quoted text: identifiers after a SQL object keyword stay, the rest goes.
+  line = line.replace(
+    /(\b(?:relation|constraint|column|table|index|type|schema|function|sequence|database|role)[ \t]{1,5})?"([^"\n]{0,300})"/gi,
+    (match: string, keyword: string | undefined, inner: string) =>
+      keyword && SQL_IDENTIFIER.test(inner) ? `${keyword}"${inner}"` : `${keyword ?? ""}"…"`
+  );
+  line = line.replace(/'[^'\n]{0,300}'/g, "'…'");
+  // Rust debug output (Some(...) / Failing row contains (...)) never carries anything needed.
+  line = line.replace(/Failing row contains \([^\n]*/g, "Failing row contains (…)");
+  return scrubText(line, 300);
+}
+
+/**
+ * The problem a Prisma / database error message states, without data:
+ * - engine errors (ConnectorError / PostgresError): "Database error 23514:
+ *   new row for relation "X" violates check constraint "Y"" (the DETAIL with
+ *   the failing row is dropped);
+ * - raw query errors: "Raw query failed. Code: `23505`. Message: Key (id)=(…) already exists.";
+ * - anything else: the message's last line (Prisma's own summary line), with
+ *   values removed. The code frame and the query arguments above it never.
+ */
+export function describePrismaProblem(message: unknown): string {
+  if (typeof message !== "string" || message.length === 0) return "";
+  const text = message.length > 20_000 ? message.slice(0, 20_000) : message;
+
+  if (/PostgresError \{/.test(text) || /ConnectorError\(/.test(text)) {
+    const code = /\bcode: \\?"([0-9A-Z]{5})\\?"/.exec(text)?.[1];
+    const rawMessage = /\bmessage: \\?"((?:[^"\\]|\\.){0,600})\\?"/.exec(text)?.[1];
+    const pgMessage = rawMessage ? rawMessage.replace(/\\\\/g, "\\").replace(/\\"/g, '"') : "";
+    return scrubText(`Database error${code ? ` ${code}` : ""}${pgMessage ? `: ${scrubDatabaseText(pgMessage)}` : ""}`, 300);
+  }
+
+  const raw = /Raw query failed\. Code: `([0-9A-Za-z]{1,10})`\. Message: `([^`]{0,2000})/.exec(text);
+  if (raw) {
+    const firstLine = raw[2].split(/\r?\n/)[0].replace(/^ERROR:\s*/, "");
+    return scrubText(`Raw query failed. Code: \`${raw[1]}\`. Message: ${scrubDatabaseText(firstLine)}`, 300);
+  }
+
+  const lastLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .pop();
+  return lastLine ? scrubDatabaseText(lastLine) : "";
+}
+
+/**
+ * One safe line for a Prisma client log event (lib/prisma.ts routes
+ * `log: error / warn` here instead of Prisma's default console output, which
+ * prints code frames, query arguments and PostgreSQL DETAIL rows):
+ *   prisma:error studentQrToken.create: Database error 23514: new row for relation "StudentQrToken" violates ...
+ */
+export function formatPrismaLogEvent(level: "error" | "warn", event: unknown): string {
+  const candidate = (event && typeof event === "object" ? event : {}) as { message?: unknown; target?: unknown };
+  const target =
+    typeof candidate.target === "string" && /^[A-Za-z0-9_$.]{1,100}$/.test(candidate.target) ? candidate.target : "";
+  const message = typeof candidate.message === "string" ? candidate.message : "";
+  const operation = target ? "" : prismaOperation(message) ?? "";
+  const problem = describePrismaProblem(message) || "(no message)";
+  return scrubText(`prisma:${level}${target || operation ? ` ${target || operation}` : ""}: ${problem}`, 400);
+}
+
 /**
  * Prisma errors without their arguments. A PrismaClientValidationError's
  * message prints the whole query (the student's name, NIC, address…), and a
@@ -161,7 +243,7 @@ function prismaSummary(error: unknown, name: string, message: string, stack: str
     parts.push(candidate.code);
   }
 
-  const operation = /Invalid `(prisma\.[A-Za-z0-9_]{1,64}\.[A-Za-z0-9_]{1,64}\(\))` invocation/.exec(message)?.[1];
+  const operation = prismaOperation(message);
 
   if (operation) parts.push(operation);
 
@@ -182,13 +264,9 @@ function prismaSummary(error: unknown, name: string, message: string, stack: str
     if (typeof field === "string" && /^[A-Za-z0-9_.()` ]{1,80}$/.test(field)) parts.push(`field ${field}`);
   }
 
-  const lastLine = message
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .pop();
+  const problem = describePrismaProblem(message);
 
-  const summary = [parts.join(" "), lastLine ? lastLine.slice(0, 300) : ""].filter(Boolean).join(": ");
+  const summary = [parts.join(" "), problem].filter(Boolean).join(": ");
   const frames = (stack ?? "")
     .split("\n")
     .filter((line) => /^\s+at /.test(line))

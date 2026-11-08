@@ -67,7 +67,14 @@ distort the rolling 24-hour regeneration limit.
 - A **separate, server-only** secret: at least **32 random bytes** (e.g.
   `openssl rand -base64 48`). Never reuse `JWT_SECRET` or any other secret,
   never prefix it with `NEXT_PUBLIC_`, never log it.
-- Missing or too short: QR features are disabled (the service answers
+- Format: base64 or base64url text (hex text from `openssl rand -hex 32` is
+  also accepted, since hex characters are valid base64). The decoded bytes are
+  the HMAC key. Loaded and validated by `loadStudentQrSecret()` in
+  `lib/student-qr-token.ts`, which rejects: missing / blank, non-base64 text,
+  fewer than 32 decoded bytes, obvious placeholders (fewer than 16 distinct
+  byte values) and a value equal to `JWT_SECRET`. It cannot measure true
+  randomness: always generate the value with `openssl rand`.
+- Missing or invalid: QR features are disabled (the service answers
   "not configured"); nothing falls back to another secret.
 - Must be set on every server before the QR features are deployed.
 
@@ -86,7 +93,7 @@ QR — printed or downloaded — stops working**. Therefore:
    `SYSTEM_REISSUE` replacement (not counted towards the regeneration limit).
 3. Students and teachers must then download / print the new QR codes.
 
-## Regeneration and revocation (implemented in a later task)
+## Regeneration and revocation (`services/student-qr-service.ts`)
 
 - Regenerating revokes the active token (setting `revokedAt`, `revokedByRole`,
   `revokedById`, `revokedReason` together) and inserts a new one in
@@ -96,3 +103,25 @@ QR — printed or downloaded — stops working**. Therefore:
   are not counted.
 - Revoked rows are kept (audit); their hashes stay unique, so an old QR can
   never match again.
+
+## Service behaviour (`services/student-qr-service.ts`)
+
+- `getOrCreateActiveToken(studentId, actor)`: returns the active token
+  (issuing the first one, reason `ISSUE`, under the student row lock).
+  Idempotent; concurrent first views produce exactly one row.
+- `regenerateToken(studentId, actor)`: one transaction —
+  `SELECT ... FOR NO KEY UPDATE` on the student (serialises QR operations; foreign-key inserts such as attendance are not blocked), count `REGENERATE` rows of the
+  last 24 hours, revoke + insert. Over the limit: `QR_REGENERATION_LIMIT`
+  (429) with `{ limit, retryAfterSeconds, retryAt }`. A `SYSTEM` actor cannot
+  regenerate.
+- `getQrStatus(studentId)`: quota and whether a token exists; no token data.
+- `resolveQrPayload(payload)`: returns only `studentId`, `teacherId`, `name`,
+  `registrationNumber`, `isActive`. Unknown, revoked or malformed payloads all
+  fail as `INVALID_QR_PAYLOAD`.
+- Actors: `STUDENT` only for itself, `TEACHER` only for an owned student
+  (otherwise `STUDENT_NOT_FOUND`); routes check this too. Deleted students
+  (status 2) are not found.
+- A stored token that no longer verifies (secret changed) fails as
+  `QR_TOKEN_UNVERIFIABLE` and is never reissued automatically.
+- Database errors on token writes are replaced by a generic error so the
+  PostgreSQL row detail (nonce, tokenHash) cannot reach route logs; the shared Prisma client (`lib/prisma.ts`) logs only sanitized one-line summaries (`formatPrismaLogEvent`).
