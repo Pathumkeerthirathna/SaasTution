@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
+import { DEFAULT_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
 import { nowInSriLanka } from "@/lib/time";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import { ClassLectureRecording, ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
@@ -21,6 +22,8 @@ type ClassWriteInput = {
   description?: string;
   monthlyFee: number;
   paymentDueWeek: number;
+  /** Default attendance grace period (0–240); omitted: 10. */
+  attendanceGraceMinutes?: number;
   schedule?: string;
   schedules: {
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
@@ -87,6 +90,7 @@ export async function listClassesByTeacher(params: ListClassesParams) {
         description: true,
         monthlyFee: true,
         paymentDueWeek: true,
+        attendanceGraceMinutes: true,
         startDate: true,
         schedule: true,
         schedules: {
@@ -447,6 +451,7 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       description: input.description,
       monthlyFee: input.monthlyFee,
       paymentDueWeek: input.paymentDueWeek,
+      attendanceGraceMinutes: input.attendanceGraceMinutes ?? DEFAULT_ATTENDANCE_GRACE_MINUTES,
       schedule: scheduleSummary,
       schedules: {
         create: input.schedules,
@@ -467,6 +472,7 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       description: true,
       monthlyFee: true,
       paymentDueWeek: true,
+      attendanceGraceMinutes: true,
       schedule: true,
       schedules: {
         select: {
@@ -513,6 +519,8 @@ export async function updateClassForTeacher(
     description?: string;
     monthlyFee?: number;
     paymentDueWeek?: number;
+    /** Changes only the class default: existing attendance registers keep their own grace. */
+    attendanceGraceMinutes?: number;
     schedule?: string;
     schedules?: {
       dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
@@ -582,6 +590,7 @@ export async function updateClassForTeacher(
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.monthlyFee !== undefined ? { monthlyFee: input.monthlyFee } : {}),
         ...(input.paymentDueWeek !== undefined ? { paymentDueWeek: input.paymentDueWeek } : {}),
+        ...(input.attendanceGraceMinutes !== undefined ? { attendanceGraceMinutes: input.attendanceGraceMinutes } : {}),
         ...(scheduleSummary !== undefined ? { schedule: scheduleSummary } : {}),
         ...(input.schedules
           ? {
@@ -597,6 +606,7 @@ export async function updateClassForTeacher(
         description: true,
         monthlyFee: true,
         paymentDueWeek: true,
+        attendanceGraceMinutes: true,
         schedule: true,
         schedules: {
           select: {

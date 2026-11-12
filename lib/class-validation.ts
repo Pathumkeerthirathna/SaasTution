@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_ATTENDANCE_GRACE_MINUTES, MIN_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
+
 const className = z
   .string()
   .trim()
@@ -24,6 +26,18 @@ const classMonthlyFee = z
   .int("Monthly fee must be a whole number.")
   .min(0, "Monthly fee cannot be negative.")
   .max(1_000_000_000, "Monthly fee is too large.");
+
+/**
+ * The class's default attendance grace period (Stage 5.7b-2b-2): whole
+ * minutes 0–240 (the database CHECK). Strict: a number only (no string
+ * coercion, no null); omitted on create = 10 (the column default), omitted
+ * on update = unchanged. Copied into each NEW attendance register only.
+ */
+const classAttendanceGraceMinutes = z
+  .number({ error: "Attendance grace period must be a whole number of minutes from 0 to 240." })
+  .int("Attendance grace period must be a whole number of minutes.")
+  .min(MIN_ATTENDANCE_GRACE_MINUTES, `Attendance grace period cannot be less than ${MIN_ATTENDANCE_GRACE_MINUTES} minutes.`)
+  .max(MAX_ATTENDANCE_GRACE_MINUTES, `Attendance grace period cannot be more than ${MAX_ATTENDANCE_GRACE_MINUTES} minutes.`);
 
 const classPaymentDueWeek = z
   .coerce.number()
@@ -65,6 +79,7 @@ export const createClassSchema = z.object({
   description: classDescription,
   monthlyFee: classMonthlyFee,
   paymentDueWeek: classPaymentDueWeek,
+  attendanceGraceMinutes: classAttendanceGraceMinutes.optional(),
   schedule: classSchedule.optional(),
   schedules: classSchedulesSchema,
 });
@@ -75,10 +90,11 @@ export const updateClassSchema = z
     description: classDescription,
     monthlyFee: classMonthlyFee.optional(),
     paymentDueWeek: classPaymentDueWeek.optional(),
+    attendanceGraceMinutes: classAttendanceGraceMinutes.optional(),
     schedule: classSchedule.optional(),
     schedules: classSchedulesSchema.optional(),
   })
-  .refine((value) => value.name || value.description !== undefined || value.monthlyFee !== undefined || value.paymentDueWeek !== undefined || value.schedule || value.schedules, {
+  .refine((value) => value.name || value.description !== undefined || value.monthlyFee !== undefined || value.paymentDueWeek !== undefined || value.attendanceGraceMinutes !== undefined || value.schedule || value.schedules, {
     message: "At least one field is required to update the class.",
   });
 

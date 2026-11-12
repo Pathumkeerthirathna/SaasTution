@@ -2,6 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { updateClassSchema } from "@/lib/class-validation";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { checkSameOriginRequest } from "@/lib/same-origin";
 import { deactivateClassForTeacher, getClassByIdForTeacher, updateClassForTeacher } from "@/services/class-service";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,12 @@ export async function PUT(
     params: { id: string };
   }
 ) {
+  // Same-origin only (CSRF), before authentication (Stage 5.7b-2b-2).
+  const origin = checkSameOriginRequest(request);
+  if (!origin.allowed) {
+    return apiError("This request must come from the application itself.", 403, "CROSS_ORIGIN_REQUEST_REJECTED");
+  }
+
   try {
     const session = await requireTeacherSession();
     const classId = context.params.id;
@@ -56,6 +63,7 @@ export async function PUT(
       description?: string;
       monthlyFee?: number;
       paymentDueWeek?: number;
+      attendanceGraceMinutes?: number;
       schedule?: string;
       schedules?: {
         dayOfWeek?: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";

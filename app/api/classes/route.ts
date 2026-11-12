@@ -2,6 +2,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { createClassSchema } from "@/lib/class-validation";
 import { handleRouteError } from "@/lib/error-handler";
+import { checkSameOriginRequest } from "@/lib/same-origin";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createClassForTeacher, listClassesByTeacher } from "@/services/class-service";
 
@@ -33,6 +34,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Same-origin only (CSRF), before authentication (Stage 5.7b-2b-2).
+  const origin = checkSameOriginRequest(request);
+  if (!origin.allowed) {
+    return apiError("This request must come from the application itself.", 403, "CROSS_ORIGIN_REQUEST_REJECTED");
+  }
+
   try {
     const session = await requireTeacherSession();
     const body = (await request.json()) as {
@@ -41,6 +48,7 @@ export async function POST(request: Request) {
       startDate: string;
       monthlyFee?: number;
       paymentDueWeek?: number;
+      attendanceGraceMinutes?: number;
       schedule?: string;
       schedules?: {
         dayOfWeek?: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";

@@ -159,7 +159,9 @@ const fakePrisma = {
     lecture: {
         findFirst: async ({ where }) => (where.id === LECTURE ? lectureRow() : null),
         findUnique: async ({ where }) => (where.id === LECTURE ? lectureRow() : null),
-        update: async () => lectureRow()
+        update: async () => lectureRow(),
+        // Stage 5.7b-2a: the live start marks LIVE with a conditional update (never a cancelled lecture; this one never is).
+        updateMany: async ({ where }) => ({ count: where.id === LECTURE ? 1 : 0 })
     }
 };
 

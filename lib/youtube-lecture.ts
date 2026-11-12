@@ -639,6 +639,11 @@ async function startInCurrentSession<T>(
     return start(session.startedAt);
 }
 
+/** A cancelled lecture stays cancelled: no YouTube live stream starts it (Stage 5.7b-2a). */
+function lectureCancelledError() {
+    return new AppError("This lecture is cancelled, so it cannot be streamed.", 409, "LECTURE_CANCELLED");
+}
+
 async function assertTeacherCanStartYouTube(
     teacherId: string,
     lectureId: string,
@@ -651,6 +656,7 @@ async function assertTeacherCanStartYouTube(
             status: 0,
         },
         select: {
+            classStatus: true,
             class: {
                 select: {
                     teacherId: true,
@@ -669,6 +675,12 @@ async function assertTeacherCanStartYouTube(
                 ? "You are not authorized to start YouTube streaming for this lecture."
                 : "You are not authorized to start YouTube recording for this lecture."
         );
+    }
+
+    // A live stream marks the lecture LIVE: refused for a cancelled lecture
+    // before any YouTube work (re-checked atomically where LIVE is written).
+    if (feature === "live" && lecture.classStatus === "CANCELLED") {
+        throw lectureCancelledError();
     }
 
     await requireCurrentSession(lectureId, sessionId, feature);
@@ -758,10 +770,28 @@ async function startYouTubeLectureInternal(
         );
     }
 
-    await prisma.lecture.update({
-        where: { id: lecture.id },
+    if (lecture.classStatus === "CANCELLED") {
+        throw lectureCancelledError();
+    }
+
+    // One conditional UPDATE: LIVE only while the lecture is not cancelled
+    // (nor removed). PostgreSQL re-checks the WHERE on the newest row version
+    // after waiting for a concurrent cancellation (READ COMMITTED), so a
+    // cancellation that committed first is never overwritten. Before any
+    // YouTube call: a refused start creates nothing on YouTube.
+    const markedLive = await prisma.lecture.updateMany({
+        where: { id: lecture.id, status: 0, classStatus: { not: "CANCELLED" } },
         data: { classStatus: "LIVE" },
     });
+
+    if (markedLive.count === 0) {
+        const now = await prisma.lecture.findUnique({
+            where: { id: lecture.id },
+            select: { status: true, classStatus: true },
+        });
+        if (now && now.status === 0 && now.classStatus === "CANCELLED") throw lectureCancelledError();
+        throw new Error("Lecture not found.");
+    }
 
     // Automatic joining waivers: a COMPLETED lecture going LIVE again stops
     // counting. Background only; never delays or fails the YouTube start.

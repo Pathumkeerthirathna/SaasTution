@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { GRACE_MINUTES_MAX, GRACE_MINUTES_MIN } from "@/components/attendance/attendance-ui";
+import { buildClassFormPayload, classGraceInput, DEFAULT_CLASS_GRACE_INPUT } from "@/components/class-form-payload";
 
 import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ExternalLink, Eye } from "lucide-react";
@@ -74,6 +76,8 @@ export type ClassItem = {
   description: string | null;
   monthlyFee: number;
   paymentDueWeek: number;
+  /** Default attendance grace period in minutes (Stage 5.7b-2b-3). */
+  attendanceGraceMinutes?: number;
   startDate: string;
   schedule: string;
   schedules: {
@@ -127,6 +131,8 @@ type FormState = {
   description: string;
   monthlyFee: string;
   paymentDueWeek: string;
+  /** The grace input's text (whole minutes 0–240). */
+  attendanceGraceMinutes: string;
   startDate: string;
   schedules: {
     dayOfWeek: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
@@ -273,6 +279,7 @@ export function ClassManagementPanel() {
     description: "",
     monthlyFee: "0",
     paymentDueWeek: "1",
+    attendanceGraceMinutes: DEFAULT_CLASS_GRACE_INPUT,
     startDate: "",
     schedules: [getDefaultScheduleRow()],
   });
@@ -286,6 +293,7 @@ export function ClassManagementPanel() {
     monthlyFee: "0",
     startDate: "",
     paymentDueWeek: "1",
+    attendanceGraceMinutes: DEFAULT_CLASS_GRACE_INPUT,
     schedules: [getDefaultScheduleRow()],
   });
   const [totalItems, setTotalItems] = useState(0);
@@ -454,16 +462,19 @@ const hasStudentFilter = Boolean(
 
       //return;
 
+      // The grace period is checked before anything is sent (whole minutes 0–240).
+      const createPayload = buildClassFormPayload(createForm);
+      if (!createPayload.ok) {
+        setErrorMessage(createPayload.message);
+        return;
+      }
+
       const response = await fetch("/api/classes", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...createForm,
-          monthlyFee: Number(createForm.monthlyFee || 0),
-          paymentDueWeek: Number(createForm.paymentDueWeek || 1),
-        }),
+        body: JSON.stringify(createPayload.body),
       });
 
       const payload = (await response.json()) as {
@@ -481,6 +492,7 @@ const hasStudentFilter = Boolean(
         description: "",
         monthlyFee: "0",
         paymentDueWeek: "1",
+        attendanceGraceMinutes: DEFAULT_CLASS_GRACE_INPUT,
         startDate: "",
         schedules: [getDefaultScheduleRow()],
       });
@@ -503,6 +515,7 @@ const hasStudentFilter = Boolean(
       description: item.description ?? "",
       monthlyFee: String(item.monthlyFee),
       paymentDueWeek: String(item.paymentDueWeek),
+      attendanceGraceMinutes: classGraceInput(item.attendanceGraceMinutes),
       startDate: item.startDate,
       schedules:
         item.schedules.length > 0
@@ -549,16 +562,19 @@ const hasStudentFilter = Boolean(
     setSuccessMessage(null);
 
     try {
+      // The grace period is checked before anything is sent (whole minutes 0–240).
+      const updatePayload = buildClassFormPayload(editForm);
+      if (!updatePayload.ok) {
+        setErrorMessage(updatePayload.message);
+        return;
+      }
+
       const response = await fetch(`/api/classes/${classId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...editForm,
-          monthlyFee: Number(editForm.monthlyFee || 0),
-          paymentDueWeek: Number(editForm.paymentDueWeek || 1),
-        }),
+        body: JSON.stringify(updatePayload.body),
       });
 
       const payload = (await response.json()) as {
@@ -1480,6 +1496,33 @@ const hasStudentFilter = Boolean(
                     </select>
                   </div>
                 </div>
+
+                <div>
+                  <label htmlFor="classAttendanceGraceMinutes" className="form-label mb-1.5 block">
+                    Attendance grace period (minutes)
+                  </label>
+                  <input
+                    id="classAttendanceGraceMinutes"
+                    type="number"
+                    inputMode="numeric"
+                    min={GRACE_MINUTES_MIN}
+                    max={GRACE_MINUTES_MAX}
+                    step={1}
+                    required
+                    value={createForm.attendanceGraceMinutes}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        attendanceGraceMinutes: event.target.value,
+                      }))
+                    }
+                    aria-describedby="classAttendanceGraceMinutesHelp"
+                    className="control-input text-sm"
+                  />
+                  <p id="classAttendanceGraceMinutesHelp" className="mt-1 text-[11px] text-muted">
+                    Joins and QR scans up to this many minutes after a lecture starts count as present ({GRACE_MINUTES_MIN}–{GRACE_MINUTES_MAX}; new lectures use it).
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1853,6 +1896,27 @@ const hasStudentFilter = Boolean(
                 <option value="3">Third week</option>
                 <option value="4">Fourth week</option>
               </select>
+            </div>
+            <div>
+              <label htmlFor="editAttendanceGraceMinutes" className="form-label mb-1 block">
+                Attendance grace period (minutes)
+              </label>
+              <input
+                id="editAttendanceGraceMinutes"
+                type="number"
+                inputMode="numeric"
+                min={GRACE_MINUTES_MIN}
+                max={GRACE_MINUTES_MAX}
+                step={1}
+                required
+                value={editForm.attendanceGraceMinutes}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, attendanceGraceMinutes: event.target.value }))}
+                aria-describedby="editAttendanceGraceMinutesHelp"
+                className="control-input text-sm"
+              />
+              <p id="editAttendanceGraceMinutesHelp" className="mt-1 text-[11px] text-muted">
+                {GRACE_MINUTES_MIN}–{GRACE_MINUTES_MAX} minutes. Changing it applies to new lectures only; existing attendance registers keep their own value.
+              </p>
             </div>
           </div>
 

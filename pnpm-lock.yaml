@@ -32,6 +32,9 @@ importers:
       jose:
         specifier: ^6.2.3
         version: 6.2.3
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       lucide-react:
         specifier: ^1.14.0
         version: 1.14.0(react@18.3.1)
@@ -96,9 +99,6 @@ importers:
       eslint-config-next:
         specifier: 14.2.33
         version: 14.2.33(eslint@8.57.1)(typescript@5.9.3)
-      jsqr:
-        specifier: 1.4.0
-        version: 1.4.0
       postcss:
         specifier: ^8.4.49
         version: 8.5.13
