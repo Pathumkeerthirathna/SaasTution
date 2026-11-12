@@ -18,6 +18,11 @@ type ImportStudentRow = {
     email?: string;
 };
 
+const IMPORTABLE_REGISTRATION_SOURCES = new Set<StudentRegistrationSource>([
+    StudentRegistrationSource.IMPORT,
+    StudentRegistrationSource.TEACHER,
+]);
+
 type ImportStudentRequest = {
   registrationSource: StudentRegistrationSource;
   students: ImportStudentRow[];
@@ -31,7 +36,33 @@ export async function POST(request: Request) {
     
     const body = (await request.json()) as ImportStudentRequest;
 
-    const { registrationSource, students } = body;
+    const { students } = body;
+
+    // Only teacher-originated sources: an import can never claim to be a
+    // public registration (PUBLIC_CLASS) or an admin creation. Missing keeps
+    // the schema default (TEACHER), as before.
+    const rawRegistrationSource = (body as { registrationSource?: unknown } | null)?.registrationSource;
+
+    if (
+        rawRegistrationSource !== undefined &&
+        rawRegistrationSource !== null &&
+        !IMPORTABLE_REGISTRATION_SOURCES.has(rawRegistrationSource as StudentRegistrationSource)
+    ) {
+        const message = "Invalid registration source.";
+
+        return NextResponse.json(
+            {
+            success: false,
+            error: { message, code: "VALIDATION_ERROR" },
+            errors: [{ row: 0, field: "registrationSource", message }],
+            },
+            {
+            status: 400,
+            }
+        );
+    }
+
+    const registrationSource = (rawRegistrationSource ?? undefined) as StudentRegistrationSource | undefined;
 
 
     if (!Array.isArray(students)) {

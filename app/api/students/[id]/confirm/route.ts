@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { handleRouteError } from "@/lib/error-handler";
 import { confirmStudent } from "../../../../../services/student-service";
 
+// Errors: { success: false, error: { message, code } } with 401 UNAUTHORIZED,
+// 404 STUDENT_NOT_FOUND, 409 STUDENT_ALREADY_APPROVED / STUDENT_DECISION_BUSY,
+// 500 INTERNAL_SERVER_ERROR.
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -15,13 +19,6 @@ export async function PUT(
       message: "Student confirmed successfully.",
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          error instanceof Error ? error.message : "Internal server error.",
-      },
-      { status: 400 }
-    );
+    return handleRouteError(error, { request });
   }
 }

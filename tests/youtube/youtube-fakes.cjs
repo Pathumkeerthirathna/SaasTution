@@ -41,7 +41,9 @@ const db = {
     overrides: [],
     // JibriShutdownControl (null: no row) and JibriShutdownModeChange rows.
     control: null,
-    modeChanges: []
+    modeChanges: [],
+    // Lecture.classStatus by lecture id (Stage 5.7b-2a; absent: SCHEDULED).
+    lectureClassStatus: {}
 };
 
 // One column condition, as Postgres evaluates it: a comparison with NULL
@@ -162,7 +164,28 @@ const locks = new Map();
 // Every lock acquisition attempt (lectureId), in order.
 const lockAttempts = [];
 
-const lectureRow = (id = LECTURE) => ({ id, title: "Physics", classId: CLASS, status: 0, class: { teacherId: TEACHER } });
+const lectureRow = (id = LECTURE) => ({
+    id, title: "Physics", classId: CLASS, status: 0, classStatus: db.lectureClassStatus[id] ?? "SCHEDULED", class: { teacherId: TEACHER }
+});
+
+// Session start's lock timeout and lecture row lock (FOR NO KEY UPDATE).
+// Any other raw SQL is a mistake in these tests.
+const sessionStartRaw = {
+    $executeRawUnsafe: async sql => {
+        if (/^SET LOCAL lock_timeout = '\d+ms'$/.test(sql)) return 0;
+        throw new Error("fake $executeRawUnsafe: unexpected SQL " + sql);
+    },
+    $queryRaw: async (strings, ...values) => {
+        const sql = strings.join("?");
+        if (/FROM "Lecture"/.test(sql) && /FOR NO KEY UPDATE/.test(sql)) {
+            const [id] = values;
+            return LECTURES.has(id)
+                ? [{ id, classId: CLASS, status: 0, classStatus: "SCHEDULED", date: new Date(0) }]
+                : [];
+        }
+        throw new Error("fake $queryRaw: unexpected SQL " + sql);
+    }
+};
 
 const prisma = {
     youTubeOperationLock: lockTable(locks),
@@ -254,8 +277,12 @@ const prisma = {
             return { ...row };
         }
     },
-    // Interactive transactions run on the same in-memory tables.
-    $transaction: async operation => operation(prisma),
+    // Interactive transactions run on the same in-memory tables. The
+    // transaction client also answers the two raw statements of a session
+    // start (services/session-service.ts createSessionUnderLectureLock); only
+    // there, so the top-level fake keeps having no $queryRaw (lib/server-clock
+    // treats a client without one as a test double).
+    $transaction: async operation => operation({ ...prisma, ...sessionStartRaw }),
     attendance: {
         updateMany: async ({ where, data }) => {
             db.attendanceCloses.push({ classSessionId: where.classSessionId, leftAt: data.leftAt });
@@ -273,7 +300,18 @@ const prisma = {
     lecture: {
         findFirst: async ({ where }) => (LECTURES.has(where.id) ? lectureRow(where.id) : null),
         findUnique: async ({ where }) => (LECTURES.has(where.id) ? lectureRow(where.id) : null),
-        update: async () => lectureRow()
+        update: async () => lectureRow(),
+        // Conditional UPDATE (Stage 5.7b-2a: a live stream never un-cancels a
+        // lecture): applies only when the row still matches the WHERE, as
+        // PostgreSQL re-checks it on the newest row version.
+        updateMany: async ({ where, data }) => {
+            if (!LECTURES.has(where.id)) return { count: 0 };
+            const row = lectureRow(where.id);
+            if (where.status !== undefined && row.status !== where.status) return { count: 0 };
+            if (where.classStatus && where.classStatus.not !== undefined && row.classStatus === where.classStatus.not) return { count: 0 };
+            if (data.classStatus !== undefined) db.lectureClassStatus[where.id] = data.classStatus;
+            return { count: 1 };
+        }
     }
 };
 
@@ -550,6 +588,7 @@ function reset() {
     yt.privacyGate = null;
     yt.streamGate = null;
     db.otherConnection = null;
+    db.lectureClassStatus = {};
     db.sessions = [LECTURE, LECTURE_2].map(lectureId => ({
         id: "fixture-session-" + lectureId, classId: CLASS, lectureId, isActive: true,
         startedAt: new Date(0), endedAt: null, teacherId: TEACHER, fixture: true

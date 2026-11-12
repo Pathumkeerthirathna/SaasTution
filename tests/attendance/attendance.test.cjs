@@ -654,3 +654,97 @@ test("ending a session closes every open visit of that session, and only those",
     assert.equal(db.attendance.find(row => row.id === "other-session-visit").leftAt, null);
     assert.equal(db.session.isActive, false);
 });
+
+// ---- Unified lecture attendance: the post-commit evidence hook (Stage 5.4b) ----
+
+const evidenceDispatcher = require(path.join(root, "services/attendance-evidence-dispatcher.ts"));
+const EVIDENCE_ENV = { APPROVAL_FEATURE_STARTED_AT: "2026-07-28T00:00:00Z", ATTENDANCE_EVIDENCE_STARTED_AT: "2026-08-15T00:00:00Z" };
+
+async function withEvidenceSettings(fn) {
+    const saved = Object.fromEntries(Object.keys(EVIDENCE_ENV).map(key => [key, process.env[key]]));
+    Object.assign(process.env, EVIDENCE_ENV);
+    try {
+        return await fn();
+    } finally {
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    }
+}
+
+async function joinOverHttp() {
+    const response = await attendanceRoute.POST(new Request("http://localhost/api/attendance", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: SESSION, classId: CLASS, studentId: STUDENT })
+    }));
+    return { status: response.status, body: await response.json() };
+}
+
+test("unified attendance: the evidence runs after the visit committed, with the visit's id; the join is unchanged", async () => {
+    reset();
+    setNow("08:00");
+    const seen = [];
+    evidenceDispatcher.onlineEvidenceDispatcherForTesting.reset(async visitId => {
+        seen.push({ visitId, committed: db.attendance.some(row => row.id === visitId), events: events.length });
+    });
+
+    const { status, body } = await withEvidenceSettings(async () => {
+        const result = await joinOverHttp();
+        await evidenceDispatcher.onlineEvidenceDispatcherForTesting.idle();
+        return result;
+    });
+
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+    assert.deepEqual(Object.keys(body.data).sort(), ["attendance", "closedVisitIds", "duplicate"]);
+    assert.deepEqual(visits(), [{ joinedAt: "08:00", leftAt: null }]);
+    // Attempted exactly once, for this visit, after its commit and after the joined event.
+    assert.deepEqual(seen, [{ visitId: body.data.attendance.id, committed: true, events: 1 }]);
+});
+
+test("unified attendance: an evidence failure never fails or changes the committed join", async () => {
+    reset();
+    setNow("08:00");
+    evidenceDispatcher.onlineEvidenceDispatcherForTesting.reset(async () => {
+        throw new Error("attendance database unavailable");
+    });
+
+    const { status, body } = await quietly(() =>
+        withEvidenceSettings(async () => {
+            const result = await joinOverHttp();
+            await evidenceDispatcher.onlineEvidenceDispatcherForTesting.idle();
+            return result;
+        })
+    );
+
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.data.duplicate, false);
+    assert.deepEqual(visits(), [{ joinedAt: "08:00", leftAt: null }]);
+    assert.deepEqual(events.map(e => e.event), ["joined"]);
+    assert.equal(evidenceDispatcher.onlineEvidenceDispatcherForTesting.snapshot().failed, 1);
+});
+
+test("unified attendance: without the settings nothing is attempted and the join behaves exactly as before", async () => {
+    reset();
+    setNow("08:00");
+    const seen = [];
+    evidenceDispatcher.onlineEvidenceDispatcherForTesting.reset(async visitId => seen.push(visitId));
+    delete process.env.APPROVAL_FEATURE_STARTED_AT;
+    delete process.env.ATTENDANCE_EVIDENCE_STARTED_AT;
+
+    const original = console.warn;
+    console.warn = () => {};
+    let result;
+    try {
+        result = await joinOverHttp();
+    } finally {
+        console.warn = original;
+    }
+    await evidenceDispatcher.onlineEvidenceDispatcherForTesting.idle();
+
+    assert.equal(result.status, 200);
+    assert.deepEqual(visits(), [{ joinedAt: "08:00", leftAt: null }]);
+    assert.deepEqual(seen, []);
+});

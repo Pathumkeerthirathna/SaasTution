@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   ChevronsRight,
   ChevronUp,
   CircleHelp,
+  ClipboardCheck,
   Clock3,
   FileText,
   Filter,
@@ -39,7 +41,8 @@ import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
 import { LectureNotePanel } from "@/components/lecture-note-panel";
 import { LectureWhiteboardPanel } from "@/components/lecture-whiteboard-panel";
-import { toSriLankaDateTimeLocal } from "@/lib/time";
+import { LECTURE_END_DATE_MESSAGES, MAX_LECTURE_DURATION_HOURS, lectureEndDateProblem } from "@/lib/lecture-schedule";
+import { parseSriLankaLocalDateTime, sriLankaDateKey, toSriLankaDateTimeLocal } from "@/lib/time";
 
 type ClassItem = {
   id: string;
@@ -53,6 +56,8 @@ type LectureItem = {
   id: string;
   title: string;
   date: string;
+  /** Scheduled end (ISO instant); null / absent: none set. */
+  endDate?: string | null;
   classStatus: ClassStatus;
   createdAt: string;
   class: {
@@ -209,6 +214,35 @@ const SRI_LANKA_TIME_ZONE = { timeZone: "Asia/Colombo" } as const;
 function toDateTimeLocal(value: string) {
   // The edit form shows (and sends back, unchanged) Sri Lankan wall-clock time.
   return toSriLankaDateTimeLocal(new Date(value));
+}
+
+/**
+ * The form's end time problem, if any: the same rule as the server
+ * (lib/lecture-schedule.ts), on the Sri Lankan datetime-local values. An
+ * empty end is fine (no end time); an incomplete start is left to the
+ * start field's own check.
+ */
+function lectureEndTimeError(date: string, endDate: string): string | null {
+  if (!endDate) return null;
+
+  const end = parseSriLankaLocalDateTime(endDate);
+  if (!end) return "Enter a valid end date and time.";
+
+  const start = parseSriLankaLocalDateTime(date);
+  if (!start) return null;
+
+  const problem = lectureEndDateProblem(start, end);
+  return problem ? LECTURE_END_DATE_MESSAGES[problem] : null;
+}
+
+/** End time for a lecture card (Asia/Colombo): the time alone when it ends on its start day. */
+function formatLectureEnd(date: string, endDate: string) {
+  const start = new Date(date);
+  const end = new Date(endDate);
+
+  return sriLankaDateKey(start) === sriLankaDateKey(end)
+    ? end.toLocaleTimeString(undefined, SRI_LANKA_TIME_ZONE)
+    : end.toLocaleString(undefined, SRI_LANKA_TIME_ZONE);
 }
 
 type DatePreset =
@@ -378,6 +412,7 @@ export function LectureManagementPanel() {
     classId: "",
     title: "",
     date: "",
+    endDate: "",
   });
 
   const [page, setPage] = useState(1);
@@ -399,7 +434,10 @@ export function LectureManagementPanel() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const [editingLecture, setEditingLecture] = useState<LectureItem | null>(null);
-  const [editLectureForm, setEditLectureForm] = useState({ title: "", date: "" });
+  const [editLectureForm, setEditLectureForm] = useState({ title: "", date: "", endDate: "" });
+
+  const createEndTimeError = lectureEndTimeError(createLectureForm.date, createLectureForm.endDate);
+  const editEndTimeError = lectureEndTimeError(editLectureForm.date, editLectureForm.endDate);
 
   const [appliedSearch, setAppliedSearch] = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
@@ -670,6 +708,7 @@ export function LectureManagementPanel() {
         : classes[0]?.id ?? "",
       title: "",
       date: requestedDate,
+      endDate: "",
     });
     setIsAddLecturePanelOpen(true);
 
@@ -761,11 +800,17 @@ export function LectureManagementPanel() {
     event.preventDefault();
 
     await withSubmitState(async () => {
+      if (createEndTimeError) {
+        throw new Error(createEndTimeError);
+      }
+
       const response = await fetch("/api/lectures", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        // Times sent as typed (Sri Lankan wall clock); an empty end field
+        // means no end time (the server reads "" as none).
         body: JSON.stringify(createLectureForm),
       });
 
@@ -784,6 +829,7 @@ export function LectureManagementPanel() {
         ...prev,
         title: "",
         date: "",
+        endDate: "",
       }));
       setIsAddLecturePanelOpen(false);
 
@@ -814,7 +860,11 @@ export function LectureManagementPanel() {
 
   function openEditLecture(lecture: LectureItem) {
     setEditingLecture(lecture);
-    setEditLectureForm({ title: lecture.title, date: toDateTimeLocal(lecture.date) });
+    setEditLectureForm({
+      title: lecture.title,
+      date: toDateTimeLocal(lecture.date),
+      endDate: lecture.endDate ? toDateTimeLocal(lecture.endDate) : "",
+    });
     setErrorMessage(null);
     setSuccessMessage(null);
   }
@@ -834,6 +884,11 @@ export function LectureManagementPanel() {
       return;
     }
 
+    if (editEndTimeError) {
+      setErrorMessage(editEndTimeError);
+      return;
+    }
+
     await withSubmitState(async () => {
       const response = await fetch(`/api/lectures/${editingLecture.id}`, {
         method: "PUT",
@@ -845,6 +900,10 @@ export function LectureManagementPanel() {
           // Sent as typed: the server reads a timezone-less value as Sri Lankan
           // time, the same rule as lecture creation.
           date: editLectureForm.date,
+          // The start and end are always sent together, as typed, so the
+          // server checks the pair as the teacher sees it; an empty end
+          // clears it.
+          endDate: editLectureForm.endDate,
         }),
       });
       const payload = (await response.json()) as { success: boolean };
@@ -1542,7 +1601,11 @@ export function LectureManagementPanel() {
                       <p className="text-sm font-semibold tracking-tight text-slate-900">{lecture.title}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
                         <span className="inline-flex items-center gap-1"><Calendar size={11} />{new Date(lecture.date).toLocaleDateString(undefined, SRI_LANKA_TIME_ZONE)}</span>
-                        <span className="inline-flex items-center gap-1"><Clock3 size={11} />{new Date(lecture.date).toLocaleTimeString(undefined, SRI_LANKA_TIME_ZONE)}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={11} />
+                          {new Date(lecture.date).toLocaleTimeString(undefined, SRI_LANKA_TIME_ZONE)}
+                          {lecture.endDate ? ` – ${formatLectureEnd(lecture.date, lecture.endDate)}` : null}
+                        </span>
                         <span className="inline-flex items-center gap-1"><GraduationCap size={11} />{lecture.class.name}</span>
                       </div>
                       <p className="mt-1 text-[11px] text-muted">{lecture.class.schedule}</p>
@@ -1678,6 +1741,15 @@ export function LectureManagementPanel() {
                         <CalendarClock size={11} />
                         Sessions
                       </button>
+                      {/* The canonical attendance register (not the session join / leave log above). */}
+                      <Link
+                        href={`/dashboard/attendance/${encodeURIComponent(lecture.id)}`}
+                        title="Attendance register"
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        <ClipboardCheck size={11} />
+                        Register
+                      </Link>
                       <button
                         type="button"
                         disabled={isSubmitting}
@@ -2289,10 +2361,42 @@ export function LectureManagementPanel() {
             </div>
           </div>
 
+          <div className="space-y-1.5 rounded-xl border border-border bg-card p-3 shadow-sm">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label htmlFor="edit-lecture-end" className="form-label block">End time (optional)</label>
+              {editLectureForm.endDate ? (
+                <button
+                  type="button"
+                  onClick={() => setEditLectureForm((prev) => ({ ...prev, endDate: "" }))}
+                  className="text-[11px] font-semibold text-brand-700 hover:underline"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="relative">
+              <Clock3 size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="edit-lecture-end"
+                type="datetime-local"
+                value={editLectureForm.endDate}
+                min={editLectureForm.date || undefined}
+                onChange={(event) => setEditLectureForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                aria-invalid={editEndTimeError ? true : undefined}
+                className="control-input h-9 pl-9 text-sm"
+              />
+            </div>
+            {editEndTimeError ? (
+              <p className="text-[11px] text-rose-600">{editEndTimeError}</p>
+            ) : (
+              <p className="text-[11px] text-muted">Sri Lankan time. After the start, at most {MAX_LECTURE_DURATION_HOURS} hours later.</p>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => void handleUpdateLecture()}
-            disabled={isSubmitting}
+            disabled={isSubmitting || Boolean(editEndTimeError)}
             className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-brand-700 text-xs font-semibold text-white shadow-soft transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save size={13} />
@@ -2457,9 +2561,47 @@ export function LectureManagementPanel() {
             </div>
           </div>
 
+          <div className="space-y-1.5 rounded-xl border border-border bg-card p-3 shadow-sm">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label htmlFor="create-lecture-end" className="form-label block">End time (optional)</label>
+              {createLectureForm.endDate ? (
+                <button
+                  type="button"
+                  onClick={() => setCreateLectureForm((prev) => ({ ...prev, endDate: "" }))}
+                  className="text-[11px] font-semibold text-brand-700 hover:underline"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="relative">
+              <Clock3 size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="create-lecture-end"
+                type="datetime-local"
+                value={createLectureForm.endDate}
+                min={createLectureForm.date || undefined}
+                onChange={(event) => setCreateLectureForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                aria-invalid={createEndTimeError ? true : undefined}
+                className="control-input h-9 pl-9 text-sm"
+              />
+            </div>
+            {createEndTimeError ? (
+              <p className="text-[11px] text-rose-600">{createEndTimeError}</p>
+            ) : (
+              <p className="text-[11px] text-muted">Sri Lankan time. After the start, at most {MAX_LECTURE_DURATION_HOURS} hours later.</p>
+            )}
+          </div>
+
           <button
             type="submit"
-            disabled={isSubmitting || !createLectureForm.classId || !createLectureForm.title || !createLectureForm.date}
+            disabled={
+              isSubmitting ||
+              !createLectureForm.classId ||
+              !createLectureForm.title ||
+              !createLectureForm.date ||
+              Boolean(createEndTimeError)
+            }
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-700 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Plus size={14} />

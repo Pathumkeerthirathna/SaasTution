@@ -23,6 +23,7 @@ const MODELS = {
   classFeeWaiverRule: "ClassFeeWaiverRule",
   feeWaiverSettings: "FeeWaiverSettings",
   classFee: "ClassFee",
+  studentConfirmationHistory: "StudentConfirmationHistory",
 };
 
 const RELATIONS = {
@@ -47,6 +48,7 @@ const RELATIONS = {
   ClassFeeWaiverRule: {},
   FeeWaiverSettings: {},
   ClassFee: {},
+  StudentConfirmationHistory: {},
 };
 
 const FEE_DEFAULTS = {
@@ -305,7 +307,34 @@ function createFakeDb() {
   const client = {};
   for (const [prop, model] of Object.entries(MODELS)) client[prop] = delegate(model);
   client.$transaction = async (arg) => (typeof arg === "function" ? arg(client) : Promise.all(arg));
-  client.$queryRaw = async () => [];
+  // The approval decisions' raw SQL (services/student-service.ts): the
+  // lock_timeout SET and the Student row-lock SELECTs. No concurrency here
+  // (see tests/students/confirmation-decisions.test.cjs for that); anything
+  // else returns no rows, as before.
+  client.$executeRawUnsafe = async (sql) => {
+    if (/^SET LOCAL lock_timeout = '\d+ms'$/.test(sql)) return 0;
+    throw new Error(`unexpected raw SQL: ${sql}`);
+  };
+  client.$queryRaw = async (strings, ...values) => {
+    const sql = Array.isArray(strings) ? strings.join("?") : String(strings);
+    // Stage 5.4e: lecture schedule edits, cancelling and deleting lock the
+    // lecture (and look for an attendance register: none here).
+    if (/FROM "Lecture" WHERE "id" = \? FOR NO KEY UPDATE/.test(sql)) {
+      const row = tables.Lecture.find((r) => r.id === values[0]);
+      return row ? [{ id: row.id, classId: row.classId, status: row.status, classStatus: row.classStatus, date: row.date, endDate: row.endDate ?? null }] : [];
+    }
+    if (!/FROM "Student"/.test(sql) || !/FOR NO KEY UPDATE/.test(sql)) return [];
+    if (/"id" = \? AND "teacherId" = \?/.test(sql)) {
+      const [studentId, teacherId] = values;
+      const row = tables.Student.find((r) => r.id === studentId && r.teacherId === teacherId);
+      return row ? [{ id: row.id, confirmationStatus: row.confirmationStatus, confirmedAt: row.confirmedAt ?? null }] : [];
+    }
+    const [teacherId] = values;
+    return tables.Student
+      .filter((r) => r.teacherId === teacherId && r.status === 0 && r.confirmationStatus === "PENDING")
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((r) => ({ id: r.id, confirmedAt: r.confirmedAt ?? null }));
+  };
 
   // ---- test API ------------------------------------------------------------------
   const api = {

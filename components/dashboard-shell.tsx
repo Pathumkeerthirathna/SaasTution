@@ -26,6 +26,7 @@ import {
   ScrollText,
   Package,
   Lock,
+  ClipboardCheck,
 } from "lucide-react";
 
 import { SidebarGraduate } from "@/components/sidebar-graduate";
@@ -53,6 +54,21 @@ type NavItem = {
   /** When present, this item is an expandable group rather than a plain link. */
   children?: NavChild[];
 };
+
+/**
+ * Top-level items that stay active on their own sub-pages (exact prefix +
+ * "/", never a bare string prefix). Only Attendance: its lecture registers
+ * live under /dashboard/attendance/[lectureId]. Every other item keeps its
+ * exact-match behaviour.
+ */
+const NESTED_ACTIVE_NAV_ITEMS: ReadonlySet<string> = new Set(["/dashboard/attendance"]);
+
+/** Whether a top-level sidebar link is active for the current path. */
+export function isNavItemActive(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  if (pathname === href) return true;
+  return NESTED_ACTIVE_NAV_ITEMS.has(href) && pathname.startsWith(`${href}/`);
+}
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -126,6 +142,7 @@ export function DashboardShell({
       { href: "/dashboard/payments",                      label: "Payments",           icon: <CircleDollarSign size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/attendance",                    label: "Attendance",         icon: <ClipboardCheck size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles",              label: "Tutes & Papers",     icon: <FolderOpen size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/papers",                        label: "Papers",             icon: <ScrollText size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles/configuration",label: "Paper Config",       icon: <Settings size={18} strokeWidth={1.75} /> },
@@ -192,7 +209,7 @@ export function DashboardShell({
         {/* Nav */}
         <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = isNavItemActive(pathname, item.href);
 
             if (item.locked) {
               return (

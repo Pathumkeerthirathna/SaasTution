@@ -42,7 +42,16 @@ model Teacher {
   paymentMessages        PaymentMessage[]
   paperConfig            TeacherPaperConfig?
 
+  /// Students whose LATEST confirmation decision (approve or decline) this
+  /// teacher made (Student.confirmedById).
   approvedStudents Student[] @relation("ConfirmedStudents")
+
+  studentConfirmationDecisions StudentConfirmationHistory[]
+
+  finalizedAttendanceRegisters LectureAttendanceRegister[]
+  attendanceDecisions          LectureAttendance[]
+  attendanceScans              AttendanceScanEvent[]
+  qrAttendanceClosures         LectureQrAttendanceClosure[]
 
   approvedDevices StudentDevice[] @relation("ApprovedDevices")
 
@@ -514,6 +523,41 @@ enum StudentConfirmationStatus {
   REJECTED
 }
 
+/// How a teacher made a confirmation decision.
+enum StudentConfirmationSource {
+  /// Confirm / Decline / Confirm again on one student.
+  INDIVIDUAL
+  /// "Confirm all pending" (always PENDING -> APPROVED, one batchId per run).
+  BULK
+}
+
+/// Append-only history of teacher approval decisions on students
+/// (docs/student-confirmation-history.md). One row per real change of
+/// Student.confirmationStatus, written in the same transaction as the change
+/// (services/student-service.ts). Decisions made before this table existed
+/// were not backfilled. CHECK constraints and the trigger that refuses
+/// UPDATE / DELETE are hand-written in migration
+/// 20261110130000_add_student_confirmation_history.
+model StudentConfirmationHistory {
+  id                  String                    @id @default(uuid())
+  studentId           String
+  fromStatus          StudentConfirmationStatus
+  toStatus            StudentConfirmationStatus
+  /// Real UTC instant; equals the Student.confirmedAt written with this row.
+  decidedAt           DateTime
+  /// Student.confirmedAt before this decision (read under the row lock).
+  previousConfirmedAt DateTime?
+  decidedByTeacherId  String
+  source              StudentConfirmationSource
+  /// Shared by every row of one bulk approval; null for INDIVIDUAL.
+  batchId             String?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  teacher Teacher @relation(fields: [decidedByTeacherId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, decidedAt])
+}
+
 enum StudentDeviceStatus {
   PENDING
   APPROVED
@@ -557,7 +601,10 @@ model Student {
 
   confirmationStatus StudentConfirmationStatus @default(PENDING)
 
+  /// Time of the LATEST teacher decision (approve or decline); null when no
+  /// decision was ever made (e.g. created already approved, or still pending).
   confirmedAt   DateTime?
+  /// Teacher who made the latest decision; null when no teacher decided.
   confirmedById String?
   confirmedBy   Teacher?  @relation("ConfirmedStudents", fields: [confirmedById], references: [id])
 
@@ -595,6 +642,9 @@ model Student {
   breakoutQuizSubmissions       BreakoutQuizSubmission[]
   breakoutRoomMemberships       BreakoutRoomMember[]
   qrTokens                      StudentQrToken[]
+  confirmationHistory           StudentConfirmationHistory[]
+  lectureAttendances            LectureAttendance[]
+  attendanceScanEvents          AttendanceScanEvent[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
 
   @@index([teacherId])
@@ -644,6 +694,7 @@ model StudentQrToken {
   /// REGENERATE (by STUDENT / TEACHER) | SYSTEM_REISSUE (by SYSTEM).
   revokedReason String?
   student       Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attendanceScans AttendanceScanEvent[]
 
   @@index([studentId, createdAt])
   @@index([studentId, revokedAt])
@@ -803,6 +854,11 @@ model Class {
   schedule             String                @default("TBD")
   monthlyFee           Int                   @default(0)
   paymentDueWeek       Int                   @default(1)
+  /// Minutes after a lecture's scheduled start during which first evidence
+  /// still counts as PRESENT (later: LATE). Copied into each new attendance
+  /// register. 0–240 (CHECK Class_attendanceGraceMinutes_check, hand-written
+  /// in migration 20261110140000_add_lecture_attendance).
+  attendanceGraceMinutes Int                 @default(10)
   teacher              Teacher               @relation(fields: [teacherId], references: [id])
   payments             ClassPayment[]
   feeHistory           ClassFee[]
@@ -816,6 +872,8 @@ model Class {
   paperSupportMessages PaperSupportMessage[]
   classPapers          ClassPaper[]
   feeWaiverRules       ClassFeeWaiverRule[]
+  attendanceRegisters  LectureAttendanceRegister[]
+  lectureAttendances   LectureAttendance[]
 
   publicRegistrations Student[] @relation("PublicClassRegistration")
 
@@ -1087,6 +1145,7 @@ model ClassSession {
   jibriStopOverrideBy           String?
   jibriStopOverrideReason       String?
   jibriShutdownOverrides        JibriShutdownOverride[]
+  attendanceScans               AttendanceScanEvent[]
   /// The teacher's reusable YouTube stream the classroom's Jibri pushed
   /// into, pinned when the fence was created (the tab-close signal's
   /// provisional fence; else when armed). Only THIS stream is ever checked;
@@ -1319,6 +1378,12 @@ model Lecture {
   id          String      @id @default(uuid())
   title       String
   date        DateTime
+  /// Scheduled end (real UTC instant), optional; entered and shown in Sri
+  /// Lankan time like `date`. Must be after `date` (CHECK constraint
+  /// Lecture_endDate_after_date, hand-written in migration
+  /// 20261110120000_add_lecture_end_date) and at most 12 hours after it
+  /// (application rule, lib/lecture-schedule.ts). No database default.
+  endDate     DateTime?
   classId     String
   classStatus ClassStatus @default(SCHEDULED)
   createdAt   DateTime    @default(now())
@@ -1336,7 +1401,13 @@ model Lecture {
   youtubeRecordings YouTubeRecording[]
   youtubeLives      YouTubeLiveBroadcast[]
 
+  attendanceRegister LectureAttendanceRegister?
+  attendanceScans    AttendanceScanEvent[]
+
   @@index([classId, status, date])
+  /// Target of the attendance tables' composite (lectureId, classId) foreign
+  /// keys, so attendance rows can never name a lecture of another class.
+  @@unique([id, classId])
 }
 
 // A saved whiteboard snapshot that belongs to the lecture (not to one class
@@ -1691,12 +1762,259 @@ model Attendance {
   leftAt         DateTime?
   classSession   ClassSession @relation(fields: [classSessionId], references: [id])
   student        Student      @relation(fields: [studentId], references: [id])
+  /// Audit rows of the unified attendance record that cite this visit
+  /// (relation only: the Attendance table itself is unchanged).
+  lectureAttendanceAudits AttendanceAuditLog[]
 
   @@index([classId])
   @@index([classId, joinedAt])
   @@index([classSessionId])
   @@index([classSessionId, joinedAt])
   @@index([classSessionId, studentId, joinedAt])
+}
+
+// ---- Unified lecture attendance (docs/lecture-attendance.md) -----------------
+//
+// One register per lecture and one canonical attendance record per student per
+// lecture, fed by online visits (Attendance), QR scans and teacher decisions.
+// The existing Attendance table and every existing attendance calculation are
+// unchanged. CHECK constraints, the register freeze trigger and the
+// append-only triggers are hand-written in migration
+// 20261110140000_add_lecture_attendance. Timestamps have no database default
+// and no @updatedAt: the application writes real UTC instants.
+
+enum LectureAttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+}
+
+/// Where a record's current status came from.
+enum AttendanceStatusSource {
+  /// Online / QR evidence (PRESENT or LATE).
+  AUTO
+  /// A teacher decision (teacherStatus).
+  TEACHER
+  /// ABSENT written by finalization.
+  FINALIZATION
+  /// Historical online backfill (PRESENT only).
+  BACKFILL
+}
+
+enum AttendanceScanResult {
+  VALID
+  INVALID_QR
+  QR_UNVERIFIABLE
+  WRONG_TEACHER
+  NOT_ELIGIBLE
+  ELIGIBILITY_UNKNOWN
+  LECTURE_UNAVAILABLE
+}
+
+enum AttendanceScanEffect {
+  STATUS_UPDATED
+  EVIDENCE_ONLY
+  REVIEW_REQUIRED
+  DUPLICATE
+  RECORDED_ONLY
+  NONE
+}
+
+enum AttendanceAuditAction {
+  CREATED_AUTO
+  AUTO_UPDATED
+  AUTO_RECALCULATED
+  EVIDENCE_RECORDED
+  TEACHER_SET
+  EVIDENCE_ACCEPTED
+  EVIDENCE_DISMISSED
+  FINALIZE_ABSENT
+  BACKFILL
+}
+
+enum RegisterAuditAction {
+  CREATED
+  GRACE_CHANGED
+  SCHEDULE_SYNCED
+  FINALIZED
+}
+
+/// One per lecture. Copies the lecture schedule and the class grace period
+/// when created; frozen once finalized (trigger: no UPDATE after finalization,
+/// never DELETE).
+model LectureAttendanceRegister {
+  lectureId            String    @id
+  classId              String
+  scheduledStartAt     DateTime
+  scheduledEndAt       DateTime?
+  graceMinutes         Int
+  finalizedAt          DateTime?
+  finalizedByTeacherId String?
+  version              Int
+  createdAt            DateTime
+  updatedAt            DateTime
+
+  lecture     Lecture  @relation(fields: [lectureId, classId], references: [id, classId], onDelete: Restrict)
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  finalizedBy Teacher? @relation(fields: [finalizedByTeacherId], references: [id], onDelete: Restrict)
+  records     LectureAttendance[]
+  auditLogs   LectureAttendanceRegisterAuditLog[]
+  /// At most one (its key is lectureId): QR attendance closed by the teacher.
+  qrClosures  LectureQrAttendanceClosure[]
+
+  @@unique([lectureId, classId])
+  @@index([classId, finalizedAt])
+}
+
+/// The canonical attendance of one student for one lecture.
+model LectureAttendance {
+  id                 String                   @id @default(uuid())
+  lectureId          String
+  classId            String
+  studentId          String
+  status             LectureAttendanceStatus
+  statusSource       AttendanceStatusSource
+  firstOnlineAt      DateTime?
+  firstQrAt          DateTime?
+  autoStatus         LectureAttendanceStatus?
+  teacherStatus      LectureAttendanceStatus?
+  teacherDecidedAt   DateTime?
+  teacherDecidedById String?
+  pendingReviewSince DateTime?
+  version            Int
+  createdAt          DateTime
+  updatedAt          DateTime
+
+  register   LectureAttendanceRegister @relation(fields: [lectureId, classId], references: [lectureId, classId], onDelete: Restrict)
+  class      Class                     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student    Student                   @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  decidedBy  Teacher?                  @relation(fields: [teacherDecidedById], references: [id], onDelete: Restrict)
+  auditLogs  AttendanceAuditLog[]
+  scanEvents AttendanceScanEvent[]
+
+  @@unique([lectureId, studentId])
+  @@index([classId, studentId])
+  @@index([studentId, lectureId])
+  @@index([lectureId, status])
+  @@index([lectureId, pendingReviewSince])
+}
+
+/// Every QR scan submission, valid or not (append-only).
+model AttendanceScanEvent {
+  id                  String               @id @default(uuid())
+  lectureId           String
+  classId             String
+  classSessionId      String?
+  scannedByTeacherId  String
+  clientScanId        String
+  scannedTokenHash    String?
+  qrTokenId           String?
+  studentId           String?
+  result              AttendanceScanResult
+  effect              AttendanceScanEffect
+  /// The approvalAt reason behind the eligibility decision; null when no
+  /// student was identified. CHECK-limited to the approvalAt reasons.
+  eligibilityReason   String?
+  afterFinalization   Boolean
+  lectureAttendanceId String?
+  clientScannedAt     DateTime?
+  receivedAt          DateTime
+
+  lecture      Lecture            @relation(fields: [lectureId, classId], references: [id, classId], onDelete: Restrict)
+  classSession ClassSession?      @relation(fields: [classSessionId], references: [id], onDelete: Restrict)
+  scannedBy    Teacher            @relation(fields: [scannedByTeacherId], references: [id], onDelete: Restrict)
+  qrToken      StudentQrToken?    @relation(fields: [qrTokenId], references: [id], onDelete: Restrict)
+  student      Student?           @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  attendance   LectureAttendance? @relation(fields: [lectureAttendanceId], references: [id], onDelete: Restrict)
+  auditLogs    AttendanceAuditLog[]
+
+  @@unique([scannedByTeacherId, clientScanId])
+  @@index([lectureId, receivedAt])
+  @@index([studentId, lectureId, receivedAt])
+}
+
+/// Every change to a LectureAttendance record, one row per record version
+/// (append-only).
+model AttendanceAuditLog {
+  id                  String                   @id @default(uuid())
+  lectureAttendanceId String
+  version             Int
+  lectureId           String
+  studentId           String
+  action              AttendanceAuditAction
+  fromStatus          LectureAttendanceStatus?
+  toStatus            LectureAttendanceStatus
+  fromTeacherStatus   LectureAttendanceStatus?
+  toTeacherStatus     LectureAttendanceStatus?
+  fromAutoStatus      LectureAttendanceStatus?
+  toAutoStatus        LectureAttendanceStatus?
+  /// TEACHER | SYSTEM (CHECK).
+  actorRole           String
+  actorId             String?
+  reason              String?
+  afterFinalization   Boolean
+  scanEventId         String?
+  attendanceVisitId   String?
+  registerAuditId     String?
+  createdAt           DateTime
+
+  record        LectureAttendance                  @relation(fields: [lectureAttendanceId], references: [id], onDelete: Restrict)
+  scanEvent     AttendanceScanEvent?               @relation(fields: [scanEventId], references: [id], onDelete: Restrict)
+  visit         Attendance?                        @relation(fields: [attendanceVisitId], references: [id], onDelete: Restrict)
+  registerAudit LectureAttendanceRegisterAuditLog? @relation(fields: [registerAuditId], references: [id], onDelete: Restrict)
+
+  @@unique([lectureAttendanceId, version])
+  @@index([lectureId, createdAt])
+  @@index([studentId, createdAt])
+}
+
+/// Every change to a register, one row per register version (append-only).
+model LectureAttendanceRegisterAuditLog {
+  id                      String              @id @default(uuid())
+  lectureId               String
+  version                 Int
+  action                  RegisterAuditAction
+  fromGraceMinutes        Int?
+  toGraceMinutes          Int?
+  fromScheduledStartAt    DateTime?
+  toScheduledStartAt      DateTime?
+  fromScheduledEndAt      DateTime?
+  toScheduledEndAt        DateTime?
+  finalizedAt             DateTime?
+  eligibleCount           Int?
+  unknownEligibilityCount Int?
+  absentCreatedCount      Int?
+  recalculatedCount       Int?
+  /// TEACHER | SYSTEM (CHECK).
+  actorRole               String
+  actorId                 String?
+  reason                  String?
+  createdAt               DateTime
+
+  register       LectureAttendanceRegister @relation(fields: [lectureId], references: [lectureId], onDelete: Restrict)
+  recalculations AttendanceAuditLog[]
+
+  @@unique([lectureId, version])
+  @@index([lectureId, createdAt])
+}
+
+/// QR attendance closed by the lecture's teacher (Stage 5.4b correction).
+/// QR scanning opens 30 minutes before the scheduled start and stays open
+/// until this row exists; the scheduled end never closes it. One row per
+/// lecture, written once and never changed or removed (append-only trigger,
+/// hand-written in the migration): no reopening. The row is both the closure
+/// state and its audit record (who closed it and when). A separate table, not
+/// register columns: a finalized register is frozen, but scanning (as
+/// recorded-only / review evidence) continues after finalization until closed.
+model LectureQrAttendanceClosure {
+  lectureId         String   @id
+  classId           String
+  closedAt          DateTime
+  closedByTeacherId String
+
+  register LectureAttendanceRegister @relation(fields: [lectureId, classId], references: [lectureId, classId], onDelete: Restrict)
+  closedBy Teacher                   @relation(fields: [closedByTeacherId], references: [id], onDelete: Restrict)
 }
 
 model Message {

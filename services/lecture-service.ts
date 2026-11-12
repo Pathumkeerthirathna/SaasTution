@@ -1,7 +1,20 @@
 import { AppError } from "@/lib/error-handler";
+import {
+  LECTURE_END_DATE_ERROR_CODES,
+  LECTURE_END_DATE_MESSAGES,
+  lectureEndDateProblem,
+} from "@/lib/lecture-schedule";
 import { prisma } from "@/lib/prisma";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { readLectureWaiverState, recalculateAfterLectureChange } from "@/services/fee-waiver-events";
+import {
+  lockLectureForUpdate,
+  lockRegisterKeyShared,
+  runAttendanceTransaction,
+  type AttendanceLocks,
+} from "@/lib/attendance/locks";
+import { attendanceError } from "@/lib/attendance/service-errors";
+import { applyRegisterScheduleSync, prepareRegisterScheduleSync } from "@/services/lecture-attendance-service";
 import type {
   CreateAssignmentInput,
   CreateLectureInput,
@@ -46,6 +59,8 @@ async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
       id: true,
       title: true,
       classId: true,
+      date: true,
+      endDate: true,
       class: {
         select: {
           id: true,
@@ -61,6 +76,28 @@ async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
   }
 
   return lecture;
+}
+
+/** The hand-written CHECK constraint of migration 20261110120000_add_lecture_end_date. */
+const LECTURE_END_DATE_CONSTRAINT = "Lecture_endDate_after_date";
+
+/**
+ * The database refused an end time that is not after the start (a
+ * concurrent edit changed the stored start / end after the check below).
+ * Recognized by the constraint name in the database error, whatever Prisma
+ * error class carries it.
+ */
+function isLectureEndDateConstraintError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(LECTURE_END_DATE_CONSTRAINT);
+}
+
+function lectureEndDateConstraintAppError(): AppError {
+  return new AppError(
+    LECTURE_END_DATE_MESSAGES.END_NOT_AFTER_START,
+    400,
+    LECTURE_END_DATE_ERROR_CODES.END_NOT_AFTER_START,
+    { field: "endDate" }
+  );
 }
 
 async function assertTeacherOwnsAssignment(teacherId: string, lectureId: string, assignmentId: string) {
@@ -189,16 +226,19 @@ async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteI
 export async function createLectureForTeacher(teacherId: string, input: CreateLectureInput) {
   await assertTeacherOwnsClass(teacherId, input.classId);
 
+  // The request schema already checked endDate against date (createLectureSchema).
   const lecture = await prisma.lecture.create({
     data: {
       classId: input.classId,
       title: input.title,
       date: input.date,
+      ...(input.endDate ? { endDate: input.endDate } : {}),
     },
     select: {
       id: true,
       title: true,
       date: true,
+      endDate: true,
       classStatus: true,
       createdAt: true,
       class: {
@@ -215,33 +255,155 @@ export async function createLectureForTeacher(teacherId: string, input: CreateLe
   return lecture;
 }
 
-export async function updateLectureForTeacher(teacherId: string, lectureId: string, input: UpdateLectureInput) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
-  const waiverBefore = await readLectureWaiverState(lectureId);
-
-  const lecture = await prisma.lecture.update({
-    where: {
-      id: lectureId,
-    },
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.date !== undefined ? { date: input.date } : {}),
-    },
+const UPDATED_LECTURE_SELECT = {
+  id: true,
+  title: true,
+  date: true,
+  endDate: true,
+  classStatus: true,
+  createdAt: true,
+  class: {
     select: {
       id: true,
-      title: true,
-      date: true,
-      classStatus: true,
-      createdAt: true,
-      class: {
-        select: {
-          id: true,
-          name: true,
-          schedule: true,
-        },
-      },
+      name: true,
+      schedule: true,
     },
+  },
+} as const;
+
+/**
+ * The start / end pair after this update: a side not in the request keeps
+ * its stored value. A start-only change that no longer fits the stored end
+ * is refused (the end is never cleared silently); `endDate: null` clears it.
+ * Returns the error to throw, or null.
+ */
+function scheduleEditError(input: UpdateLectureInput, stored: { date: Date; endDate: Date | null }): AppError | null {
+  const start = input.date ?? stored.date;
+  const end = input.endDate !== undefined ? input.endDate : stored.endDate ?? null;
+  const problem = lectureEndDateProblem(start, end);
+  if (!problem) return null;
+
+  const message =
+    input.endDate === undefined
+      ? `${LECTURE_END_DATE_MESSAGES[problem]} This lecture's end time does not fit the new start time: change the end time as well, or clear it.`
+      : LECTURE_END_DATE_MESSAGES[problem];
+
+  return new AppError(message, 400, LECTURE_END_DATE_ERROR_CODES[problem], { field: "endDate" });
+}
+
+/**
+ * A schedule edit (start and / or end; Stage 5.4e) in one attendance
+ * transaction, so the lecture and its OPEN attendance register change
+ * together (docs/lecture-attendance.md, "Schedule synchronization"):
+ *  1. the Lecture FOR NO KEY UPDATE (waits for attendance work holding it FOR
+ *     SHARE; 3 s lock timeout: 409 ATTENDANCE_BUSY), then ownership, existence
+ *     and soft delete re-checked under the lock (404 LECTURE_NOT_FOUND), and
+ *     the new start / end re-checked against the LOCKED stored values (400);
+ *  2. an existing register FOR UPDATE and, when it is open and the start
+ *     moves, its records with evidence (prepareRegisterScheduleSync);
+ *  3. write phase: the Lecture update, then the register sync
+ *     (applyRegisterScheduleSync: open registers only; a finalized register,
+ *     its records and its audits are left exactly as they are; no register
+ *     is created; the grace is never changed).
+ * Database errors are never caught inside the transaction.
+ */
+async function updateLectureScheduleInTransaction(
+  locks: AttendanceLocks,
+  input: { teacherId: string; lectureId: string; update: UpdateLectureInput }
+) {
+  const now = new Date();
+  const locked = await lockLectureForUpdate(locks, input.lectureId);
+  const owned =
+    locked && locked.status === 0
+      ? await locks.db.lecture.findFirst({
+          where: { id: input.lectureId, status: 0, class: { teacherId: input.teacherId } },
+          select: { id: true },
+        })
+      : null;
+  if (!locked || !owned) throw new AppError("Lecture not found.", 404, "LECTURE_NOT_FOUND");
+
+  const problem = scheduleEditError(input.update, locked);
+  if (problem) throw problem;
+
+  const start = input.update.date ?? locked.date;
+  const end = input.update.endDate !== undefined ? input.update.endDate : locked.endDate;
+  const plan = await prepareRegisterScheduleSync(locks, { lectureId: input.lectureId, start, end });
+
+  locks.beginWrites();
+  const lecture = await locks.db.lecture.update({
+    where: { id: input.lectureId },
+    data: {
+      ...(input.update.title !== undefined ? { title: input.update.title } : {}),
+      ...(input.update.date !== undefined ? { date: input.update.date } : {}),
+      ...(input.update.endDate !== undefined ? { endDate: input.update.endDate } : {}),
+    },
+    select: UPDATED_LECTURE_SELECT,
   });
+  await applyRegisterScheduleSync(locks, plan, { actor: { role: "TEACHER", teacherId: input.teacherId }, now });
+  return lecture;
+}
+
+/**
+ * Cancelling or soft-deleting a lecture (Stage 5.4e guard) in one attendance
+ * transaction: the Lecture FOR NO KEY UPDATE (ownership, existence and soft
+ * delete re-checked under the lock), then an existing register FOR KEY SHARE:
+ * finalized means 409 LECTURE_ATTENDANCE_FINALIZED and nothing changes (a
+ * finalized lecture keeps its attendance). Then the write.
+ */
+async function guardedLectureWriteInTransaction(
+  locks: AttendanceLocks,
+  input: { teacherId: string; lectureId: string; data: { classStatus: "CANCELLED" } | { status: 1 } }
+) {
+  const locked = await lockLectureForUpdate(locks, input.lectureId);
+  const owned =
+    locked && locked.status === 0
+      ? await locks.db.lecture.findFirst({
+          where: { id: input.lectureId, status: 0, class: { teacherId: input.teacherId } },
+          select: { id: true },
+        })
+      : null;
+  if (!locked || !owned) throw new AppError("Lecture not found.", 404, "LECTURE_NOT_FOUND");
+
+  const register = await lockRegisterKeyShared(locks, input.lectureId);
+  if (register?.finalizedAt) throw attendanceError("LECTURE_ATTENDANCE_FINALIZED");
+
+  locks.beginWrites();
+  return locks.db.lecture.update({ where: { id: input.lectureId }, data: input.data, select: UPDATED_LECTURE_SELECT });
+}
+
+export async function updateLectureForTeacher(teacherId: string, lectureId: string, input: UpdateLectureInput) {
+  const stored = await assertTeacherOwnsLecture(teacherId, lectureId);
+  const scheduleEdit = input.date !== undefined || input.endDate !== undefined;
+
+  if (scheduleEdit) {
+    const problem = scheduleEditError(input, stored);
+    if (problem) throw problem;
+  }
+
+  const waiverBefore = await readLectureWaiverState(lectureId);
+
+  let lecture;
+
+  try {
+    lecture = scheduleEdit
+      ? // Start / end: the lecture and its open attendance register, atomically.
+        await runAttendanceTransaction((locks) =>
+          updateLectureScheduleInTransaction(locks, { teacherId, lectureId, update: input })
+        )
+      : // Title only: the existing autocommit update (E2).
+        await prisma.lecture.update({
+          where: {
+            id: lectureId,
+          },
+          data: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+          },
+          select: UPDATED_LECTURE_SELECT,
+        });
+  } catch (error) {
+    if (isLectureEndDateConstraintError(error)) throw lectureEndDateConstraintAppError();
+    throw error;
+  }
 
   // Automatic joining waivers: a COMPLETED lecture moving date or billing
   // month. After the update, outside it; never fails the lecture update.
@@ -258,28 +420,21 @@ export async function updateLectureClassStatusForTeacher(
   await assertTeacherOwnsLecture(teacherId, lectureId);
   const waiverBefore = await readLectureWaiverState(lectureId);
 
-  const lecture = await prisma.lecture.update({
-    where: {
-      id: lectureId,
-    },
-    data: {
-      classStatus,
-    },
-    select: {
-      id: true,
-      title: true,
-      date: true,
-      classStatus: true,
-      createdAt: true,
-      class: {
-        select: {
-          id: true,
-          name: true,
-          schedule: true,
-        },
-      },
-    },
-  });
+  const lecture =
+    classStatus === "CANCELLED"
+      ? // Refused (409 LECTURE_ATTENDANCE_FINALIZED) when the attendance is finalized.
+        await runAttendanceTransaction((locks) =>
+          guardedLectureWriteInTransaction(locks, { teacherId, lectureId, data: { classStatus: "CANCELLED" } })
+        )
+      : await prisma.lecture.update({
+          where: {
+            id: lectureId,
+          },
+          data: {
+            classStatus,
+          },
+          select: UPDATED_LECTURE_SELECT,
+        });
 
   // Automatic joining waivers: entering or leaving COMPLETED. After the
   // update, outside it; never fails the status change.
@@ -297,14 +452,10 @@ export async function deleteLectureForTeacher(teacherId: string, lectureId: stri
 
   // Soft delete: status 1 hides the lecture (and, via lecture.status filters, its
   // notes / assignments / quizzes) from every view while keeping history intact.
-  await prisma.lecture.update({
-    where: {
-      id: lectureId,
-    },
-    data: {
-      status: 1,
-    },
-  });
+  // Refused (409 LECTURE_ATTENDANCE_FINALIZED) when the attendance is finalized.
+  await runAttendanceTransaction((locks) =>
+    guardedLectureWriteInTransaction(locks, { teacherId, lectureId, data: { status: 1 } })
+  );
 
   emitStudentDataChange({ classId: lecture.classId });
 
@@ -374,6 +525,7 @@ export async function listLecturesForTeacher(params: {
         id: true,
         title: true,
         date: true,
+        endDate: true,
         classStatus: true,
         createdAt: true,
         class: {

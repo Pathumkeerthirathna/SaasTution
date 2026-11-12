@@ -20,9 +20,11 @@ export async function PUT(
       throw new AppError("Lecture id is required.", 400, "VALIDATION_ERROR");
     }
 
+    // endDate: a Sri Lankan datetime-local value, or null to clear it.
     const body = (await request.json()) as {
       title?: string;
       date?: string;
+      endDate?: string | null;
     };
 
     const parsed = updateLectureSchema.safeParse(body);

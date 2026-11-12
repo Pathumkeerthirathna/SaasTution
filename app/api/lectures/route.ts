@@ -60,6 +60,8 @@ export async function POST(request: Request) {
       classId?: string;
       title?: string;
       date?: string;
+      // Optional Sri Lankan datetime-local value; null or omitted: no end time.
+      endDate?: string | null;
     };
 
     const parsed = createLectureSchema.safeParse(body);

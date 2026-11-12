@@ -1,6 +1,8 @@
 import { Prisma, StudentClassAction, StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 
+import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
@@ -2190,133 +2192,234 @@ export async function checkIfNameExists(
 }
 
 
-export async function confirmStudent(teacherId: string, studentId: string) {
-  const student = await prisma.student.findFirst({
-    where: {
-      id: studentId,
-      teacherId,
-    },
-    select: {
-      id: true,
-      confirmationStatus: true,
-    },
-  });
+// ---- Approval decisions (docs/student-confirmation-history.md) ---------------------
+//
+// Every change of Student.confirmationStatus by a teacher goes through
+// decideStudentConfirmation or confirmAllPendingStudents: the student row is
+// locked (FOR NO KEY UPDATE) first, the decision is checked against the LOCKED
+// state, and the status change and its StudentConfirmationHistory row are
+// written in the same transaction. Concurrent decisions on one student
+// therefore run one after the other and the history is always truthful.
+// FOR NO KEY UPDATE does not block inserts whose foreign keys reference the
+// student (enrolments, attendance, QR tokens only take FOR KEY SHARE).
 
-  if (!student) {
-    throw new Error("Student not found.");
+export const STUDENT_DECISION_LOCK_TIMEOUT_MS = 3_000;
+export const STUDENT_DECISION_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
+
+type StudentDecisionStatus = typeof StudentConfirmationStatus.APPROVED | typeof StudentConfirmationStatus.REJECTED;
+
+type LockedStudentDecisionRow = {
+  id: string;
+  confirmationStatus: StudentConfirmationStatus;
+  confirmedAt: Date | null;
+};
+
+/**
+ * The instant recorded for a decision: now, but always strictly after the
+ * previous decision on the student (so history is strictly ordered even if a
+ * request waited for the lock or the clock moved back).
+ */
+export function nextDecisionInstant(now: Date, previous: Date | null): Date {
+  if (previous && previous.getTime() + 1 > now.getTime()) {
+    return new Date(previous.getTime() + 1);
   }
 
-  if (student.confirmationStatus === StudentConfirmationStatus.APPROVED) {
-    throw new Error("Student is already confirmed.");
-  }
-
-  const decidedAt = new Date();
-
-  await prisma.$transaction([
-    prisma.student.update({
-      where: {
-        id: studentId,
-      },
-      data: {
-        confirmationStatus: StudentConfirmationStatus.APPROVED,
-        confirmedAt: decidedAt,
-      },
-    }),
-    // approvedAt records the FIRST approval only: a re-approval after a
-    // rejection never overwrites it.
-    prisma.student.updateMany({
-      where: { id: studentId, approvedAt: null },
-      data: { approvedAt: decidedAt },
-    }),
-  ]);
-
-  // Automatic joining waivers of this month's unpaid invoices (after the
-  // approval, outside it; a failure is logged and never fails the approval).
-  await recalculateAfterStudentDecision(studentId);
+  return now;
 }
 
-export async function confirmAllPendingStudents(teacherId: string) {
-  const decidedAt = new Date();
+function studentDecisionBusyError() {
+  return new AppError(
+    "Another change to this student is in progress. Please try again.",
+    409,
+    "STUDENT_DECISION_BUSY"
+  );
+}
 
-  const { ids: approvedIds, count } = await prisma.$transaction(async (tx) => {
-    const pending = await tx.student.findMany({
-      where: {
-        teacherId,
-        confirmationStatus: StudentConfirmationStatus.PENDING,
-      },
-      select: { id: true },
-    });
-    const ids = pending.map((entry) => entry.id);
+function alreadyDecidedError(status: StudentDecisionStatus) {
+  return status === StudentConfirmationStatus.APPROVED
+    ? new AppError("This student is already confirmed.", 409, "STUDENT_ALREADY_APPROVED")
+    : new AppError("This student is already declined.", 409, "STUDENT_ALREADY_REJECTED");
+}
 
-    if (ids.length === 0) {
-      return { ids, count: 0 };
+/**
+ * Approve or decline ONE of the teacher's students (any registration source;
+ * inactive students too). Re-approval (REJECTED -> APPROVED) and decline after
+ * approval (APPROVED -> REJECTED) are allowed.
+ *
+ * 404 STUDENT_NOT_FOUND (missing, or another teacher's), 409
+ * STUDENT_ALREADY_APPROVED / STUDENT_ALREADY_REJECTED (nothing written, no
+ * history), 409 STUDENT_DECISION_BUSY (row locked too long / deadlock;
+ * nothing written).
+ */
+export async function decideStudentConfirmation(
+  teacherId: string,
+  studentId: string,
+  toStatus: StudentDecisionStatus
+) {
+  let fromStatus: StudentConfirmationStatus;
+
+  try {
+    fromStatus = await prisma.$transaction(async (tx) => {
+      // SET cannot take a bind parameter; the value is a module constant.
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${STUDENT_DECISION_LOCK_TIMEOUT_MS}ms'`);
+
+      const locked = await tx.$queryRaw<LockedStudentDecisionRow[]>`
+        SELECT "id", "confirmationStatus", "confirmedAt"
+        FROM "Student"
+        WHERE "id" = ${studentId} AND "teacherId" = ${teacherId}
+        FOR NO KEY UPDATE`;
+      const current = locked[0];
+
+      if (!current) {
+        throw new AppError("Student not found.", 404, "STUDENT_NOT_FOUND");
+      }
+
+      if (current.confirmationStatus === toStatus) {
+        throw alreadyDecidedError(toStatus);
+      }
+
+      // Read after the lock: never before the decision this one waited for.
+      const decidedAt = nextDecisionInstant(new Date(), current.confirmedAt);
+
+      await tx.student.update({
+        where: { id: studentId },
+        data: {
+          confirmationStatus: toStatus,
+          confirmedAt: decidedAt,
+          confirmedById: teacherId,
+        },
+      });
+
+      // approvedAt records the FIRST approval only: a re-approval after a
+      // rejection never overwrites it; a decline never clears it.
+      if (toStatus === StudentConfirmationStatus.APPROVED) {
+        await tx.student.updateMany({
+          where: { id: studentId, approvedAt: null },
+          data: { approvedAt: decidedAt },
+        });
+      }
+
+      await tx.studentConfirmationHistory.create({
+        data: {
+          studentId,
+          fromStatus: current.confirmationStatus,
+          toStatus,
+          decidedAt,
+          previousConfirmedAt: current.confirmedAt,
+          decidedByTeacherId: teacherId,
+          source: "INDIVIDUAL",
+          batchId: null,
+        },
+      });
+
+      return current.confirmationStatus;
+    }, STUDENT_DECISION_TRANSACTION_OPTIONS);
+  } catch (error) {
+    if (isRetryableLockError(error)) {
+      throw studentDecisionBusyError();
     }
 
-    // First approval only (see confirmStudent).
-    await tx.student.updateMany({
-      where: { id: { in: ids }, approvedAt: null },
-      data: { approvedAt: decidedAt },
-    });
+    throw error;
+  }
 
-    const result = await tx.student.updateMany({
-      where: {
-        id: { in: ids },
-        confirmationStatus: StudentConfirmationStatus.PENDING,
-      },
-      data: {
-        confirmationStatus: StudentConfirmationStatus.APPROVED,
-        confirmedAt: decidedAt,
-      },
-    });
+  // Automatic joining waivers of this month's unpaid invoices, after the
+  // commit (a failure is logged and never fails the decision). Decided from
+  // the LOCKED previous status, so a decision that raced another one is never
+  // skipped.
+  if (fromStatus === StudentConfirmationStatus.APPROVED || toStatus === StudentConfirmationStatus.APPROVED) {
+    await recalculateAfterStudentDecision(studentId);
+  }
 
-    return { ids, count: result.count };
-  });
+  return { fromStatus, toStatus };
+}
+
+export async function confirmStudent(teacherId: string, studentId: string) {
+  return decideStudentConfirmation(teacherId, studentId, StudentConfirmationStatus.APPROVED);
+}
+
+export async function declineStudent(teacherId: string, studentId: string) {
+  return decideStudentConfirmation(teacherId, studentId, StudentConfirmationStatus.REJECTED);
+}
+
+/**
+ * Approve all of the teacher's ACTIVE (status 0) pending students, in one
+ * transaction: lock them in id order, approve exactly the locked rows, one
+ * history row each (PENDING -> APPROVED, BULK, one shared batchId and
+ * instant). A student declined meanwhile drops out (PostgreSQL re-checks the
+ * WHERE after a lock wait); inactive and deleted students are never touched.
+ * Returns the number of students actually approved.
+ */
+export async function confirmAllPendingStudents(teacherId: string) {
+  let approvedIds: string[];
+
+  try {
+    approvedIds = await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${STUDENT_DECISION_LOCK_TIMEOUT_MS}ms'`);
+
+      const locked = await tx.$queryRaw<Pick<LockedStudentDecisionRow, "id" | "confirmedAt">[]>`
+        SELECT "id", "confirmedAt"
+        FROM "Student"
+        WHERE "teacherId" = ${teacherId} AND "status" = 0 AND "confirmationStatus" = 'PENDING'
+        ORDER BY "id"
+        FOR NO KEY UPDATE`;
+
+      if (locked.length === 0) {
+        return [];
+      }
+
+      const ids = locked.map((row) => row.id);
+      const decidedAt = locked.reduce<Date>((at, row) => nextDecisionInstant(at, row.confirmedAt), new Date());
+      const batchId = randomUUID();
+
+      const result = await tx.student.updateMany({
+        where: { id: { in: ids }, teacherId, status: 0, confirmationStatus: StudentConfirmationStatus.PENDING },
+        data: {
+          confirmationStatus: StudentConfirmationStatus.APPROVED,
+          confirmedAt: decidedAt,
+          confirmedById: teacherId,
+        },
+      });
+
+      // The rows are locked, so this cannot differ; if it ever did, roll
+      // everything back rather than record history that is not true.
+      if (result.count !== ids.length) {
+        throw new Error(`Bulk approval changed ${result.count} of ${ids.length} locked students.`);
+      }
+
+      // First approval only (see decideStudentConfirmation).
+      await tx.student.updateMany({
+        where: { id: { in: ids }, approvedAt: null },
+        data: { approvedAt: decidedAt },
+      });
+
+      await tx.studentConfirmationHistory.createMany({
+        data: locked.map((row) => ({
+          studentId: row.id,
+          fromStatus: StudentConfirmationStatus.PENDING,
+          toStatus: StudentConfirmationStatus.APPROVED,
+          decidedAt,
+          previousConfirmedAt: row.confirmedAt,
+          decidedByTeacherId: teacherId,
+          source: "BULK" as const,
+          batchId,
+        })),
+      });
+
+      return ids;
+    }, STUDENT_DECISION_TRANSACTION_OPTIONS);
+  } catch (error) {
+    if (isRetryableLockError(error)) {
+      throw studentDecisionBusyError();
+    }
+
+    throw error;
+  }
 
   for (const studentId of approvedIds) {
     await recalculateAfterStudentDecision(studentId);
   }
 
-  return count;
-}
-
-
-export async function declineStudent(teacherId: string, studentId: string) {
-  const student = await prisma.student.findFirst({
-    where: {
-      id: studentId,
-      teacherId,
-    },
-    select: {
-      id: true,
-      confirmationStatus: true,
-    },
-  });
-
-  if (!student) {
-    throw new Error("Student not found.");
-  }
-
-  if (student.confirmationStatus === StudentConfirmationStatus.REJECTED) {
-    throw new Error("Student is already confirmed.");
-  }
-
-  // approvedAt is deliberately left unchanged (first approval is kept).
-  await prisma.student.update({
-    where: {
-      id: studentId,
-    },
-    data: {
-      confirmationStatus: StudentConfirmationStatus.REJECTED,
-      confirmedAt: new Date(),
-    },
-  });
-
-  // APPROVED -> REJECTED: remove automatic joining waivers that no longer
-  // apply to this month's unpaid invoices (after the decline; a failure is
-  // logged and never fails it).
-  if (student.confirmationStatus === StudentConfirmationStatus.APPROVED) {
-    await recalculateAfterStudentDecision(studentId);
-  }
+  return approvedIds.length;
 }
 
 

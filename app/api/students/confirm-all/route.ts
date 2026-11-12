@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { handleRouteError } from "@/lib/error-handler";
 import { confirmAllPendingStudents } from "../../../../services/student-service";
 
-export async function PUT() {
+// Approves the teacher's ACTIVE pending students. `count` is the number
+// actually approved. Errors: { success: false, error: { message, code } } with
+// 401 UNAUTHORIZED, 409 STUDENT_DECISION_BUSY, 500 INTERNAL_SERVER_ERROR.
+export async function PUT(request: Request) {
   try {
     const session = await requireTeacherSession();
     const count = await confirmAllPendingStudents(session.teacherId);
@@ -13,13 +17,6 @@ export async function PUT() {
       message: `${count} student(s) confirmed successfully.`,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          error instanceof Error ? error.message : "Internal server error.",
-      },
-      { status: 400 }
-    );
+    return handleRouteError(error, { request });
   }
 }

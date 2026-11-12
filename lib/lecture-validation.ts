@@ -1,18 +1,19 @@
 import { z } from "zod";
 
+import { LECTURE_END_DATE_MESSAGES, lectureEndDateProblem } from "@/lib/lecture-schedule";
 import { isLocalDateTimeString, parseSriLankaLocalDateTime } from "@/lib/time";
 
 const uuid = z.string().trim().uuid("Invalid id format.");
 
 /**
- * Lecture date/time. A timezone-less datetime-local value
+ * The Sri Lankan lecture time rule. A timezone-less datetime-local value
  * ("YYYY-MM-DDTHH:MM") is Sri Lankan time, whatever the server's timezone;
  * anything else (ISO strings with "Z" or an offset, Date objects) is coerced
  * exactly as before. Malformed values still fail as "Invalid date"; so does a
  * datetime-local value that is not a real date (e.g. February 30th), instead
  * of being rolled over and read in the server's timezone.
  */
-const lectureDate = z.preprocess((value) => {
+function toSriLankaInstant(value: unknown): unknown {
   if (typeof value === "string") {
     const trimmed = value.trim();
 
@@ -22,21 +23,55 @@ const lectureDate = z.preprocess((value) => {
   }
 
   return value;
-}, z.coerce.date());
+}
+
+/** Lecture start date/time (Lecture.date). */
+const lectureDate = z.preprocess(toSriLankaInstant, z.coerce.date());
+
+/**
+ * Lecture end date/time (Lecture.endDate): the same Sri Lankan rule as the
+ * start. `null` or an empty / blank string (an empty form field) means "no
+ * end time" and clears it; it is never coerced to 1970. Omitted leaves it
+ * unchanged.
+ */
+const lectureEndDate = z
+  .preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : toSriLankaInstant(value)),
+    z.coerce.date({ error: "The end time must be a valid date and time." }).nullable()
+  )
+  .optional();
+
+/** End after start, at most 12 hours (lib/lecture-schedule.ts), when both are in the request. */
+function checkEndAgainstStart(value: { date?: Date; endDate?: Date | null }, ctx: z.RefinementCtx) {
+  if (!value.date || !value.endDate) return;
+
+  const problem = lectureEndDateProblem(value.date, value.endDate);
+
+  if (problem) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: LECTURE_END_DATE_MESSAGES[problem] });
+  }
+}
 
 /** Assignment due date: exactly the same Sri Lankan rule as lecture dates. */
 const assignmentDueDate = lectureDate;
 
-export const createLectureSchema = z.object({
-  classId: uuid,
-  title: z
-    .string()
-    .trim()
-    .min(2, "Lecture title must be at least 2 characters long.")
-    .max(150, "Lecture title must be at most 150 characters long."),
-  date: lectureDate,
-});
+export const createLectureSchema = z
+  .object({
+    classId: uuid,
+    title: z
+      .string()
+      .trim()
+      .min(2, "Lecture title must be at least 2 characters long.")
+      .max(150, "Lecture title must be at most 150 characters long."),
+    date: lectureDate,
+    endDate: lectureEndDate,
+  })
+  .superRefine(checkEndAgainstStart);
 
+/**
+ * When only one of date / endDate is sent, the other is the stored value:
+ * the lecture service checks the pair (updateLectureForTeacher).
+ */
 export const updateLectureSchema = z
   .object({
     title: z
@@ -46,10 +81,12 @@ export const updateLectureSchema = z
       .max(150, "Lecture title must be at most 150 characters long.")
       .optional(),
     date: lectureDate.optional(),
+    endDate: lectureEndDate,
   })
-  .refine((value) => value.title !== undefined || value.date !== undefined, {
+  .refine((value) => value.title !== undefined || value.date !== undefined || value.endDate !== undefined, {
     message: "At least one field is required.",
-  });
+  })
+  .superRefine(checkEndAgainstStart);
 
 export const lectureListQuerySchema = z.object({
   classId: uuid.optional(),

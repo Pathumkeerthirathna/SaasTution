@@ -1,4 +1,8 @@
+import { StudentConfirmationStatus } from "@prisma/client";
+
 import { AppError } from "@/lib/error-handler";
+import { isRetryableLockError } from "@/lib/breakout-activities/errors";
+import { dispatchOnlineEvidence } from "@/services/attendance-evidence-dispatcher";
 import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/lib/mailer";
 import { emitLiveChange, emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
@@ -153,11 +157,130 @@ function combineYouTubeCleanups(results: YouTubeSessionCleanupResult[]): YouTube
   return { status: closed > 0 ? "done" : "none", closed };
 }
 
+/** Upper bound for the lecture row lock wait of a session start (SET LOCAL lock_timeout). */
+export const SESSION_START_LOCK_TIMEOUT_MS = 3_000;
+
+/**
+ * Options of the session-start transaction. No isolationLevel: it runs at the
+ * database default, READ COMMITTED, which the lock protocol below relies on.
+ * The lock wait always ends well before the transaction expires, so a busy
+ * lecture surfaces as 409 LECTURE_BUSY, never as an expired transaction.
+ */
+export const SESSION_START_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
+
+type LockedLecture = {
+  id: string;
+  classId: string;
+  status: number;
+  classStatus: string;
+};
+
+/** A cancelled lecture stays cancelled: it is never started (Stage 5.7b-2a). */
+function lectureCancelledError() {
+  return new AppError("This lecture is cancelled, so it cannot be started.", 409, "LECTURE_CANCELLED");
+}
+
+/**
+ * Creates the class session and marks its lecture LIVE in ONE interactive
+ * transaction, after taking FOR NO KEY UPDATE on the lecture row.
+ *
+ * Why the lock: attendance finalization (planned) takes FOR SHARE on the
+ * lecture row, then checks that the lecture has no active session, then
+ * commits. FOR NO KEY UPDATE conflicts with FOR SHARE, and the session
+ * insert happens only while this lock is held, so a session can never be
+ * created between finalization's check and its commit:
+ *   - start locks first: finalization waits for this commit and its check (a
+ *     later statement, READ COMMITTED) sees the new session;
+ *   - finalization locks first: this start waits until it has committed.
+ * (Inserting the session alone would not do: its foreign key only takes
+ * FOR KEY SHARE on the lecture, which FOR SHARE does not block.)
+ *
+ * Both writes commit or roll back together. The lecture is re-checked under
+ * the lock: removed (status 1) or moved since the ownership check means 404
+ * LECTURE_NOT_FOUND and nothing is written; cancelled (classStatus
+ * CANCELLED, also when the cancellation committed while this start waited
+ * for the lock) means 409 LECTURE_CANCELLED and nothing is written.
+ */
+async function createSessionUnderLectureLock(params: {
+  classId: string;
+  lectureId: string;
+  roomName: string;
+  jitsiDomain: string;
+}) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // SET cannot take a bind parameter; the value is a module constant.
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${SESSION_START_LOCK_TIMEOUT_MS}ms'`);
+
+      const locked = await tx.$queryRaw<LockedLecture[]>`
+        SELECT "id", "classId", "status", "classStatus"::text AS "classStatus"
+        FROM "Lecture"
+        WHERE "id" = ${params.lectureId}
+        FOR NO KEY UPDATE`;
+      const current = locked[0];
+
+      if (!current || current.status !== 0 || current.classId !== params.classId) {
+        throw new AppError("Lecture not found for this class.", 404, "LECTURE_NOT_FOUND");
+      }
+
+      // Authoritative: the LOCKED row. A cancellation holds this row FOR NO KEY
+      // UPDATE too, so it either committed before (seen here) or waits until
+      // this start has committed.
+      if (current.classStatus === "CANCELLED") throw lectureCancelledError();
+
+      const session = await tx.classSession.create({
+        data: {
+          classId: params.classId,
+          lectureId: params.lectureId,
+          roomName: params.roomName,
+          jitsiDomain: params.jitsiDomain,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          classId: true,
+          lectureId: true,
+          roomName: true,
+          jitsiDomain: true,
+          isActive: true,
+          startedAt: true,
+          lecture: {
+            select: {
+              id: true,
+              title: true,
+              date: true,
+            },
+          },
+        },
+      });
+
+      await tx.lecture.update({
+        where: { id: params.lectureId },
+        data: { classStatus: "LIVE" },
+      });
+
+      return session;
+    }, SESSION_START_TRANSACTION_OPTIONS);
+  } catch (error) {
+    // The lecture row stayed locked (e.g. a finalization in progress) or a
+    // deadlock was detected: nothing was written; the teacher can retry.
+    if (isRetryableLockError(error)) {
+      throw new AppError("This lecture is busy. Please try starting the class again.", 409, "LECTURE_BUSY");
+    }
+
+    throw error;
+  }
+}
+
 export async function startClassSessionForTeacher(teacherId: string, classId: string, lectureId: string) {
   const [classroom, lecture] = await Promise.all([
     assertTeacherOwnsClass(teacherId, classId),
     assertTeacherOwnsLectureInClass(teacherId, classId, lectureId),
   ]);
+
+  // Refused before anything else happens (the class's live session is not
+  // ended for a start that cannot succeed); re-checked under the lock below.
+  if (lecture.classStatus === "CANCELLED") throw lectureCancelledError();
 
   const replacedSessions = await prisma.classSession.findMany({
     where: {
@@ -200,35 +323,13 @@ export async function startClassSessionForTeacher(teacherId: string, classId: st
   const roomName = createRoomName(classId);
   const jitsiDomain = getJitsiDomain();
 
-  const session = await prisma.classSession.create({
-    data: {
-      classId,
-      lectureId: lecture.id,
-      roomName,
-      jitsiDomain,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      classId: true,
-      lectureId: true,
-      roomName: true,
-      jitsiDomain: true,
-      isActive: true,
-      startedAt: true,
-      lecture: {
-        select: {
-          id: true,
-          title: true,
-          date: true,
-        },
-      },
-    },
-  });
-
-  await prisma.lecture.update({
-    where: { id: lecture.id },
-    data: { classStatus: "LIVE" },
+  // The new session and the lecture going LIVE commit together, under the
+  // lecture row lock (createSessionUnderLectureLock); events only after.
+  const session = await createSessionUnderLectureLock({
+    classId,
+    lectureId: lecture.id,
+    roomName,
+    jitsiDomain,
   });
 
   // Automatic joining waivers: a COMPLETED lecture going LIVE again stops
@@ -586,7 +687,23 @@ export async function notifyStudentsForSession(params: {
   };
 }
 
-export async function getSessionJoinInfo(sessionId: string, studentS: StudentSession) {
+/**
+ * The active session and the logged-in student, for the classroom: the
+ * session must be active and the student active (status 0) and enrolled
+ * (active ClassStudent) in its class.
+ *
+ * `requireApproved`: the student's registration must also be APPROVED. Login
+ * already requires it, but a session cookie issued before a teacher declined
+ * the student stays valid until it expires, so every NEW entry (join info,
+ * Jitsi token, attendance visit) checks it again here. Only leaving an
+ * existing visit skips it (markStudentLeftSession), so a student declined
+ * mid-class can still close their own open visit.
+ */
+async function findActiveSessionForStudent(
+  sessionId: string,
+  studentId: string,
+  options: { requireApproved: boolean }
+) {
   const session = await prisma.classSession.findUnique({
     where: {
       id: sessionId,
@@ -634,8 +751,9 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
 
   const student = await prisma.student.findFirst({
     where: {
-      id: studentS.studentId,
+      id: studentId,
       status: 0,
+      ...(options.requireApproved ? { confirmationStatus: StudentConfirmationStatus.APPROVED } : {}),
       classes: {
         some: {
           classId: session.classId,
@@ -654,6 +772,14 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
   if (!student) {
     throw new AppError("Student is not enrolled in this class.", 403, "STUDENT_NOT_IN_CLASS");
   }
+
+  return { session, student };
+}
+
+export async function getSessionJoinInfo(sessionId: string, studentS: StudentSession) {
+  const { session, student } = await findActiveSessionForStudent(sessionId, studentS.studentId, {
+    requireApproved: true,
+  });
 
   const jitsiToken =
   shouldUseJitsiJwtAuth(session.jitsiDomain)
@@ -721,6 +847,9 @@ async function getActiveSessionForEnrolledStudent(sessionId: string, studentId: 
     where: {
       id: studentId,
       status: 0,
+      // Same rule as getSessionJoinInfo: a declined student's still-valid
+      // session cookie does not open the class register.
+      confirmationStatus: StudentConfirmationStatus.APPROVED,
       classes: {
         some: {
           classId: session.classId,
@@ -931,6 +1060,9 @@ export async function markAttendanceOnJoin(params: {
     classId: joinInfo.session.classId,
   });
 
+  // Unified lecture attendance (docs/lecture-attendance.md): the visit is committed; its canonical evidence runs later in its own transaction. Never throws.
+  dispatchOnlineEvidence(attendance.id);
+
   return {
     attendance,
     // A new visit is always recorded (kept for the response shape).
@@ -952,7 +1084,12 @@ export async function markStudentLeftSession(
   student: StudentSession,
   attendanceId?: string
 ) {
-  const joinInfo = await getSessionJoinInfo(sessionId, student);
+  // The same session / enrolment checks as joining, except the approval
+  // check: a student declined during the class still closes their own visit
+  // (only their own, still-open visit in this session can be closed below).
+  const { session } = await findActiveSessionForStudent(sessionId, student.studentId, {
+    requireApproved: false,
+  });
 
   const openAttendance = await prisma.attendance.findFirst({
     where: {
@@ -1000,7 +1137,7 @@ export async function markStudentLeftSession(
     : null;
 
   return {
-    classId: joinInfo.session.classId,
+    classId: session.classId,
     attendance,
     updated: Boolean(attendance),
   };

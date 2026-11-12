@@ -49,6 +49,14 @@ import { Grade, StudentConfirmationStatus } from "@prisma/client";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
+import {
+  apiErrorMessage,
+  CONFIRM_ALL_PROMPT,
+  confirmAllSuccessMessage,
+  decisionActionsFor,
+  PENDING_ACTION_TEXT,
+  type PendingStudentAction,
+} from "@/components/student-confirmation-actions";
 import { email } from "zod";
 
 export type StudentListItem = {
@@ -240,7 +248,7 @@ export function StudentGuardianManagementPanel() {
   const [isConfirmingAll, setIsConfirmingAll] = useState(false);
 
   const [pendingAction, setPendingAction] = useState<{
-    type: "delete" | "activate";
+    type: PendingStudentAction;
     studentId: string;
     rect: DOMRect;
   } | null>(null);
@@ -325,6 +333,28 @@ export function StudentGuardianManagementPanel() {
   ) {
     setPendingAction({
       type: "delete",
+      studentId,
+      rect: event.currentTarget.getBoundingClientRect(),
+    });
+  }
+
+  function askDeclineConfirmedStudent(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    studentId: string
+  ) {
+    setPendingAction({
+      type: "decline-approved",
+      studentId,
+      rect: event.currentTarget.getBoundingClientRect(),
+    });
+  }
+
+  function askReapproveStudent(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    studentId: string
+  ) {
+    setPendingAction({
+      type: "reapprove",
       studentId,
       rect: event.currentTarget.getBoundingClientRect(),
     });
@@ -1283,108 +1313,59 @@ const pendingCount = pendingStudents.length;
   !!EmailError ||
   !!NameError;
 
- const handleConfirmStudent = async (student: StudentListItem) => {
-
-  console.log(student);
+ // Confirm (approve) or decline one student. Used for pending students and
+ // for decline-after-confirmation / confirm-again (after their popovers).
+ const decideStudent = async (student: StudentListItem, decision: "confirm" | "decline") => {
+  const isConfirm = decision === "confirm";
+  const fallback = isConfirm ? "Failed to confirm student." : "Failed to decline student.";
 
   try {
-    const response = await fetch(`/api/students/${student.id}/confirm`, {
+    const response = await fetch(`/api/students/${student.id}/${decision}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
     });
 
-    const result = await response.json();
-
-    console.log(result);
+    const result = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(result.message || "Failed to confirm student.");
+      toast.error(apiErrorMessage(result, fallback));
+
+      // Already decided, or another change was in progress: show the real state.
+      if (response.status === 409) {
+        await loadStudentList(page, filters);
+      }
+
+      return;
     }
 
-    toast.success("Student confirmed successfully.");
+    toast.success(isConfirm ? "Student confirmed successfully." : "Student declined successfully.");
 
     setStudents((prev) =>
       prev.map((s) =>
         s.id === student.id
           ? {
               ...s,
-              StudentConfirmationStatus: StudentConfirmationStatus.APPROVED,
+              StudentConfirmationStatus: isConfirm
+                ? StudentConfirmationStatus.APPROVED
+                : StudentConfirmationStatus.REJECTED,
             }
           : s
       )
     );
   } catch (error) {
     console.error(error);
-
-    toast.error(
-      error instanceof Error
-        ? error.message
-        : "Failed to confirm student."
-    );
-
-    if (error instanceof Error) {
-      console.error(error.message);
-      console.error(error.stack);
-    } else {
-      console.error(error);
-    }
+    toast.error(fallback);
   }
 };
 
- const handleDeclineStudent = async (student: StudentListItem) => {
+ const handleConfirmStudent = (student: StudentListItem) => decideStudent(student, "confirm");
 
-  console.log(student);
-
-  try {
-    const response = await fetch(`/api/students/${student.id}/decline`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    const result = await response.json();
-
-    console.log(result);
-
-    if (!response.ok) {
-      throw new Error(result.message || "Failed to confirm student.");
-    }
-
-    toast.error("Student declined successfully.");
-
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.id === student.id
-          ? {
-              ...s,
-              StudentConfirmationStatus: StudentConfirmationStatus.REJECTED,
-            }
-          : s
-      )
-    );
-  } catch (error) {
-    console.error(error);
-
-    toast.error(
-      error instanceof Error
-        ? error.message
-        : "Failed to confirm student."
-    );
-
-    if (error instanceof Error) {
-      console.error(error.message);
-      console.error(error.stack);
-    } else {
-      console.error(error);
-    }
-  }
-};
+ const handleDeclineStudent = (student: StudentListItem) => decideStudent(student, "decline");
 
 const handleConfirmAllStudents = async () => {
-  if (!confirm(`Confirm all ${pendingCount} pending students?`)) {
+  if (!confirm(CONFIRM_ALL_PROMPT)) {
     return;
   }
 
@@ -1395,21 +1376,26 @@ const handleConfirmAllStudents = async () => {
       method: "PUT",
     });
 
-    const result = await response.json();
+    const result = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(result.message);
+      toast.error(apiErrorMessage(result, "Failed to confirm students."));
+
+      if (response.status === 409) {
+        await loadStudentList(page, filters);
+      }
+
+      return;
     }
 
-    toast.success(`${pendingCount} students confirmed successfully.`);
+    toast.success(confirmAllSuccessMessage(result));
 
     await loadStudentList(page, filters);
   } catch (error) {
-    toast.error(
-      error instanceof Error
-        ? error.message
-        : "Failed to confirm students."
-    );
+    console.error(error);
+    toast.error("Failed to confirm students.");
+  } finally {
+    setIsConfirmingAll(false);
   }
 };
 
@@ -1754,7 +1740,7 @@ const handleConfirmAllStudents = async () => {
                         className="px-3 py-3"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        {student.StudentConfirmationStatus === "PENDING" ? (
+                        {decisionActionsFor(student, "table").includes("confirm") ? (
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => handleConfirmStudent(student)}
@@ -1772,16 +1758,46 @@ const handleConfirmAllStudents = async () => {
                               Decline
                             </button>
                           </div>
-                        ) : student.StudentConfirmationStatus === StudentConfirmationStatus.APPROVED ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                              <CheckCircle size={12} />
-                              Confirmed
+                        ) : student.StudentConfirmationStatus === "PENDING" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                              Pending
                             </span>
+                          ) : student.StudentConfirmationStatus === StudentConfirmationStatus.APPROVED ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                <CheckCircle size={12} />
+                                Confirmed
+                              </span>
+
+                              {decisionActionsFor(student, "table").includes("decline-approved") && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => askDeclineConfirmedStudent(event, student.id)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-50"
+                                >
+                                  <XCircle size={12} />
+                                  Decline
+                                </button>
+                              )}
+                            </div>
                           ) : student.StudentConfirmationStatus === StudentConfirmationStatus.REJECTED ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
-                              <XCircle size={12} />
-                              Declined
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
+                                <XCircle size={12} />
+                                Declined
+                              </span>
+
+                              {decisionActionsFor(student, "table").includes("reapprove") && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => askReapproveStudent(event, student.id)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                                >
+                                  <CheckCircle size={12} />
+                                  Confirm again
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
                               Unknown
@@ -2258,7 +2274,7 @@ const handleConfirmAllStudents = async () => {
                         Confirmation Status
                       </p>
 
-                      {student.StudentConfirmationStatus === "PENDING" ? (
+                      {decisionActionsFor(student, "card").includes("confirm") ? (
                         <button
                           onClick={() => handleConfirmStudent(student)}
                           className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600"
@@ -2266,11 +2282,46 @@ const handleConfirmAllStudents = async () => {
                           <CheckCircle size={12} />
                           Confirm
                         </button>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                          <CheckCircle size={12} />
-                          Verified
+                      ) : student.StudentConfirmationStatus === "PENDING" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                          Pending
                         </span>
+                      ) : student.StudentConfirmationStatus === "REJECTED" ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
+                            <XCircle size={12} />
+                            Declined
+                          </span>
+
+                          {decisionActionsFor(student, "card").includes("reapprove") && (
+                            <button
+                              type="button"
+                              onClick={(event) => askReapproveStudent(event, student.id)}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                            >
+                              <CheckCircle size={12} />
+                              Confirm again
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle size={12} />
+                            Verified
+                          </span>
+
+                          {decisionActionsFor(student, "card").includes("decline-approved") && (
+                            <button
+                              type="button"
+                              onClick={(event) => askDeclineConfirmedStudent(event, student.id)}
+                              className="inline-flex items-center gap-1 rounded-full border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-50"
+                            >
+                              <XCircle size={12} />
+                              Decline
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -3520,15 +3571,9 @@ const handleConfirmAllStudents = async () => {
       {pendingAction && (
         <ConfirmActionPopover
           rect={pendingAction.rect}
-          message={
-            pendingAction.type === "delete"
-              ? "Are you sure you want to delete this student?"
-              : "Are you sure you want to activate this student?"
-          }
-          confirmLabel={
-            pendingAction.type === "delete" ? "Delete" : "Activate"
-          }
-          tone={pendingAction.type === "activate" ? "positive" : "danger"}
+          message={PENDING_ACTION_TEXT[pendingAction.type].message}
+          confirmLabel={PENDING_ACTION_TEXT[pendingAction.type].confirmLabel}
+          tone={PENDING_ACTION_TEXT[pendingAction.type].tone}
           onCancel={() => setPendingAction(null)}
           onConfirm={() => {
             const { type, studentId } = pendingAction;
@@ -3537,8 +3582,14 @@ const handleConfirmAllStudents = async () => {
 
             if (type === "delete") {
               void handleDeleteStudent(studentId);
-            } else {
+            } else if (type === "activate") {
               void handleActivateStudent(studentId);
+            } else {
+              const target = students.find((s) => s.id === studentId);
+
+              if (target) {
+                void decideStudent(target, type === "reapprove" ? "confirm" : "decline");
+              }
             }
           }}
         />
