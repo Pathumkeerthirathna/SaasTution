@@ -104,6 +104,11 @@ export function LoginForm() {
         const err = payload.error ?? {};
         let message = err.message ?? "Unable to sign in.";
 
+        // Student login limits (SP-6D): a fixed message, whatever the account.
+        if (response.status === 429 || err.code === "LOGIN_RATE_LIMITED") {
+          message = "Too many login attempts. Please wait before trying again.";
+        }
+
         if (
           err.code === "STUDENT_PENDING_APPROVAL" ||
           err.code === "STUDENT_DEACTIVATED" ||

@@ -2,6 +2,7 @@ import { reportRouteError } from "@/lib/error-handler";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
 import { StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 import {
     generateAvailableRegistrationNumbers,
@@ -99,6 +100,15 @@ export async function POST(request: Request) {
         ) {
             const reg =
             normalizeRegistrationNumber(student.registrationNumber);
+
+            // SP-6G: the shared limit (normalized length); never truncated.
+            if (isRegistrationNumberTooLong(reg)) {
+            errors.push({
+                row: rowNumber,
+                field: "registrationNumber",
+                message: REGISTRATION_NUMBER_TOO_LONG_MESSAGE,
+            });
+            }
 
             if (registrationMap.has(reg)) {
             errors.push({

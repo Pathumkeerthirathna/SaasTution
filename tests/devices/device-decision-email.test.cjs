@@ -36,7 +36,7 @@ const log = [];
 function resetDb({ status = "PENDING", email = "student@example.com" } = {}) {
   failUpdate = false;
   log.length = 0;
-  db.students = [{ id: STUDENT, name: "Nimal Perera", email, teacherId: TEACHER }];
+  db.students = [{ id: STUDENT, name: "Nimal Perera", email, teacherId: TEACHER, sessionVersion: 0 }];
   db.devices = [
     {
       id: DEVICE,
@@ -66,6 +66,19 @@ const fakePrisma = {
       if (where.student?.teacherId && student?.teacherId !== where.student.teacherId) return null;
       return select ? Object.fromEntries(Object.keys(select).map((k) => [k, device[k]])) : { ...device };
     },
+    // SP-6F: rejection / removal run in a transaction with a conditional update.
+    async updateMany({ where, data }) {
+      if (failUpdate) throw new Error("db down");
+      const device = db.devices.find((d) => d.id === where.id && (where.status === undefined || d.status === where.status));
+      if (!device) return { count: 0 };
+      Object.assign(device, Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined)));
+      log.push(`update:${device.status}`);
+      return { count: 1 };
+    },
+    async findUnique({ where }) {
+      const device = db.devices.find((d) => d.id === where.id);
+      return device ? { ...device } : null;
+    },
     async update({ where, data }) {
       if (failUpdate) throw new Error("db down");
       const device = db.devices.find((d) => d.id === where.id);
@@ -76,12 +89,32 @@ const fakePrisma = {
     },
   },
   student: {
+    async updateMany({ where, data }) {
+      const student = db.students.find((s) => s.id === where.id);
+      if (!student) return { count: 0 };
+      student.sessionVersion += data.sessionVersion.increment;
+      return { count: 1 };
+    },
     async findUnique({ where, select }) {
       const student = db.students.find((s) => s.id === where.id);
       if (!student) return null;
       return Object.fromEntries(Object.keys(select).map((k) => [k, student[k]]));
     },
   },
+};
+
+// An interactive transaction over the same tables: everything is restored if it throws.
+fakePrisma.$transaction = async (fn) => {
+  const snapshot = { devices: db.devices.map((d) => ({ ...d })), students: db.students.map((s) => ({ ...s })), log: [...log] };
+  try {
+    return await fn(fakePrisma);
+  } catch (error) {
+    db.devices = snapshot.devices;
+    db.students = snapshot.students;
+    log.length = 0;
+    log.push(...snapshot.log);
+    throw error;
+  }
 };
 
 // ---- Fake mailer ----------------------------------------------------------

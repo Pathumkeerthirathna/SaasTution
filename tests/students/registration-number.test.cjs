@@ -383,3 +383,150 @@ test("login: a number held only by a deleted student cannot log in", async () =>
   setup([student(PATHUM, pat(1), 2)]);
   await assert.rejects(auth.loginStudent(pat(1), PASSWORD), (e) => e.statusCode === 401 && e.code === "INVALID_CREDENTIALS");
 });
+
+// ---- SP-6C: no initial password ------------------------------------------------------------------
+
+test("add: a new teacher-created student has no password (null), with a generated or a typed number; onboarding email unchanged", async () => {
+  setup([]);
+  const mailer = require.cache[path.join(root, "lib", "mailer.ts")].exports;
+  const original = mailer.sendStudentRegistrationEmail;
+  const sent = [];
+  mailer.sendStudentRegistrationEmail = async (input) => sent.push(input);
+  try {
+    const generated = await quiet(() => service.createStudent(PATHUM, { name: "Generated Number", gradeId: 6, contact01: "0771234567", email: "generated@mail.com" }));
+    const typed = await quiet(() => service.createStudent(PATHUM, addInput(pat(42))));
+    for (const created of [generated, typed]) {
+      const row = db.student.find((s) => s.id === created.id);
+      assert.equal(row.password, null, `${row.registrationNumber}: no password`);
+      assert.ok(row.registrationNumber, "a registration number is still assigned");
+      assert.equal("password" in created, false, "never returned");
+    }
+    assert.equal(db.student.find((s) => s.id === generated.id).registrationNumber, pat(1));
+    assert.deepEqual(sent.map((m) => [m.to, m.registrationNumber]), [["generated@mail.com", pat(1)], [`new-${pat(42).toLowerCase()}@mail.com`, pat(42)]]);
+    assert.equal(sent.some((m) => "password" in m), false, "no password is emailed");
+
+    // The registration number is not a way in: the student sets a password through Forgot Password.
+    await assert.rejects(auth.loginStudent(pat(1), pat(1)), (e) => e.statusCode === 401 && e.code === "INVALID_CREDENTIALS");
+  } finally {
+    mailer.sendStudentRegistrationEmail = original;
+  }
+});
+
+test("CSV import: unchanged, imported students still have no password", async () => {
+  setup([]);
+  const { status, body } = await runImport([row("Csv One"), row("Csv Two", `pat-${Y}-050`)]);
+  assert.equal(status, 200, JSON.stringify(body));
+  const imported = db.student.filter((s) => s.name.startsWith("Csv "));
+  assert.equal(imported.length, 2);
+  for (const s of imported) assert.equal(s.password ?? null, null, s.name);
+});
+
+// ---- SP-6G: one 64-character limit for creating, editing, importing and logging in -------------------------
+
+const validation = require(path.join(root, "lib", "student-validation.ts"));
+const loginLimits = require(path.join(root, "lib", "student-login-rate-limit.ts"));
+const studentsRoute = require(path.join(root, "app", "api", "students", "route.ts"));
+const studentRoute = require(path.join(root, "app", "api", "students", "[id]", "route.ts"));
+
+const TOO_LONG = "Registration number must be at most 64 characters long.";
+const n = (length, char = "A") => char.repeat(length);
+
+test("one constant: login and creation use the same 64-character limit", () => {
+  assert.equal(validation.REGISTRATION_NUMBER_MAX_LENGTH, 64);
+  assert.equal(loginLimits.MAX_LOGIN_REGISTRATION_NUMBER_LENGTH, validation.REGISTRATION_NUMBER_MAX_LENGTH);
+  assert.equal(validation.REGISTRATION_NUMBER_TOO_LONG_MESSAGE, TOO_LONG);
+  const source = require("node:fs").readFileSync(path.join(root, "lib", "student-login-rate-limit.ts"), "utf8");
+  assert.match(source, /MAX_LOGIN_REGISTRATION_NUMBER_LENGTH = REGISTRATION_NUMBER_MAX_LENGTH;/, "no second hard-coded value");
+});
+
+test("the limit is measured on the normalized form (trimmed, upper case): 64 accepted, 65 refused, never truncated", () => {
+  const field = validation.createStudentSchema.shape.registrationNumber;
+  const ok = (value) => field.safeParse(value);
+  assert.equal(ok(n(64)).success, true);
+  assert.equal(ok(n(64)).data, n(64), "unchanged, not truncated");
+  assert.equal(ok(`   ${n(64, "a")}   `).success, true, "surrounding spaces do not count; lower case is the same length upper-cased");
+  const long = ok(n(65));
+  assert.equal(long.success, false);
+  assert.equal(long.error.issues[0].message, TOO_LONG);
+  // Upper-casing can lengthen a string: "ß" becomes "SS".
+  assert.equal(ok(n(32, "ß")).success, true, "32 x ß -> 64 normalized characters");
+  assert.equal(ok(n(33, "ß")).success, false, "33 characters typed, 66 normalized");
+  assert.equal(validation.isRegistrationNumberTooLong(n(33, "ß")), true);
+  assert.equal(validation.isRegistrationNumberTooLong(`  ${n(64)}  `), false);
+  // Empty values keep their existing rule and message.
+  assert.equal(ok("   ").error.issues[0].message, "Registration number is required.");
+  // The edit schema shares the same field.
+  assert.equal(validation.updateStudentSchema.shape.registrationNumber.safeParse(n(65)).success, false);
+});
+
+test("teacher add and edit: 400 VALIDATION_ERROR with the message; nothing is created or changed", async () => {
+  setup([student(PATHUM, pat(1))]);
+  const before = JSON.stringify(db.student);
+  const post = await studentsRoute.POST(
+    new Request("http://localhost/api/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(addInput(n(65))) })
+  );
+  const posted = await post.json();
+  assert.deepEqual([post.status, posted.error.code, posted.error.message], [400, "VALIDATION_ERROR", TOO_LONG]);
+
+  const id = db.student[0].id;
+  const put = await studentRoute.PUT(
+    new Request(`http://localhost/api/students/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editInput(n(33, "ß"))) }),
+    { params: { id } }
+  );
+  const putBody = await put.json();
+  assert.deepEqual([put.status, putBody.error.code, putBody.error.message], [400, "VALIDATION_ERROR", TOO_LONG]);
+  assert.equal(JSON.stringify(db.student), before);
+
+  // 64 normalized characters are fine end to end.
+  const created = await quiet(() => service.createStudent(PATHUM, addInput(n(64, "b"))));
+  assert.equal(created.registrationNumber, n(64, "B"));
+});
+
+test("service guards: createStudent and updateStudentForTeacher refuse an over-long number whatever the caller", async () => {
+  setup([student(PATHUM, pat(1))]);
+  const tooLong = (e) => e.statusCode === 400 && e.code === "VALIDATION_ERROR" && e.message === TOO_LONG && e.details?.field === "registrationNumber";
+  await assert.rejects(quiet(() => service.createStudent(PATHUM, addInput(n(65)))), tooLong);
+  await assert.rejects(quiet(() => service.createStudent(PATHUM, addInput(n(33, "ß")))), tooLong);
+  await assert.rejects(quiet(() => service.updateStudentForTeacher(PATHUM, db.student[0].id, editInput(`  ${n(65, "x")} `))), tooLong);
+  assert.equal(db.student.length, 1);
+  assert.equal(db.student[0].registrationNumber, pat(1), "the stored number is untouched");
+});
+
+test("generated numbers are unchanged (well under the limit)", async () => {
+  setup([]);
+  const created = await quiet(() => service.createStudent(PATHUM, { name: "Generated", gradeId: 6, contact01: "0771234567", email: "gen@mail.com" }));
+  assert.equal(created.registrationNumber, pat(1));
+  assert.ok(created.registrationNumber.length < 64);
+});
+
+test("CSV import: an over-long number is a row error (row number, field, message); all or nothing — no student is created", async () => {
+  setup([]);
+  const { status, body } = await runImport([row("Fine One"), row("Too Long", n(65, "c")), row("Fine Two", `pat-${Y}-060`), row("Expands", n(33, "ß"))]);
+  assert.equal(status, 400, JSON.stringify(body));
+  const lengthErrors = body.errors.filter((e) => e.message === TOO_LONG);
+  assert.deepEqual(lengthErrors, [
+    { row: 3, field: "registrationNumber", message: TOO_LONG },
+    { row: 5, field: "registrationNumber", message: TOO_LONG },
+  ]);
+  assert.equal(db.student.length, 0, "nothing imported");
+
+  setup([]);
+  const ok = await runImport([row("Edge", n(64, "d")), row("Generated")]);
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.deepEqual(db.student.map((s) => s.registrationNumber).sort(), [n(64, "D"), pat(1)].sort());
+});
+
+test("availability check: an over-long number is refused (400 with the message), never reported as available", async () => {
+  setup([]);
+  const check = async (number) => {
+    const response = await checkRoute.GET(new Request(`http://localhost/api/students/check-registration-number?registrationNumber=${encodeURIComponent(number)}&studentId=`));
+    return { status: response.status, body: await response.json() };
+  };
+  assert.deepEqual(await check(n(65)), { status: 400, body: { message: TOO_LONG } });
+  assert.deepEqual(await check(n(33, "ß")), { status: 400, body: { message: TOO_LONG } });
+  assert.deepEqual(await check(n(64)), { status: 200, body: { exists: false } }, "64 still answers as before");
+
+  const form = require("node:fs").readFileSync(path.join(root, "components", "student-guardian-management-panel.tsx"), "utf8");
+  assert.match(form, /if \(!response\.ok\) \{\s*\/\/[^\n]*\n\s*setRegistrationNumberError\(result\.message \?\? "Invalid registration number\."\);\s*\} else if \(result\.exists\) \{/, "the form shows the refusal");
+  assert.equal((form.match(/maxLength=\{REGISTRATION_NUMBER_MAX_LENGTH\}/g) ?? []).length, 2, "add and edit inputs");
+});

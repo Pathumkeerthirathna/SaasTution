@@ -1,9 +1,26 @@
 import { z } from "zod";
 
+/**
+ * Longest registration number (Student Profile SP-6G): the single source of
+ * truth for creating, editing and importing students and for the student
+ * login (lib/student-login-rate-limit.ts). Measured on the normalized form
+ * (trimmed, upper case) — the form that is stored and looked up — because
+ * upper-casing can lengthen a string (e.g. "ß" -> "SS").
+ */
+export const REGISTRATION_NUMBER_MAX_LENGTH = 64;
+
+export const REGISTRATION_NUMBER_TOO_LONG_MESSAGE = `Registration number must be at most ${REGISTRATION_NUMBER_MAX_LENGTH} characters long.`;
+
+/** True when the normalized (trimmed, upper-case) registration number is longer than the limit. Never truncates. */
+export function isRegistrationNumberTooLong(value: string): boolean {
+  return value.trim().toUpperCase().length > REGISTRATION_NUMBER_MAX_LENGTH;
+}
+
 const registrationNumber = z
   .string()
   .trim()
   .min(1, "Registration number is required.")
+  .refine((value) => !isRegistrationNumberTooLong(value), REGISTRATION_NUMBER_TOO_LONG_MESSAGE)
 
 const studentName = z
   .string()

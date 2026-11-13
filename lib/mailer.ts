@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 
 import { AppError, getErrorMessage } from "@/lib/error-handler";
 import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
+import { getPasswordChangedEmail, passwordChangedText, type PasswordChangedBy } from "@/emails/PasswordChangedEmail";
 import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
@@ -18,6 +19,7 @@ export type EmailPurpose =
   | "TeacherAccountConfirmed"
   | "GuardianRegistration"
   | "PasswordReset"
+  | "PasswordChanged"
   | "EmailVerificationCode"
   | "DeviceApproval"
   | "DeviceDecision"
@@ -480,6 +482,17 @@ export async function sendPasswordResetEmail(
     getPasswordResetEmail({ resetLink: input.resetLink, expiresIn: "30 minutes" }),
     `Reset your SLClassroom password by opening this link:\n${input.resetLink}\n\nIf you did not request this, you can ignore this email.`,
     "PasswordReset"
+  );
+}
+
+/** SP-7B: sent to the student's current email after a committed password reset. */
+export async function sendPasswordChangedEmail(input: { to: string; by?: PasswordChangedBy }) {
+  await sendEmail(
+    input.to,
+    "Your SLClassroom password was changed",
+    getPasswordChangedEmail(input.by),
+    passwordChangedText(input.by),
+    "PasswordChanged"
   );
 }
 

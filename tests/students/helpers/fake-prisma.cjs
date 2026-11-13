@@ -13,7 +13,10 @@
  *    among rows with status <> 2, case-sensitive, NULLs never clash) by
  *    throwing Prisma P2002, like PostgreSQL would. createMany is
  *    all-or-nothing.
- *  - $transaction(fn) runs fn with the same client (no rollback).
+ *  - $transaction(fn) runs fn with the same client (no rollback), unless
+ *    state.rollback is true: then every table is snapshotted first and
+ *    restored if fn throws, as a database would roll back.
+ *  - update / updateMany data may use { increment: n } on a numeric column.
  *  - state.stopOn = "table.method" makes that call throw STOP (used to prove a
  *    code path got past its checks); state.beforeWrite(table, method, data)
  *    runs before every write (used to simulate a concurrent registration).
@@ -27,7 +30,16 @@ const STOP = "STOPPED_AT_MARKER";
 
 function createFakePrisma() {
   const db = {};
-  const state = { stopOn: null, beforeWrite: null };
+  const state = { stopOn: null, beforeWrite: null, rollback: false };
+
+  /** Applies `data` to `row`, resolving { increment: n } against the current value. */
+  function applyData(row, data) {
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined) continue;
+      row[key] = value && typeof value === "object" && !(value instanceof Date) && "increment" in value ? (row[key] ?? 0) + value.increment : value;
+    }
+    return row;
+  }
   let nextId = 1;
 
   const lower = (v) => (typeof v === "string" ? v.toLowerCase() : v);
@@ -136,7 +148,7 @@ function createFakePrisma() {
         await beforeWrite("update", data);
         const row = rows().find((r) => matches(r, where));
         if (!row) throw new Error(`${table}.update: record not found`);
-        const next = { ...row, ...Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined)) };
+        const next = applyData({ ...row }, data);
         if (table === "student") assertStudentIndex([next], rows());
         Object.assign(row, next);
         return project(row, select);
@@ -145,7 +157,7 @@ function createFakePrisma() {
         guard("updateMany");
         await beforeWrite("updateMany", data);
         const hit = rows().filter((r) => matches(r, where));
-        hit.forEach((r) => Object.assign(r, data));
+        hit.forEach((r) => applyData(r, data));
         return { count: hit.length };
       },
       async deleteMany({ where } = {}) {
@@ -163,7 +175,19 @@ function createFakePrisma() {
     {},
     {
       get(target, prop) {
-        if (prop === "$transaction") return async (fn) => fn(prisma);
+        if (prop === "$transaction") {
+          return async (fn) => {
+            if (!state.rollback) return fn(prisma);
+            const snap = Object.fromEntries(Object.entries(db).map(([name, list]) => [name, list.map((r) => ({ ...r }))]));
+            try {
+              return await fn(prisma);
+            } catch (error) {
+              for (const key of Object.keys(db)) delete db[key];
+              Object.assign(db, snap);
+              throw error;
+            }
+          };
+        }
         if (typeof prop !== "string" || prop.startsWith("$") || prop === "then") return undefined;
         return (delegates[prop] ??= delegate(prop));
       },
@@ -175,6 +199,7 @@ function createFakePrisma() {
     for (const [name, list] of Object.entries(tables)) db[name] = list.map((r) => ({ ...r }));
     state.stopOn = null;
     state.beforeWrite = null;
+    state.rollback = false;
   }
 
   return { db, prisma, state, reset, STOP };

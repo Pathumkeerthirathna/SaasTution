@@ -1,5 +1,4 @@
 import { Prisma, StudentClassAction, StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
-import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 
 import { isRetryableLockError } from "@/lib/breakout-activities/errors";
@@ -13,6 +12,7 @@ import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import { recalculateAfterStudentDecision } from "@/services/fee-waiver-events";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
+import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
 import { requireTeacherSession } from "@/lib/auth-session";
 
@@ -26,7 +26,6 @@ import {
 } from "@/emails/StudentRegistrationEmail";
 import { ClassroomStudent } from "@/components/Jitsi/types";
 
-const HASH_ROUNDS = 12;
 
 async function assertTeacherOwnsClass(classId: string, teacherId: string) {
   const classroom = await prisma.class.findFirst({
@@ -96,6 +95,17 @@ export function isRegistrationNumberConflict(error: unknown) {
   const target = error.meta?.target;
   const text = Array.isArray(target) ? target.map((value) => String(value)).join(",") : String(target ?? "");
   return text.includes("registrationNumber");
+}
+
+/**
+ * SP-6G: a registration number longer than REGISTRATION_NUMBER_MAX_LENGTH
+ * (normalized) could never be used to log in, so it is never stored. Never
+ * truncated: 400 VALIDATION_ERROR with the shared message.
+ */
+function assertRegistrationNumberLength(registrationNumber: string) {
+  if (isRegistrationNumberTooLong(registrationNumber)) {
+    throw new AppError(REGISTRATION_NUMBER_TOO_LONG_MESSAGE, 400, "VALIDATION_ERROR", { field: "registrationNumber" });
+  }
 }
 
 function registrationNumberTakenError() {
@@ -200,6 +210,9 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     ? normalizeRegistrationNumber(input.registrationNumber)
     : undefined;
 
+  // SP-6G: defensive, whatever route called (generated numbers are always short).
+  if (requestedRegistrationNumber) assertRegistrationNumberLength(requestedRegistrationNumber);
+
   if (requestedRegistrationNumber && (await isRegistrationNumberTaken(requestedRegistrationNumber))) {
     throw registrationNumberTakenError();
   }
@@ -232,7 +245,6 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
-    const passwordHash = await bcrypt.hash(registrationNumber, HASH_ROUNDS);
 
     try {
       const student = await prisma.student.create({
@@ -240,7 +252,11 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
           registrationNumber:requestedRegistrationNumber??registrationNumber,
           name: input.name,
           gradeId: input.gradeId,
-          password: passwordHash,
+          // Student Profile SP-6C: no initial password (the registration number
+          // is guessable). Like imported and self-registered students, the
+          // student sets one through "Forgot Password" (the registration email
+          // already says so), which proves they own the email address.
+          password: null,
           contact: input.contact01??"",
           contact01: input.contact01,
           contact02: input.contact02,
@@ -925,6 +941,9 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
   }
 
   const registrationNumber = normalizeRegistrationNumber(input.registrationNumber);
+
+  // SP-6G: defensive, whatever route called (the request schema checks it too).
+  assertRegistrationNumberLength(registrationNumber);
 
   // Checked across every teacher's non-deleted students (not only this
   // teacher's); keeping the student's own number is not a clash.

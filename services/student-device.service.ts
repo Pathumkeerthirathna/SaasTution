@@ -1,5 +1,6 @@
 import { DeviceApprovalException } from "@/app/exceptions/DeviceApprovalException";
 import { AppError } from "@/lib/error-handler";
+import { clientKey } from "@/lib/error-logging/request-trust";
 import { prisma } from "@/lib/prisma";
 import { StudentDeviceStatus } from "@prisma/client";
 import {
@@ -71,6 +72,13 @@ async function notifyTeacherOfPendingDevice(
   });
 }
 
+/**
+ * Minimum length of a fingerprint blob used for exact matching (SP-6B). The
+ * FingerprintJS components serialised by lib/current-device.ts are far
+ * longer; anything shorter is not a fingerprint and never identifies a device.
+ */
+export const MIN_FINGERPRINT_MATCH_LENGTH = 64;
+
 type ValidateStudentDeviceParams = {
   studentId: string;
   device?: {
@@ -109,10 +117,14 @@ export async function validateStudentDevice({
     );
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    request.headers.get("x-real-ip") ??
-    null;
+  // Informational only (stored, shown to the teacher): the address appended by
+  // the trusted proxy chain (TRUSTED_PROXY_COUNT), never the client-supplied
+  // first X-Forwarded-For entry or X-Real-IP; null when it cannot be trusted.
+  const ip = clientKey(request);
+
+  // Every device field below is supplied by the browser; none is a secret.
+  // Student Profile SP-6B: approval can only be reached through an exact
+  // identity match (1 or 2); the coarse attributes (3) never grant it.
 
   // 1. Exact match on the FingerprintJS visitor id.
   let existingDevice = await prisma.studentDevice.findUnique({
@@ -123,23 +135,28 @@ export async function validateStudentDevice({
       },
     },
   });
+  let matchedBy: "DEVICE_ID" | "FINGERPRINT" | "ATTRIBUTES" | null = existingDevice ? "DEVICE_ID" : null;
 
-  // 2. Exact match on the stored fingerprint blob.
-  if (!existingDevice && device.fingerprint) {
+  // 2. Exact match on the stored fingerprint blob (the FingerprintJS
+  //    components, kilobytes of JSON). Browser / OS / platform values cannot
+  //    produce it; trivially short values are never used to identify a device.
+  if (!existingDevice && typeof device.fingerprint === "string" && device.fingerprint.length >= MIN_FINGERPRINT_MATCH_LENGTH) {
     existingDevice = await prisma.studentDevice.findFirst({
       where: {
         studentId,
         fingerprint: device.fingerprint,
       },
     });
+    if (existingDevice) matchedBy = "FINGERPRINT";
   }
 
-  // 3. Stable-attribute match. The FingerprintJS visitor id and the fingerprint
-  //    blob both drift over time (browser updates, setting changes), so fall
-  //    back to the attributes we actually surface as "a device": the browser
-  //    name, OS and platform (plus the hardware model on mobile). Browser and
-  //    OS *versions* are deliberately excluded so a Chrome 150 -> 151 update
-  //    does not register as a brand-new device. An already-approved match wins.
+  // 3. Stable-attribute match: browser name, OS and platform (plus the
+  //    hardware model when sent). These are guessable, so they only find an
+  //    existing PENDING or BLOCKED request for the same kind of device (no
+  //    duplicate requests; a rejected device stays rejected). They NEVER match
+  //    an APPROVED device and never change a device's identity: an
+  //    unrecognised browser on an approved kind of device is a new device and
+  //    waits for the teacher.
   if (!existingDevice) {
     const attributeWhere = {
       studentId,
@@ -149,20 +166,16 @@ export async function validateStudentDevice({
       ...(device.deviceModel ? { deviceModel: device.deviceModel } : {}),
     };
 
-    existingDevice =
-      (await prisma.studentDevice.findFirst({
-        where: { ...attributeWhere, status: StudentDeviceStatus.APPROVED },
-        orderBy: { lastLoginAt: "desc" },
-      })) ??
-      (await prisma.studentDevice.findFirst({
-        where: attributeWhere,
-        orderBy: [{ approvalRequestedAt: "desc" }],
-      }));
+    existingDevice = await prisma.studentDevice.findFirst({
+      where: { ...attributeWhere, status: { not: StudentDeviceStatus.APPROVED } },
+      orderBy: [{ approvalRequestedAt: "desc" }],
+    });
+    if (existingDevice) matchedBy = "ATTRIBUTES";
   }
 
-  // When we matched an existing device by fingerprint/attributes rather than by
-  // the exact visitor id, refresh its identifying data (but never its status).
-  if (existingDevice && existingDevice.deviceId !== device.deviceId) {
+  // An exact fingerprint match whose visitor id drifted: refresh the device's
+  // identifying data (but never its status). Attribute matches never do this.
+  if (existingDevice && matchedBy === "FINGERPRINT" && existingDevice.deviceId !== device.deviceId) {
     existingDevice = await prisma.studentDevice.update({
       where: {
         id: existingDevice.id,
@@ -385,17 +398,30 @@ export async function deleteStudentDeviceForTeacher(
   deviceId: string,
   teacherId: string
 ) {
-  const owned = await prisma.studentDevice.findFirst({
-    where: { id: deviceId, student: { teacherId } },
-    select: { id: true },
-  });
+  // SP-6F: removing an APPROVED device ends the student's sessions in the same
+  // transaction (see rejectStudentDevice); either both happen or neither.
+  return prisma.$transaction(async (tx) => {
+    const owned = await tx.studentDevice.findFirst({
+      where: { id: deviceId, student: { teacherId } },
+      select: { id: true, status: true, studentId: true },
+    });
 
-  if (!owned) {
-    return { deleted: false };
-  }
+    if (!owned) {
+      return { deleted: false };
+    }
 
-  await prisma.studentDevice.delete({ where: { id: deviceId } });
-  return { deleted: true };
+    // Conditional on the status read: a concurrent change or removal deletes nothing here.
+    const removed = await tx.studentDevice.deleteMany({ where: { id: deviceId, status: owned.status } });
+    if (removed.count !== 1) {
+      return { deleted: false };
+    }
+
+    if (owned.status === StudentDeviceStatus.APPROVED) {
+      await invalidateStudentSessions(tx, owned.studentId);
+    }
+
+    return { deleted: true };
+  }, DEVICE_TRANSACTION_OPTIONS);
 }
 
 /**
@@ -558,28 +584,80 @@ export async function approveStudentDevice(
   return device;
 }
 
+/*
+ * Student Profile SP-6F: blocking or removing a device ends the student's
+ * sessions. A JWT is not bound to a device, so the only way to end a session
+ * that may be running on that device is the student's session version
+ * (lib/student-session.ts): it is incremented in the SAME transaction as the
+ * device change, for that student only, and the change is rolled back if the
+ * increment does not happen. The student signs in again on their other
+ * approved devices.
+ *
+ * Only a device that was APPROVED can carry a session (a login succeeds only
+ * on an approved device), so only blocking or removing an APPROVED device
+ * increments the version. Rejecting a PENDING request, re-rejecting a BLOCKED
+ * device or removing a PENDING / BLOCKED one signs nobody out.
+ */
+const DEVICE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
+
+function deviceDecisionConflict() {
+  return new AppError("This device was changed at the same time. Please refresh and try again.", 409, "DEVICE_DECISION_CONFLICT");
+}
+
+type DeviceTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Ends every session of the student (inside the device transaction); exactly one row or the transaction rolls back. */
+async function invalidateStudentSessions(tx: DeviceTransaction, studentId: string) {
+  const bumped = await tx.student.updateMany({
+    where: { id: studentId },
+    data: { sessionVersion: { increment: 1 } },
+  });
+  if (bumped.count !== 1) {
+    throw new AppError("The student's sessions could not be ended. Nothing was changed.", 409, "DEVICE_DECISION_CONFLICT");
+  }
+}
+
 export async function rejectStudentDevice(
   deviceId: string,
   teacherId: string,
   reason?: string
 ) {
-  const previous = await assertDeviceBelongsToTeacher(deviceId, teacherId);
+  const { device, previousStatus } = await prisma.$transaction(async (tx) => {
+    // Two tries: a concurrent decision makes the conditional update match nothing;
+    // the second read sees its committed result.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const owned = await tx.studentDevice.findFirst({
+        where: { id: deviceId, student: { teacherId } },
+        select: { id: true, status: true, studentId: true },
+      });
+      if (!owned) throw new AppError("Device not found.", 404, "DEVICE_NOT_FOUND");
 
-  const device = await prisma.studentDevice.update({
-    where: {
-      id: deviceId,
-    },
-    data: {
-      status: "BLOCKED",
-      rejectedAt: new Date(),
-      rejectedReason: reason,
-      approvedByTeacherId: teacherId,
-      approvedAt: null,
-      approvedReason: null,
-    },
-  });
+      const changed = await tx.studentDevice.updateMany({
+        where: { id: deviceId, status: owned.status },
+        data: {
+          status: "BLOCKED",
+          rejectedAt: new Date(),
+          rejectedReason: reason,
+          approvedByTeacherId: teacherId,
+          approvedAt: null,
+          approvedReason: null,
+        },
+      });
+      if (changed.count !== 1) continue;
 
-  if (previous.status !== StudentDeviceStatus.BLOCKED) {
+      if (owned.status === StudentDeviceStatus.APPROVED) {
+        await invalidateStudentSessions(tx, owned.studentId);
+      }
+
+      const updated = await tx.studentDevice.findUnique({ where: { id: deviceId } });
+      if (!updated) throw deviceDecisionConflict();
+      return { device: updated, previousStatus: owned.status };
+    }
+    throw deviceDecisionConflict();
+  }, DEVICE_TRANSACTION_OPTIONS);
+
+  // After the commit only (unchanged): a decision email when the status changed.
+  if (previousStatus !== StudentDeviceStatus.BLOCKED) {
     await notifyStudentOfDeviceDecision(device, "rejected", reason);
   }
 

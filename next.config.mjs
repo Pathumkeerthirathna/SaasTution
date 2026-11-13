@@ -12,6 +12,14 @@ const nextConfig = {
   experimental: {
     instrumentationHook: true,
   },
+  // Password-reset pages only (Student Profile SP-7E): a reset address must
+  // never leave in a Referer header. Other routes are unaffected.
+  async headers() {
+    return ["/reset-password", "/reset-password/:path*"].map((source) => ({
+      source,
+      headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+    }));
+  },
   images: {
     remotePatterns: [
       {

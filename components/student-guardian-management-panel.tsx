@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { REGISTRATION_NUMBER_MAX_LENGTH } from "@/lib/student-validation";
 import { createPortal } from "react-dom";
 import {
   FormEvent,
@@ -1225,7 +1226,10 @@ const pendingCount = pendingStudents.length;
 
       const result = await response.json();
 
-      if (result.exists) {
+      if (!response.ok) {
+        // SP-6G: e.g. too long; never shown as available.
+        setRegistrationNumberError(result.message ?? "Invalid registration number.");
+      } else if (result.exists) {
         setRegistrationNumberError("Registration number already exists.");
       } else {
         setRegistrationNumberError("");
@@ -2592,6 +2596,7 @@ const handleConfirmAllStudents = async () => {
                 </label>
 
                 <input
+                  maxLength={REGISTRATION_NUMBER_MAX_LENGTH}
                   value={studentForm.registrationNumber}
                   onChange={(event) => {
                     setStudentForm((prev) => ({
@@ -2946,6 +2951,7 @@ const handleConfirmAllStudents = async () => {
 
               <div className="relative">
                 <input
+                  maxLength={REGISTRATION_NUMBER_MAX_LENGTH}
                   value={editStudentForm.registrationNumber}
                   onChange={(event) => {
                     setEditStudentForm((prev) => ({

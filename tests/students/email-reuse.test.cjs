@@ -81,6 +81,7 @@ fake("lib/mailer.ts", {
     return `https://slclassroom.live/reset-password/confirm?token=${token}`;
   },
   sendPasswordResetEmail: async (input) => resetEmails.push(input),
+  sendPasswordChangedEmail: async () => {},
   sendEmailVerificationCodeEmail: async () => {},
   sendEmail: async () => {},
   sendStudentRegistrationEmail: async () => {},
@@ -88,7 +89,7 @@ fake("lib/mailer.ts", {
 
 const { assertEmailAvailable } = require(path.join(root, "lib", "email-uniqueness.ts"));
 const { createStudent, updateStudentForTeacher, RegisterStudentViaPublicClasses } = require(path.join(root, "services", "student-service.ts"));
-const { requestPasswordReset, confirmPasswordReset, loginStudent, loginByLoginId } = require(path.join(root, "services", "auth-service.ts"));
+const { requestPasswordReset, confirmPasswordReset, loginStudent, loginByLoginId, settlePasswordResetEmailsForTests } = require(path.join(root, "services", "auth-service.ts"));
 const importRoute = require(path.join(root, "app", "api", "students", "import", "route.ts"));
 
 const bcrypt = require("bcryptjs");
@@ -101,7 +102,7 @@ function setup() {
   resetTokens.length = 0;
   // Login-ready fixtures: every student has the same password, a confirmed
   // email and an approved registration.
-  for (const s of db.student) Object.assign(s, { password: PASSWORD_HASH, emailConfirmed: true, confirmationStatus: "APPROVED" });
+  for (const s of db.student) Object.assign(s, { password: PASSWORD_HASH, emailConfirmed: true, confirmationStatus: "APPROVED", sessionVersion: 0 });
 }
 
 const conflict = (pattern) => (error) => error.statusCode === 409 && pattern.test(error.message);
@@ -247,12 +248,18 @@ test("CSV import: active / inactive emails and in-file duplicates are still reje
 
 // ---- Password reset ---------------------------------------------------------
 
-test("password reset by email resolves the current student, not the deleted record", async () => {
+test("password reset: a reused email never identifies a student (SP-7C); the current holder resets by registration number", async () => {
   setup();
   // The new student reusing Student B's email; the deleted row comes first.
   db.student.push({ id: "s-new", teacherId: T1, name: "New B", gradeId: 6, registrationNumber: "PK-2026-5", email: "def@gmail.com", status: 0 });
 
   await requestPasswordReset("DEF@gmail.com");
+  await settlePasswordResetEmailsForTests();
+  assert.equal(db.passwordResetToken.length, 0, "student emails are not reset identifiers");
+  assert.equal(resetEmails.length, 0);
+
+  await requestPasswordReset("PK-2026-5");
+  await settlePasswordResetEmailsForTests();
   assert.equal(db.passwordResetToken.length, 1);
   assert.equal(db.passwordResetToken[0].userId, "s-new");
   assert.equal(resetEmails.length, 1);
@@ -262,21 +269,26 @@ test("password reset by email resolves the current student, not the deleted reco
 test("password reset by email: an email held only by a deleted student sends nothing", async () => {
   setup();
   await requestPasswordReset("def@gmail.com");
+  await settlePasswordResetEmailsForTests();
   assert.equal(db.passwordResetToken.length, 0);
   assert.equal(resetEmails.length, 0);
 });
 
-test("password reset: active students can still reset by email and by registration number", async () => {
+test("password reset: active students reset by registration number (any case), not by email (SP-7C)", async () => {
   setup();
   await requestPasswordReset("abc@mail.com");
   await requestPasswordReset("pk-2026-1");
+  await requestPasswordReset(" PK-2026-1 ");
+  await settlePasswordResetEmailsForTests();
   assert.deepEqual(db.passwordResetToken.map((t) => t.userId), ["s-a", "s-a"]);
+  assert.equal(db.passwordResetToken.filter((t) => t.usedAt == null).length, 1, "only the latest link is active");
   assert.equal(resetEmails.length, 2);
 });
 
 test("password reset: a deleted student cannot reset by registration number (no token, no email, same quiet success)", async () => {
   setup();
   await assert.doesNotReject(requestPasswordReset("PK-2026-2"));
+  await settlePasswordResetEmailsForTests();
   assert.equal(db.passwordResetToken.length, 0);
   assert.equal(resetEmails.length, 0);
 });
@@ -293,29 +305,33 @@ test("password reset: a link issued before the student was deleted no longer wor
   const token = resetTokens.at(-1);
   db.student.find((s) => s.id === "s-a").status = 2;
 
-  // The token itself is valid: the refusal comes from the deleted-student check.
-  const original = fakePrisma.student.updateMany;
-  let studentUpdateTried = false;
-  fakePrisma.student.updateMany = async (args) => {
-    studentUpdateTried = true;
-    return original(args);
+  // The token itself is valid: the refusal comes from the deleted-student check,
+  // made after the token was claimed (SP-7B), so the claim must be rolled back.
+  state.rollback = true;
+  const original = fakePrisma.passwordResetToken.updateMany;
+  let tokenClaimed = false;
+  fakePrisma.passwordResetToken.updateMany = async (args) => {
+    const result = await original(args);
+    if (result.count === 1) tokenClaimed = true;
+    return result;
   };
   try {
     await assert.rejects(confirmPasswordReset(token, "new-password-1"), (e) => e.code === "INVALID_RESET_TOKEN");
   } finally {
-    fakePrisma.student.updateMany = original;
+    fakePrisma.passwordResetToken.updateMany = original;
   }
-  assert.equal(studentUpdateTried, true, "reached the student update");
+  assert.equal(tokenClaimed, true, "the token was valid and claimed before the deleted-student check");
   assert.equal(db.student.find((s) => s.id === "s-a").password, PASSWORD_HASH, "password unchanged");
-  assert.equal(db.passwordResetToken[0].usedAt, undefined, "token not consumed");
+  assert.equal(db.passwordResetToken[0].usedAt, undefined, "token not consumed (claim rolled back)");
 });
 
 test("password reset: an active student's link still sets the new password", async () => {
   setup();
-  await requestPasswordReset("abc@mail.com");
+  await requestPasswordReset("PK-2026-1");
   await confirmPasswordReset(resetTokens.at(-1), "new-password-1");
   assert.ok(bcrypt.compareSync("new-password-1", db.student.find((s) => s.id === "s-a").password));
   assert.ok(db.passwordResetToken[0].usedAt instanceof Date);
+  assert.equal(db.student.find((s) => s.id === "s-a").sessionVersion, 1, "existing sessions revoked (SP-7B)");
 });
 
 // ---- Student login ------------------------------------------------------------
