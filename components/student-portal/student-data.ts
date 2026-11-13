@@ -52,6 +52,9 @@ export type AnnouncementItem = {
   sentAt: string;
 };
 
+/** Anchor of "My Attendance QR" on /student/profile (a plain module, so server pages can link to it). */
+export const STUDENT_QR_PANEL_ID = "my-attendance-qr";
+
 export const studentNavItems: StudentNavItem[] = [
   { href: "/student/dashboard",        label: "Dashboard",             icon: "dashboard" },
   { href: "/student/calendar",         label: "Calendar",              icon: "calendar" },
@@ -64,6 +67,7 @@ export const studentNavItems: StudentNavItem[] = [
   { href: "/student/material-bundles", label: "Tutes / Papers",        icon: "folder" },
   { href: "/student/attendance",       label: "Attendance / History",  icon: "attendance" },
   { href: "/student/messages",         label: "Messages",              icon: "messages" },
+  { href: "/student/profile",          label: "My Profile",            icon: "profile" },
   { href: "/student/settings",         label: "Settings",              icon: "settings" },
 ];
 

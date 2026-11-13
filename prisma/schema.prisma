@@ -594,6 +594,11 @@ model Student {
   email     String?
   password  String?
 
+  /// Student session invalidation (Student Profile SP-5): student JWTs carry
+  /// this value as the `sv` claim (a token without it counts as 0); raising it
+  /// invalidates every other student session. Teachers / guardians do not use it.
+  sessionVersion Int @default(0)
+
   publicClassId String?
   publicClass   Class?  @relation("PublicClassRegistration", fields: [publicClassId], references: [id])
 

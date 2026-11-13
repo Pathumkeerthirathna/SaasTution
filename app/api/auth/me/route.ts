@@ -4,6 +4,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { assertStudentSessionAccess } from "@/lib/student-session";
 
 const ADMIN_ID = "admin-pathum";
 
@@ -36,6 +37,9 @@ export async function GET(request: Request) {
 
     if (session.role !== "TEACHER") {
       if (session.role === "STUDENT") {
+        // Central student check: 401 / 403 STUDENT_ACCOUNT_INACTIVE (handled below); DB errors -> 500.
+        await assertStudentSessionAccess(session);
+
         const student = await prisma.student.findUnique({
           where: { id: session.sub },
           select: {

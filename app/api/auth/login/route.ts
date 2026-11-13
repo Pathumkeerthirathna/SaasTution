@@ -3,6 +3,8 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { buildSessionCookieConfig, signAuthToken, AUTH_COOKIE_NAME } from "@/lib/auth";
 import { loginSchema } from "@/lib/auth-validation";
 import { handleRouteError } from "@/lib/error-handler";
+import { clientKey } from "@/lib/error-logging/request-trust";
+import { LoginRateLimitedError } from "@/lib/student-login-rate-limit";
 import { markTeacherLoggedIn } from "@/lib/login-tracker";
 import { verifySessionInviteToken } from "@/lib/session-invite";
 import { loginByLoginId } from "@/services/auth-service";
@@ -84,7 +86,9 @@ export async function POST(request: Request) {
       return response;
     }
 
-    const loginResult = await loginByLoginId(loginId, parsed.data.password);
+    // The trusted client address (never a client-supplied header) is used
+    // only by the student branch's rate limits (Student Profile SP-6D).
+    const loginResult = await loginByLoginId(loginId, parsed.data.password, { clientKey: clientKey(request) });
 
 
     if (loginResult.role === "STUDENT") {
@@ -142,12 +146,24 @@ export async function POST(request: Request) {
       markTeacherLoggedIn(loginResult.user.id);
     }
 
-    const token = await signAuthToken({
-      sub: loginResult.user.id,
-      email: loginResult.user.email,
-      role: loginResult.role,
-      name: loginResult.user.name,
-    });
+    // Students: the session version comes from their authenticated record
+    // (never from the request); teachers' tokens are unchanged.
+    const token = await signAuthToken(
+      loginResult.role === "STUDENT"
+        ? {
+            sub: loginResult.user.id,
+            email: loginResult.user.email,
+            role: "STUDENT",
+            name: loginResult.user.name,
+            sessionVersion: loginResult.sessionVersion,
+          }
+        : {
+            sub: loginResult.user.id,
+            email: loginResult.user.email,
+            role: loginResult.role,
+            name: loginResult.user.name,
+          }
+    );
 
     const response = apiSuccess(
       {
@@ -166,6 +182,13 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
+    if (error instanceof LoginRateLimitedError) {
+      // Student login limits (SP-6D): one generic answer, whatever the account.
+      const limited = apiError(error.message, 429, error.code);
+      limited.headers.set("Retry-After", String(error.retryAfterSeconds));
+      limited.headers.set("Cache-Control", "no-store");
+      return limited;
+    }
     return handleRouteError(error, { request });
   }
 }

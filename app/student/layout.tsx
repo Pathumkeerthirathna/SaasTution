@@ -5,6 +5,7 @@ import { ReactNode } from "react";
 import { StudentShell } from "@/components/student-portal/student-shell";
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkStudentSessionAccess } from "@/lib/student-session";
 
 type StudentLayoutProps = {
   children: ReactNode;
@@ -20,6 +21,12 @@ export default async function StudentLayout({ children }: StudentLayoutProps) {
   const session = await verifyAuthToken(token);
 
   if (!session || session.role !== "STUDENT") {
+    redirect("/login");
+  }
+
+  // Central student check (exists, active, session version); a database
+  // failure throws (error page), it never renders the portal.
+  if ((await checkStudentSessionAccess(session)) !== "ACTIVE") {
     redirect("/login");
   }
 

@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 
-import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
+import { AUTH_COOKIE_NAME, verifyAuthToken, type AuthTokenPayload } from "@/lib/auth";
 import { AppError } from "@/lib/error-handler";
+import { assertStudentSessionAccess, checkStudentSessionAccess } from "@/lib/student-session";
 
 export type TeacherSession = {
   teacherId: string;
@@ -44,14 +45,7 @@ export type AppSession =
       role: "STUDENT";
     };
 
-/** Like `requireAppSession`, but returns null instead of throwing when there's no valid session. */
-export async function getOptionalSession(): Promise<AppSession | null> {
-  const token = cookies().get(AUTH_COOKIE_NAME)?.value;
-  if (!token) return null;
-
-  const payload = await verifyAuthToken(token);
-  if (!payload) return null;
-
+function toAppSession(payload: AuthTokenPayload): AppSession {
   return {
     userId: payload.sub,
     email: payload.email,
@@ -60,7 +54,8 @@ export async function getOptionalSession(): Promise<AppSession | null> {
   };
 }
 
-export async function requireAppSession(): Promise<AppSession> {
+/** The verified token from the session cookie (signature and expiry only; no database). */
+async function readAppToken(): Promise<AuthTokenPayload> {
   const token = cookies().get(AUTH_COOKIE_NAME)?.value;
 
   if (!token) {
@@ -73,55 +68,86 @@ export async function requireAppSession(): Promise<AppSession> {
     throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
   }
 
-  return {
-    userId: payload.sub,
-    email: payload.email,
-    name: payload.name,
-    role: payload.role,
-  };
+  return payload;
+}
+
+/**
+ * Like `requireAppSession`, but returns null instead of throwing when there's no valid session.
+ * A student session counts only while it passes the central student check (lib/student-session.ts);
+ * a database failure still throws (never treated as a session).
+ */
+export async function getOptionalSession(): Promise<AppSession | null> {
+  const token = cookies().get(AUTH_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  const payload = await verifyAuthToken(token);
+  if (!payload) return null;
+
+  if (payload.role === "STUDENT" && (await checkStudentSessionAccess(payload)) !== "ACTIVE") return null;
+
+  return toAppSession(payload);
+}
+
+/** Any signed-in app user. Student sessions are also checked against the database (lib/student-session.ts). */
+export async function requireAppSession(): Promise<AppSession> {
+  const payload = await readAppToken();
+
+  if (payload.role === "STUDENT") {
+    await assertStudentSessionAccess(payload);
+  }
+
+  return toAppSession(payload);
 }
 
 export async function requireTeacherSession(): Promise<TeacherSession> {
-  const session = await requireAppSession();
+  const payload = await readAppToken();
 
-  if (session.role !== "TEACHER") {
+  if (payload.role !== "TEACHER") {
     throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
   }
 
   return {
-    teacherId: session.userId,
-    email: session.email,
-    name: session.name,
+    teacherId: payload.sub,
+    email: payload.email,
+    name: payload.name,
     role: "TEACHER",
   };
 }
 
 export async function requireAdminSession(): Promise<AdminSession> {
-  const session = await requireAppSession();
+  const payload = await readAppToken();
 
-  if (session.role !== "ADMIN") {
+  if (payload.role !== "ADMIN") {
     throw new AppError("Admin privileges are required.", 403, "FORBIDDEN");
   }
 
   return {
-    adminId: session.userId,
-    email: session.email,
-    name: session.name,
+    adminId: payload.sub,
+    email: payload.email,
+    name: payload.name,
     role: "ADMIN",
   };
 }
 
+/**
+ * The signed-in student (Student Profile SP-5.4): a valid student token whose
+ * student exists, is active (status 0) and whose session version matches the
+ * database. 401 UNAUTHORIZED otherwise, or 403 STUDENT_ACCOUNT_INACTIVE for an
+ * inactive account; a database failure is thrown as is.
+ */
 export async function requireStudentSession(): Promise<StudentSession> {
-  const session = await requireAppSession();
+  const payload = await readAppToken();
 
-  if (session.role !== "STUDENT") {
+  if (payload.role !== "STUDENT") {
     throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
   }
 
+  await assertStudentSessionAccess(payload);
+
   return {
-    studentId: session.userId,
-    email: session.email,
-    name: session.name,
+    studentId: payload.sub,
+    email: payload.email,
+    name: payload.name,
     role: "STUDENT",
   };
 }

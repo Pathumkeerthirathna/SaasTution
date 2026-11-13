@@ -1,12 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Loader2, Printer, QrCode, RefreshCw, ShieldAlert } from "lucide-react";
+import { Download, Loader2, Maximize2, Printer, QrCode, RefreshCw, ShieldAlert } from "lucide-react";
+
+import { QrEnlargeDialog } from "@/components/qr/qr-enlarge-dialog";
 
 /*
- * Shared QR identity card: the student's own Settings panel
+ * Shared QR identity card: the student's own "My Attendance QR" on My Profile
  * (components/student-portal/student-qr-panel.tsx) and the teacher's student
  * profile tab (app/student/Components/StudentQrIdentity.tsx).
+ *
+ * Display-only unless a regenerate endpoint is given: the student card
+ * (Student Profile SP-4) passes none, so it shows the QR and Download only:
+ * no Print, no Regenerate button, no confirmation, no regeneration counts.
+ * The teacher card passes one and keeps every action. (The regeneration API
+ * itself is unchanged; this only decides what the UI offers.)
  *
  * A QR is never created by viewing it: when the status says there is no
  * active QR, the card first issues one explicitly (same-origin POST to the
@@ -25,7 +33,8 @@ export type QrIdentityEndpoints = {
   /** POST: issues the first QR (idempotent). GET image never issues. */
   issue: string;
   image: string;
-  regenerate: string;
+  /** Omitted: display-only (view and download). */
+  regenerate?: string;
 };
 
 /** A failed QR request, keeping the status and API error code. */
@@ -64,30 +73,31 @@ const STYLES: Record<Variant, { frame: string; primary: string; secondary: strin
   },
 };
 
-const COPY: Record<
-  Variant,
-  {
-    unavailable: string;
-    confirm: string;
-    success: string;
-    limitWithTime: (when: string) => string;
-    limit: string;
-    nextAllowed: (when: string) => string;
-    footnote: string;
-  }
-> = {
+type RegenerationCopy = {
+  confirm: string;
+  success: string;
+  limitWithTime: (when: string) => string;
+  limit: string;
+  nextAllowed: (when: string) => string;
+  footnote: string;
+};
+
+const COPY: Record<Variant, { unavailable: string; download: string; footnote: string }> = {
   student: {
     unavailable: "QR codes are not available right now. Please try again later or contact your teacher.",
-    confirm: "Your current QR code will stop working immediately, including printed or downloaded copies.",
-    success: "Your QR code was regenerated. The old QR code no longer works — download or print the new one.",
-    limitWithTime: (when) => `You have reached the regeneration limit. You can regenerate again after ${when}.`,
-    limit: "You have reached the regeneration limit. Please try again later.",
-    nextAllowed: (when) => `You can regenerate again after ${when}.`,
-    footnote:
-      "Regenerate only if your QR code was lost or shared. Your teacher can also regenerate it; both count towards the same limit.",
+    download: "Download QR Code",
+    footnote: "If your QR code is lost or shared with someone else, ask your teacher for a new one.",
   },
   teacher: {
     unavailable: "QR codes are not available right now. Student QR codes are not configured on this server.",
+    download: "Download QR",
+    footnote: "",
+  },
+};
+
+/** Regeneration wording exists for the teacher card only (the student card is display-only). */
+const REGENERATION_COPY: Partial<Record<Variant, RegenerationCopy>> = {
+  teacher: {
     confirm:
       "The student's current QR code will stop working immediately, including printed or downloaded copies. Give the student the new one.",
     success: "The QR code was regenerated. The old QR code no longer works — download or print the new one for the student.",
@@ -134,11 +144,21 @@ export type QrIdentityCardProps = {
   endpoints: QrIdentityEndpoints;
   studentName: string;
   registrationNumber: string | null;
+  /**
+   * Opt-in (the student's own card only): the QR can be enlarged in a modal
+   * that reuses the loaded image. Omitted: the card renders exactly as before.
+   */
+  enlargeable?: boolean;
 };
 
-export function QrIdentityCard({ variant, endpoints, studentName, registrationNumber }: QrIdentityCardProps) {
+export function QrIdentityCard({ variant, endpoints, studentName, registrationNumber, enlargeable = false }: QrIdentityCardProps) {
   const styles = STYLES[variant];
   const copy = COPY[variant];
+  const regenerateEndpoint = endpoints.regenerate;
+  const regenCopy = REGENERATION_COPY[variant];
+  // Regeneration (and Print) only where a regenerate endpoint is given: the teacher card.
+  const canRegenerate = Boolean(regenerateEndpoint && regenCopy);
+  const footnote = canRegenerate && regenCopy ? regenCopy.footnote : copy.footnote;
 
   const [status, setStatus] = useState<QrStatus | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -148,6 +168,7 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
   const [confirming, setConfirming] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [enlarged, setEnlarged] = useState(false);
   const imageUrlRef = useRef<string | null>(null);
   // Replaced object URLs, revoked once the new image has loaded (revoking a
   // URL an <img> is still loading would fail that load).
@@ -330,10 +351,11 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
   }, [registrationNumber, studentName]);
 
   const handleRegenerate = useCallback(async () => {
+    if (!regenerateEndpoint || !regenCopy) return; // display-only card: nothing to send
     setRegenerating(true);
     setNotice(null);
     try {
-      const response = await fetch(endpoints.regenerate, {
+      const response = await fetch(regenerateEndpoint, {
         method: "POST",
         cache: "no-store",
         credentials: "same-origin",
@@ -346,7 +368,7 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
         if (response.status === 429) {
           const retryAt = failure?.error?.details?.retryAt;
           const when = retryAt ? formatSriLankaTime(retryAt) : "";
-          setNotice({ tone: "error", text: when ? copy.limitWithTime(when) : copy.limit });
+          setNotice({ tone: "error", text: when ? regenCopy.limitWithTime(when) : regenCopy.limit });
           await loadStatus().catch(() => undefined);
           return;
         }
@@ -360,20 +382,33 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
       const body = (await response.json()) as { data: QrStatus };
       setStatus(body.data);
       await loadImage();
-      setNotice({ tone: "success", text: copy.success });
+      setNotice({ tone: "success", text: regenCopy.success });
     } catch {
       setNotice({ tone: "error", text: "Could not regenerate the QR code. Please check your connection and try again." });
     } finally {
       setRegenerating(false);
       setConfirming(false);
     }
-  }, [copy, endpoints.regenerate, loadImage, loadStatus, messageFor]);
+  }, [regenCopy, regenerateEndpoint, loadImage, loadStatus, messageFor]);
 
   const limitReached = Boolean(status && status.regenerationsRemaining <= 0);
   const nextAllowed = status?.nextRegenerationAt ? formatSriLankaTime(status.nextRegenerationAt) : "";
   const canAct = Boolean(imageUrl) && !loading && !sessionExpired;
+  const canEnlarge = enlargeable && canAct;
   const buttonBase =
     "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+  const qrImage = imageUrl ? (
+    // A blob: URL of the private PNG; next/image cannot load it.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={imageUrl}
+      alt={`QR code for ${studentName}`}
+      className="h-full w-full object-contain [image-rendering:pixelated]"
+      data-testid="student-qr-image"
+      onLoad={revokeStale}
+    />
+  ) : null;
 
   return (
     <div className="flex flex-col gap-6 md:flex-row md:items-start">
@@ -386,16 +421,21 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
               <Loader2 className="h-6 w-6 animate-spin text-slate-500" aria-hidden />
               Loading QR code…
             </div>
-          ) : imageUrl ? (
-            // A blob: URL of the private PNG; next/image cannot load it.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageUrl}
-              alt={`QR code for ${studentName}`}
-              className="h-full w-full object-contain [image-rendering:pixelated]"
-              data-testid="student-qr-image"
-              onLoad={revokeStale}
-            />
+          ) : qrImage ? (
+            canEnlarge ? (
+              <button
+                type="button"
+                onClick={() => setEnlarged(true)}
+                aria-label="Enlarge QR code"
+                aria-haspopup="dialog"
+                className="h-full w-full cursor-zoom-in rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
+                data-testid="student-qr-enlarge-image"
+              >
+                {qrImage}
+              </button>
+            ) : (
+              qrImage
+            )
           ) : (
             <div className="flex flex-col items-center gap-2 px-2 text-center text-sm text-slate-500">
               <QrCode className="h-8 w-8 text-slate-400" aria-hidden />
@@ -435,27 +475,43 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <button type="button" onClick={handleDownload} disabled={!canAct} className={`${buttonBase} ${styles.primary}`}>
             <Download className="h-4 w-4" aria-hidden />
-            Download QR
+            {copy.download}
           </button>
-          <button type="button" onClick={handlePrint} disabled={!canAct} className={`${buttonBase} ${styles.secondary}`}>
-            <Printer className="h-4 w-4" aria-hidden />
-            Print QR
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setNotice(null);
-              setConfirming(true);
-            }}
-            disabled={!canAct || regenerating || limitReached || confirming}
-            className={`${buttonBase} border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100`}
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden />
-            Regenerate QR
-          </button>
+          {enlargeable && (
+            <button
+              type="button"
+              onClick={() => setEnlarged(true)}
+              disabled={!canEnlarge}
+              aria-haspopup="dialog"
+              className={`${buttonBase} ${styles.secondary}`}
+            >
+              <Maximize2 className="h-4 w-4" aria-hidden />
+              Enlarge QR Code
+            </button>
+          )}
+          {canRegenerate && (
+            <>
+              <button type="button" onClick={handlePrint} disabled={!canAct} className={`${buttonBase} ${styles.secondary}`}>
+                <Printer className="h-4 w-4" aria-hidden />
+                Print QR
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNotice(null);
+                  setConfirming(true);
+                }}
+                disabled={!canAct || regenerating || limitReached || confirming}
+                className={`${buttonBase} border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100`}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                Regenerate QR
+              </button>
+            </>
+          )}
         </div>
 
-        {confirming && (
+        {canRegenerate && regenCopy && confirming && (
           <div
             className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
             role="alertdialog"
@@ -464,7 +520,7 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
             <p id="qr-regenerate-title" className="font-semibold">
               Regenerate this QR code?
             </p>
-            <p className="mt-1">{copy.confirm}</p>
+            <p className="mt-1">{regenCopy.confirm}</p>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
@@ -507,7 +563,7 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
           </p>
         )}
 
-        {status && status.configured && (
+        {canRegenerate && regenCopy && status && status.configured && (
           <div className={`rounded-xl border px-3 py-2 text-sm text-slate-700 ${styles.quota}`} data-testid="student-qr-quota">
             <p>
               Regenerations left:{" "}
@@ -516,12 +572,21 @@ export function QrIdentityCard({ variant, endpoints, studentName, registrationNu
               </span>{" "}
               in the last 24 hours.
             </p>
-            {limitReached && nextAllowed && <p className="mt-1 text-amber-800">{copy.nextAllowed(nextAllowed)}</p>}
+            {limitReached && nextAllowed && <p className="mt-1 text-amber-800">{regenCopy.nextAllowed(nextAllowed)}</p>}
           </div>
         )}
 
-        <p className="text-xs text-slate-500">{copy.footnote}</p>
+        {footnote ? <p className="text-xs text-slate-500">{footnote}</p> : null}
       </div>
+
+      {enlarged && canEnlarge && imageUrl && (
+        <QrEnlargeDialog
+          imageUrl={imageUrl}
+          studentName={studentName}
+          registrationNumber={registrationNumber}
+          onClose={() => setEnlarged(false)}
+        />
+      )}
     </div>
   );
 }

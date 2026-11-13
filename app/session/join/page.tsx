@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
+import { checkStudentSessionAccess } from "@/lib/student-session";
 import JitsiClassroom from "@/components/Jitsi/JitsiClassroom";
 
 // Scoped to the live classroom only. `viewportFit: cover` lets the layout use
@@ -36,6 +37,11 @@ export default async function SessionJoinPage({ searchParams }: SessionJoinPageP
     const session = await verifyAuthToken(token);
 
     if (!session || session.role !== "STUDENT") {
+      redirect(`/login?invite=${encodeURIComponent(inviteToken)}`);
+    }
+
+    // Central student check (exists, active, session version).
+    if ((await checkStudentSessionAccess(session)) !== "ACTIVE") {
       redirect(`/login?invite=${encodeURIComponent(inviteToken)}`);
     }
   }

@@ -192,6 +192,8 @@ const fieldLines = (block) =>
 
 // Approved later migrations that build on this one (each has its own guard).
 const QR_CLOSURE_MIGRATION = "20261110150000_add_lecture_qr_attendance_closure";
+// Student Profile SP-5.2 (additive Student column; guarded by tests/students/session-version-migration-guard.test.cjs).
+const STUDENT_SESSION_VERSION_MIGRATION = "20261112120000_add_student_session_version";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -202,7 +204,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------

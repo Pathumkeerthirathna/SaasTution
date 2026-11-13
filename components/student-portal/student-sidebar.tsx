@@ -14,6 +14,7 @@ import {
   CalendarDays,
   MessageSquare,
   Settings,
+  UserRound,
   GraduationCap,
   Wallet,
   X,
@@ -50,6 +51,7 @@ const iconMap: Record<string, LucideIcon> = {
   attendance:  CalendarCheck,
   messages:    MessageSquare,
   settings:    Settings,
+  profile:     UserRound,
   payments:    Wallet,
 };
 
