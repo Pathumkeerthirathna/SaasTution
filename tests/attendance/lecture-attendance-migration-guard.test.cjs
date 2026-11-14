@@ -194,6 +194,9 @@ const fieldLines = (block) =>
 const QR_CLOSURE_MIGRATION = "20261110150000_add_lecture_qr_attendance_closure";
 // Student Profile SP-5.2 (additive Student column; guarded by tests/students/session-version-migration-guard.test.cjs).
 const STUDENT_SESSION_VERSION_MIGRATION = "20261112120000_add_student_session_version";
+// Recorded Lectures RL-2 (additive new tables + a Class (id, teacherId) unique; guarded by
+// tests/recorded-lectures/recorded-lectures-migration-guard.test.cjs).
+const RECORDED_LECTURES_MIGRATION = "20261114120000_add_recorded_lectures";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -204,7 +207,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------

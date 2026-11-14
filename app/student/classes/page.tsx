@@ -11,6 +11,7 @@ import {
   ClipboardList,
   HelpCircle,
   ChevronRight,
+  Video,
 } from "lucide-react";
 
 import { StudentClassLiveBadge } from "@/components/student-portal/student-class-live-badge";
@@ -253,6 +254,13 @@ export default async function StudentClassesPage() {
               >
                 <FileText size={11} />
                 Lectures
+              </Link>
+              <Link
+                href={`/student/recorded-lectures?classId=${cls.id}`}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900"
+              >
+                <Video size={11} />
+                Recorded Lectures
               </Link>
               <Link
                 href={`/student/assignments?classId=${cls.id}`}

@@ -32,16 +32,16 @@ test("v7 examples (MiB): 100 -> 100; with an 8 lease -> 92 + 16 = 108; after app
   assert.equal(total(C.computeReservations([{ ...upload, ...noLease }], NOW)), 100 * MIB);
 
   const leased = C.computeReservations([{ ...upload, ...lease(8 * MIB) }], NOW);
-  assert.deepEqual(leased, { reservedUploads: 92 * MIB, reservedChunks: 16 * MIB, inflightLeaseBytes: 8 * MIB });
+  assert.deepEqual(leased, { reservedUploads: 92 * MIB, reservedChunks: 16 * MIB, reservedAssembly: 0, inflightLeaseBytes: 8 * MIB });
   assert.equal(total(leased), 108 * MIB, "not 116 (counted three times) and not 100 (scratch copy forgotten)");
 
   assert.equal(total(C.computeReservations([{ expectedBytes: 100 * MIB, receivedBytes: 8 * MIB, ...noLease }], NOW)), 92 * MIB);
 
   const expired = C.computeReservations([{ ...upload, ...lease(8 * MIB, -1) }], NOW);
-  assert.deepEqual(expired, { reservedUploads: 100 * MIB, reservedChunks: 0, inflightLeaseBytes: 0 });
+  assert.deepEqual(expired, { reservedUploads: 100 * MIB, reservedChunks: 0, reservedAssembly: 0, inflightLeaseBytes: 0 });
 
   const last = C.computeReservations([{ expectedBytes: 100 * MIB, receivedBytes: 92 * MIB, ...lease(8 * MIB) }], NOW);
-  assert.deepEqual(last, { reservedUploads: 0, reservedChunks: 16 * MIB, inflightLeaseBytes: 8 * MIB });
+  assert.deepEqual(last, { reservedUploads: 0, reservedChunks: 16 * MIB, reservedAssembly: 0, inflightLeaseBytes: 8 * MIB });
 });
 
 test("a lease expiring exactly now is no longer current", () => {
@@ -56,7 +56,7 @@ test("several uploads add up; the candidate is simply one of the rows (no extra 
     { expectedBytes: 300, receivedBytes: 0, ...noLease },
     { expectedBytes: 1000, receivedBytes: 1000, ...noLease },
   ];
-  assert.deepEqual(C.computeReservations(rows, NOW), { reservedUploads: 350 + 300 + 0, reservedChunks: 100, inflightLeaseBytes: 50 });
+  assert.deepEqual(C.computeReservations(rows, NOW), { reservedUploads: 350 + 300 + 0, reservedChunks: 100, reservedAssembly: 0, inflightLeaseBytes: 50 });
 });
 
 test("capacity boundary: an exactly fitting candidate is allowed; one byte more is refused (no over- or under-reservation)", () => {
@@ -130,19 +130,26 @@ test("lease timing: expiry from the configured 300 s lease; Retry-After at least
   assert.equal(C.retryAfterSecondsForLease(NOW - 5000, NOW), 1);
 });
 
-test("scratch files: the current lease's file is always kept; others only after the 15 min grace", () => {
-  const token = "a".repeat(64);
-  const other = "b".repeat(64);
-  const grace = { scratchGraceMinutes: 15 };
-  const old = NOW - 16 * 60_000;
-  const young = NOW - 60_000;
-  const d = (input) => C.scratchFileDisposition({ nowMs: NOW, ...input }, grace);
+test("RL-3.4: a COMPLETING upload reserves its full size for assembly, on top of the other reservations", () => {
+  const rows = [
+    { expectedBytes: 100 * MIB, receivedBytes: 100 * MIB, ...noLease, assemblyBytes: 100 * MIB }, // COMPLETING
+    { expectedBytes: 50 * MIB, receivedBytes: 10 * MIB, ...lease(8 * MIB) }, // ACTIVE, unchanged rules
+  ];
+  const r = C.computeReservations(rows, NOW);
+  assert.deepEqual(r, { reservedUploads: 32 * MIB, reservedChunks: 16 * MIB, reservedAssembly: 100 * MIB, inflightLeaseBytes: 8 * MIB });
 
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: old, upload: { leaseToken: token, leaseExpiresAtMs: NOW + 1 } }), "KEEP", "current lease, even if old");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: old, upload: { leaseToken: token, leaseExpiresAtMs: NOW - 1 } }), "DELETE", "expired lease");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: old, upload: { leaseToken: other, leaseExpiresAtMs: NOW + 1 } }), "DELETE", "another lease");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: old, upload: { leaseToken: null, leaseExpiresAtMs: null } }), "DELETE");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: old, upload: null }), "DELETE", "no upload row");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: young, upload: null }), "KEEP", "younger than the grace period");
-  assert.equal(d({ fileLeaseToken: token, fileModifiedAtMs: NOW - 15 * 60_000, upload: null }), "DELETE", "exactly the grace period");
+  const minFree = 5 * 1024 * MIB;
+  const exact = 32 * MIB + 16 * MIB + 100 * MIB + minFree;
+  assert.deepEqual(C.decideCapacity({ freeBytes: exact, reservations: r }, { ...CONFIG, minFreeBytes: minFree }), { ok: true, headroomBytes: 0 });
+  assert.deepEqual(C.decideCapacity({ freeBytes: exact - 1, reservations: r }, { ...CONFIG, minFreeBytes: minFree }), {
+    ok: false, reason: "INSUFFICIENT_STORAGE", shortfallBytes: 1,
+  });
+});
+
+test("RL-3.4: assembly reservations are validated (non-negative integer, at most the upload size)", () => {
+  const base = { expectedBytes: 100, receivedBytes: 100, ...noLease };
+  for (const bad of [-1, 1.5, 101, Number.NaN, "100"]) {
+    assert.throws(() => C.computeReservations([{ ...base, assemblyBytes: bad }], NOW), /Invalid reservation/);
+  }
+  assert.equal(C.computeReservations([{ ...base }], NOW).reservedAssembly, 0, "absent means 0");
 });

@@ -15,7 +15,11 @@ import type { RecordedLectureConfig } from "./config";
  *                              appended to the temporary upload file while
  *                              both exist)
  *
- *   allowed when  free - sum(outstanding_u) - sum(chunkRes_u) >= minFreeBytes
+ *   assembly_u    = assemblyBytes (RL-3.4: expectedBytes for a COMPLETING
+ *                   session, whose assembled file grows to the full size
+ *                   while every chunk file still exists; 0 otherwise)
+ *
+ *   allowed when  free - sum(outstanding_u) - sum(chunkRes_u) - sum(assembly_u) >= minFreeBytes
  *
  * A candidate (new upload or new lease) must already be among the rows; no
  * extra "request bytes" term is added. Bytes already written to disk are
@@ -29,11 +33,15 @@ export type ReservationRow = {
   leaseBytes: number | null;
   /** Epoch ms; null without a lease. */
   leaseExpiresAtMs: number | null;
+  /** Bytes reserved for assembling the upload (RL-3.4; at most expectedBytes). Default 0. */
+  assemblyBytes?: number;
 };
 
 export type Reservations = {
   reservedUploads: number;
   reservedChunks: number;
+  /** Sum of assembly reservations (COMPLETING uploads, RL-3.4). */
+  reservedAssembly: number;
   /** Sum of current lease sizes (limited by maxInflightChunkBytes). */
   inflightLeaseBytes: number;
 };
@@ -52,6 +60,7 @@ export function isLeaseCurrent(row: Pick<ReservationRow, "leaseBytes" | "leaseEx
 export function computeReservations(rows: readonly ReservationRow[], nowMs: number): Reservations {
   let reservedUploads = 0;
   let reservedChunks = 0;
+  let reservedAssembly = 0;
   let inflightLeaseBytes = 0;
 
   for (const row of rows) {
@@ -64,13 +73,18 @@ export function computeReservations(rows: readonly ReservationRow[], nowMs: numb
     const remaining = row.expectedBytes - row.receivedBytes;
     if (lease > remaining) throw new Error("Invalid reservation row.");
 
+    const assembly = row.assemblyBytes ?? 0;
+    assertNonNegativeInteger(assembly);
+    if (assembly > row.expectedBytes) throw new Error("Invalid reservation row.");
+
     reservedUploads += remaining - lease;
     reservedChunks += 2 * lease;
+    reservedAssembly += assembly;
     inflightLeaseBytes += lease;
   }
 
-  if (!Number.isSafeInteger(reservedUploads + reservedChunks)) throw new Error("Invalid reservation total.");
-  return { reservedUploads, reservedChunks, inflightLeaseBytes };
+  if (!Number.isSafeInteger(reservedUploads + reservedChunks + reservedAssembly)) throw new Error("Invalid reservation total.");
+  return { reservedUploads, reservedChunks, reservedAssembly, inflightLeaseBytes };
 }
 
 export type CapacityDecision =
@@ -88,11 +102,12 @@ export function decideCapacity(
 ): CapacityDecision {
   assertNonNegativeInteger(input.freeBytes);
   const { reservedUploads, reservedChunks, inflightLeaseBytes } = input.reservations;
+  const reservedAssembly = input.reservations.reservedAssembly ?? 0;
 
   if (inflightLeaseBytes > config.maxInflightChunkBytes) {
     return { ok: false, reason: "INFLIGHT_CHUNK_CAP", shortfallBytes: inflightLeaseBytes - config.maxInflightChunkBytes };
   }
-  const headroom = input.freeBytes - reservedUploads - reservedChunks - config.minFreeBytes;
+  const headroom = input.freeBytes - reservedUploads - reservedChunks - reservedAssembly - config.minFreeBytes;
   if (headroom < 0) return { ok: false, reason: "INSUFFICIENT_STORAGE", shortfallBytes: -headroom };
   return { ok: true, headroomBytes: headroom };
 }
@@ -107,27 +122,5 @@ export function retryAfterSecondsForLease(leaseExpiresAt: number, nowMs: number)
   return Math.max(1, Math.ceil((leaseExpiresAt - nowMs) / 1000));
 }
 
-export type ScratchFileDisposition = "KEEP" | "DELETE";
-
-/**
- * Whether an abandoned scratch (.chunk) file may be deleted. A file of the
- * CURRENT lease is always kept; any other is deleted once it is older than
- * the grace period (so a request that just created it is never raced).
- */
-export function scratchFileDisposition(
-  input: {
-    fileLeaseToken: string;
-    fileModifiedAtMs: number;
-    /** The upload row now (null: no row). */
-    upload: { leaseToken: string | null; leaseExpiresAtMs: number | null } | null;
-    nowMs: number;
-  },
-  config: Pick<RecordedLectureConfig, "scratchGraceMinutes">
-): ScratchFileDisposition {
-  const { upload } = input;
-  if (upload && upload.leaseToken === input.fileLeaseToken && upload.leaseExpiresAtMs !== null && upload.leaseExpiresAtMs > input.nowMs) {
-    return "KEEP";
-  }
-  if (input.nowMs - input.fileModifiedAtMs < config.scratchGraceMinutes * 60_000) return "KEEP";
-  return "DELETE";
-}
+// RL-3.5: scratchFileDisposition (which treated committed chunk files as scratch) is retired;
+// file cleanup decisions are in cleanup-rules.ts.

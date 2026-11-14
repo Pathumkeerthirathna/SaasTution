@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   open,
+  opendir,
   realpath,
   rename,
   rmdir,
@@ -22,10 +23,12 @@ import {
   StorageError,
   type ByteChunkSource,
   type ByteRange,
+  type DirectoryEntry,
   type FileStorage,
   type StoredByteSource,
   type StoredFileInfo,
   type WriteNewFileOptions,
+  type WriteNewFileResult,
 } from "./types";
 
 /*
@@ -69,6 +72,8 @@ const O_NOFOLLOW = typeof fsConstants.O_NOFOLLOW === "number" ? fsConstants.O_NO
 const DIRECTORY_MODE = 0o750;
 const FILE_MODE = 0o640;
 const COPY_BLOCK_BYTES = 1024 * 1024;
+/** listDirectory's default entry limit. */
+const DEFAULT_LIST_LIMIT = 100_000;
 const READ_STREAM_HIGH_WATER_MARK = 64 * 1024;
 const IS_WINDOWS = process.platform === "win32";
 
@@ -106,6 +111,27 @@ function sameFile(a: { dev: number; ino: number }, b: { dev: number; ino: number
 
 async function closeQuietly(handle: FileHandle | undefined) {
   if (handle) await handle.close().catch(() => {});
+}
+
+const O_DIRECTORY = typeof fsConstants.O_DIRECTORY === "number" ? fsConstants.O_DIRECTORY : 0;
+
+/** Whether this platform can flush a directory through Node.js (not Windows: EPERM). */
+export const DIRECTORY_SYNC_SUPPORTED = process.platform !== "win32";
+
+/**
+ * Flushes a directory (fsync), so the names of files created in it survive a
+ * crash. Returns false, doing nothing, where Node.js cannot do that (Windows);
+ * on POSIX any failure throws (the caller treats the write as failed).
+ */
+export async function syncDirectoryPath(absoluteDir: string): Promise<boolean> {
+  if (!DIRECTORY_SYNC_SUPPORTED) return false;
+  const handle = await open(absoluteDir, fsConstants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+  try {
+    await handle.sync();
+    return true;
+  } finally {
+    await closeQuietly(handle);
+  }
 }
 
 /** Iterates a web stream or async iterable, failing on abort or once the deadline passes (even while waiting). */
@@ -319,7 +345,7 @@ export class LocalFileStorage implements FileStorage {
     await closeQuietly(handle);
   }
 
-  async writeNewFile(key: string, source: ByteChunkSource, options: WriteNewFileOptions): Promise<{ bytesWritten: number }> {
+  async writeNewFile(key: string, source: ByteChunkSource, options: WriteNewFileOptions): Promise<WriteNewFileResult> {
     assertSafeInteger(options.maxBytes, 0);
     if (options.exactBytes !== undefined) {
       assertSafeInteger(options.exactBytes, 0);
@@ -345,12 +371,23 @@ export class LocalFileStorage implements FileStorage {
       if (options.exactBytes !== undefined && written !== options.exactBytes) throw new StorageError("SIZE_MISMATCH");
       if (options.sync) await handle.sync();
       await handle.close();
-      return { bytesWritten: written };
     } catch (error) {
       await closeQuietly(handle);
       await this.discardCreated(absolute);
       throw toStorageError(error);
     }
+
+    // The file is complete, flushed and closed; now its directory entry (opt-in).
+    let directorySynced = false;
+    if (options.syncDirectory) {
+      try {
+        directorySynced = await syncDirectoryPath(path.dirname(absolute));
+      } catch (error) {
+        await this.discardCreated(absolute);
+        throw toStorageError(error);
+      }
+    }
+    return { bytesWritten: written, directorySynced };
   }
 
   async truncate(key: string, size: number): Promise<void> {
@@ -472,6 +509,16 @@ export class LocalFileStorage implements FileStorage {
     }
   }
 
+  async syncDirectory(key: string): Promise<boolean> {
+    const absolute = this.resolve(key);
+    if (!(await this.directoryChainExists(absolute))) throw new StorageError("NOT_FOUND");
+    try {
+      return await syncDirectoryPath(absolute);
+    } catch (error) {
+      throw toStorageError(error);
+    }
+  }
+
   async promote(fromKey: string, toKey: string): Promise<void> {
     const from = this.resolve(fromKey);
     const to = this.resolve(toKey);
@@ -538,6 +585,46 @@ export class LocalFileStorage implements FileStorage {
     } catch (error) {
       if (errnoCode(error) === "ENOENT") return false;
       throw toStorageError(error);
+    }
+  }
+
+  async *listDirectory(key: string, options: { limit?: number } = {}): AsyncGenerator<DirectoryEntry> {
+    const limit = options.limit ?? DEFAULT_LIST_LIMIT;
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new StorageError("INVALID_ARGUMENT");
+    const absolute = this.resolve(key);
+    // Every directory down to (and including) this one must be real (never a link).
+    if (!(await this.directoryChainExists(absolute))) return;
+
+    let dir;
+    try {
+      dir = await opendir(absolute);
+    } catch (error) {
+      if (errnoCode(error) === "ENOENT") return;
+      throw toStorageError(error);
+    }
+    let count = 0;
+    try {
+      for await (const entry of dir) {
+        if (count >= limit) break;
+        count++;
+        let kind: DirectoryEntry["kind"];
+        if (entry.isSymbolicLink()) kind = "other";
+        else if (entry.isFile()) kind = "file";
+        else if (entry.isDirectory()) kind = "directory";
+        else {
+          // Type unknown to the directory listing: look at the entry itself (lstat: no link followed).
+          try {
+            const info = await lstat(path.join(absolute, entry.name));
+            kind = info.isSymbolicLink() ? "other" : info.isFile() ? "file" : info.isDirectory() ? "directory" : "other";
+          } catch {
+            continue;
+          }
+        }
+        yield { name: entry.name, kind };
+      }
+    } finally {
+      // for await closes the directory at its end or on break; closing again is harmless.
+      await dir.close().catch(() => undefined);
     }
   }
 

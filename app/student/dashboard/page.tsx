@@ -26,6 +26,7 @@ import { LiveDashboardSection } from "@/components/student-portal/live-dashboard
 import { DashboardAgenda } from "@/components/student-portal/dashboard-agenda";
 import { DashboardPaymentStatus } from "@/components/student-portal/dashboard-payment-status";
 import { DashboardStudyNotes } from "@/components/student-portal/dashboard-study-notes";
+import { DashboardRecordedLectures } from "@/components/student-portal/recorded-lectures/dashboard-recorded-lectures";
 import { DashboardPerformance } from "@/components/student-portal/dashboard-performance";
 import { getStudentDashboardCounts } from "@/services/student-dashboard-counts-service";
 import { RealtimeRefresh } from "@/components/student-portal/realtime-refresh";
@@ -370,6 +371,9 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
 
         {/* Unviewed lecture notes */}
         <DashboardStudyNotes />
+
+        {/* Recorded lectures from the last few days (RL-5.1; the full library is one click away) */}
+        <DashboardRecordedLectures />
 
         {/* Overall attendance % + quiz performance % */}
         <DashboardPerformance />

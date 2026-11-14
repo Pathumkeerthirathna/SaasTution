@@ -63,6 +63,8 @@ export function isStorageError(error: unknown, code?: StorageErrorCode): error i
   return error instanceof StorageError && (code === undefined || error.code === code);
 }
 
+export type DirectoryEntry = { name: string; kind: "file" | "directory" | "other" };
+
 export type StoredFileInfo = {
   size: number;
   modifiedAtMs: number;
@@ -86,8 +88,21 @@ export type WriteNewFileOptions = {
   signal?: AbortSignal;
   /** Flush the file to disk before returning. */
   sync?: boolean;
+  /**
+   * After the file is flushed and closed, also flush its directory (so the new
+   * file's name survives a crash). POSIX only: a failure fails the write and
+   * removes the file. On Windows, Node.js cannot flush a directory (EPERM): it
+   * is skipped and the result reports directorySynced: false.
+   */
+  syncDirectory?: boolean;
   /** Clock (tests). */
   now?: () => number;
+};
+
+export type WriteNewFileResult = {
+  bytesWritten: number;
+  /** true: the directory was flushed (syncDirectory on POSIX); false: not requested or not supported here. */
+  directorySynced: boolean;
 };
 
 /** Random access to one stored file, for parsers that read only small parts. */
@@ -103,7 +118,7 @@ export interface FileStorage {
   /** Creates an empty file exclusively (ALREADY_EXISTS if anything is there). */
   createEmptyFile(key: string): Promise<void>;
   /** Streams a source into a NEW file (exclusive); on any failure the partial file is removed. */
-  writeNewFile(key: string, source: ByteChunkSource, options: WriteNewFileOptions): Promise<{ bytesWritten: number }>;
+  writeNewFile(key: string, source: ByteChunkSource, options: WriteNewFileOptions): Promise<WriteNewFileResult>;
   /** Cuts an existing file to `size` bytes (never extends it). */
   truncate(key: string, size: number): Promise<void>;
   /** Copies `sourceKey` onto the end of `targetKey`, then flushes the target. */
@@ -114,10 +129,23 @@ export interface FileStorage {
   openByteSource(key: string): Promise<StoredByteSource>;
   /** Streams the file (or an inclusive range of it); never loads it into memory. */
   openRead(key: string, range?: ByteRange): Promise<{ stream: ReadableStream<Uint8Array>; size: number }>;
+  /**
+   * Flushes a directory (its entries survive a crash): true when done, false
+   * where the platform cannot (Windows). POSIX failures throw.
+   */
+  syncDirectory(key: string): Promise<boolean>;
   /** Moves a file to a new key without ever replacing an existing file (ALREADY_EXISTS). */
   promote(fromKey: string, toKey: string): Promise<void>;
   /** Deletes a file; false when it did not exist. Never follows a link. */
   remove(key: string): Promise<boolean>;
+  /**
+   * The entries of a directory below the root, streamed (never all at once),
+   * at most `limit` of them (default 100,000), in no particular order. Links
+   * are never followed: a symlink, or anything that is neither a regular file
+   * nor a directory, is reported as "other". A missing directory yields
+   * nothing.
+   */
+  listDirectory(key: string, options?: { limit?: number }): AsyncIterable<DirectoryEntry>;
   /** Removes an EMPTY directory; false when missing or not empty. */
   removeEmptyDirectory(key: string): Promise<boolean>;
   /** Bytes available to the application on the storage filesystem. */

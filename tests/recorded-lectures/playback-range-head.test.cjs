@@ -1,7 +1,8 @@
 /*
  * Recorded Lectures RL-1: HTTP Range parsing (lib/file-storage/http-range.ts)
  * and the GET / HEAD playback response foundation
- * (lib/recorded-lectures/stream-response.ts). No route uses it yet.
+ * (lib/recorded-lectures/stream-response.ts). Used by the student stream route
+ * since RL-4.3 (lifecycle, slots and idle timeout: stream-lifecycle.test.cjs).
  *
  *   npm run test:recorded-lectures
  */
@@ -108,6 +109,11 @@ function assertCommonHeaders(response) {
   assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("content-disposition"), 'inline; filename="recording.mp4"');
+  // RL-4.3
+  assert.equal(response.headers.get("cross-origin-resource-policy"), "same-origin");
+  assert.equal(response.headers.get("x-accel-buffering"), "no");
+  assert.equal(response.headers.get("etag"), null);
+  assert.equal(response.headers.get("last-modified"), null);
 }
 
 test("GET without Range: 200, the whole file streamed, Content-Length = size", async () => {

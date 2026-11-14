@@ -400,8 +400,12 @@ const NEW_MIGRATION = "20261110150000_add_lecture_qr_attendance_closure";
 test("migration: additive, exact, after the attendance migration; only approved migrations follow; lock timeout first and last", () => {
   const names = fs.readdirSync(MIGRATIONS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
   assert.equal(names[names.indexOf("20261110140000_add_lecture_attendance") + 1], NEW_MIGRATION);
-  // Only approved later migrations may follow (Student Profile SP-5.2: an additive Student column).
-  assert.deepEqual(names.slice(names.indexOf(NEW_MIGRATION) + 1), ["20261112120000_add_student_session_version"]);
+  // Only approved later migrations may follow (Student Profile SP-5.2: an additive Student column;
+  // Recorded Lectures RL-2: additive new tables and a Class (id, teacherId) unique).
+  assert.deepEqual(names.slice(names.indexOf(NEW_MIGRATION) + 1), [
+    "20261112120000_add_student_session_version",
+    "20261114120000_add_recorded_lectures",
+  ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");
   const statements = raw

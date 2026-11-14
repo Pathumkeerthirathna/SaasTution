@@ -67,6 +67,12 @@ model Teacher {
   breakoutAssignments BreakoutAssignment[]
   breakoutQuizzes     BreakoutQuiz[]
 
+  /// Recorded lecture parts this teacher uploaded (RecordedLecture.teacherId).
+  recordedLectures        RecordedLecture[] @relation("RecordedLectureTeacher")
+  /// Recorded lecture parts for which this teacher requested deletion
+  /// (RecordedLecture.deletedByTeacherId).
+  deletedRecordedLectures RecordedLecture[] @relation("RecordedLectureDeletedBy")
+
   @@index([createdAt])
 }
 
@@ -882,7 +888,14 @@ model Class {
 
   publicRegistrations Student[] @relation("PublicClassRegistration")
 
+  /// Through the composite (classId, teacherId) foreign key below.
+  recordedLectures RecordedLecture[]
+
   @@index([teacherId, createdAt])
+  /// Target of RecordedLecture's composite (classId, teacherId) foreign key,
+  /// so a recording's teacherId is always the teacher who owns its class
+  /// (Recorded Lectures RL-2). Additive; "id" alone is already unique.
+  @@unique([id, teacherId])
 }
 
 model ClassFee {
@@ -1408,6 +1421,10 @@ model Lecture {
 
   attendanceRegister LectureAttendanceRegister?
   attendanceScans    AttendanceScanEvent[]
+
+  /// Uploaded recording parts (Recorded Lectures), through the composite
+  /// (lectureId, classId) foreign key.
+  recordedLectures RecordedLecture[]
 
   @@index([classId, status, date])
   /// Target of the attendance tables' composite (lectureId, classId) foreign
@@ -2441,4 +2458,237 @@ model BreakoutGroupQuizAttempt {
   classSession ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
 
   @@index([classSessionId])
+}
+
+// ---------------------------------------------------------------------------
+// Recorded Lectures (RL-2): uploaded MP4 recording parts of a lecture.
+//
+// Migration 20261114120000_add_recorded_lectures holds hand-written CHECK
+// constraints and one partial unique index that Prisma 5.22 cannot express
+// (guarded by tests/recorded-lectures/recorded-lectures-migration-guard.test.cjs).
+// Apply with `prisma migrate deploy` only, never `prisma db push`.
+//
+// Timestamps have no database default: the application writes real UTC
+// instants (serverNow()), and every lease / expiry comparison uses the same
+// application clock, never the database's now().
+//
+// BigInt columns arrive in JavaScript as `bigint`. Code using them (RL-3)
+// must convert with Number() only after Number.isSafeInteger() holds,
+// failing closed otherwise, and must never put a raw bigint into JSON
+// (JSON.stringify throws on it).
+//
+// Prisma enums only limit the values. The transitions below are NOT enforced
+// by the database: RL-3 enforces them with conditional updates
+// (WHERE "state" = <expected>) inside transactions.
+// ---------------------------------------------------------------------------
+
+/// Lifecycle of a recording part:
+///   UPLOADING -> VERIFYING -> READY
+///   UPLOADING -> FAILED
+///   VERIFYING -> FAILED
+/// READY and FAILED are final. Only READY parts (status 0) can be played by
+/// students.
+enum RecordedLectureState {
+  UPLOADING
+  VERIFYING
+  READY
+  FAILED
+}
+
+/// Lifecycle of an upload session:
+///   ACTIVE -> COMPLETING -> COMPLETED
+///   ACTIVE | COMPLETING -> FAILED | EXPIRED | CANCELLED
+/// COMPLETED, FAILED, EXPIRED and CANCELLED are final.
+enum RecordingUploadState {
+  ACTIVE
+  COMPLETING
+  COMPLETED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+/// One uploaded recording part of a lecture, created when its upload starts
+/// (state UPLOADING). The stored file is
+///   Teachers/{teacherId}/Lectures/{lectureId}/RecordedLectures/{id}/{storedFileName}
+/// below FILE_STORAGE_ROOT, so id, teacherId and lectureId never change
+/// (their foreign keys are ON UPDATE RESTRICT).
+///
+/// Ownership: teacherId is the teacher who owns the lecture's class, enforced
+/// by the composite foreign key (classId, teacherId) -> Class(id, teacherId);
+/// (lectureId, classId) -> Lecture(id, classId) ties the lecture to that
+/// same class.
+///
+/// status:
+///   0 = active recording.
+///   2 = purge pending: deletion was requested and the stored file's
+///       deletion is pending or failed; the cleanup can be retried.
+///   1 = removed: the stored file's deletion has completed (final).
+/// Lifecycle:
+///   1. status 0: deletedAt, purgeRequestedAt and purgedAt are NULL.
+///   2. Deletion requested: status 2, deletedAt and purgeRequestedAt set,
+///      purgedAt NULL; playback is unavailable from then on.
+///   3. File deletion succeeded: status 1, purgeRequestedAt cleared,
+///      purgedAt set (deletedAt kept).
+///   4. File deletion failed: stays status 2, so the cleanup is retried.
+/// Status 1 is not recoverable; retryable cleanup is status 2. Only status 0
+/// is shown anywhere (CHECKs enforce the column / status pairing).
+/// Part numbers are unique per lecture among status-0 parts that are not
+/// FAILED (hand-written partial unique index
+/// "RecordedLecture_active_part_number_key").
+model RecordedLecture {
+  id        String @id @default(uuid())
+  lectureId String
+  classId   String
+  teacherId String
+
+  /// 1..200 characters (VarChar + CHECK).
+  title           String @db.VarChar(200)
+  partNumber      Int
+  /// For display only; never part of a storage key. Ends in ".mp4".
+  displayFileName String @db.VarChar(200)
+  /// Always "video/mp4" (CHECK).
+  mimeType        String @db.VarChar(32)
+  /// Declared size in bytes: 1..64,000,000,000 (CHECK; the highest allowed
+  /// RECORDED_LECTURE_MAX_PART_BYTES).
+  sizeBytes       BigInt
+
+  /// "{32 lowercase hex}.mp4" (CHECK). Null until the file is moved to its
+  /// final place; required when READY.
+  storedFileName  String?  @db.VarChar(36)
+  /// Whole seconds, 1..172,800 (48 hours, CHECK); required when READY. An
+  /// invalid or longer duration fails the upload (RL-3); it is never stored
+  /// as NULL instead.
+  durationSeconds Int?
+  /// 1..65,535 (CHECK); NULL when the file does not state it.
+  width           Int?
+  height          Int?
+  /// e.g. "avc1.64001F" (CHECK); required when READY.
+  videoCodec      String?  @db.VarChar(32)
+  /// "mp4a.40.2" | "mp4a.40.5" | "mp4a.40.29" (CHECK); required when READY.
+  audioCodec      String?  @db.VarChar(32)
+  /// Required when READY.
+  fragmented      Boolean?
+
+  state       RecordedLectureState
+  /// UPPER_SNAKE code; set exactly when FAILED (CHECK).
+  failureCode String?              @db.VarChar(64)
+
+  status             Int       @default(0)
+  /// When deletion was requested; set exactly when status <> 0 (CHECK).
+  deletedAt          DateTime?
+  /// Who requested the deletion (NULL: the system). Only with deletedAt.
+  deletedByTeacherId String?
+  /// Set exactly when status = 2 (CHECK).
+  purgeRequestedAt   DateTime?
+  /// When the stored recording file's physical deletion completed; set
+  /// exactly when status = 1 (CHECK), NULL while active or purge pending.
+  purgedAt           DateTime? @db.Timestamp(3)
+
+  createdAt DateTime
+  updatedAt DateTime
+  /// Set exactly when READY / FAILED (CHECK).
+  readyAt   DateTime?
+  failedAt  DateTime?
+
+  lecture   Lecture  @relation(fields: [lectureId, classId], references: [id, classId], onDelete: Cascade, onUpdate: Restrict)
+  class     Class    @relation(fields: [classId, teacherId], references: [id, teacherId], onDelete: Restrict, onUpdate: Restrict)
+  teacher   Teacher  @relation("RecordedLectureTeacher", fields: [teacherId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deletedBy Teacher? @relation("RecordedLectureDeletedBy", fields: [deletedByTeacherId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  uploadSession RecordingUploadSession?
+
+  /// Target of RecordingUploadSession's composite (recordedLectureId,
+  /// teacherId) foreign key, so the session's teacher always equals the
+  /// recording's.
+  @@unique([id, teacherId])
+  @@index([lectureId, status, state, partNumber])
+  @@index([teacherId, createdAt])
+  @@index([classId])
+}
+
+/// The upload of one RecordedLecture (exactly one per recording). The bytes
+/// are assembled in System/TemporaryUploads/{id}.part; the in-flight chunk
+/// is System/TemporaryUploads/{id}.{leaseToken}.chunk.
+///
+/// receivedBytes is the source of truth: the .part file may hold more bytes
+/// after a crash and is truncated to receivedBytes before the next append.
+///
+/// Chunk lease (at most one chunk in flight per upload): the five lease
+/// columns are all NULL or all set; a lease starts at receivedBytes, fits in
+/// the bytes remaining and exists only while ACTIVE (CHECKs). Chunk ORDER is
+/// enforced by RL-3's conditional update (no trigger): the chunk row is
+/// inserted and receivedBytes advanced in one transaction, only WHERE the
+/// lease token, offset and expiry still match.
+model RecordingUploadSession {
+  id                String @id @default(uuid())
+  /// One session per recording: the composite unique (recordedLectureId,
+  /// teacherId) below is enough, since a recording has exactly one
+  /// teacherId (RecordedLecture.id is its primary key).
+  recordedLectureId String
+  /// Always the recording's teacherId (composite foreign key).
+  teacherId         String
+
+  /// 1..64,000,000,000 (CHECK).
+  expectedBytes BigInt
+  /// 0..expectedBytes (CHECK).
+  receivedBytes BigInt @default(0)
+  /// Committed chunks; 0 exactly when receivedBytes is 0 (CHECK).
+  chunkCount    Int    @default(0)
+
+  state       RecordingUploadState
+  /// UPPER_SNAKE code; set exactly when FAILED (CHECK).
+  failureCode String?              @db.VarChar(64)
+
+  /// 64 lowercase hex characters, never reused (unique, also among chunks).
+  leaseToken     String?   @unique @db.Char(64)
+  /// Always equal to receivedBytes while a lease exists (CHECK).
+  leaseOffset    BigInt?
+  /// 1..67,108,864 and at most expectedBytes - receivedBytes (CHECK).
+  leaseBytes     Int?
+  leaseGrantedAt DateTime?
+  /// After leaseGrantedAt (CHECK).
+  leaseExpiresAt DateTime?
+
+  /// When an unfinished upload expires (createdAt + upload expiry).
+  expiresAt      DateTime
+  lastActivityAt DateTime
+  createdAt      DateTime
+  updatedAt      DateTime
+  /// Set exactly when the state is final (CHECK).
+  endedAt        DateTime?
+
+  /// Optimistic concurrency: incremented by every RL-3 update.
+  version Int @default(0)
+
+  recordedLecture RecordedLecture        @relation(fields: [recordedLectureId, teacherId], references: [id, teacherId], onDelete: Cascade, onUpdate: Restrict)
+  chunks          RecordingUploadChunk[]
+
+  @@unique([recordedLectureId, teacherId])
+  @@index([teacherId, state])
+  @@index([state, expiresAt])
+  @@index([state])
+}
+
+/// Append-only record of the chunks accepted for an upload. Duplicates are
+/// impossible: one row per (session, chunkIndex), per (session, startOffset)
+/// and per lease token.
+model RecordingUploadChunk {
+  id              String   @id @default(uuid())
+  uploadSessionId String
+  /// 0, 1, 2, ... (0 exactly when startOffset is 0, CHECK).
+  chunkIndex      Int
+  startOffset     BigInt
+  /// 1..67,108,864 (CHECK).
+  byteLength      Int
+  /// The lease under which the chunk was committed (64 lowercase hex).
+  leaseToken      String   @unique @db.Char(64)
+  /// SHA-256 of the chunk (64 lowercase hex); NULL when not computed.
+  sha256          String?  @db.Char(64)
+  receivedAt      DateTime
+
+  uploadSession RecordingUploadSession @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([uploadSessionId, chunkIndex])
+  @@unique([uploadSessionId, startOffset])
 }

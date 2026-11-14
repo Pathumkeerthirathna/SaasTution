@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   Clock3,
   FileText,
+  Film,
   Filter,
   GraduationCap,
   MonitorPlay,
@@ -1656,6 +1657,14 @@ export function LectureManagementPanel() {
                         >
                           Whiteboards {lecture._count.whiteboards ?? 0}
                         </button>
+                        {/* Recorded lectures (uploads, recording studio): their own page. */}
+                        <Link
+                          href={`/dashboard/lectures/${encodeURIComponent(lecture.id)}/recordings`}
+                          className="inline-flex items-center gap-1 rounded-full border border-brand-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+                        >
+                          <Film size={10} />
+                          Recorded lectures
+                        </Link>
                       </div>
                     </div>
                   </div>

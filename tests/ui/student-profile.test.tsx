@@ -169,6 +169,7 @@ test("navigation: one 'My Profile' entry linking to /student/profile with its ow
       "/student/calendar",
       "/student/classes",
       "/student/lectures",
+      "/student/recorded-lectures", // Recorded Lectures RL-5.1 (approved entry point D-2)
       "/student/assignments",
       "/student/quizzes",
       "/student/papers",

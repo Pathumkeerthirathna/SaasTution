@@ -129,7 +129,34 @@ function listFiles(dir, out = []) {
   return out;
 }
 
-test("isolation: no existing application code imports the RL-1 modules (nothing is wired in yet)", () => {
+// The only application files allowed to import the recorded-lecture modules (RL-3.2 to RL-3.5: the
+// upload, chunk, completion and maintenance services and their routes; RL-4.2: the student service and routes). Any other importer (an existing feature) fails.
+const APPROVED_IMPORTERS = [
+  "app/api/lectures/[id]/recorded-lectures/uploads/route.ts",
+  "app/api/recorded-lectures/uploads/[uploadId]/route.ts",
+  "app/api/recorded-lectures/uploads/[uploadId]/chunks/route.ts",
+  "app/api/recorded-lectures/uploads/[uploadId]/complete/route.ts",
+  "services/recorded-lecture-upload-service.ts",
+  "services/recorded-lecture-chunk-service.ts",
+  "services/recorded-lecture-completion-service.ts",
+  "services/recorded-lecture-maintenance-service.ts",
+  // RL-4.2: the student list / metadata service (its routes import only the service).
+  "services/recorded-lecture-student-service.ts",
+  // RL-4.3: the student playback service (its route imports only the service).
+  "services/recorded-lecture-stream-service.ts",
+  // RL-5.1: the student page loaders, and the player helpers (a type-only import of the student DTO).
+  "services/recorded-lecture-student-pages.ts",
+  "components/student-portal/recorded-lectures/recording-helpers.ts",
+  // Teacher side: management / preview service and routes, the upload engine and studio (browser MP4 check).
+  "services/recorded-lecture-teacher-service.ts",
+  "app/api/lectures/[id]/recorded-lectures/route.ts",
+  "app/api/recorded-lectures/[recordingId]/route.ts",
+  "components/recorded-lectures/teacher-recordings-client.tsx",
+  "components/recorded-lectures/studio-controller.ts",
+  "components/recorded-lectures/upload-engine.ts",
+];
+
+test("isolation: only the approved RL-3 upload service and routes import the recorded-lecture modules", () => {
   const importers = [];
   for (const dir of ["app", "components", "lib", "services", "scripts", "middleware.ts"]) {
     const target = path.join(root, dir);
@@ -141,17 +168,60 @@ test("isolation: no existing application code imports the RL-1 modules (nothing 
       if (/lib\/file-storage|lib\/recorded-lectures/.test(fs.readFileSync(file, "utf8"))) importers.push(rel);
     }
   }
-  assert.deepEqual(importers, []);
+  assert.deepEqual(importers.sort(), [...APPROVED_IMPORTERS].sort());
 });
+
+// RL-3.1 upload foundation modules: an explicit, per-file allow-list (stricter than "anything").
+// Prisma may only be imported for TYPES (import type ... from "@prisma/client"); the Prisma client
+// instance (@/lib/prisma) is never imported here, and only upload-errors.ts may import AppError.
+const RL3_MODULES = {
+  "lib/recorded-lectures/bigint.ts": [],
+  "lib/recorded-lectures/upload-errors.ts": ["@/lib/error-handler"],
+  "lib/recorded-lectures/upload-dto.ts": ["@prisma/client"],
+  "lib/recorded-lectures/upload-locks.ts": ["@prisma/client"],
+  "lib/recorded-lectures/request-body.ts": [],
+  "lib/recorded-lectures/chunk-stream.ts": [],
+  "lib/recorded-lectures/chunk-assembly.ts": [],
+  "lib/recorded-lectures/cleanup-rules.ts": [],
+  // RL-4.2 (pure): the dashboard window and the student DTO.
+  "lib/recorded-lectures/dashboard-window.ts": [],
+  "lib/recorded-lectures/student-dto.ts": [],
+  // RL-4.3 (pure): the playback stream slots.
+  "lib/recorded-lectures/stream-slots.ts": [],
+  // Teacher side (pure): the teacher DTO (Prisma types only).
+  "lib/recorded-lectures/teacher-dto.ts": ["@prisma/client"],
+};
 
 test("isolation: the RL-1 modules import nothing from existing features (only node and each other)", () => {
   const dirs = [path.join(root, "lib", "file-storage"), path.join(root, "lib", "recorded-lectures")];
   for (const file of dirs.flatMap((d) => listFiles(d))) {
+    if (Object.hasOwn(RL3_MODULES, path.relative(root, file).split(path.sep).join("/"))) continue;
     const src = fs.readFileSync(file, "utf8");
     for (const [, spec] of src.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+"([^"]+)"/gm)) {
       const allowed = spec.startsWith("node:") || spec.startsWith("./") || spec.startsWith("@/lib/file-storage/") || spec.startsWith("@/lib/recorded-lectures/");
       assert.ok(allowed, `${path.relative(root, file)} imports ${spec}`);
     }
     assert.doesNotMatch(src, /prisma|process\.env\.DATABASE_URL/i, `${path.relative(root, file)}: no database access in RL-1`);
+  }
+});
+
+test("isolation: the RL-3.1 modules import only their allow-listed modules; Prisma for types only, never the client", () => {
+  for (const [rel, extra] of Object.entries(RL3_MODULES)) {
+    const src = fs.readFileSync(path.join(root, ...rel.split("/")), "utf8");
+    for (const [statement, spec] of src.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+"([^"]+)"/gm)) {
+      const base = spec.startsWith("node:") || spec.startsWith("./") || spec.startsWith("@/lib/file-storage/") || spec.startsWith("@/lib/recorded-lectures/");
+      assert.ok(base || extra.includes(spec), `${rel} imports ${spec}`);
+      if (spec === "@prisma/client") assert.match(statement.trim(), /^import type\b/, `${rel}: Prisma types only`);
+    }
+    assert.doesNotMatch(src, /@\/lib\/prisma|process\.env\.DATABASE_URL|new PrismaClient/, `${rel}: no database client`);
+  }
+  // Every file in the two folders is either an RL-1 module (checked above) or listed here.
+  const listed = new Set(Object.keys(RL3_MODULES));
+  const rl1 = new Set([
+    "config.ts", "keys.ts", "chunk-lease.ts", "validation.ts", "mp4-inspect.ts", "mp4-inspect-node.ts", "storage.ts", "stream-response.ts",
+  ]);
+  for (const file of listFiles(path.join(root, "lib", "recorded-lectures"))) {
+    const rel = path.relative(root, file).split(path.sep).join("/");
+    assert.ok(listed.has(rel) || rl1.has(path.basename(file)), `${rel} is neither an RL-1 module nor an allow-listed RL-3 module`);
   }
 });

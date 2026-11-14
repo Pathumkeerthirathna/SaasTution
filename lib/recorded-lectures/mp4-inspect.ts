@@ -22,7 +22,14 @@
  *       others are refused;
  *     - other tracks (text, timecode, hint) are ignored.
  *  4. At least one H.264 video track AND at least one AAC audio track.
- *  5. The duration comes from "mvhd" (or "mehd" for fragmented files).
+ *  5. The duration comes from "mvhd" (or "mehd" for fragmented files). A
+ *     fragmented file with neither (what a browser's MediaRecorder writes:
+ *     the length is unknown while recording) gets it from its LAST
+ *     fragments: per track, "tfdt" (fragment start) + the "trun" sample
+ *     durations (or the "tfhd" / "trex" default), in that track's "mdhd"
+ *     timescale; the longest track wins. Only the last few "moof" boxes are
+ *     read (bounded); anything unreadable there leaves the duration unknown
+ *     (the file itself is not rejected for it).
  *
  * Limits keep hostile files cheap: a cap on top-level boxes, on boxes
  * inside moov, on nesting depth and on the moov size; 64-bit sizes must be
@@ -115,6 +122,9 @@ const MPEG4_AUDIO_OTI = 0x40;
  * Every box is at least 8 bytes, so the walk is also bounded by the file size.
  */
 export const DEFAULT_MAX_TOP_LEVEL_BOXES = 250_000;
+/** Fragment duration fallback: at most this many trailing "moof" boxes are read, each at most this large. */
+export const MAX_TAIL_FRAGMENTS = 32;
+export const MAX_FRAGMENT_HEADER_BYTES = 4 * 1024 * 1024;
 const MAX_FTYP_BYTES = 4096;
 const TWO_POW_32 = 4294967296;
 
@@ -389,16 +399,38 @@ function parseAudioEntry(b: Uint8Array, entry: Box, walk: Walk, depth: number): 
 
 // ---- Tracks and movie ----------------------------------------------------------------------------
 
-type TrackResult = { kind: "video"; track: VideoTrack } | { kind: "audio"; codec: string } | { kind: "other" };
+type TrackTiming = { trackId: number; timescale: number };
+
+/** tkhd track_ID and mdhd timescale; null when either is missing or unusable (never rejects the file). */
+function trackTiming(b: Uint8Array, trakBoxes: Box[], mdiaBoxes: Box[]): TrackTiming | null {
+  try {
+    const tkhd = child(trakBoxes, "tkhd");
+    const mdhd = child(mdiaBoxes, "mdhd");
+    if (!tkhd || !mdhd) return null;
+    const trackId = u32(b, tkhd.payload + (u8(b, tkhd.payload) === 1 ? 20 : 12));
+    const timescale = u32(b, mdhd.payload + (u8(b, mdhd.payload) === 1 ? 20 : 12));
+    return trackId > 0 && timescale > 0 ? { trackId, timescale } : null;
+  } catch {
+    return null;
+  }
+}
+
+type TrackResult = (
+  | { kind: "video"; track: VideoTrack }
+  | { kind: "audio"; codec: string }
+  | { kind: "other" }
+) & { timing: TrackTiming | null };
 
 function parseTrack(b: Uint8Array, trak: Box, walk: Walk, depth: number): TrackResult {
-  const mdia = child(children(b, trak.payload, trak.end, walk, depth + 1), "mdia");
+  const trakBoxes = children(b, trak.payload, trak.end, walk, depth + 1);
+  const mdia = child(trakBoxes, "mdia");
   if (!mdia) throw new Reject("MALFORMED");
   const mdiaBoxes = children(b, mdia.payload, mdia.end, walk, depth + 2);
   const hdlr = child(mdiaBoxes, "hdlr");
   if (!hdlr) throw new Reject("MALFORMED");
   const handler = fourcc(b, hdlr.payload + 8);
-  if (handler !== "vide" && handler !== "soun") return { kind: "other" };
+  const timing = trackTiming(b, trakBoxes, mdiaBoxes);
+  if (handler !== "vide" && handler !== "soun") return { kind: "other", timing };
 
   const minf = child(mdiaBoxes, "minf");
   const stbl = minf && child(children(b, minf.payload, minf.end, walk, depth + 3), "stbl");
@@ -411,10 +443,10 @@ function parseTrack(b: Uint8Array, trak: Box, walk: Walk, depth: number): TrackR
 
   if (handler === "vide") {
     const tracks = entries.map((entry) => parseVideoEntry(b, entry, walk, depth + 6));
-    return { kind: "video", track: tracks[0] };
+    return { kind: "video", track: tracks[0], timing };
   }
   const codecs = entries.map((entry) => parseAudioEntry(b, entry, walk, depth + 6));
-  return { kind: "audio", codec: codecs[0] };
+  return { kind: "audio", codec: codecs[0], timing };
 }
 
 function durationFrom(duration: number, timescale: number): number | null {
@@ -448,8 +480,18 @@ function parseMoov(b: Uint8Array, options: Required<Pick<Mp4InspectOptions, "max
   let durationSeconds = movie.durationSeconds;
 
   const mvex = child(top, "mvex");
+  const mvexBoxes = mvex ? children(b, mvex.payload, mvex.end, walk, 1) : [];
+  // trex: each track's default sample duration for its fragments (fragment duration fallback).
+  const trexDefaults = new Map<number, number>();
+  for (const trex of mvexBoxes.filter((box) => box.type === "trex")) {
+    try {
+      trexDefaults.set(u32(b, trex.payload + 4), u32(b, trex.payload + 12));
+    } catch {
+      // A damaged trex only removes the fallback's default for that track.
+    }
+  }
   if (mvex && durationSeconds === null) {
-    const mehd = child(children(b, mvex.payload, mvex.end, walk, 1), "mehd");
+    const mehd = child(mvexBoxes, "mehd");
     if (mehd) {
       const version = u8(b, mehd.payload);
       const fragmentDuration = version === 1 ? u64(b, mehd.payload + 4) : u32(b, mehd.payload + 4);
@@ -459,15 +501,93 @@ function parseMoov(b: Uint8Array, options: Required<Pick<Mp4InspectOptions, "max
 
   const video: VideoTrack[] = [];
   const audio: string[] = [];
+  const timings: FragmentTrackTiming[] = [];
   for (const trak of top.filter((box) => box.type === "trak")) {
     const result = parseTrack(b, trak, walk, 1);
     if (result.kind === "video") video.push(result.track);
     else if (result.kind === "audio") audio.push(result.codec);
+    if (result.kind !== "other" && result.timing) {
+      timings.push({ ...result.timing, defaultSampleDuration: trexDefaults.get(result.timing.trackId) ?? null });
+    }
   }
 
   if (video.length === 0) throw new Reject("VIDEO_TRACK_REQUIRED");
   if (audio.length === 0) throw new Reject("AUDIO_TRACK_REQUIRED");
-  return { durationSeconds, fragmented: Boolean(mvex), video, audio };
+  return { durationSeconds, fragmented: Boolean(mvex), video, audio, timings };
+}
+
+// ---- Fragmented duration fallback -------------------------------------------------------------------
+
+type FragmentTrackTiming = TrackTiming & { defaultSampleDuration: number | null };
+
+/** The end time (in its track's timescale) of one track fragment: tfdt + its sample durations; null if unknown. */
+function trafEnd(b: Uint8Array, traf: Box, walk: Walk, byTrack: Map<number, FragmentTrackTiming>): { trackId: number; end: number } | null {
+  const boxes = children(b, traf.payload, traf.end, walk, 2);
+  const tfhd = child(boxes, "tfhd");
+  const tfdt = child(boxes, "tfdt");
+  if (!tfhd || !tfdt) return null;
+  const tfhdFlags = (u8(b, tfhd.payload + 1) << 16) | (u8(b, tfhd.payload + 2) << 8) | u8(b, tfhd.payload + 3);
+  const trackId = u32(b, tfhd.payload + 4);
+  const timing = byTrack.get(trackId);
+  if (!timing) return null;
+  let at = tfhd.payload + 8;
+  if (tfhdFlags & 0x01) at += 8; // base_data_offset
+  if (tfhdFlags & 0x02) at += 4; // sample_description_index
+  const defaultDuration = tfhdFlags & 0x08 ? u32(b, at) : timing.defaultSampleDuration;
+
+  const base = u8(b, tfdt.payload) === 1 ? u64(b, tfdt.payload + 4) : u32(b, tfdt.payload + 4);
+  let total = 0;
+  for (const trun of boxes.filter((box) => box.type === "trun")) {
+    const flags = (u8(b, trun.payload + 1) << 16) | (u8(b, trun.payload + 2) << 8) | u8(b, trun.payload + 3);
+    const count = u32(b, trun.payload + 4);
+    let pos = trun.payload + 8;
+    if (flags & 0x001) pos += 4; // data_offset
+    if (flags & 0x004) pos += 4; // first_sample_flags
+    const stride = (flags & 0x100 ? 4 : 0) + (flags & 0x200 ? 4 : 0) + (flags & 0x400 ? 4 : 0) + (flags & 0x800 ? 4 : 0);
+    if (pos + count * stride > trun.end) throw new Reject("MALFORMED");
+    if (flags & 0x100) {
+      for (let i = 0; i < count; i += 1) total += u32(b, pos + i * stride);
+    } else {
+      if (defaultDuration === null) return null;
+      total += count * defaultDuration;
+    }
+  }
+  const end = base + total;
+  return Number.isSafeInteger(end) ? { trackId, end } : null;
+}
+
+/**
+ * Duration from the last fragments: the latest end time of every track
+ * (scanning moof boxes from the end), in seconds; null when it cannot be
+ * determined. Never rejects the file for the content of its fragments.
+ */
+async function fragmentedDurationSeconds(source: Mp4ByteSource, tailMoofs: Box[], timings: FragmentTrackTiming[]): Promise<number | null> {
+  if (timings.length === 0 || tailMoofs.length === 0) return null;
+  const byTrack = new Map(timings.map((t) => [t.trackId, t]));
+  const ends = new Map<number, number>();
+  try {
+    for (let i = tailMoofs.length - 1; i >= 0 && ends.size < byTrack.size; i -= 1) {
+      const moof = tailMoofs[i];
+      const length = moof.end - moof.payload;
+      if (length > MAX_FRAGMENT_HEADER_BYTES) return null;
+      const bytes = await readExactly(source, moof.payload, length);
+      const walk: Walk = { boxes: 0, maxBoxes: 10_000, maxDepth: 4 };
+      for (const traf of children(bytes, 0, bytes.length, walk, 1).filter((box) => box.type === "traf")) {
+        const result = trafEnd(bytes, traf, walk, byTrack);
+        if (result && !ends.has(result.trackId)) ends.set(result.trackId, result.end);
+      }
+    }
+  } catch (error) {
+    if (error instanceof Reject) return null;
+    throw error;
+  }
+  let best: number | null = null;
+  for (const [trackId, end] of ends) {
+    const timing = byTrack.get(trackId);
+    const seconds = timing ? durationFrom(end, timing.timescale) : null;
+    if (seconds !== null && (best === null || seconds > best)) best = seconds;
+  }
+  return best;
 }
 
 // ---- Entry point ---------------------------------------------------------------------------------
@@ -533,6 +653,7 @@ export async function inspectMp4(source: Mp4ByteSource, options: Mp4InspectOptio
 
     // 2. Top-level boxes by header only.
     const moovs: Box[] = [];
+    const tailMoofs: Box[] = []; // the last MAX_TAIL_FRAGMENTS moof boxes (fragment duration fallback)
     let offset = ftyp.end;
     let count = 0;
     while (offset < source.size) {
@@ -542,6 +663,10 @@ export async function inspectMp4(source: Mp4ByteSource, options: Mp4InspectOptio
       if (box.toEnd && box.type !== "mdat") throw new Reject("MALFORMED");
       if (box.type === "ftyp") throw new Reject("MALFORMED");
       if (box.type === "moov") moovs.push(box);
+      if (box.type === "moof") {
+        tailMoofs.push(box);
+        if (tailMoofs.length > MAX_TAIL_FRAGMENTS) tailMoofs.shift();
+      }
       offset = box.end;
     }
     if (moovs.length === 0) throw new Reject("NO_MOOV");
@@ -553,6 +678,10 @@ export async function inspectMp4(source: Mp4ByteSource, options: Mp4InspectOptio
     if (moovLength > options.maxMoovBytes) throw new Reject("MOOV_TOO_LARGE");
     const moovBytes = await readExactly(source, moov.payload, moovLength);
     const parsed = parseMoov(moovBytes, { maxBoxesInMoov, maxDepth });
+    const durationSeconds =
+      parsed.durationSeconds === null && parsed.fragmented
+        ? await fragmentedDurationSeconds(source, tailMoofs, parsed.timings)
+        : parsed.durationSeconds;
 
     return {
       ok: true,
@@ -560,7 +689,7 @@ export async function inspectMp4(source: Mp4ByteSource, options: Mp4InspectOptio
         majorBrand,
         compatibleBrands,
         fragmented: parsed.fragmented,
-        durationSeconds: parsed.durationSeconds,
+        durationSeconds,
         videoCodec: parsed.video[0].codec,
         audioCodec: parsed.audio[0],
         width: parsed.video[0].width || null,

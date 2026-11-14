@@ -71,10 +71,22 @@ export function chunkScratchKey(uploadId: string, leaseToken: string): string {
   return joinStorageKey(TEMPORARY_UPLOADS_DIRECTORY, `${requireId(uploadId)}.${leaseToken}.chunk`);
 }
 
+/**
+ * The claim-specific file a completion assembles the chunks into (RL-3.4):
+ *   System/TemporaryUploads/{uploadId}.{32 hex}.assembly
+ * where the hex part is the claim's stored file name without ".mp4". Every
+ * completion claim has its own name, so attempts never share a file.
+ */
+export function assemblyKey(uploadId: string, claimFileName: string): string {
+  if (typeof claimFileName !== "string" || !STORED_NAME.test(claimFileName)) throw new Error("Invalid claim file name.");
+  return joinStorageKey(TEMPORARY_UPLOADS_DIRECTORY, `${requireId(uploadId)}.${claimFileName.slice(0, -4)}.assembly`);
+}
+
 export type RecordedLectureKeyKind =
   | { kind: "recording"; teacherId: string; lectureId: string; recordingId: string; storedName: string }
   | { kind: "temp"; uploadId: string }
-  | { kind: "scratch"; uploadId: string; leaseToken: string };
+  | { kind: "scratch"; uploadId: string; leaseToken: string }
+  | { kind: "assembly"; uploadId: string; claimFileName: string };
 
 /** Classifies a key produced by this module; null for anything else (never deleted automatically). */
 export function parseRecordedLectureKey(key: string): RecordedLectureKeyKind | null {
@@ -103,6 +115,8 @@ export function parseRecordedLectureKey(key: string): RecordedLectureKeyKind | n
     if (temp && UUID.test(temp[1])) return { kind: "temp", uploadId: temp[1] };
     const scratch = /^([0-9a-f-]{36})\.([0-9a-f]{64})\.chunk$/.exec(segments[2]);
     if (scratch && UUID.test(scratch[1])) return { kind: "scratch", uploadId: scratch[1], leaseToken: scratch[2] };
+    const assembly = /^([0-9a-f-]{36})\.([0-9a-f]{32})\.assembly$/.exec(segments[2]);
+    if (assembly && UUID.test(assembly[1])) return { kind: "assembly", uploadId: assembly[1], claimFileName: `${assembly[2]}.mp4` };
   }
 
   return null;

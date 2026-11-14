@@ -206,11 +206,11 @@ test("createEmptyFile: creates folders, then refuses to replace anything (exclus
 
 test("writeNewFile: streams chunks (async iterable or web stream); exact size and limits; nothing kept on failure", async () => {
   await withStorage(async (storage, dir) => {
-    assert.deepEqual(await storage.writeNewFile("a/one", chunks("abc", "def"), { maxBytes: 6, exactBytes: 6, sync: true }), { bytesWritten: 6 });
+    assert.deepEqual(await storage.writeNewFile("a/one", chunks("abc", "def"), { maxBytes: 6, exactBytes: 6, sync: true }), { bytesWritten: 6, directorySynced: false });
     assert.equal(read(dir, "a/one").toString(), "abcdef");
 
     const web = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("xy")); c.close(); } });
-    assert.deepEqual(await storage.writeNewFile("a/web", web, { maxBytes: 10 }), { bytesWritten: 2 });
+    assert.deepEqual(await storage.writeNewFile("a/web", web, { maxBytes: 10 }), { bytesWritten: 2, directorySynced: false });
 
     await assert.rejects(storage.writeNewFile("a/big", chunks("abcd", "ef"), { maxBytes: 5 }), code("LIMIT_EXCEEDED"));
     assert.equal(fs.existsSync(path.join(dir, "a", "big")), false);
