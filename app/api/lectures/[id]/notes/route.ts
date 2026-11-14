@@ -5,7 +5,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { noteKindSchema } from "@/lib/lecture-validation";
-import { addNoteToLectureForTeacher, listNotesForLectureForTeacher } from "@/services/lecture-service";
+import { addNoteToLectureForTeacher, assertTeacherOwnsLecture, listNotesForLectureForTeacher } from "@/services/lecture-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,6 +120,10 @@ export async function POST(
         "FILE_TOO_LARGE"
       );
     }
+
+    // RL-0: the teacher must own this (active) lecture before anything is
+    // written to disk; otherwise 404 LECTURE_NOT_FOUND and no folder or file.
+    await assertTeacherOwnsLecture(session.teacherId, lectureId);
 
     const bytes = new Uint8Array(await fileEntry.arrayBuffer());
     const safeFileName = sanitizeFileName(fileEntry.name || "upload.bin") || "upload.bin";

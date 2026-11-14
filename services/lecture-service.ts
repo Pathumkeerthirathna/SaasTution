@@ -46,7 +46,7 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
   return classroom;
 }
 
-async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
+export async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
   const lecture = await prisma.lecture.findFirst({
     where: {
       id: lectureId,
