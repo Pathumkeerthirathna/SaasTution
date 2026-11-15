@@ -61,6 +61,7 @@ import {
   type ScanQueueSnapshot,
   type ScannerAvailability,
 } from "@/components/attendance/qr-scanner-logic";
+import { createBrowserScanAnnouncer, shouldAnnounceScan } from "@/components/attendance/scan-audio";
 
 // =========================================================================================
 // Views (pure: rendered with react-dom/server in the tests)
@@ -513,9 +514,18 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
     void load("initial");
     const refresher = createDebouncedRefresh({ refresh: () => load("refresh") });
     refresherRef.current = refresher;
+    // Spoken confirmation (chime fallback) of a NEW attendance mark, once per student while this
+    // scanner is open; the name comes from the server's answer (components/attendance/scan-audio.ts).
+    const announcer = createBrowserScanAnnouncer();
+    const announced = new Set<string>();
     const queue = createScanQueue({
       lectureId,
       onChange: setSnapshot,
+      onAnswered: (outcome) => {
+        if (!outcome.student || !shouldAnnounceScan(outcome, announced)) return;
+        announced.add(outcome.student.studentId);
+        announcer.announce(outcome.student.name);
+      },
       onEvent: (event) => {
         if (event.kind === "STATE_CHANGED") void refresher.flush();
         else refresher.schedule();
@@ -578,6 +588,7 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
       cameraController.dispose();
       frames.stop();
       queue.dispose();
+      announcer.dispose();
       refresher.dispose();
       queueRef.current = null;
       cameraRef.current = null;

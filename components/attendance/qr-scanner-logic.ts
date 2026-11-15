@@ -483,6 +483,12 @@ export type ScanQueueDeps = {
   lectureId: string;
   onChange: (snapshot: ScanQueueSnapshot) => void;
   onEvent?: (event: ScanQueueEvent) => void;
+  /**
+   * Every answer the SERVER gave (after it is in the feed), e.g. for the audio
+   * confirmation. Never called for errors or unanswered scans; a callback that
+   * throws never affects the queue.
+   */
+  onAnswered?: (outcome: QrScanResponse) => void;
   submit?: (lectureId: string, body: ScanRequestBody, options: { signal: AbortSignal }) => Promise<ScanSubmitOutcome>;
   /** A fresh clientScanId (default crypto.randomUUID()). */
   newClientScanId?: () => string;
@@ -593,6 +599,11 @@ export function createScanQueue(deps: ScanQueueDeps) {
           replayed: outcome.replayed,
           retryable: false,
         });
+        try {
+          deps.onAnswered?.(outcome);
+        } catch {
+          // Feedback (audio) must never break scanning.
+        }
         event({ kind: outcome.result === "LECTURE_UNAVAILABLE" ? "STATE_CHANGED" : "ANSWERED" });
         return;
       }

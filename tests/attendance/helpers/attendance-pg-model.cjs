@@ -212,6 +212,11 @@ function createPgModel() {
         await pg.ended.get(owner).promise;
         continue;
       }
+      // Claim the key in the SAME step as the check, as PostgreSQL's unique index does: the
+      // caller's insert runs after an await, and without this claim a concurrent transaction
+      // could pass the check in between (both "inserting" the same key). Released at the
+      // transaction's end like every pending key.
+      pg.pending.set(key, label);
       return false;
     }
   }

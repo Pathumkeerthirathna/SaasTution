@@ -461,3 +461,110 @@ test("percentages: the existing calculations read online session attendance only
   }
   assert.match(sources["app/api/student/dashboard/performance/route.ts"], /attendance: \{ where: \{ studentId \}, select: \{ id: true \}, take: 1 \}/);
 });
+
+// ======================================================================================
+// Duplicate QR scans: one effective record per student, counted once everywhere
+// ======================================================================================
+
+test("duplicates 1-4: the first scan marks the student; repeated scans (new scan ids) create nothing, change nothing and are counted once; other students independently", async () => {
+  reset();
+  setNow(at(5));
+  const first = await scan("s1");
+  assert.deepEqual([first.result, first.effect, first.attendance.status, first.replayed], ["VALID", "STATUS_UPDATED", "PRESENT", false]);
+  const created = JSON.stringify(record("s1"));
+
+  for (const minute of [6, 7, 15, 30]) {
+    setNow(at(minute));
+    const again = await scan("s1");
+    assert.deepEqual([again.result, again.effect, again.replayed], ["VALID", "DUPLICATE", false], `scan at +${minute}`);
+    assert.equal(again.attendance.status, "PRESENT");
+  }
+  assert.equal(recordsOf("s1").length, 1, "one record");
+  assert.equal(JSON.stringify(record("s1")), created, "the record (status, first QR time, version) is unchanged");
+  assert.deepEqual(auditsOf("s1").map((a) => a.action), ["CREATED_AUTO"], "repeats write no audit");
+  assert.equal(scansFor("s1").length, 5, "every scan is kept as a scan event (history), none as attendance");
+
+  setNow(at(8));
+  assert.equal((await scan("s2")).effect, "STATUS_UPDATED");
+  setNow(at(25));
+  assert.deepEqual([(await scan("s3")).effect, record("s3").status], ["STATUS_UPDATED", "LATE"]);
+  setNow(at(26));
+  assert.equal((await scan("s2")).effect, "DUPLICATE");
+
+  const reg = await registerResponse();
+  assert.equal(reg.summary.withRecord, 3);
+  assert.deepEqual(reg.summary.recordStatus, { PRESENT: 2, LATE: 1, ABSENT: 0, EXCUSED: 0 }, "unique students");
+});
+
+test("duplicates 5: concurrent scans of the same student (different scan ids, same instant) -> one record, one STATUS_UPDATED, the rest DUPLICATE; the same scan id twice -> one event, replayed", async () => {
+  reset();
+  setNow(at(5));
+  const outcomes = await Promise.all([scan("s1"), scan("s1"), scan("s1"), scan("s1")]);
+  assert.deepEqual(outcomes.map((o) => o.effect).sort(), ["DUPLICATE", "DUPLICATE", "DUPLICATE", "STATUS_UPDATED"]);
+  assert.equal(recordsOf("s1").length, 1);
+  assert.deepEqual(auditsOf("s1").map((a) => a.action), ["CREATED_AUTO"]);
+
+  const same = await Promise.all([scan("s2", "integration-scan-same-id-01"), scan("s2", "integration-scan-same-id-01")]);
+  assert.deepEqual(same.map((o) => o.replayed).sort(), [false, true]);
+  assert.equal(scansFor("s2").length, 1, "one scan event for one scan id");
+  assert.equal(recordsOf("s2").length, 1);
+
+  const reg = await registerResponse();
+  assert.deepEqual(reg.summary.recordStatus, { PRESENT: 2, LATE: 0, ABSENT: 0, EXCUSED: 0 });
+});
+
+test("duplicates 6: a teacher's manual decision is never overwritten by repeated scans (review at most once; later scans are duplicates)", async () => {
+  reset();
+  setNow(at(4));
+  await decide("s1", "ABSENT");
+  assert.deepEqual([record("s1").status, record("s1").statusSource], ["ABSENT", "TEACHER"]);
+  const first = await scan("s1");
+  assert.equal(first.effect, "REVIEW_REQUIRED", "stronger evidence only raises a review");
+  setNow(at(6));
+  const again = await scan("s1");
+  assert.equal(again.effect, "DUPLICATE");
+  assert.deepEqual([record("s1").status, record("s1").statusSource, record("s1").teacherStatus], ["ABSENT", "TEACHER", "ABSENT"]);
+  assert.equal(recordsOf("s1").length, 1);
+});
+
+test("duplicates 7-9: register summary, finalization preview and finalization all count each student once", async () => {
+  reset();
+  setNow(at(5));
+  await scan("s1");
+  setNow(at(6));
+  await scan("s1");
+  await scan("s2");
+  setNow(at(7));
+  await scan("s1");
+  await scan("s2");
+
+  const reg = await registerResponse();
+  assert.equal(reg.summary.withRecord, 2);
+  assert.deepEqual(reg.summary.recordStatus, { PRESENT: 2, LATE: 0, ABSENT: 0, EXCUSED: 0 });
+  assert.equal(reg.students.filter((s) => s.studentId === "s1").length, 1, "one register row per student");
+
+  setNow(at(200));
+  const prev = await preview.getLectureAttendanceFinalizationPreview({ teacherId: T1, lectureId: L1 }, { env: ENV });
+  assert.equal(prev.summary.studentsWithRecord, 2);
+  assert.deepEqual(prev.summary.recordStatus, { PRESENT: 2, LATE: 0, ABSENT: 0, EXCUSED: 0 });
+  assert.equal(prev.summary.automaticAbsent, 3, "s3, s4, s5");
+  assert.equal(prev.summary.studentsWithRecord + prev.summary.automaticAbsent + prev.summary.manualReview + prev.summary.notEligibleWithoutRecord, prev.summary.rosterSize);
+
+  const result = await finalize(prev.fingerprint);
+  assert.equal(result.absentCreated, 3);
+  assert.deepEqual(result.details.recordStatusBefore, { PRESENT: 2, LATE: 0, ABSENT: 0, EXCUSED: 0 });
+  assert.equal(result.details.studentsWithRecord, 2);
+  assert.equal(Object.values(pg.committed.records).filter((r) => r.lectureId === L1).length, 5, "exactly one record per student");
+  for (const id of ["s1", "s2"]) assert.deepEqual([record(id).status, record(id).statusSource], ["PRESENT", "AUTO"], id);
+
+  const after = await registerResponse();
+  assert.deepEqual(after.summary.recordStatus, { PRESENT: 2, LATE: 0, ABSENT: 3, EXCUSED: 0 });
+});
+
+test("duplicates: the database model enforces one record per (lecture, student) (the schema's unique key)", () => {
+  const schema = fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
+  const model = schema.slice(schema.indexOf("model LectureAttendance {"), schema.indexOf("}", schema.indexOf("model LectureAttendance {")));
+  assert.match(model, /@@unique\(\[lectureId, studentId\]\)/);
+  const migration = fs.readFileSync(path.join(root, "prisma", "migrations", "20261110140000_add_lecture_attendance", "migration.sql"), "utf8");
+  assert.match(migration, /CREATE UNIQUE INDEX "LectureAttendance_lectureId_studentId_key" ON "LectureAttendance"\("lectureId", "studentId"\);/);
+});
