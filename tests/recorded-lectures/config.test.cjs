@@ -154,6 +154,12 @@ const APPROVED_IMPORTERS = [
   "components/recorded-lectures/teacher-recordings-client.tsx",
   "components/recorded-lectures/studio-controller.ts",
   "components/recorded-lectures/upload-engine.ts",
+  // Unified storage Stage 2 (Notes and assignment submissions on the shared storage foundation):
+  // the resource key modules and the one shared read / write module. They use lib/file-storage only
+  // (never lib/recorded-lectures); routes import them, not lib/file-storage. See tests/storage-migration.
+  "lib/notes/storage-keys.ts",
+  "lib/assignments/submission-keys.ts",
+  "lib/stored-files/stored-file.ts",
 ];
 
 test("isolation: only the approved RL-3 upload service and routes import the recorded-lecture modules", () => {

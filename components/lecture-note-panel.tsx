@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -19,13 +19,14 @@ import {
   X,
 } from "lucide-react";
 
+import { NOTE_DELETION_LABELS, noteDeletionConfirmText, readDeletionOutcome } from "@/lib/permanent-deletion/client";
+
 type NoteVisibility = "PUBLIC" | "PRIVATE";
 type NoteAccess = "FREE" | "LOCKED";
 
 type LectureNote = {
   id: string;
   title: string;
-  fileUrl: string;
   kind: "NOTE" | "SUPPORTING_MATERIAL";
   mimeType: string;
   sizeBytes: number;
@@ -72,6 +73,9 @@ export function LectureNotePanel(props: {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Stage 3.6: a deletion that is hidden but whose file is still being deleted (not a success).
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const deletingRef = useRef(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const selectedNote = useMemo(() => notes.find((note) => note.id === selectedNoteId) ?? null, [notes, selectedNoteId]);
@@ -257,35 +261,50 @@ export function LectureNotePanel(props: {
       return;
     }
 
-    const confirmed = window.confirm(`Delete note \"${selectedNote.title}\"?`);
+    // Permanent: an explicit, irreversible confirmation; one request at a time.
+    if (deletingRef.current) {
+      return;
+    }
+    const confirmed = window.confirm(noteDeletionConfirmText(selectedNote.title));
     if (!confirmed) {
       return;
     }
 
+    deletingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setPendingMessage(null);
 
     try {
       const response = await fetch(`/api/lectures/${props.lectureId}/notes/${selectedNote.id}`, {
         method: "DELETE",
       });
 
-      const payload = (await response.json()) as {
-        success: boolean;
-      };
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      const outcome = readDeletionOutcome(response.status, payload, NOTE_DELETION_LABELS);
 
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to delete note."));
+      if (outcome.kind === "error") {
+        throw new Error(outcome.message);
       }
 
       await loadNotes(null);
       await notifyChanged();
-      setSuccessMessage("Note deleted successfully.");
+      if (outcome.kind === "deleted") {
+        setSuccessMessage(outcome.message);
+      } else {
+        setPendingMessage(outcome.message);
+      }
       setIsFormOpen(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete note.");
+      setErrorMessage(error instanceof Error ? error.message : NOTE_DELETION_LABELS.failed);
     } finally {
+      deletingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -296,6 +315,11 @@ export function LectureNotePanel(props: {
     <div className="space-y-4">
       {errorMessage && !isFormOpen ? <p className="notice-error text-xs">{errorMessage}</p> : null}
       {successMessage ? <p className="notice-success text-xs">{successMessage}</p> : null}
+      {pendingMessage ? (
+        <p role="status" className="notice-info text-xs">
+          {pendingMessage}
+        </p>
+      ) : null}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
@@ -573,7 +597,7 @@ export function LectureNotePanel(props: {
                       className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Trash2 size={13} />
-                      Delete note
+                      Delete permanently
                     </button>
                   ) : null}
                 </div>

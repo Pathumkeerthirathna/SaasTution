@@ -73,7 +73,6 @@ type AssignmentItem = {
     id: string;
     notes: string | null;
     fileName: string;
-    fileUrl: string;
     mimeType: string;
     sizeBytes: number;
     submittedAt: string;

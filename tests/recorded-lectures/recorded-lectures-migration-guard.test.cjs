@@ -233,10 +233,16 @@ const GENERATED_SQL = [
 
 // ---- Migration placement and shape ---------------------------------------------------------------
 
-test("the migration exists and is the latest one", () => {
+// Migrations approved to follow this one (each has its own guard test).
+const LATER_MIGRATIONS = [
+  "20261115120000_add_unified_file_storage_keys", // unified storage Stage 2: tests/storage-migration/migration-guard.test.cjs
+  "20261116120000_add_teacher_storage_accounting", // storage accounting Stage 3.1: tests/storage-quota/migration-guard.test.cjs
+];
+
+test("the migration exists, and only approved migrations follow it", () => {
   assert.ok(fs.existsSync(migrationPath(MIGRATION)));
   const all = [...otherMigrations(), MIGRATION].sort();
-  assert.equal(all[all.length - 1], MIGRATION);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) + 1), LATER_MIGRATIONS);
 });
 
 test("lock_timeout is set first and reset last", () => {

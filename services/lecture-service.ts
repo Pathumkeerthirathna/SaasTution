@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { AppError } from "@/lib/error-handler";
 import {
   LECTURE_END_DATE_ERROR_CODES,
@@ -15,6 +17,8 @@ import {
 } from "@/lib/attendance/locks";
 import { attendanceError } from "@/lib/attendance/service-errors";
 import { applyRegisterScheduleSync, prepareRegisterScheduleSync } from "@/services/lecture-attendance-service";
+import { commitTeacherStorageReservation, type StorageReservationHandle } from "@/services/storage-reservation-service";
+import { deleteAssignmentPermanently, deleteNotePermanently, type PermanentDeletionState } from "@/services/permanent-deletion-service";
 import type {
   CreateAssignmentInput,
   CreateLectureInput,
@@ -571,11 +575,13 @@ export async function listNotesForLectureForTeacher(teacherId: string, lectureId
   });
 }
 
+// The teacher-facing Note shape. No fileUrl / storageKey (unified storage
+// Stage 2): files are served by id through the preview / download routes, and
+// neither a legacy path nor a storage key is needed by the client.
 const noteSelect = {
   id: true,
   lectureId: true,
   title: true,
-  fileUrl: true,
   kind: true,
   mimeType: true,
   sizeBytes: true,
@@ -800,20 +806,16 @@ export async function updateAssignmentForTeacher(
   });
 }
 
-export async function deleteAssignmentForTeacher(teacherId: string, lectureId: string, assignmentId: string) {
-  const assignment = await assertTeacherOwnsAssignment(teacherId, lectureId, assignmentId);
-
-  // Soft delete — keep submissions and history.
-  await prisma.assignment.update({
-    where: {
-      id: assignmentId,
-    },
-    data: {
-      status: 1,
-    },
-  });
-
-  emitStudentDataChange({ classId: assignment.lecture.classId });
+/**
+ * PERMANENT deletion (Stage 3.6): the assignment, every student submission
+ * and every submission PDF (services/permanent-deletion-service.ts). DELETED
+ * when everything is gone; PENDING when it is hidden everywhere and the rest
+ * is finished by a retry (the same request again, or maintenance).
+ */
+export async function deleteAssignmentForTeacher(teacherId: string, lectureId: string, assignmentId: string): Promise<PermanentDeletionState> {
+  const result = await deleteAssignmentPermanently({ teacherId, lectureId, assignmentId });
+  emitStudentDataChange({ classId: result.classId });
+  return result.state;
 }
 
 export async function addQuizToLectureForTeacher(
@@ -913,20 +915,49 @@ export async function addNoteToLectureForTeacher(params: {
   mimeType: string;
   sizeBytes: number;
   kind: "NOTE" | "SUPPORTING_MATERIAL";
+  /** Unified storage (Stage 2): the server-generated note id the stored file's key was built with. */
+  id?: string;
+  storageKey?: string;
+  sha256?: string;
+  /**
+   * Called when the Note row was NOT created (ownership re-check or insert
+   * failed), so the caller can remove the file it already stored. Never
+   * called once the row exists (the file is then referenced).
+   */
+  discardStoredFile?: () => Promise<unknown>;
+  /**
+   * Storage quota (Stage 3.2): the upload's reservation. The Note row is then
+   * created inside commitTeacherStorageReservation - under the teacher's quota
+   * lock, atomically with the reservation's deletion, and only if the quota
+   * still allows it when the reservation has expired.
+   */
+  reservation?: StorageReservationHandle;
 }) {
-  const lecture = await assertTeacherOwnsLecture(params.teacherId, params.lectureId);
-
-  const note = await prisma.note.create({
-    data: {
-      lectureId: params.lectureId,
-      title: params.title,
-      fileUrl: params.fileUrl,
-      kind: params.kind,
-      mimeType: params.mimeType,
-      sizeBytes: params.sizeBytes,
-    },
-    select: noteSelect,
-  });
+  let lecture: Awaited<ReturnType<typeof assertTeacherOwnsLecture>>;
+  let note;
+  try {
+    lecture = await assertTeacherOwnsLecture(params.teacherId, params.lectureId);
+    const createNote = (client: Pick<Prisma.TransactionClient, "note">) =>
+      client.note.create({
+        data: {
+          ...(params.id !== undefined ? { id: params.id } : {}),
+          lectureId: params.lectureId,
+          title: params.title,
+          fileUrl: params.fileUrl,
+          ...(params.storageKey !== undefined ? { storageKey: params.storageKey, sha256: params.sha256 } : {}),
+          kind: params.kind,
+          mimeType: params.mimeType,
+          sizeBytes: params.sizeBytes,
+        },
+        select: noteSelect,
+      });
+    note = params.reservation
+      ? await commitTeacherStorageReservation(params.reservation, "TEACHER", (tx) => createNote(tx))
+      : await createNote(prisma);
+  } catch (error) {
+    await params.discardStoredFile?.();
+    throw error;
+  }
 
   // Track a per-student "viewed" row for every active student of the class.
   const activeStudents = await prisma.classStudent.findMany({
@@ -966,21 +997,15 @@ export async function updateNoteForTeacher(
   });
 }
 
-export async function deleteNoteForTeacher(teacherId: string, lectureId: string, noteId: string) {
-  const note = await assertTeacherOwnsNote(teacherId, lectureId, noteId);
-
-  // Soft delete — keep the file record and download history.
-  await prisma.note.update({
-    where: {
-      id: noteId,
-    },
-    data: {
-      status: 1,
-    },
-  });
-
-  emitStudentDataChange({ classId: note.lecture.classId });
-  return note;
+/**
+ * PERMANENT deletion (Stage 3.6): the note row (and its per-student view
+ * rows) and its stored file (services/permanent-deletion-service.ts).
+ * DELETED or PENDING (hidden everywhere; finished by a retry).
+ */
+export async function deleteNoteForTeacher(teacherId: string, lectureId: string, noteId: string): Promise<PermanentDeletionState> {
+  const result = await deleteNotePermanently({ teacherId, lectureId, noteId });
+  emitStudentDataChange({ classId: result.classId });
+  return result.state;
 }
 
 export async function getAndTrackNoteDownloadForTeacher(teacherId: string, noteId: string) {
@@ -1024,6 +1049,7 @@ export async function getAndTrackNoteDownloadForTeacher(teacherId: string, noteI
       id: true,
       title: true,
       fileUrl: true,
+      storageKey: true,
       mimeType: true,
       sizeBytes: true,
       downloadCount: true,

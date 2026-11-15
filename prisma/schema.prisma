@@ -73,6 +73,13 @@ model Teacher {
   /// (RecordedLecture.deletedByTeacherId).
   deletedRecordedLectures RecordedLecture[] @relation("RecordedLectureDeletedBy")
 
+  /// Storage quota (Stage 3.1): the admin's individual override (none = the
+  /// subscription plan's storageGB), its audit history, and in-flight Notes /
+  /// submission upload reservations.
+  storageLimit        TeacherStorageLimit?
+  storageLimitChanges TeacherStorageLimitChange[]
+  storageReservations StorageReservation[]
+
   @@index([createdAt])
 }
 
@@ -1634,6 +1641,19 @@ model Note {
   // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
   status Int @default(0)
 
+  /// Unified storage (Stage 2): the file's RELATIVE key below FILE_STORAGE_ROOT
+  /// (Teachers/{teacherId}/Lectures/{lectureId}/Notes/{noteId}/{32 hex}.{ext}),
+  /// never an absolute path. Null for a file still in the legacy location
+  /// (fileUrl). Reads use it first. Unique, so one stored file has one owner.
+  /// CHECKs (hand-written in migration 20261115120000_add_unified_file_storage_keys):
+  /// Note_storageKey_format and Note_storageKey_requires_sha256. Trigger
+  /// Note_clear_stale_storage_key clears storageKey / sha256 when fileUrl
+  /// changes without storageKey (an older application version's write).
+  storageKey String? @unique @db.VarChar(512)
+  /// SHA-256 (64 lowercase hex) of the stored file, computed while it was
+  /// written. CHECK Note_sha256_format.
+  sha256     String? @db.Char(64)
+
   lecture Lecture @relation(fields: [lectureId], references: [id])
 
   noteStudents NoteStudent[]
@@ -1689,6 +1709,19 @@ model AssignmentSubmission {
   sizeBytes    Int
   marks        Int?
   reviewedAt   DateTime?
+  /// Unified storage (Stage 2): RELATIVE key below FILE_STORAGE_ROOT
+  /// (Teachers/{teacherId}/Lectures/{lectureId}/Assignments/{assignmentId}/Submissions/{submissionId}/{32 hex}.pdf).
+  /// Null for a file still in the legacy location (fileUrl). Every
+  /// resubmission gets a new key. CHECKs (migration
+  /// 20261115120000_add_unified_file_storage_keys):
+  /// AssignmentSubmission_storageKey_format and
+  /// AssignmentSubmission_storageKey_requires_sha256. Trigger
+  /// AssignmentSubmission_clear_stale_storage_key clears storageKey / sha256
+  /// when fileUrl changes without storageKey (the previous version's
+  /// resubmission), so no version ever reads a replaced file.
+  storageKey   String?    @unique @db.VarChar(512)
+  /// SHA-256 (64 lowercase hex) of the stored file. CHECK AssignmentSubmission_sha256_format.
+  sha256       String?    @db.Char(64)
   assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student      Student    @relation(fields: [studentId], references: [id])
 
@@ -2691,4 +2724,79 @@ model RecordingUploadChunk {
 
   @@unique([uploadSessionId, chunkIndex])
   @@unique([uploadSessionId, startOffset])
+}
+
+// ---- Teacher storage accounting and quotas (Stage 3.1) ------------------------------------------
+//
+// Effective limit of a teacher: the individual override (TeacherStorageLimit)
+// when a row exists, otherwise the current subscription plan's storageGB
+// (decimal: 1 GB = 1,000,000,000 bytes), otherwise unlimited. Usage is
+// computed from database rows that reference verified files in the unified
+// storage (services/teacher-storage-usage-service.ts); it is never stored.
+// Timestamps are written by the application with serverNow() (no database
+// defaults). CHECK constraints are hand-written in migration
+// 20261116120000_add_teacher_storage_accounting.
+
+/// The administrator's individual storage limit for one teacher. A missing
+/// row means "no override: use the subscription plan". 0 is a real limit
+/// (nothing may be stored), never "unlimited". CHECK
+/// TeacherStorageLimit_limitBytes_range: 0 .. 10^15 bytes (1 PB).
+model TeacherStorageLimit {
+  teacherId           String   @id
+  limitBytes          BigInt
+  updatedAt           DateTime
+  /// The administrator responsible for the latest change (AdminSession).
+  updatedByAdminId    String   @db.VarChar(191)
+  updatedByAdminEmail String   @db.VarChar(320)
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+}
+
+/// Append-only audit of individual limit changes (never updated or deleted
+/// by the application). previousLimitBytes / newLimitBytes are the individual
+/// overrides before / after (NULL = no override); planLimitBytes is the plan
+/// allocation at the time of the change (NULL = unlimited or no subscription).
+/// CHECK TeacherStorageLimitChange_bytes_range on all three.
+model TeacherStorageLimitChange {
+  id                  String   @id @default(uuid())
+  teacherId           String
+  previousLimitBytes  BigInt?
+  newLimitBytes       BigInt?
+  planLimitBytes      BigInt?
+  changedByAdminId    String   @db.VarChar(191)
+  changedByAdminEmail String   @db.VarChar(320)
+  changedAt           DateTime
+
+  /// Restrict: the history outlives nothing it describes (teachers are never hard-deleted).
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([teacherId, changedAt])
+}
+
+enum StorageReservationCategory {
+  NOTE
+  SUBMISSION
+}
+
+/// Capacity reserved for a Notes / assignment submission upload while its
+/// file is being written (Recorded Lectures reserve through their ACTIVE /
+/// COMPLETING RecordingUploadSession rows instead, never here). Expired rows
+/// reserve nothing. CHECKs (migration 20261116120000_add_teacher_storage_accounting):
+/// StorageReservation_bytes_range (1 .. 2,147,483,647, the Int range of
+/// Note / AssignmentSubmission.sizeBytes), StorageReservation_expiry_after_creation,
+/// StorageReservation_storageKey_format (the category's key layout) and
+/// StorageReservation_storageKey_owner (the key is below Teachers/{teacherId}/).
+model StorageReservation {
+  id         String                     @id @default(uuid())
+  teacherId  String
+  category   StorageReservationCategory
+  bytes      BigInt
+  storageKey String                     @unique @db.VarChar(512)
+  createdAt  DateTime
+  expiresAt  DateTime
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([teacherId, expiresAt])
+  @@index([expiresAt])
 }

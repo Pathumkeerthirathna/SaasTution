@@ -834,7 +834,10 @@ test("instrumentation: the Node-only import sits inside the constant NEXT_RUNTIM
 
     assert.ok(start >= 0, "the guarded branch exists");
     assert.ok(importAt > start, "the import is inside it");
-    assert.equal((code.match(/import\(/g) || []).length, 1, "one dynamic import, no other");
+    // Stage 3.6 added the second one (the Recorded Lectures maintenance scheduler), in the same branch.
+    const schedulerAt = code.indexOf('await import("./services/recorded-lecture-maintenance-scheduler")');
+    assert.ok(schedulerAt > importAt, "the scheduler import is inside it too");
+    assert.equal((code.match(/import\(/g) || []).length, 2, "these two dynamic imports, no other");
     assert.doesNotMatch(code, /^import /m, "no static import (it would be compiled for Edge)");
     assert.doesNotMatch(code, /NEXT_RUNTIME !== /, "no early-return form");
 });

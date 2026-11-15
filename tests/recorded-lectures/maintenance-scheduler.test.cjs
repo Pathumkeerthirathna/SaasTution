@@ -1,7 +1,7 @@
 /*
  * Recorded Lectures RL-3.5: the maintenance scheduler
- * (services/recorded-lecture-maintenance-scheduler.ts). It is built but NOT
- * wired into application startup; this file also guards that.
+ * (services/recorded-lecture-maintenance-scheduler.ts). Since Stage 3.6 it is
+ * wired: instrumentation.ts (and nothing else) starts it; this file guards that.
  *
  *   npm run test:recorded-lectures
  */
@@ -33,9 +33,15 @@ function listFiles(dir, out = []) {
   return out;
 }
 
-test("NOT WIRED: no application file starts the scheduler (instrumentation.ts unchanged)", () => {
-  const instrumentation = fs.readFileSync(path.join(root, "instrumentation.ts"), "utf8");
-  assert.doesNotMatch(instrumentation, /recorded-lecture|maintenance/i);
+test("WIRED (Stage 3.6): only instrumentation.ts starts the scheduler, inside its production Node.js branch; no route or other file", () => {
+  const instrumentation = fs.readFileSync(path.join(root, "instrumentation.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const branch = instrumentation.indexOf('if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "production") {');
+  const buildSkip = instrumentation.indexOf('if (process.env.NEXT_PHASE === "phase-production-build") {');
+  const importAt = instrumentation.indexOf('await import("./services/recorded-lecture-maintenance-scheduler")');
+  const startAt = instrumentation.indexOf("startRecordedLectureMaintenance();");
+  assert.ok(branch >= 0 && buildSkip > branch && importAt > buildSkip && startAt > importAt, "imported and started inside the guarded branch, after the build check");
+  assert.equal((instrumentation.match(/startRecordedLectureMaintenance\(/g) || []).length, 1, "started once");
+  assert.doesNotMatch(instrumentation, /force:\s*true/, "never forced past canRunMaintenanceScheduler");
   const users = [];
   for (const dir of ["app", "components", "lib", "services", "scripts"]) {
     for (const file of listFiles(path.join(root, dir))) {
@@ -46,7 +52,7 @@ test("NOT WIRED: no application file starts the scheduler (instrumentation.ts un
       if (/from\s+["'][^"']*recorded-lecture-maintenance-scheduler["']|startRecordedLectureMaintenance\s*\(/.test(source)) users.push(rel);
     }
   }
-  assert.deepEqual(users, []);
+  assert.deepEqual(users, [], "no route, page or service starts it (no public endpoint)");
   assert.equal(scheduler.isMaintenanceSchedulerRunning(), false);
 });
 

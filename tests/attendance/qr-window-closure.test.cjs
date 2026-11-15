@@ -401,10 +401,14 @@ test("migration: additive, exact, after the attendance migration; only approved 
   const names = fs.readdirSync(MIGRATIONS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
   assert.equal(names[names.indexOf("20261110140000_add_lecture_attendance") + 1], NEW_MIGRATION);
   // Only approved later migrations may follow (Student Profile SP-5.2: an additive Student column;
-  // Recorded Lectures RL-2: additive new tables and a Class (id, teacherId) unique).
+  // Recorded Lectures RL-2: additive new tables and a Class (id, teacherId) unique;
+  // unified storage Stage 2: additive nullable Note / AssignmentSubmission columns;
+  // teacher storage accounting Stage 3.1: additive new tables).
   assert.deepEqual(names.slice(names.indexOf(NEW_MIGRATION) + 1), [
     "20261112120000_add_student_session_version",
     "20261114120000_add_recorded_lectures",
+    "20261115120000_add_unified_file_storage_keys",
+    "20261116120000_add_teacher_storage_accounting",
   ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");

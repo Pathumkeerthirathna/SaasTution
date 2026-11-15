@@ -38,6 +38,7 @@ import { DashboardPaperReviews } from "@/components/dashboard/dashboard-paper-re
 import { DashboardBundlePaperReviews } from "@/components/dashboard/dashboard-bundle-paper-reviews";
 import { TeacherRealtimeRefresh } from "@/components/dashboard/teacher-realtime-refresh";
 import { TeacherPlanSelection } from "@/components/dashboard/teacher-plan-selection";
+import { DashboardStorageUsage } from "@/components/dashboard/dashboard-storage-usage";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -707,6 +708,9 @@ export default async function DashboardPage() {
         studentsTotal={studentsTotalCount}
         pendingDeviceApprovals={pendingDeviceApprovalsCount}
       />
+
+      {/* ── 2b. Storage usage (read only; Stage 3.5) ─────────────────────── */}
+      <DashboardStorageUsage />
 
       {/* ── 3. Schedule | Events (range-selectable) ──────────────────────── */}
       <DashboardScheduleEvents />

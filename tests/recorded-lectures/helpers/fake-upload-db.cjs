@@ -222,6 +222,16 @@ function createFakeUploadDb() {
     /** Tests only: make advisory locks no-ops (to show what they protect). */
     disableAdvisoryLocks: false,
     hooks: {},
+    // ---- Teacher storage quota (Stage 3.3). Empty = every teacher unlimited, nothing else counted. ----
+    /** TeacherStorageLimit rows: { teacherId, limitBytes }. */
+    storageLimits: [],
+    /** TeacherSubscription rows: { teacherId, status, endDate, updatedAt, plan: { storageGB } }. */
+    subscriptions: [],
+    /** StorageReservation rows (Notes / submissions). */
+    reservations: [],
+    /** Committed Notes / submission bytes per teacher (what the usage SQL would sum). */
+    quotaNotesBytes: new Map(),
+    quotaSubmissionsBytes: new Map(),
   };
 
   const locks = new Map();
@@ -361,6 +371,13 @@ function createFakeUploadDb() {
           const row = db.recordings.find((r) => matches(r, where));
           return row ? pick(row, select) : null;
         },
+        async aggregate({ where, _sum }) {
+          await gate();
+          record({ kind: "recordedLecture.aggregate", where });
+          if (!_sum || !_sum.sizeBytes) throw new Error("fake: aggregate _sum.sizeBytes only");
+          const rows = db.recordings.filter((r) => matches(r, where));
+          return { _sum: { sizeBytes: rows.length ? rows.reduce((t, r) => t + r.sizeBytes, BigInt(0)) : null } };
+        },
         async findMany({ where, select, orderBy, take }) {
           await gate();
           record({ kind: "recordedLecture.findMany", where });
@@ -457,6 +474,71 @@ function createFakeUploadDb() {
           if (db.hooks.beforeSessionUpdateMany) await db.hooks.beforeSessionUpdateMany(where, data, txId);
           record({ kind: "recordingUploadSession.updateMany", where, data });
           return update("sessions", db.sessions.filter((s) => matches(s, where)), data, checkSession);
+        },
+      },
+      // ---- Teacher storage quota (Stage 3.3) ----------------------------------------------------------
+      async $queryRaw(strings, ...values) {
+        await gate();
+        const sql = strings.join("?");
+        record({ kind: "queryRaw", sql, values });
+        // getTeacherStorageUsage's Notes / submission sums (the only raw query of the upload paths).
+        if (!sql.includes('"notesBytes"')) throw new Error("fake: unsupported $queryRaw");
+        const teacherId = values[0];
+        return [{ notesBytes: db.quotaNotesBytes.get(teacherId) ?? BigInt(0), submissionsBytes: db.quotaSubmissionsBytes.get(teacherId) ?? BigInt(0) }];
+      },
+      storageReservation: {
+        async create({ data, select }) {
+          await gate();
+          record({ kind: "storageReservation.create", data });
+          // The migration's CHECKs and unique index.
+          if (!(typeof data.bytes === "bigint" && data.bytes >= BigInt(1) && data.bytes <= BigInt(2147483647))) throw new Error("fake CHECK StorageReservation_bytes_range");
+          if (!(data.expiresAt > data.createdAt)) throw new Error("fake CHECK StorageReservation_expiry_after_creation");
+          if (!data.storageKey.startsWith(`Teachers/${data.teacherId}/`)) throw new Error("fake CHECK StorageReservation_storageKey_owner");
+          if (db.reservations.some((r) => r.storageKey === data.storageKey)) throw prismaError("P2002", { target: ["storageKey"] });
+          const row = { ...data };
+          db.reservations.push(row);
+          undo(() => db.reservations.splice(db.reservations.indexOf(row), 1));
+          return pick(row, select);
+        },
+        async findUnique({ where, select }) {
+          await gate();
+          const row = db.reservations.find((r) => r.id === where.id);
+          return row ? pick(row, select) : null;
+        },
+        async deleteMany({ where }) {
+          await gate();
+          record({ kind: "storageReservation.deleteMany", where });
+          const removed = db.reservations.filter((r) => matches(r, where));
+          db.reservations = db.reservations.filter((r) => !removed.includes(r));
+          undo(() => db.reservations.push(...removed));
+          return { count: removed.length };
+        },
+        async groupBy({ by, where }) {
+          await gate();
+          record({ kind: "storageReservation.groupBy", where });
+          if (by.length !== 1 || by[0] !== "category") throw new Error("fake: groupBy by category only");
+          const live = db.reservations.filter((r) => matches(r, where));
+          return ["NOTE", "SUBMISSION"]
+            .map((category) => ({ category, rows: live.filter((r) => r.category === category) }))
+            .filter((g) => g.rows.length > 0)
+            .map((g) => ({ category: g.category, _sum: { bytes: g.rows.reduce((t, r) => t + r.bytes, BigInt(0)) } }));
+        },
+      },
+      teacherStorageLimit: {
+        async findUnique({ where, select }) {
+          await gate();
+          const row = db.storageLimits.find((l) => l.teacherId === where.teacherId);
+          return row ? pick(row, select) : null;
+        },
+      },
+      teacherSubscription: {
+        async findFirst({ where, orderBy }) {
+          await gate();
+          const { OR, ...rest } = where;
+          const rows = db.subscriptions
+            .filter((s) => matches(s, rest) && (!OR || OR.some((condition) => matches(s, condition))))
+            .sort((a, b) => (orderBy?.updatedAt === "desc" ? b.updatedAt - a.updatedAt : a.updatedAt - b.updatedAt));
+          return rows[0] ? { plan: { storageGB: rows[0].plan.storageGB } } : null;
         },
       },
     };

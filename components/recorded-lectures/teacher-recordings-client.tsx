@@ -21,9 +21,11 @@ import {
 import { blobByteSource, inspectMp4 } from "@/lib/recorded-lectures/mp4-inspect";
 import type { TeacherRecordingDto } from "@/lib/recorded-lectures/teacher-dto";
 import { formatDuration, formatLectureDateTime } from "@/components/student-portal/recorded-lectures/recording-helpers";
+import { RECORDING_DELETION_LABELS, RECORDING_DELETION_WARNING } from "@/lib/permanent-deletion/client";
 
 import { fingerprintFile, openRecordingStore, sameFingerprint, type RecordingStore } from "./recording-store";
 import { formatBytes, progressPercent, RecordingUploader, uploadMessage, type UploadSnapshot } from "./upload-engine";
+import { UploadFormatGuide } from "./upload-format-guide";
 
 /*
  * Teacher Recorded Lectures management for one lecture: the parts with their
@@ -50,7 +52,7 @@ type ActiveUpload = {
   snapshot: UploadSnapshot;
 };
 
-type Notice = { tone: "error" | "success"; text: string; signIn?: boolean } | null;
+type Notice = { tone: "error" | "success" | "pending"; text: string; signIn?: boolean } | null;
 
 const STATE_LABEL: Record<TeacherRecordingDto["state"], string> = {
   UPLOADING: "Uploading",
@@ -341,7 +343,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
   }
 
   async function doDelete() {
-    if (!confirmDelete) return;
+    if (!confirmDelete || deleting) return;
     setDeleting(true);
     try {
       const target = confirmDelete;
@@ -364,7 +366,13 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
       }
       if (local) dismiss(local);
       if (target.upload) await storeRef.current?.deleteFileUpload(target.upload.uploadId).catch(() => undefined);
-      setNotice({ tone: "success", text: `Part ${target.partNumber} was deleted. Students can no longer see it.` });
+      // Stage 3.6: success only when the file is gone (200 deleted); 202 = removed, file deletion pending.
+      const pending = response.status === 202 && (json.data as { pending?: unknown } | undefined)?.pending === true;
+      setNotice(
+        pending
+          ? { tone: "pending", text: `Part ${target.partNumber} was ${RECORDING_DELETION_LABELS.pending}` }
+          : { tone: "success", text: `Part ${target.partNumber} was ${RECORDING_DELETION_LABELS.deleted}` }
+      );
       setConfirmDelete(null);
       await refresh();
     } catch {
@@ -399,7 +407,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
       {notice ? (
         <div
           role={notice.tone === "error" ? "alert" : "status"}
-          className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${notice.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
+          className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${notice.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-900" : notice.tone === "pending" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
         >
           <span>
             {notice.text}{" "}
@@ -425,6 +433,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
           MP4 video with H.264 video and AAC audio, up to {formatBytes(initial.limits.maxPartBytes)} per part. Students see a part only after it has
           been uploaded and checked.
         </p>
+        <UploadFormatGuide maxSizeLabel={formatBytes(initial.limits.maxPartBytes)} />
         <form onSubmit={onSubmit} className="mt-3 grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_120px_auto] md:items-end" noValidate>
           <label className="block text-xs font-semibold text-slate-700">
             Video file
@@ -664,10 +673,10 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
         <div role="dialog" aria-modal="true" aria-labelledby="rl-delete-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
             <h3 id="rl-delete-title" className="text-base font-bold text-slate-900">
-              Delete part {confirmDelete.partNumber}?
+              Permanently delete part {confirmDelete.partNumber}?
             </h3>
             <p className="mt-2 break-words text-sm text-slate-600">
-              “{confirmDelete.title}” will be removed. Students will no longer see it.
+              “{confirmDelete.title}”: {RECORDING_DELETION_WARNING}
               {confirmDelete.state === "UPLOADING" ? " The unfinished upload is cancelled." : ""}
             </p>
             <div className="mt-4 flex justify-end gap-2">
@@ -676,7 +685,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
               </button>
               <button type="button" disabled={deleting} onClick={() => void doDelete()} className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white disabled:opacity-60">
                 {deleting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Trash2 size={16} aria-hidden />}
-                Delete
+                Delete permanently
               </button>
             </div>
           </div>

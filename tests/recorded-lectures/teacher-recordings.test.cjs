@@ -16,6 +16,7 @@ const H = require("./helpers/upload-harness.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const fs = require("node:fs");
 
 const { state, ids, constants, F, signInAs, validMp4, until, db } = H;
 const { OWNER, OTHER, LECTURE, LECTURE_2, LECTURE_OTHER, id } = ids;
@@ -28,6 +29,7 @@ const { uploadLocalRecording } = require(path.join(root, "components", "recorded
 const Studio = require(path.join(root, "components", "recorded-lectures", "studio-helpers.ts"));
 const M = require(path.join(root, "lib", "recorded-lectures", "mp4-inspect.ts"));
 const { fragmentedRecording } = require("./helpers/fragmented-mp4.cjs");
+const { StorageError } = require(path.join(root, "lib", "file-storage", "types.ts"));
 
 const routes = {
   start: require(path.join(root, "app", "api", "lectures", "[id]", "recorded-lectures", "uploads", "route.ts")),
@@ -506,18 +508,24 @@ test("edit: title and part number; a part number in use is 409; invalid values 4
   assert.equal((await api("PATCH", `/api/recorded-lectures/${a.recording.id}`, { title: "Mine now" })).status, 404);
 });
 
-test("delete: soft delete (status 2, purge pending); an active upload is cancelled first; others 404", async () => {
+test("delete (Stage 3.6): PERMANENT - the stored file is removed, then status 1 / purgedAt; an active upload is cancelled first; others 404", async () => {
   await signInAs(OWNER);
   const { uploadId, recording } = await readyRecording(1);
+  const stored = H.finalPath(uploadId, H.recordingOf(uploadId).storedFileName);
+  assert.ok(fs.existsSync(stored));
   await signInAs(OTHER);
   assert.equal((await api("DELETE", `/api/recorded-lectures/${recording.id}`)).status, 404);
+  assert.ok(fs.existsSync(stored), "another teacher deletes nothing");
   await signInAs(OWNER);
   const res = await api("DELETE", `/api/recorded-lectures/${recording.id}`);
   assert.equal(res.status, 200);
+  assert.deepEqual(res.body.data, { deleted: true, pending: false });
   const row = H.recordingOf(uploadId);
-  assert.equal(row.status, 2);
-  assert.ok(row.deletedAt instanceof Date && row.purgeRequestedAt instanceof Date);
+  assert.equal(row.status, 1, "final only after the file deletion");
+  assert.ok(row.deletedAt instanceof Date && row.purgedAt instanceof Date);
+  assert.equal(row.purgeRequestedAt, null);
   assert.equal(row.deletedByTeacherId, OWNER);
+  assert.equal(fs.existsSync(stored), false, "the video file is deleted");
   assert.equal((await api("DELETE", `/api/recorded-lectures/${recording.id}`)).status, 404, "already deleted");
   const list = await api("GET", `/api/lectures/${LECTURE}/recorded-lectures`);
   assert.equal(list.body.data.recordings.length, 0);
@@ -528,7 +536,29 @@ test("delete: soft delete (status 2, purge pending); an active upload is cancell
   const recId = H.recordingOf(partial.body.data.uploadId).id;
   assert.equal((await api("DELETE", `/api/recorded-lectures/${recId}`)).status, 200);
   assert.equal(H.sessionOf(partial.body.data.uploadId).state, "CANCELLED");
-  assert.equal(H.recordingOf(partial.body.data.uploadId).status, 2);
+  assert.equal(H.recordingOf(partial.body.data.uploadId).status, 1, "no stored file: finalized at once");
+});
+
+test("delete (Stage 3.6): a failing file deletion -> 202 pending (status 2, still hidden, file kept); a repeated DELETE retries and finalizes", async () => {
+  await signInAs(OWNER);
+  const { uploadId, recording } = await readyRecording(1);
+  const stored = H.finalPath(uploadId, H.recordingOf(uploadId).storedFileName);
+  state.storagePatches.remove = async () => {
+    throw new StorageError("IO_ERROR");
+  };
+  const res = await api("DELETE", `/api/recorded-lectures/${recording.id}`);
+  assert.equal(res.status, 202);
+  assert.deepEqual(res.body.data, { deleted: false, pending: true });
+  assert.equal(H.recordingOf(uploadId).status, 2);
+  assert.equal(H.recordingOf(uploadId).purgedAt, null, "never purged before the file is gone");
+  assert.ok(fs.existsSync(stored));
+  const list = await api("GET", `/api/lectures/${LECTURE}/recorded-lectures`);
+  assert.equal(list.body.data.recordings.length, 0, "hidden while pending");
+  delete state.storagePatches.remove;
+  const again = await api("DELETE", `/api/recorded-lectures/${recording.id}`);
+  assert.equal(again.status, 200, "retry of a pending deletion");
+  assert.equal(H.recordingOf(uploadId).status, 1);
+  assert.equal(fs.existsSync(stored), false);
 });
 
 test("delete: refused (409) while the recording is being verified", async () => {

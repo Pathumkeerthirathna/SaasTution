@@ -1,11 +1,13 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { noteKindSchema } from "@/lib/lecture-validation";
+import { generateNoteStoredName, noteFileKey } from "@/lib/notes/storage-keys";
+import { discardStoredUpload, storeUpload } from "@/lib/stored-files/stored-file";
 import { addNoteToLectureForTeacher, assertTeacherOwnsLecture, listNotesForLectureForTeacher } from "@/services/lecture-service";
+import { releaseTeacherStorageReservation, reserveTeacherStorage } from "@/services/storage-reservation-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,14 +51,6 @@ const SUPPORTING_MIME_TYPES = new Set([
 
 const MAX_NOTE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_SUPPORTING_SIZE_BYTES = 25 * 1024 * 1024;
-
-function sanitizeFileName(fileName: string) {
-  return fileName
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 function getAllowedMimeTypes(kind: "NOTE" | "SUPPORTING_MATERIAL") {
   return kind === "NOTE" ? NOTE_MIME_TYPES : SUPPORTING_MIME_TYPES;
@@ -123,30 +117,58 @@ export async function POST(
 
     // RL-0: the teacher must own this (active) lecture before anything is
     // written to disk; otherwise 404 LECTURE_NOT_FOUND and no folder or file.
+    // (Also: the lecture id below is then a real lecture id, not URL input.)
     await assertTeacherOwnsLecture(session.teacherId, lectureId);
 
-    const bytes = new Uint8Array(await fileEntry.arrayBuffer());
-    const safeFileName = sanitizeFileName(fileEntry.name || "upload.bin") || "upload.bin";
-    const uniquePrefix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const fileName = `${uniquePrefix}-${safeFileName}`;
-
-    const uploadDir = path.join(process.cwd(), "storage", "lectures", lectureId);
-    await mkdir(uploadDir, { recursive: true });
-
-    const fullFilePath = path.join(uploadDir, fileName);
-    await writeFile(fullFilePath, bytes);
-
-    const fileUrl = `lectures/${lectureId}/${fileName}`;
-
-    const note = await addNoteToLectureForTeacher({
+    // Unified storage (Stage 2): the file goes to FILE_STORAGE_ROOT under a
+    // server-generated key (Teachers/{teacher}/Lectures/{lecture}/Notes/{noteId}/
+    // {random}.{ext from the validated MIME type}); nothing from the browser's
+    // file name reaches the filesystem. It is written completely (exact size,
+    // SHA-256, flushed) BEFORE the Note row exists - while the rollback window
+    // is open, together with a verified legacy copy that fileUrl points to (so
+    // the previous application version can still serve it) - and both are
+    // removed again if the row is not created. Reads use storageKey.
+    const noteId = randomUUID();
+    const storageKey = noteFileKey({
       teacherId: session.teacherId,
       lectureId,
-      title,
-      fileUrl,
-      kind,
-      mimeType: fileEntry.type,
-      sizeBytes: fileEntry.size,
+      noteId,
+      storedName: generateNoteStoredName(fileEntry.type),
     });
+    // Storage quota (Stage 3.2): reserve the file's size under the teacher's quota lock
+    // BEFORE anything is written (413 STORAGE_QUOTA_EXCEEDED if it does not fit). The Note
+    // row and the reservation's removal then commit together (addNoteToLectureForTeacher);
+    // any failure removes the written files and releases the reservation.
+    const reservation = await reserveTeacherStorage({
+      teacherId: session.teacherId,
+      category: "NOTE",
+      storageKey,
+      bytes: BigInt(fileEntry.size),
+      audience: "TEACHER",
+    });
+
+    let note;
+    try {
+      const stored = await storeUpload("NOTE", storageKey, fileEntry, maxFileSize);
+      note = await addNoteToLectureForTeacher({
+        teacherId: session.teacherId,
+        lectureId,
+        title,
+        fileUrl: stored.fileUrl,
+        kind,
+        mimeType: fileEntry.type,
+        sizeBytes: stored.sizeBytes,
+        id: noteId,
+        storageKey,
+        sha256: stored.sha256,
+        discardStoredFile: () => discardStoredUpload(stored, "Lecture note upload: discard the files of a note that was not created"),
+        reservation,
+      });
+    } catch (error) {
+      // Committed reservations are already gone (this is then a no-op); otherwise it is released now.
+      await releaseTeacherStorageReservation(reservation, "Lecture note upload: release the storage reservation of a failed upload");
+      throw error;
+    }
 
     return apiSuccess(
       {

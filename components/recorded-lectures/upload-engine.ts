@@ -96,6 +96,9 @@ const MESSAGES: Record<string, string> = {
   PART_NUMBER_IN_USE: "This lecture already has a recording with that part number. Choose another part number.",
   TOO_MANY_ACTIVE_UPLOADS: "You have too many uploads in progress. Finish or cancel one first.",
   INSUFFICIENT_STORAGE: "There is not enough storage space for this upload right now.",
+  // Teacher storage quota (Stage 3.3): the teacher's own allocation, distinct from the server's disk.
+  STORAGE_QUOTA_EXCEEDED: "This recording would exceed your storage limit. Delete files you no longer need or ask an administrator for more storage.",
+  STORAGE_QUOTA_BUSY: "Storage is busy right now. Please try again in a moment.",
   RECORDED_LECTURES_NOT_CONFIGURED: "Recorded lecture uploads are not available right now.",
   UPLOAD_EXPIRED: "This upload expired before it was finished. Start the upload again.",
   UPLOAD_NOT_FOUND: "This upload no longer exists. Start the upload again.",

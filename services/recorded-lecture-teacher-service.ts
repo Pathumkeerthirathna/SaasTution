@@ -3,10 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { isRecordedLectureId } from "@/lib/recorded-lectures/keys";
 import { buildTeacherRecordingDto, type TeacherRecordingDto } from "@/lib/recorded-lectures/teacher-dto";
 import { uploadError } from "@/lib/recorded-lectures/upload-errors";
+import { getRecordedLectureStorage } from "@/lib/recorded-lectures/storage";
 import { validateUploadDeclaration } from "@/lib/recorded-lectures/validation";
 import { serverNow } from "@/lib/server-clock";
 import { assertTeacherOwnsLecture } from "@/services/lecture-service";
 import { cancelRecordingUpload } from "@/services/recorded-lecture-completion-service";
+import { purgeRemovedRecording } from "@/services/recorded-lecture-maintenance-service";
 import { streamStoredRecording } from "@/services/recorded-lecture-stream-service";
 import { assertTeacherCanUpload, loadConfig } from "@/services/recorded-lecture-upload-service";
 
@@ -173,6 +175,28 @@ export async function deleteTeacherRecording(input: { teacherId: string; recordi
     if (again && again.status === 0 && again.state === "VERIFYING") throw uploadError("UPLOAD_COMPLETING");
     throw recordingNotFound();
   }
+}
+
+/**
+ * Stage 3.6: the teacher's DELETE is PERMANENT. The recording is marked
+ * (deleteTeacherRecording: status 2, hidden everywhere, committed first), then
+ * its stored file is deleted at once (purgeRemovedRecording, the maintenance
+ * purge). DELETED = the file is gone and the row is final (status 1,
+ * purgedAt); PENDING = hidden, the file deletion is retried by maintenance.
+ * Deleting a recording that is already pending retries the purge.
+ */
+export async function deleteTeacherRecordingPermanently(input: { teacherId: string; recordingId: string }): Promise<"DELETED" | "PENDING"> {
+  if (!isRecordedLectureId(input.recordingId)) throw recordingNotFound();
+  const pending = await prisma.recordedLecture.findFirst({
+    where: { id: input.recordingId, teacherId: input.teacherId, status: 2, purgedAt: null },
+    select: { id: true },
+  });
+  if (!pending) await deleteTeacherRecording(input);
+  const opened = await getRecordedLectureStorage(process.env);
+  if (opened.ok) await purgeRemovedRecording(opened.storage, input.recordingId);
+  // The database decides (a concurrent maintenance run may have finished it): final only as status 1.
+  const after = await prisma.recordedLecture.findFirst({ where: { id: input.recordingId, teacherId: input.teacherId }, select: { status: true } });
+  return after?.status === 1 ? "DELETED" : "PENDING";
 }
 
 /** Owner preview of a READY recording (same streaming, slots under "teacher:<id>"). */

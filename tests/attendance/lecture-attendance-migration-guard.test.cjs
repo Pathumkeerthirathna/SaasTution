@@ -197,6 +197,12 @@ const STUDENT_SESSION_VERSION_MIGRATION = "20261112120000_add_student_session_ve
 // Recorded Lectures RL-2 (additive new tables + a Class (id, teacherId) unique; guarded by
 // tests/recorded-lectures/recorded-lectures-migration-guard.test.cjs).
 const RECORDED_LECTURES_MIGRATION = "20261114120000_add_recorded_lectures";
+// Unified storage Stage 2 (additive nullable Note / AssignmentSubmission columns; guarded by
+// tests/storage-migration/migration-guard.test.cjs).
+const UNIFIED_STORAGE_MIGRATION = "20261115120000_add_unified_file_storage_keys";
+// Teacher storage accounting Stage 3.1 (additive new tables; guarded by
+// tests/storage-quota/migration-guard.test.cjs).
+const STORAGE_ACCOUNTING_MIGRATION = "20261116120000_add_teacher_storage_accounting";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -207,7 +213,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------

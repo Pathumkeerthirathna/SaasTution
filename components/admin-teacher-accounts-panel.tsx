@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { AdminTeacherStorageCard } from "./admin-teacher-storage-card";
+
 type TeacherAccount = {
   id: string;
   name: string;
@@ -638,6 +640,9 @@ export function AdminTeacherAccountsPanel() {
             </span>
           </div>
         )}
+
+        {/* Storage usage and the individual storage limit (Stage 3.4) */}
+        {selectedTeacher && <AdminTeacherStorageCard key={selectedTeacher.id} teacherId={selectedTeacher.id} />}
 
         {loadingClasses && (
           <p className="mt-4 flex items-center gap-1.5 text-[12px] text-slate-500">

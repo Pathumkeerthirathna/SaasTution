@@ -66,15 +66,27 @@ export async function DELETE(
       throw new AppError("Lecture id and note id are required.", 400, "VALIDATION_ERROR");
     }
 
-    // Soft delete only — keep the file on disk so the note can be restored.
-    await deleteNoteForTeacher(session.teacherId, lectureId, noteId);
+    // PERMANENT deletion (Stage 3.6): the note and its file. 200 only when both are gone;
+    // 202 when it is hidden and the file deletion is still pending (retried automatically).
+    const state = await deleteNoteForTeacher(session.teacherId, lectureId, noteId);
+
+    if (state === "PENDING") {
+      return apiSuccess(
+        { deleted: false, pending: true },
+        {
+          message: "The note was removed. Its file is still being deleted and will be removed automatically.",
+          status: 202,
+        }
+      );
+    }
 
     return apiSuccess(
       {
         deleted: true,
+        pending: false,
       },
       {
-        message: "Note deleted successfully.",
+        message: "Note deleted permanently.",
       }
     );
   } catch (error) {

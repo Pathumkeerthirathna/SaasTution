@@ -1,7 +1,7 @@
 /*
  * Recorded Lectures RL-3.5: maintenance (cleanup, expiry, recovery) through the
  * real services and LocalFileStorage (helpers/upload-harness.cjs) with the
- * in-memory database fake. The scheduler is NOT used here (it is not wired);
+ * in-memory database fake. The scheduler is not used here (its wiring is tested in maintenance-scheduler.test.cjs);
  * runs are called directly.
  *
  *   npm run test:recorded-lectures
@@ -49,10 +49,11 @@ function writeTemp(name, ageMs, bytes = Buffer.from("x")) {
 }
 
 const run = (phases, limits) => maintenance.runRecordedLectureMaintenance({ phases, limits });
-const TEMP = { expire: false, recover: false, temporary: true, finals: false };
-const FINALS = { expire: false, recover: false, temporary: false, finals: true };
-const EXPIRE = { expire: true, recover: false, temporary: false, finals: false };
-const RECOVER = { expire: false, recover: true, temporary: false, finals: false };
+const TEMP = { expire: false, recover: false, temporary: true, finals: false, purge: false };
+const FINALS = { expire: false, recover: false, temporary: false, finals: true, purge: false };
+const EXPIRE = { expire: true, recover: false, temporary: false, finals: false, purge: false };
+const RECOVER = { expire: false, recover: true, temporary: false, finals: false, purge: false };
+const PURGE = { expire: false, recover: false, temporary: false, finals: false, purge: true };
 
 /** A paused chunk writer: sends `firstBytes`, then waits for resume(). Released after each test. */
 function pausedPut(uploadId, offset, bytes, firstBytes) {
@@ -687,6 +688,168 @@ test("job limit: a fifth completion in this process is refused (503, retry) whil
   hold.open();
   await completion.waitForCompletionJobs();
   assert.equal((await H.complete(uploads[4].id)).status, 202);
+});
+
+// ---- Purge of deleted recordings (Stage 3.6) ------------------------------------------------------------------
+
+async function readyForPurge() {
+  await H.signInAs(OWNER);
+  const uploadId = await H.uploadFile(H.validMp4(64 * 1024));
+  await H.complete(uploadId);
+  await completion.waitForCompletionJobs();
+  const row = H.recordingOf(uploadId);
+  const file = H.finalPath(uploadId, row.storedFileName);
+  // What the teacher's DELETE commits first (deleteTeacherRecording): hidden, purge pending.
+  Object.assign(row, { status: 2, deletedAt: new Date(state.clock), deletedByTeacherId: OWNER, purgeRequestedAt: new Date(state.clock) });
+  return { uploadId, row, file };
+}
+
+test("purge: a deleted READY recording's file is removed, THEN status 1 / purgedAt (purgeRequestedAt cleared); active ones untouched", async () => {
+  const { row, file } = await readyForPurge();
+  const keptId = await H.uploadFile(H.validMp4(64 * 1024), { part: 2 });
+  await H.complete(keptId);
+  await completion.waitForCompletionJobs();
+  const kept = H.finalPath(keptId, H.recordingOf(keptId).storedFileName);
+  const report = await run(PURGE);
+  assert.equal(report.purge.examined, 1);
+  assert.equal(report.purge.purged, 1);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(fs.existsSync(path.dirname(file)), false, "its empty folder is removed");
+  assert.equal(row.status, 1);
+  assert.ok(row.purgedAt instanceof Date);
+  assert.equal(row.purgeRequestedAt, null);
+  assert.ok(fs.existsSync(kept), "an active recording is never touched");
+  assert.equal(H.recordingOf(keptId).status, 0);
+  assert.equal((await run(PURGE)).purge.examined, 0, "idempotent: nothing left to do");
+});
+
+test("purge: a file already missing counts as deleted (finalized)", async () => {
+  const { row, file } = await readyForPurge();
+  fs.rmSync(file);
+  assert.equal((await run(PURGE)).purge.purged, 1);
+  assert.equal(row.status, 1);
+});
+
+test("purge: a failing file deletion leaves it pending (status 2, purgedAt NULL, file kept); the next run retries", async () => {
+  const { row, file } = await readyForPurge();
+  state.storagePatches.remove = async () => {
+    throw new StorageError("IO_ERROR");
+  };
+  const report = await run(PURGE);
+  delete state.storagePatches.remove;
+  assert.equal(report.purge.pending, 1);
+  assert.equal(row.status, 2);
+  assert.equal(row.purgedAt, null, "purgedAt only after the file is gone");
+  assert.ok(fs.existsSync(file));
+  const backingOff = await run(PURGE);
+  assert.deepEqual([backingOff.purge.examined, backingOff.purge.backoff], [0, 1], "Stage 3.7: a failed purge backs off (1, 2, 4 ... minutes), not logged every run");
+  maintenance.resetMaintenanceStateForTests(); // = after the backoff (or a restart)
+  assert.equal((await run(PURGE)).purge.purged, 1);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(row.status, 1);
+});
+
+test("purge: protected while an upload session of it is ACTIVE or COMPLETING, or the recording is VERIFYING", async () => {
+  await H.signInAs(OWNER);
+  const partial = await H.createUpload(3 * MIB, { part: 3 });
+  const uploadId = partial.body.data.uploadId;
+  await H.putChunk(uploadId, 0, Buffer.alloc(MIB, 1));
+  const row = H.recordingOf(uploadId);
+  Object.assign(row, { status: 2, deletedAt: new Date(state.clock), purgeRequestedAt: new Date(state.clock) });
+  assert.equal(H.sessionOf(uploadId).state, "ACTIVE");
+  let report = await run(PURGE);
+  assert.equal(report.purge.protected, 1);
+  assert.equal(row.status, 2);
+  assert.equal(H.chunksOf(uploadId).length, 1);
+
+  const verifying = await readyForPurge();
+  verifying.row.state = "VERIFYING";
+  H.sessionOf(uploadId).state = "COMPLETING";
+  report = await run(PURGE);
+  assert.equal(report.purge.protected, 2);
+  assert.ok(fs.existsSync(verifying.file));
+  verifying.row.state = "READY";
+});
+
+test("purge: a stored name that does not validate is never used as a path (unverifiable, left pending)", async () => {
+  const { row, file } = await readyForPurge();
+  const good = row.storedFileName;
+  row.storedFileName = "../../escape.mp4";
+  const report = await run(PURGE);
+  assert.equal(report.purge.unverifiable, 1);
+  assert.equal(row.status, 2);
+  assert.ok(fs.existsSync(file));
+  row.storedFileName = good;
+});
+
+test("purge: database unavailable -> the phase fails, nothing is deleted; retried later", async () => {
+  const { row, file } = await readyForPurge();
+  H.db().faults.down = true;
+  const report = await run(PURGE);
+  H.db().faults.down = false;
+  assert.deepEqual(report.failedPhases, ["purge"]);
+  assert.ok(fs.existsSync(file));
+  assert.equal(row.status, 2);
+  assert.equal((await run(PURGE)).purge.purged, 1);
+});
+
+test("Stage 3.7 purge fairness: recordings that keep failing never starve the others (the next run continues after them)", async () => {
+  const stuck = [];
+  for (let part = 1; part <= 3; part++) {
+    await H.signInAs(OWNER);
+    const uploadId = await H.uploadFile(H.validMp4(64 * 1024), { part });
+    await H.complete(uploadId);
+    await completion.waitForCompletionJobs();
+    const row = H.recordingOf(uploadId);
+    Object.assign(row, { status: 2, deletedAt: new Date(state.clock), purgeRequestedAt: new Date(state.clock) });
+    stuck.push({ row, file: H.finalPath(uploadId, row.storedFileName) });
+  }
+  const sorted = [...stuck].sort((a, b) => (a.row.id < b.row.id ? -1 : 1));
+  const [first, second, last] = sorted;
+  state.storagePatches.remove = async (original, key) => {
+    if (!key.includes(last.row.id)) throw new StorageError("IO_ERROR");
+    return original(key);
+  };
+  const one = await run(PURGE, { purgeBatch: 2 });
+  assert.deepEqual([one.purge.examined, one.purge.pending], [2, 2]);
+  const two = await run(PURGE, { purgeBatch: 2 });
+  delete state.storagePatches.remove;
+  assert.equal(two.purge.purged, 1, "the third one is reached on the next run");
+  assert.equal(last.row.status, 1);
+  assert.deepEqual([first.row.status, second.row.status], [2, 2]);
+});
+
+test("Stage 3.7 finals sweep after a purge: no false 'READY file missing' alarm; leftovers of the purged recording are orphans (after the grace) and its folder goes", async () => {
+  const { row, file } = await readyForPurge();
+  const dir = path.dirname(file);
+  const leftover = path.join(dir, `${"3".repeat(32)}.mp4`);
+  fs.writeFileSync(leftover, "old claim");
+  assert.equal((await run(PURGE)).purge.purged, 1);
+  assert.equal(row.status, 1);
+  assert.ok(fs.existsSync(dir), "a folder that is not empty stays after the purge");
+  age(leftover, ORPHAN - 1000);
+  let report = await run(FINALS);
+  assert.equal(report.finals.missingReadyFiles, 0, "a purged recording's file is gone on purpose");
+  assert.ok(fs.existsSync(leftover), "within the grace");
+  age(leftover, ORPHAN);
+  maintenance.resetMaintenanceStateForTests();
+  report = await run(FINALS);
+  assert.equal(report.finals.missingReadyFiles, 0);
+  assert.equal(fs.existsSync(leftover), false);
+  assert.equal(fs.existsSync(dir), false, "the purged recording's folder is removed");
+});
+
+test("Stage 3.7 finals sweep: a recording PENDING purge keeps its file (only the purge deletes it); a missing file there is not reported as data loss", async () => {
+  const { row, file } = await readyForPurge();
+  age(file, 10 * ORPHAN);
+  let report = await run(FINALS);
+  assert.ok(fs.existsSync(file), "never deleted by the orphan sweep");
+  assert.equal(report.finals.deleted, 0);
+  fs.rmSync(file);
+  maintenance.resetMaintenanceStateForTests();
+  report = await run(FINALS);
+  assert.equal(report.finals.missingReadyFiles, 0);
+  assert.equal(row.status, 2);
 });
 
 test("no unhandled promise rejections", () => {

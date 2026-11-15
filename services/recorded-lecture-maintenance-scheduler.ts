@@ -1,17 +1,20 @@
 import { abandonRunningCompletions } from "@/services/recorded-lecture-completion-service";
 import { runRecordedLectureMaintenance, type MaintenanceReport } from "@/services/recorded-lecture-maintenance-service";
+import { retryPendingDeletions, type PendingDeletionReport } from "@/services/permanent-deletion-service";
 
 /*
  * Recorded Lectures RL-3.5: the maintenance scheduler.
  *
- * NOT WIRED: nothing in the application calls startRecordedLectureMaintenance
- * yet (instrumentation.ts is unchanged); enabling it is a separate, reviewed
- * step. Until then cleanup and automatic recovery do not run.
+ * WIRED (Stage 3.6): instrumentation.ts starts it once per server process,
+ * only on a long-running production Node server (never during the build, in
+ * the Edge runtime or in development). There is no HTTP endpoint for it.
  *
  * When started (one per process; later calls do nothing):
  *   - a first run STARTUP_DELAY_MS after start (startup recovery), then every
  *     MAINTENANCE_INTERVAL_MS;
- *   - every run: expiry and stale-completion recovery; the temporary-file
+ *   - every run: expiry and stale-completion recovery, the purge of deleted
+ *     recordings, and (Stage 3.6) the retry of pending PERMANENT deletions
+ *     of Notes and assignments (retryPendingDeletions); the temporary-file
  *     sweep at most every TEMPORARY_SWEEP_EVERY_MS; the final-file orphan
  *     sweep at most every FINAL_SWEEP_EVERY_MS;
  *   - runs never overlap (a tick during a run is skipped); a failing run is
@@ -29,6 +32,8 @@ export const MAINTENANCE_INTERVAL_MS = 60_000;
 export const STARTUP_DELAY_MS = 30_000;
 export const TEMPORARY_SWEEP_EVERY_MS = 5 * 60_000;
 export const FINAL_SWEEP_EVERY_MS = 6 * 3_600_000;
+/** Wall-clock budget of one tick's Notes / assignment deletion retry. */
+export const PENDING_DELETION_BUDGET_MS = 20_000;
 /** How long shutdown waits for claims to be abandoned before letting the signal proceed. */
 export const SHUTDOWN_ABANDON_TIMEOUT_MS = 1_000;
 
@@ -68,17 +73,21 @@ export function isMaintenanceSchedulerRunning(): boolean {
  * One scheduled run: expiry and recovery always, the sweeps when due.
  * Returns null when a run is already in progress here.
  */
-export async function runMaintenanceTick(nowMs: number = Date.now()): Promise<MaintenanceReport | null> {
+export async function runMaintenanceTick(
+  nowMs: number = Date.now()
+): Promise<(MaintenanceReport & { pendingDeletions: PendingDeletionReport | null }) | null> {
   const state = ticks();
   if (state.running) return null;
   state.running = true;
   try {
     const temporary = state.lastTemporaryAtMs === null || nowMs - state.lastTemporaryAtMs >= TEMPORARY_SWEEP_EVERY_MS;
     const finals = state.lastFinalsAtMs === null || nowMs - state.lastFinalsAtMs >= FINAL_SWEEP_EVERY_MS;
-    const report = await runRecordedLectureMaintenance({ phases: { expire: true, recover: true, temporary, finals } });
+    const report = await runRecordedLectureMaintenance({ phases: { expire: true, recover: true, temporary, finals, purge: true } });
     if (temporary && !report.failedPhases.includes("temporary") && report.skipped === null) state.lastTemporaryAtMs = nowMs;
     if (finals && !report.failedPhases.includes("finals") && report.skipped === null && report.finals?.complete) state.lastFinalsAtMs = nowMs;
-    return report;
+    // Same tick, same overlap guard: no second scheduler. Never throws.
+    const pendingDeletions = await retryPendingDeletions({ deadlineMs: Date.now() + PENDING_DELETION_BUDGET_MS });
+    return { ...report, pendingDeletions };
   } catch {
     return null; // runRecordedLectureMaintenance never throws; defensive only
   } finally {

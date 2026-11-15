@@ -16,6 +16,7 @@ import {
   isRecordedLectureId,
   parseRecordedLectureKey,
   recordingDirectoryKey,
+  recordingFileKey,
   TEACHERS_DIRECTORY,
   TEMPORARY_UPLOADS_DIRECTORY,
   type RecordedLectureKeyKind,
@@ -38,7 +39,11 @@ import { expireStaleUploads, loadConfig, noCurrentLease } from "@/services/recor
  *                over by a new claim here (recoverStaleCompletion), with an
  *                in-memory backoff per upload;
  *   3. temporary files below System/TemporaryUploads (chunk, assembly, legacy .part);
- *   4. final files below Teachers/.../RecordedLectures/{recordingId}/ (orphans).
+ *   4. final files below Teachers/.../RecordedLectures/{recordingId}/ (orphans);
+ *   5. purge     (Stage 3.6) PERMANENT deletion of recordings a teacher
+ *                deleted (status 2): the stored final file is removed, then
+ *                the row becomes status 1 with purgedAt set (see
+ *                purgeRemovedRecording).
  *
  * Deletion safety: a file is deleted only after (a) its name parses as one of
  * the recorded-lecture key kinds (unknown names, symlinks and other entries are
@@ -53,8 +58,8 @@ import { expireStaleUploads, loadConfig, noCurrentLease } from "@/services/recor
  * one filesystem operation at a time, database queries by ids in batches.
  *
  * Nothing here starts on its own: the scheduler
- * (services/recorded-lecture-maintenance-scheduler.ts) is NOT wired into
- * application startup yet.
+ * (services/recorded-lecture-maintenance-scheduler.ts) runs it, started by
+ * instrumentation.ts on a long-running production server (Stage 3.6).
  */
 
 export type MaintenanceLimits = {
@@ -71,6 +76,8 @@ export type MaintenanceLimits = {
   tempMaxDeletes: number;
   finalMaxRecordingDirs: number;
   finalMaxDeletes: number;
+  /** Deleted recordings purged by one run. */
+  purgeBatch: number;
 };
 
 export const DEFAULT_MAINTENANCE_LIMITS: MaintenanceLimits = Object.freeze({
@@ -83,6 +90,7 @@ export const DEFAULT_MAINTENANCE_LIMITS: MaintenanceLimits = Object.freeze({
   tempMaxDeletes: 200,
   finalMaxRecordingDirs: 500,
   finalMaxDeletes: 200,
+  purgeBatch: 50,
 });
 
 export type SweepCounts = { examined: number; deleted: number; kept: number; unknown: number; skippedLinks: number; errors: number };
@@ -94,6 +102,7 @@ export type MaintenanceReport = {
   recovery: { examined: number; outcomes: Partial<Record<RecoveryOutcome | "backoff", number>> };
   temporary: SweepCounts | null;
   finals: (SweepCounts & { directoriesRemoved: number; missingReadyFiles: number; complete: boolean }) | null;
+  purge: PurgeCounts | null;
   failedPhases: string[];
   timedOut: boolean;
 };
@@ -104,7 +113,12 @@ type Backoff = { attempts: number; nextAtMs: number };
 const state = globalThis as unknown as {
   slRecordedLectureRecoveryBackoff?: Map<string, Backoff>;
   slRecordedLectureFinalSweepCursor?: string | null;
+  slRecordedLecturePurge?: { cursor: string | null; backoff: Map<string, Backoff> };
 };
+function purgeState() {
+  if (!state.slRecordedLecturePurge) state.slRecordedLecturePurge = { cursor: null, backoff: new Map() };
+  return state.slRecordedLecturePurge;
+}
 function backoffs(): Map<string, Backoff> {
   if (!state.slRecordedLectureRecoveryBackoff) state.slRecordedLectureRecoveryBackoff = new Map();
   return state.slRecordedLectureRecoveryBackoff;
@@ -119,6 +133,7 @@ export function recoveryBackoffMs(attempts: number): number {
 export function resetMaintenanceStateForTests() {
   state.slRecordedLectureRecoveryBackoff = new Map();
   state.slRecordedLectureFinalSweepCursor = null;
+  state.slRecordedLecturePurge = { cursor: null, backoff: new Map() };
 }
 
 function reportMaintenanceError(error: unknown, phase: string) {
@@ -387,10 +402,13 @@ async function sweepRecordingDirectory(
   // The database first: a file is referenced only by its own recording at exactly this path.
   const row = await prisma.recordedLecture.findFirst({
     where: { id: ids.recordingId },
-    select: { state: true, storedFileName: true, teacherId: true, lectureId: true },
+    select: { state: true, storedFileName: true, teacherId: true, lectureId: true, status: true },
   });
-  const recording: RecordingFacts | null =
-    row && row.teacherId === ids.teacherId && row.lectureId === ids.lectureId ? { state: row.state, storedFileName: row.storedFileName } : null;
+  // Stage 3.6: a PURGED recording (status 1) references no file any more: whatever is left in its
+  // folder is an orphan (deleted after the grace) and the folder is removable. A recording pending
+  // purge (status 2) still references its file (the purge phase deletes it, never this sweep).
+  const owned = row !== null && row.teacherId === ids.teacherId && row.lectureId === ids.lectureId;
+  const recording: RecordingFacts | null = owned && row.status !== 1 ? { state: row.state, storedFileName: row.storedFileName } : null;
 
   let sawReadyFile = false;
   for await (const entry of storage.listDirectory(dirKey, { limit: 1_000 })) {
@@ -413,8 +431,9 @@ async function sweepRecordingDirectory(
       counts
     );
   }
-  if (recording && recording.state === "READY" && !sawReadyFile) {
-    // Data loss: never "fixed" here, only reported.
+  if (recording && recording.state === "READY" && !sawReadyFile && row?.status === 0) {
+    // Data loss: never "fixed" here, only reported. (A recording pending purge may already have
+    // lost its file to the purge, which then finalizes it: not data loss.)
     counts.missingReadyFiles++;
     reportMaintenanceError(new Error("A READY recording's file is missing."), "finals");
   }
@@ -427,15 +446,128 @@ async function sweepRecordingDirectory(
   }
 }
 
+// ---- 5. Purge of deleted recordings (Stage 3.6) ----------------------------------------------------------------
+
+export type PurgeOutcome = "purged" | "pending" | "protected" | "unverifiable" | "not-pending";
+export type PurgeCounts = { examined: number; backoff: number } & Record<PurgeOutcome, number>;
+
+/**
+ * PERMANENT deletion of ONE recording a teacher deleted (status 2, purgedAt
+ * NULL). Recoverable and idempotent:
+ *   - protected (nothing done, retried later): the recording is VERIFYING,
+ *     or an upload session of it is ACTIVE / COMPLETING;
+ *   - the stored final file, at the key built from the row's OWN teacher,
+ *     lecture, id and storedFileName (a name that does not validate is never
+ *     touched: "unverifiable", left pending and logged), is removed; already
+ *     missing counts as removed; any other failure leaves it pending
+ *     (status 2, still counted in the teacher's usage) for the next run;
+ *   - only then: status 1, purgedAt set, purgeRequestedAt cleared (the
+ *     table's CHECKs), conditional on the row being unchanged; the empty
+ *     recording folder is removed best-effort (never a non-empty one).
+ * Never throws.
+ */
+export async function purgeRemovedRecording(storage: LocalFileStorage, recordingId: string): Promise<PurgeOutcome> {
+  try {
+    const row = await prisma.recordedLecture.findFirst({
+      where: { id: recordingId, status: 2, purgedAt: null },
+      select: { id: true, teacherId: true, lectureId: true, storedFileName: true, state: true },
+    });
+    if (!row) return "not-pending";
+    if (row.state === "VERIFYING") return "protected";
+    const busy = await prisma.recordingUploadSession.findFirst({
+      where: { recordedLectureId: row.id, state: { in: ["ACTIVE", "COMPLETING"] } },
+      select: { id: true },
+    });
+    if (busy) return "protected";
+
+    const ids = { teacherId: row.teacherId, lectureId: row.lectureId, recordingId: row.id };
+    if (row.storedFileName !== null) {
+      let key: string;
+      try {
+        key = recordingFileKey({ ...ids, storedName: row.storedFileName });
+      } catch (error) {
+        reportMaintenanceError(error, "purge");
+        return "unverifiable";
+      }
+      try {
+        await storage.remove(key); // false = already missing: counts as removed
+      } catch (error) {
+        reportMaintenanceError(error, "purge");
+        return "pending";
+      }
+    }
+
+    const now = await serverNow();
+    const done = await prisma.recordedLecture.updateMany({
+      where: { id: row.id, status: 2, purgedAt: null, storedFileName: row.storedFileName },
+      data: { status: 1, purgedAt: now, purgeRequestedAt: null, updatedAt: now },
+    });
+    try {
+      await storage.removeEmptyDirectory(recordingDirectoryKey(ids));
+    } catch {
+      // Best effort: a folder that is not empty (or not removable) stays; the orphan sweep handles files.
+    }
+    return done.count === 1 ? "purged" : "not-pending";
+  } catch (error) {
+    reportMaintenanceError(error, "purge");
+    return "pending";
+  }
+}
+
+/**
+ * Phase 5: pending purges in id order, each pass continuing after the previous
+ * one (wrapping at the end), so recordings that keep failing can never starve
+ * the others; a "pending" (failed) or "unverifiable" one is skipped for
+ * 1, 2, 4 ... 60 minutes (logged once per attempt, not every run). Process
+ * memory only: a restart starts over, which is safe (every step idempotent).
+ */
+export async function purgeRemovedRecordings(storage: LocalFileStorage, limits: MaintenanceLimits, deadlineMs: number): Promise<PurgeCounts> {
+  const counts: PurgeCounts = { examined: 0, backoff: 0, purged: 0, pending: 0, protected: 0, unverifiable: 0, "not-pending": 0 };
+  const memory = purgeState();
+  const nowMs = Date.now();
+  for (const [id, entry] of memory.backoff) if (entry.nextAtMs + 2 * 3_600_000 < nowMs) memory.backoff.delete(id);
+  const cursor = memory.cursor;
+  const rows = await prisma.recordedLecture.findMany({
+    where: { status: 2, purgedAt: null, ...(cursor ? { id: { gt: cursor } } : {}) },
+    orderBy: { id: "asc" },
+    take: limits.purgeBatch,
+    select: { id: true },
+  });
+  memory.cursor = rows.length < limits.purgeBatch ? null : rows[rows.length - 1].id;
+  let lastDone = cursor;
+  for (const { id } of rows) {
+    if (Date.now() >= deadlineMs) {
+      memory.cursor = lastDone;
+      break;
+    }
+    lastDone = id;
+    const entry = memory.backoff.get(id);
+    if (entry && entry.nextAtMs > Date.now()) {
+      counts.backoff++;
+      continue;
+    }
+    counts.examined++;
+    const outcome = await purgeRemovedRecording(storage, id);
+    counts[outcome]++;
+    if (outcome === "pending" || outcome === "unverifiable") {
+      const attempts = (entry?.attempts ?? 0) + 1;
+      memory.backoff.set(id, { attempts, nextAtMs: Date.now() + recoveryBackoffMs(attempts) });
+    } else {
+      memory.backoff.delete(id);
+    }
+  }
+  return counts;
+}
+
 // ---- One run ----------------------------------------------------------------------------------------------------
 
-export type MaintenancePhases = { expire?: boolean; recover?: boolean; temporary?: boolean; finals?: boolean };
+export type MaintenancePhases = { expire?: boolean; recover?: boolean; temporary?: boolean; finals?: boolean; purge?: boolean };
 
 /** One maintenance run (the scheduler decides which phases). Never throws. */
 export async function runRecordedLectureMaintenance(
   options: { phases?: MaintenancePhases; limits?: Partial<MaintenanceLimits> } = {}
 ): Promise<MaintenanceReport> {
-  const phases = { expire: true, recover: true, temporary: true, finals: true, ...options.phases };
+  const phases = { expire: true, recover: true, temporary: true, finals: true, purge: true, ...options.phases };
   const limits: MaintenanceLimits = { ...DEFAULT_MAINTENANCE_LIMITS, ...options.limits };
   const report: MaintenanceReport = {
     skipped: null,
@@ -443,6 +575,7 @@ export async function runRecordedLectureMaintenance(
     recovery: { examined: 0, outcomes: {} },
     temporary: null,
     finals: null,
+    purge: null,
     failedPhases: [],
     timedOut: false,
   };
@@ -480,6 +613,7 @@ export async function runRecordedLectureMaintenance(
   if (phases.recover) await run("recover", async (now) => void (report.recovery = await recoverStaleCompletions(now, limits)));
   if (phases.temporary) await run("temporary", async (now) => void (report.temporary = await sweepTemporaryFiles(storage, now, config, limits, deadlineMs)));
   if (phases.finals) await run("finals", async (now) => void (report.finals = await sweepRecordingFiles(storage, now, config, limits, deadlineMs)));
+  if (phases.purge) await run("purge", async () => void (report.purge = await purgeRemovedRecordings(storage, limits, deadlineMs)));
   if (Date.now() >= deadlineMs) report.timedOut = true;
   return report;
 }

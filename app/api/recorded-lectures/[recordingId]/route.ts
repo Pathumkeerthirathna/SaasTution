@@ -2,7 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { readLimitedJson, START_UPLOAD_BODY_MAX_BYTES } from "@/lib/recorded-lectures/request-body";
 import { uploadErrorResponse } from "@/lib/recorded-lectures/upload-errors";
-import { deleteTeacherRecording, updateTeacherRecording } from "@/services/recorded-lecture-teacher-service";
+import { deleteTeacherRecordingPermanently, updateTeacherRecording } from "@/services/recorded-lecture-teacher-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,8 +30,15 @@ export async function PATCH(request: Request, context: { params: { recordingId: 
 export async function DELETE(request: Request, context: { params: { recordingId: string } }) {
   try {
     const session = await requireTeacherSession();
-    await deleteTeacherRecording({ teacherId: session.teacherId, recordingId: context.params.recordingId });
-    return apiSuccess({ deleted: true }, { message: "Recording deleted." });
+    // Stage 3.6: PERMANENT. 200 only when the stored file is gone; 202 while its deletion is pending (retried by maintenance).
+    const state = await deleteTeacherRecordingPermanently({ teacherId: session.teacherId, recordingId: context.params.recordingId });
+    if (state === "PENDING") {
+      return apiSuccess(
+        { deleted: false, pending: true },
+        { message: "The recording was removed. Its video file is still being deleted and will be removed automatically.", status: 202 }
+      );
+    }
+    return apiSuccess({ deleted: true, pending: false }, { message: "Recording deleted permanently." });
   } catch (error) {
     return uploadErrorResponse(error, request);
   }

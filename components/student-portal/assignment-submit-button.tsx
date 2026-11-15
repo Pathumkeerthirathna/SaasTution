@@ -11,7 +11,6 @@ type Props = {
     id: string;
     notes: string | null;
     fileName: string;
-    fileUrl: string;
     mimeType: string;
     sizeBytes: number;
     submittedAt: Date;
@@ -71,7 +70,6 @@ export function AssignmentSubmitButton({ assignmentId, dueDate, initialSubmissio
               id: string;
               notes: string | null;
               fileName: string;
-              fileUrl: string;
               mimeType: string;
               sizeBytes: number;
               submittedAt: string;

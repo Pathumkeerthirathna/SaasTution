@@ -18,7 +18,11 @@ import {
 } from "@/lib/recorded-lectures/upload-locks";
 import { validateUploadDeclaration } from "@/lib/recorded-lectures/validation";
 import { serverNow } from "@/lib/server-clock";
+import { lockTeacherStorageQuota } from "@/lib/storage-quota/locks";
+import { fitsWithinStorageLimit } from "@/lib/storage-quota/usage";
 import { assertTeacherOwnsLecture } from "@/services/lecture-service";
+import { isQuotaLockTimeout, storageQuotaBusyError, storageQuotaExceededError } from "@/services/storage-reservation-service";
+import { getTeacherStorageUsage } from "@/services/teacher-storage-usage-service";
 
 /*
  * Recorded Lectures RL-3.2: start an upload and read its status.
@@ -35,6 +39,14 @@ import { assertTeacherOwnsLecture } from "@/services/lecture-service";
  *   4. this teacher's expired ACTIVE uploads are expired (conditional
  *      updates), which also frees their part numbers;
  *   5. the active-upload cap;
+ *   5b. teacher storage quota (Stage 3.3): the teacher's quota advisory lock
+ *      (lock order level 2, shared with Notes / submission reservations), then
+ *      committed + reserved usage (this teacher's ACTIVE / COMPLETING sessions,
+ *      Notes / submission reservations; the candidate is not stored yet, so
+ *      its declared size is added exactly once as the request) must fit the
+ *      effective limit, else 413 STORAGE_QUOTA_EXCEEDED. The session written
+ *      below IS the reservation: no StorageReservation row. A quota lock
+ *      timeout is 503 STORAGE_QUOTA_BUSY;
  *   6. the global capacity advisory lock;
  *   7. the candidate rows (RecordedLecture UPLOADING + RecordingUploadSession
  *      ACTIVE) are written first;
@@ -233,9 +245,19 @@ export async function startRecordingUpload(input: StartUploadInput): Promise<Upl
     const activeUploads = await tx.recordingUploadSession.count({ where: { teacherId, state: { in: [...ACTIVE_STATES] } } });
     if (activeUploads >= config.maxActiveUploadsPerTeacher) throw uploadError("TOO_MANY_ACTIVE_UPLOADS");
 
-    await lockUploadCapacity(tx);
-
     const sizeBytes = byteCountToBigint(declaration.sizeBytes, "sizeBytes");
+
+    // 5b. Teacher storage quota (lock level 2: after the teacher upload lock, before the capacity lock).
+    try {
+      await lockTeacherStorageQuota(tx, teacherId);
+    } catch (error) {
+      if (isQuotaLockTimeout(error)) throw storageQuotaBusyError();
+      throw error;
+    }
+    const usage = await getTeacherStorageUsage(teacherId, { db: tx, now });
+    if (!fitsWithinStorageLimit(usage, sizeBytes)) throw storageQuotaExceededError(usage, sizeBytes, "TEACHER");
+
+    await lockUploadCapacity(tx);
     const recording = await tx.recordedLecture.create({
       data: {
         id: randomUUID(),

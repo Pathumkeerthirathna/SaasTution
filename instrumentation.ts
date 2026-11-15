@@ -6,6 +6,9 @@
  * long-running production Node server only. Not during `next build`, not in
  * the Edge runtime, and not on serverless functions (it checks itself); there
  * the students' live-updates connections run the same check instead.
+ * Also starts the Recorded Lectures maintenance scheduler
+ * (services/recorded-lecture-maintenance-scheduler.ts, Stage 3.6) under the
+ * same conditions; it checks its own (storage configured, not serverless).
  *
  * Next.js compiles this file for the Node.js AND the Edge runtime, with
  * process.env.NEXT_RUNTIME and process.env.NODE_ENV replaced by literals. The
@@ -24,5 +27,13 @@ export async function register() {
     const { startTeacherDepartureSweeper } = await import("./lib/teacher-departure-sweep");
 
     startTeacherDepartureSweeper();
+
+    // Stage 3.6: Recorded Lectures maintenance (expiry, recovery, cleanup, purge of deleted
+    // recordings) and the retry of pending permanent deletions of Notes / assignments.
+    // Once per process (it ignores later calls), and only where it may run
+    // (canRunMaintenanceScheduler: production, not serverless, storage configured).
+    const { startRecordedLectureMaintenance } = await import("./services/recorded-lecture-maintenance-scheduler");
+
+    startRecordedLectureMaintenance();
   }
 }

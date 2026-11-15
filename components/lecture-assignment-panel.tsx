@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   CheckCircle2,
@@ -17,6 +17,8 @@ import {
   Eye,
   Trash2,
 } from "lucide-react";
+
+import { ASSIGNMENT_DELETION_LABELS, assignmentDeletionConfirmText, readDeletionOutcome } from "@/lib/permanent-deletion/client";
 
 import { toSriLankaDateTimeLocal } from "@/lib/time";
 
@@ -101,6 +103,9 @@ export function LectureAssignmentPanel(props: {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Stage 3.6: a deletion that is hidden but whose submissions and files are still being deleted (not a success).
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const deletingRef = useRef(false);
   const [submissionsAssignmentId, setSubmissionsAssignmentId] = useState<string | null>(null);
   const [submissionsData, setSubmissionsData] = useState<SubmissionsData | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
@@ -351,35 +356,50 @@ export function LectureAssignmentPanel(props: {
       return;
     }
 
-    const confirmed = window.confirm(`Delete assignment \"${assignment.title}\"?`);
+    // Permanent, with every submission and PDF: an explicit, irreversible confirmation; one request at a time.
+    if (deletingRef.current) {
+      return;
+    }
+    const confirmed = window.confirm(assignmentDeletionConfirmText(assignment.title));
     if (!confirmed) {
       return;
     }
 
+    deletingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setPendingMessage(null);
 
     try {
       const response = await fetch(`/api/lectures/${props.lectureId}/assignments/${assignmentId}`, {
         method: "DELETE",
       });
-      const result = (await response.json()) as {
-        success: boolean;
-      };
+      let result: unknown = null;
+      try {
+        result = await response.json();
+      } catch {
+        result = null;
+      }
+      const outcome = readDeletionOutcome(response.status, result, ASSIGNMENT_DELETION_LABELS);
 
-      if (!response.ok || !result.success) {
-        throw new Error(readApiError(result, "Failed to delete assignment."));
+      if (outcome.kind === "error") {
+        throw new Error(outcome.message);
       }
 
       const fallbackId = selectedAssignmentId === assignmentId ? null : selectedAssignmentId;
       await loadAssignments(fallbackId);
       await notifyChanged();
-      setSuccessMessage("Assignment deleted successfully.");
+      if (outcome.kind === "deleted") {
+        setSuccessMessage(outcome.message);
+      } else {
+        setPendingMessage(outcome.message);
+      }
       setIsFormOpen(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete assignment.");
+      setErrorMessage(error instanceof Error ? error.message : ASSIGNMENT_DELETION_LABELS.failed);
     } finally {
+      deletingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -388,6 +408,11 @@ export function LectureAssignmentPanel(props: {
     <div className="space-y-4">
       {errorMessage && !isFormOpen ? <p className="notice-error text-xs">{errorMessage}</p> : null}
       {successMessage ? <p className="notice-success text-xs">{successMessage}</p> : null}
+      {pendingMessage ? (
+        <p role="status" className="notice-info text-xs">
+          {pendingMessage}
+        </p>
+      ) : null}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
@@ -562,7 +587,7 @@ export function LectureAssignmentPanel(props: {
                       className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Trash2 size={13} />
-                      Delete assignment
+                      Delete permanently
                     </button>
                   ) : null}
                 </div>

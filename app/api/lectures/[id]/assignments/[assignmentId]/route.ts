@@ -69,14 +69,27 @@ export async function DELETE(
       throw new AppError("Lecture id and assignment id are required.", 400, "VALIDATION_ERROR");
     }
 
-    await deleteAssignmentForTeacher(session.teacherId, lectureId, assignmentId);
+    // PERMANENT deletion (Stage 3.6): the assignment, every submission and every submission PDF.
+    // 200 only when everything is gone; 202 when it is hidden and the rest is still pending.
+    const state = await deleteAssignmentForTeacher(session.teacherId, lectureId, assignmentId);
+
+    if (state === "PENDING") {
+      return apiSuccess(
+        { deleted: false, pending: true },
+        {
+          message: "The assignment was removed. Its submissions and files are still being deleted and will be removed automatically.",
+          status: 202,
+        }
+      );
+    }
 
     return apiSuccess(
       {
         deleted: true,
+        pending: false,
       },
       {
-        message: "Assignment deleted successfully.",
+        message: "Assignment and all submissions deleted permanently.",
       }
     );
   } catch (error) {

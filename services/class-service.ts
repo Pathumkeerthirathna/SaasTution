@@ -429,6 +429,7 @@ export async function getPublicFreeNote(noteId: string) {
       id: true,
       title: true,
       fileUrl: true,
+      storageKey: true,
       mimeType: true,
     },
   });

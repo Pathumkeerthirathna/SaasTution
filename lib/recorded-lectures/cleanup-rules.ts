@@ -112,7 +112,8 @@ export type RecordingFacts = { state: string; storedFileName: string | null };
  *   KEEP   the recording exists, its storedFileName is this name and it is not
  *          FAILED (READY: the published file; VERIFYING: a claim between publishing
  *          and READY). Recordings removed by a teacher (status 1 / 2) are kept:
- *          purging them is not part of this stage;
+ *          the orphan sweep never deletes them; their PERMANENT deletion is the
+ *          maintenance purge phase (Stage 3.6, purgeRemovedRecording);
  *   DELETE otherwise (missing recording, another name, FAILED), and only at least
  *          the 48-hour orphan grace after the file's last modification;
  *   KEEP   within that grace.

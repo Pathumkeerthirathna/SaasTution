@@ -1,37 +1,11 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
+import { openStoredFileForRead, storedFileAppError, storedFileResponse } from "@/lib/stored-files/stored-file";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const UPLOADS_ROOT = path.join(process.cwd(), "public", "uploads");
-const STORAGE_ROOT = path.join(process.cwd(), "storage");
-
-function getFilePath(fileUrl: string): { filePath: string; allowedRoot: string } {
-  if (fileUrl.startsWith("/uploads/")) {
-    return {
-      filePath: path.join(process.cwd(), "public", fileUrl),
-      allowedRoot: UPLOADS_ROOT,
-    };
-  }
-
-  return {
-    filePath: path.join(process.cwd(), "storage", fileUrl),
-    allowedRoot: STORAGE_ROOT,
-  };
-}
-
-function assertPathInBounds(resolvedPath: string, allowedRoot: string) {
-  const relative = path.relative(allowedRoot, resolvedPath);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new AppError("The requested file is not available.", 403, "FILE_ACCESS_DENIED");
-  }
-}
 
 // GET /api/student/lectures/[lectureId]/notes/[noteId]/file
 // Streams the note file inline (for preview). Student must be enrolled.
@@ -66,6 +40,7 @@ export async function GET(
       },
       select: {
         fileUrl: true,
+        storageKey: true,
         title: true,
         mimeType: true,
       },
@@ -98,14 +73,12 @@ export async function GET(
       /* viewing the file must not fail on a tracking hiccup */
     }
 
-    const { filePath, allowedRoot } = getFilePath(note.fileUrl);
-    assertPathInBounds(filePath, allowedRoot);
-
-    const file = await readFile(filePath).catch(() => {
-      throw new AppError("The file is no longer available.", 404, "FILE_NOT_FOUND");
+    // Unified storage: storageKey first, else the legacy fileUrl (incl. /uploads/); streamed.
+    const file = await openStoredFileForRead("NOTE", note, { allowLegacyUploads: true }).catch((error) => {
+      throw storedFileAppError(error, "The file is no longer available.");
     });
 
-    const ext = path.extname(note.fileUrl) || ".pdf";
+    const ext = file.extension || ".pdf";
     const safeName =
       (note.title
         .toLowerCase()
@@ -115,14 +88,10 @@ export async function GET(
 
     const encoded = encodeURIComponent(safeName);
 
-    return new Response(file, {
-      status: 200,
-      headers: {
-        "Content-Type": note.mimeType || "application/pdf",
-        "Content-Length": String(file.byteLength),
-        "Content-Disposition": `inline; filename="${safeName}"; filename*=UTF-8''${encoded}`,
-        "Cache-Control": "private, no-store",
-      },
+    return storedFileResponse(file, {
+      "Content-Type": note.mimeType || "application/pdf",
+      "Content-Disposition": `inline; filename="${safeName}"; filename*=UTF-8''${encoded}`,
+      "Cache-Control": "private, no-store",
     });
   } catch (error) {
     return handleRouteError(error, { request: _request });

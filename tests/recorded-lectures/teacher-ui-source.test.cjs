@@ -76,7 +76,7 @@ test("studio: browser capabilities, persistence request, device release, unsuppo
 
 test("management: pause / resume / retry / cancel, resume with the same file, delete confirmation, preview", () => {
   const c = code(manage);
-  for (const needle of [".uploader.pause()", "uploader.cancel()", "Resume upload", "fingerprintFile(", "sameFingerprint(", "Delete part", "method: \"DELETE\"", "method: \"PATCH\"", "PART_NUMBER_IN_USE", "beforeunload"]) {
+  for (const needle of [".uploader.pause()", "uploader.cancel()", "Resume upload", "fingerprintFile(", "sameFingerprint(", "Permanently delete part", "RECORDING_DELETION_WARNING", "method: \"DELETE\"", "method: \"PATCH\"", "PART_NUMBER_IN_USE", "beforeunload"]) {
     assert.ok(c.includes(needle), needle);
   }
   const video = c.match(/<video[\s\S]*?\/>/)[0];
@@ -111,15 +111,82 @@ test("existing features untouched: YouTube, Jitsi, lecture scheduling, Notes / A
     "services/lecture-service.ts", "components/student-portal/lecture-list-client.tsx", "app/api/lectures/[id]/notes", "app/api/assignments", "app/api/attendance",
     "middleware.ts", "instrumentation.ts", "prisma/migrations/20261114120000_add_recorded_lectures",
   ];
-  const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...paths], { cwd: root, encoding: "utf8" });
+  // Changed on purpose by unified storage Stage 2 (Notes / submission files; tests/storage-migration),
+  // not by Recorded Lectures; everything else in the list must stay unchanged.
+  const stage2 = [
+    "services/lecture-service.ts",
+    "components/student-portal/lecture-list-client.tsx",
+    "app/api/lectures/[id]/notes/route.ts",
+    "app/api/assignments/[assignmentId]/submit/route.ts",
+    "app/api/assignments/[assignmentId]/submit/file/route.ts",
+    // Stage 3.6 (permanent deletion; tests/storage-quota/permanent-deletion.test.cjs): the note DELETE
+    // route and the maintenance scheduler's wiring.
+    "app/api/lectures/[id]/notes/[noteId]/route.ts",
+    "instrumentation.ts",
+  ].map((file) => `:(exclude,literal)${file}`);
+  const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...paths, ...stage2], { cwd: root, encoding: "utf8" });
   assert.equal(diff.trim(), "", diff);
 });
 
 test("the lecture panel only gains the 'Recorded lectures' link (no line removed)", () => {
-  const numstat = execFileSync("git", ["diff", "--numstat", "HEAD", "--", "components/lecture-management-panel.tsx"], { cwd: root, encoding: "utf8" }).trim();
+  // Against 9610568 (the commit before Recorded Lectures touched the panel), so it holds before and after committing.
+  const numstat = execFileSync("git", ["diff", "--numstat", "9610568", "--", "components/lecture-management-panel.tsx"], { cwd: root, encoding: "utf8" }).trim();
   const [added, removed] = numstat.split(/\s+/).map(Number);
   assert.equal(removed, 0);
   assert.ok(added > 0 && added <= 12, numstat);
   const panel = read("components", "lecture-management-panel.tsx");
   assert.match(panel, /href=\{`\/dashboard\/lectures\/\$\{encodeURIComponent\(lecture\.id\)\}\/recordings`\}/);
+});
+
+// ---- Video format & conversion guide ------------------------------------------------------------------
+
+const guide = read(...DIR, "upload-format-guide.tsx");
+
+test("format guide: placed under the upload description, collapsed by default, accessible toggle", () => {
+  const c = code(manage);
+  const description = c.indexOf("been uploaded and checked.");
+  const guideAt = c.indexOf("<UploadFormatGuide maxSizeLabel={formatBytes(initial.limits.maxPartBytes)} />");
+  const formAt = c.indexOf("<form onSubmit={onSubmit}");
+  assert.ok(description > 0 && guideAt > description && formAt > guideAt, "description, then the guide, then the form");
+  const g = code(guide);
+  assert.match(g, /useState\(false\)/, "collapsed by default");
+  assert.match(g, /aria-expanded=\{open\}/);
+  assert.match(g, /aria-controls=\{panelId\}/);
+  assert.match(g, /id=\{panelId\} hidden=\{!open\}/);
+  assert.match(g, /<CircleHelp /);
+  assert.match(g, /Video format &amp; conversion guide/);
+  assert.match(g, /min-h-\[44px\]/);
+});
+
+test("format guide: the supported format, the size from the server's limit, and the conversion advice", () => {
+  for (const text of ["MP4", "H.264 (AVC)", "AAC", "per part", "If your video is not supported, convert it to the recommended format before uploading."]) {
+    assert.ok(guide.includes(text), text);
+  }
+  assert.match(guide, /\$\{maxSizeLabel\} per part/, "the limit comes from the server configuration, not a hard-coded number");
+  assert.match(guide, /size of the original video, the speed of your computer and the quality/);
+});
+
+test("format guide: HandBrake steps, official link opened safely, privacy note", () => {
+  require("tsx/cjs/api").register();
+  const G = require(path.join(root, ...DIR, "upload-format-guide.tsx"));
+  assert.equal(G.HANDBRAKE_URL, "https://handbrake.fr/");
+  assert.deepEqual(G.HANDBRAKE_STEPS, [
+    "Open HandBrake.",
+    "Select the original video.",
+    "Under Summary, set Format to MP4.",
+    "Under Video, select H.264 (x264).",
+    "Under Audio, select AAC.",
+    "Choose where to save the converted file.",
+    "Click Start Encode.",
+    "Upload the converted MP4 to SLClassroom.",
+  ]);
+  assert.match(guide, /href=\{HANDBRAKE_URL\}\s+target="_blank"\s+rel="noopener noreferrer"/);
+  assert.match(guide, /opens in a new tab/);
+  assert.match(guide, /Avoid uploading private classroom recordings to unknown online\s+conversion websites/);
+});
+
+test("format guide: information only (no validation, upload or limit logic)", () => {
+  const g = code(guide);
+  assert.doesNotMatch(g, /fetch\(|inspectMp4|RecordingUploader|maxPartBytes|4_000_000_000|4000000000/);
+  assert.doesNotMatch(g, /\btruncate\b|line-clamp/);
 });
