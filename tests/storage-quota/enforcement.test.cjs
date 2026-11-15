@@ -228,6 +228,8 @@ function makeClient(ctx) {
       },
     },
     teacherStorageLimit: { findUnique: async ({ where }) => db.tables.limits.find((l) => l.teacherId === where.teacherId) ?? null },
+    // Profile photos (PROFILE_IMAGE): none unless a test adds db.tables.profiles rows.
+    teacherProfile: { findUnique: async ({ where }) => (db.tables.profiles ?? []).find((p) => p.teacherId === where.teacherId) ?? null },
     teacherSubscription: {
       async findFirst({ where }) {
         const now = where.OR[1].endDate.gt;

@@ -27,7 +27,7 @@ type CategoryRow = { committedBytes: string; reservedBytes: string; totalBytes: 
 
 export type TeacherStorageView = {
   measuredAt: string;
-  categories: { recordedLectures: CategoryRow; notes: CategoryRow; submissions: CategoryRow };
+  categories: { recordedLectures: CategoryRow; notes: CategoryRow; submissions: CategoryRow; profileImages: CategoryRow };
   committedBytes: string;
   reservedBytes: string;
   /** committed + reserved: what new uploads are measured against. */
@@ -49,7 +49,7 @@ export type TeacherStorageView = {
 };
 
 export function buildTeacherStorageView(usage: TeacherStorageUsage): TeacherStorageView {
-  const row = (key: "recordedLectures" | "notes" | "submissions"): CategoryRow => ({
+  const row = (key: "recordedLectures" | "notes" | "submissions" | "profileImages"): CategoryRow => ({
     committedBytes: usage.committed[key].toString(),
     reservedBytes: usage.reserved[key].toString(),
     totalBytes: (usage.committed[key] + usage.reserved[key]).toString(),
@@ -57,7 +57,7 @@ export function buildTeacherStorageView(usage: TeacherStorageUsage): TeacherStor
   const limit = usage.limit.limitBytes;
   return {
     measuredAt: usage.measuredAt.toISOString(),
-    categories: { recordedLectures: row("recordedLectures"), notes: row("notes"), submissions: row("submissions") },
+    categories: { recordedLectures: row("recordedLectures"), notes: row("notes"), submissions: row("submissions"), profileImages: row("profileImages") },
     committedBytes: usage.committed.total.toString(),
     reservedBytes: usage.reserved.total.toString(),
     totalBytes: usage.totalUsedAndReservedBytes.toString(),

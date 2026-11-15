@@ -1,40 +1,57 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { handleRouteError } from "@/lib/error-handler";
+import { openLegacyTeacherPhoto, storedFileAppError, storedFileResponse } from "@/lib/stored-files/stored-file";
 
-export async function GET(
-  request: Request,
-  { params }: { params: { filename: string } }
-) {
-  const filePath = path.join(
-    process.cwd(),
-    "storage",
-    "teachers",
-    params.filename
-  );
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
+/*
+ * GET /uploads/teachers/{name}: LEGACY teacher profile photos (uploaded before
+ * unified storage; <cwd>/storage/teachers). Kept so existing profileImageUrl
+ * values keep working; new photos use /api/teacher-photos/... .
+ *
+ * Hardened: the name must match the old naming exactly ({teacher id}-{time}
+ * .{jpg|jpeg|png|webp|gif}): no separators, dots, encodings or absolute paths
+ * can reach the filesystem, and SVG (script-capable) is never served. The file
+ * is opened by the confined legacy reader (inside the folder, no link
+ * followed). The type comes from the allowed extension, never sniffed, and a
+ * sandboxing CSP applies. Legacy names are unique per upload (time in the
+ * name), so they stay immutable.
+ */
+
+const TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+const notFound = () =>
+  new Response("Not Found", {
+    status: 404,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+  });
+
+export async function GET(request: Request, context: { params: { filename: string } }) {
+  const name = context.params?.filename;
+  const extension = typeof name === "string" ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  const type = Object.hasOwn(TYPES, extension) ? TYPES[extension] : null;
+  if (!type) return notFound();
   try {
-    const file = await fs.readFile(filePath);
-
-    const ext = path.extname(params.filename).toLowerCase();
-
-    const types: Record<string, string> = {
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-      ".svg": "image/svg+xml",
-    };
-
-    return new Response(file, {
-      headers: {
-        "Content-Type": types[ext] || "application/octet-stream",
-        "Cache-Control": "public,max-age=31536000,immutable",
-      },
+    const file = await openLegacyTeacherPhoto(name);
+    return storedFileResponse(file, {
+      "Content-Type": type,
+      "Content-Disposition": "inline",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
     });
-  } catch {
-    return new Response("Not Found", {
-      status: 404,
-    });
+  } catch (error) {
+    const appError = storedFileAppError(error, "Not Found");
+    if (appError !== error && (appError as { statusCode?: number }).statusCode === 404) return notFound();
+    if (appError !== error && (appError as { statusCode?: number }).statusCode === 403) return notFound();
+    const response = handleRouteError(appError, { request });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
   }
 }

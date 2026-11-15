@@ -11,8 +11,9 @@ import { getTeacherStorageUsage } from "@/services/teacher-storage-usage-service
 
 /*
  * Teacher storage quota, Stage 3.2: reservations for Notes and assignment
- * submission uploads (Recorded Lectures reserve through their upload
- * sessions; Stage 3.3).
+ * submission uploads, and teacher profile photos (category PROFILE_IMAGE,
+ * services/teacher-profile-photo-service.ts). Recorded Lectures reserve
+ * through their upload sessions (Stage 3.3).
  *
  *   1. reserveTeacherStorage    one short transaction: quota lock, expired
  *                               reservations of the teacher removed, usage
@@ -54,7 +55,7 @@ const MAX_RESERVATION_BYTES = BigInt(2_147_483_647);
 const QUOTA_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 
 export type QuotaAudience = "TEACHER" | "STUDENT";
-export type StorageReservationCategory = "NOTE" | "SUBMISSION";
+export type StorageReservationCategory = "NOTE" | "SUBMISSION" | "PROFILE_IMAGE";
 
 export type StorageReservationHandle = {
   id: string;

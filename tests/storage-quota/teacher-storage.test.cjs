@@ -85,6 +85,8 @@ const client = {
       return db.limits.find((l) => l.teacherId === where.teacherId) ?? null;
     },
   },
+  // Profile photos (PROFILE_IMAGE): none unless a test adds db.profiles rows.
+  teacherProfile: { findUnique: async ({ where }) => (db.profiles ?? []).find((p) => p.teacherId === where.teacherId) ?? null },
   teacherSubscription: {
     async findFirst({ where }) {
       seen(where.teacherId);
@@ -174,6 +176,7 @@ test("normal usage: committed + reserved per category, totals, remaining and per
     recordedLectures: { committedBytes: "3000000000", reservedBytes: "500000000", totalBytes: "3500000000" },
     notes: { committedBytes: "250000000", reservedBytes: "0", totalBytes: "250000000" },
     submissions: { committedBytes: "125000000", reservedBytes: "25000000", totalBytes: "150000000" },
+    profileImages: { committedBytes: "0", reservedBytes: "0", totalBytes: "0" },
   });
   assert.deepEqual([d.committedBytes, d.reservedBytes, d.totalBytes], ["3375000000", "525000000", "3900000000"]);
   assert.deepEqual([d.limitBytes, d.limitSource, d.remainingBytes, d.usagePercent], ["10000000000", "PLAN", "6100000000", 39]);

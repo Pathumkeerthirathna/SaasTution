@@ -531,6 +531,13 @@ function createFakeUploadDb() {
           return row ? pick(row, select) : null;
         },
       },
+      // Teacher profile photos (PROFILE_IMAGE quota category): none unless a test adds db.profiles rows.
+      teacherProfile: {
+        async findUnique({ where }) {
+          await gate();
+          return (db.profiles ?? []).find((p) => p.teacherId === where.teacherId) ?? null;
+        },
+      },
       teacherSubscription: {
         async findFirst({ where, orderBy }) {
           await gate();

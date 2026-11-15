@@ -416,3 +416,68 @@ Failures are logged and retried.
 The fake-database tests cover the application logic. They do **not** prove PostgreSQL behaviour: the advisory-lock serialisation and the READ COMMITTED visibility at finalize. Those need the approved local test database, which does not exist yet.
 
 The migrations `20261115120000` and `20261116120000` are still **not applied** anywhere. Stage 3.6 adds no migration.
+
+# Teacher profile photos
+
+Teachers' profile photos are stored on unified storage and count toward the storage quota as their own category, **Profile Images** (`PROFILE_IMAGE`).
+
+## Where they live
+
+```
+FILE_STORAGE_ROOT/Teachers/{teacherId}/Profile/Photo/{32 hex}.{jpg|png|webp}
+```
+
+- [lib/profile-images/storage-keys.ts](../lib/profile-images/storage-keys.ts) generates and parses the keys. The teacher id comes from the session, the name is random and the extension follows the detected type. Every upload gets a new key.
+- Database columns on `TeacherProfile`:
+  - `profileImageStorageKey`, `profileImageSha256`, `profileImageSizeBytes` and `profileImageMimeType` are set and cleared together.
+  - `profileImageUrl` stays the display URL that every consumer reads: the profile header, the public profile, search, and the Jitsi `photoUrl`.
+  - A unified photo's URL is `/api/teacher-photos/{teacherId}/{storedName}`. It is unique per upload, so it is cached as immutable.
+- Migrations, created but **not applied**:
+  - `20261117120000_add_profile_image_reservation_category` adds the enum value on its own.
+  - `20261117120100_add_teacher_profile_image_storage` adds the columns, the unique key and the CHECKs (all-or-none, key format, owner, digest, size of 1 byte to 2 MB, type, extension matches type). It also extends the reservation key CHECK.
+
+## Upload and replace (`PUT /api/teacher/profile/photo`)
+
+1. The same-origin check and the session check run **before** any of the body is read.
+2. The body is read with a hard 2 MB limit, enforced while reading: Content-Length first, then every chunk.
+3. The type is detected from the file's own bytes. Only JPEG, PNG and WebP are accepted, with structural checks. SVG, HTML, GIF and malformed files get 415.
+4. The full new size is reserved under the teacher's quota lock. The old photo keeps counting, so a replacement never frees quota in advance.
+5. The photo is streamed to a new key, with SHA-256 computed and the exact size checked.
+6. In one transaction under the quota lock, the profile row is updated with a compare-and-set and the reservation is deleted. A lost race discards this attempt's file and retries, up to 3 attempts.
+7. After the commit, the previous unified photo is deleted. If that fails, it is logged and left for the orphan sweep (it is no longer counted).
+
+On any failure the old photo stays; partial files and reservations are removed. Legacy photos are never deleted.
+
+## Remove (`DELETE /api/teacher/profile/photo`)
+
+1. `profileImageUrl` is cleared, so the photo is hidden everywhere at once. The key stays, so the photo still counts.
+2. The file is deleted. A file that is already missing counts as deleted.
+3. The four columns are cleared, and only now is the quota released.
+
+The response is 200 when the removal is complete, or 202 when it is pending. The maintenance tick finishes pending removals, backing off a failed one for 1 to 60 minutes. For a legacy photo, only the URL is cleared and the file is kept. There is **no administrator removal**.
+
+## Serving
+
+- **`/api/teacher-photos/...`** serves only the teacher's **current** photo. A replaced, removed, pending or unknown name returns 404. Headers: the stored type, `nosniff`, a sandboxing CSP, and `Content-Disposition: inline`.
+- **`/uploads/teachers/{name}`** (legacy) keeps existing URLs working and is hardened:
+  - only the old naming pattern with a raster extension is accepted, and SVG is never served;
+  - the file is opened by the confined legacy reader, which stays inside the folder and never follows a link;
+  - the same safety headers are sent.
+- With no photo, `GET /api/teacher/profile/photo` returns `profileImageUrl: null` and the UI shows its placeholder. The old `/images/avatar.png` default never existed.
+
+## Maintenance
+
+The existing maintenance tick handles profile photos under the same overlap guard; there is no new scheduler.
+- **Pending removals:** every tick.
+- **Orphan sweep:** at most every 6 hours (`sweepProfilePhotoOrphans`). It lists only `Teachers/*/Profile/Photo/`. A file is deleted only when all of these hold:
+  - the name parses as a photo key of that teacher;
+  - the teacher's row does not reference it (the database is read first);
+  - no unexpired `PROFILE_IMAGE` reservation names it;
+  - it is older than 24 hours.
+
+  Links and unknown files are never touched.
+- **Inventory:** the scan lists `Teachers/*/Profile` as another feature's folder, so it is never reported as unexpected or unreferenced. The orphan sweep checks its references instead.
+
+## Not verified here
+
+All tests use an in-memory database fake. The quota lock is emulated as a mutex. Neither migration has been applied to any database, and no PostgreSQL behaviour has been validated.

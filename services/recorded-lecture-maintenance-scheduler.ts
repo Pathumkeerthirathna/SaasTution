@@ -1,6 +1,12 @@
 import { abandonRunningCompletions } from "@/services/recorded-lecture-completion-service";
 import { runRecordedLectureMaintenance, type MaintenanceReport } from "@/services/recorded-lecture-maintenance-service";
 import { retryPendingDeletions, type PendingDeletionReport } from "@/services/permanent-deletion-service";
+import {
+  finishPendingProfilePhotoRemovals,
+  sweepProfilePhotoOrphans,
+  type PendingProfilePhotoReport,
+  type ProfilePhotoSweepReport,
+} from "@/services/teacher-profile-photo-service";
 
 /*
  * Recorded Lectures RL-3.5: the maintenance scheduler.
@@ -14,7 +20,10 @@ import { retryPendingDeletions, type PendingDeletionReport } from "@/services/pe
  *     MAINTENANCE_INTERVAL_MS;
  *   - every run: expiry and stale-completion recovery, the purge of deleted
  *     recordings, and (Stage 3.6) the retry of pending PERMANENT deletions
- *     of Notes and assignments (retryPendingDeletions); the temporary-file
+ *     of Notes and assignments (retryPendingDeletions), and pending teacher
+ *     profile-photo removals (finishPendingProfilePhotoRemovals); the
+ *     profile-photo orphan sweep (Teachers/{t}/Profile/Photo/ only) at most
+ *     every PROFILE_PHOTO_SWEEP_EVERY_MS; the temporary-file
  *     sweep at most every TEMPORARY_SWEEP_EVERY_MS; the final-file orphan
  *     sweep at most every FINAL_SWEEP_EVERY_MS;
  *   - runs never overlap (a tick during a run is skipped); a failing run is
@@ -34,6 +43,9 @@ export const TEMPORARY_SWEEP_EVERY_MS = 5 * 60_000;
 export const FINAL_SWEEP_EVERY_MS = 6 * 3_600_000;
 /** Wall-clock budget of one tick's Notes / assignment deletion retry. */
 export const PENDING_DELETION_BUDGET_MS = 20_000;
+/** Profile photos: the orphan sweep's cadence, and the budget of each profile-photo step. */
+export const PROFILE_PHOTO_SWEEP_EVERY_MS = 6 * 3_600_000;
+export const PROFILE_PHOTO_BUDGET_MS = 10_000;
 /** How long shutdown waits for claims to be abandoned before letting the signal proceed. */
 export const SHUTDOWN_ABANDON_TIMEOUT_MS = 1_000;
 
@@ -44,7 +56,7 @@ type SchedulerState = {
 };
 
 /** Run bookkeeping, shared by scheduled and manual ticks (overlap guard, sweep cadence). */
-type TickState = { running: boolean; lastTemporaryAtMs: number | null; lastFinalsAtMs: number | null };
+type TickState = { running: boolean; lastTemporaryAtMs: number | null; lastFinalsAtMs: number | null; lastProfilePhotoSweepAtMs?: number | null };
 
 const holder = globalThis as unknown as { slRecordedLectureMaintenance?: SchedulerState; slRecordedLectureMaintenanceTicks?: TickState };
 
@@ -75,7 +87,14 @@ export function isMaintenanceSchedulerRunning(): boolean {
  */
 export async function runMaintenanceTick(
   nowMs: number = Date.now()
-): Promise<(MaintenanceReport & { pendingDeletions: PendingDeletionReport | null }) | null> {
+): Promise<
+  | (MaintenanceReport & {
+      pendingDeletions: PendingDeletionReport | null;
+      profilePhotoRemovals: PendingProfilePhotoReport | null;
+      profilePhotoSweep: ProfilePhotoSweepReport | null;
+    })
+  | null
+> {
   const state = ticks();
   if (state.running) return null;
   state.running = true;
@@ -87,7 +106,15 @@ export async function runMaintenanceTick(
     if (finals && !report.failedPhases.includes("finals") && report.skipped === null && report.finals?.complete) state.lastFinalsAtMs = nowMs;
     // Same tick, same overlap guard: no second scheduler. Never throws.
     const pendingDeletions = await retryPendingDeletions({ deadlineMs: Date.now() + PENDING_DELETION_BUDGET_MS });
-    return { ...report, pendingDeletions };
+    // Profile photos: pending removals every tick; the orphan sweep on its own cadence. Both never throw.
+    const profilePhotoRemovals = await finishPendingProfilePhotoRemovals({ deadlineMs: Date.now() + PROFILE_PHOTO_BUDGET_MS });
+    const sweepDue = state.lastProfilePhotoSweepAtMs == null || nowMs - state.lastProfilePhotoSweepAtMs >= PROFILE_PHOTO_SWEEP_EVERY_MS;
+    let profilePhotoSweep: ProfilePhotoSweepReport | null = null;
+    if (sweepDue) {
+      profilePhotoSweep = await sweepProfilePhotoOrphans({ deadlineMs: Date.now() + PROFILE_PHOTO_BUDGET_MS });
+      if (profilePhotoSweep.complete) state.lastProfilePhotoSweepAtMs = nowMs;
+    }
+    return { ...report, pendingDeletions, profilePhotoRemovals, profilePhotoSweep };
   } catch {
     return null; // runRecordedLectureMaintenance never throws; defensive only
   } finally {

@@ -18,7 +18,8 @@
  * limit (limitBytes === null), never 0.
  *
  * Counted categories: Recorded Lectures, Notes (incl. supporting material),
- * assignment submissions - only files referenced by valid database rows in the
+ * assignment submissions, the teacher's profile photo (PROFILE_IMAGE) - only
+ * files referenced by valid database rows in the
  * unified storage hierarchy. Everything else is excluded (see
  * docs/unified-file-storage.md, "Teacher storage quota").
  */
@@ -108,7 +109,8 @@ export function recordingSessionReservedBytes(session: RecordingSessionForQuota,
 
 // ---- Usage -------------------------------------------------------------------------------------------------
 
-export type StorageCategoryBytes = { recordedLectures: bigint; notes: bigint; submissions: bigint };
+/** profileImages: the teacher's own profile photo (unified storage, Teachers/{t}/Profile/Photo/). */
+export type StorageCategoryBytes = { recordedLectures: bigint; notes: bigint; submissions: bigint; profileImages: bigint };
 
 export type TeacherStorageUsage = {
   teacherId: string;
@@ -131,7 +133,7 @@ export type TeacherStorageUsage = {
 };
 
 const ZERO = BigInt(0);
-const sum = (c: StorageCategoryBytes) => c.recordedLectures + c.notes + c.submissions;
+const sum = (c: StorageCategoryBytes) => c.recordedLectures + c.notes + c.submissions + c.profileImages;
 
 function assertNonNegative(value: bigint, what: string) {
   if (typeof value !== "bigint" || value < ZERO) throw new Error(`Invalid ${what}: expected a non-negative BigInt.`);
@@ -198,6 +200,7 @@ const categories = (c: StorageCategoryBytes & { total: bigint }) => ({
   recordedLectures: c.recordedLectures.toString(),
   notes: c.notes.toString(),
   submissions: c.submissions.toString(),
+  profileImages: c.profileImages.toString(),
   total: c.total.toString(),
 });
 

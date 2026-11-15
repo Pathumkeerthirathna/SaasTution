@@ -89,6 +89,13 @@ const client = {
       return db.tables.limits.find((l) => l.teacherId === where.teacherId) ?? null;
     },
   },
+  // Profile photos (PROFILE_IMAGE): from db.tables.profiles (none by default).
+  teacherProfile: {
+    async findUnique({ where, select }) {
+      assert.deepEqual(select, { profileImageStorageKey: true, profileImageSizeBytes: true });
+      return (db.tables.profiles ?? []).find((p) => p.teacherId === where.teacherId) ?? null;
+    },
+  },
   teacherSubscription: {
     async findFirst({ where, orderBy }) {
       assert.deepEqual(orderBy, { updatedAt: "desc" });
@@ -218,8 +225,8 @@ test("summary: exact totals, remaining, percentage, over-quota and fits-within d
   const usage = U.summarizeTeacherStorageUsage({
     teacherId: T1,
     measuredAt: NOW,
-    committed: { recordedLectures: B(600), notes: B(150), submissions: B(50) },
-    reserved: { recordedLectures: B(100), notes: B(25), submissions: B(0) },
+    committed: { recordedLectures: B(600), notes: B(150), submissions: B(50), profileImages: B(0) },
+    reserved: { recordedLectures: B(100), notes: B(25), submissions: B(0), profileImages: B(0) },
     limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(1000), subscription: null }),
   });
   assert.equal(usage.committed.total, B(800));
@@ -232,7 +239,7 @@ test("summary: exact totals, remaining, percentage, over-quota and fits-within d
   assert.equal(U.fitsWithinStorageLimit(usage, B(75)), true, "exactly up to the limit");
   assert.equal(U.fitsWithinStorageLimit(usage, B(76)), false, "one byte over");
 
-  const reduced = U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(600), notes: B(150), submissions: B(50) }, reserved: { recordedLectures: B(0), notes: B(0), submissions: B(0) }, limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(500), subscription: null }) });
+  const reduced = U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(600), notes: B(150), submissions: B(50), profileImages: B(0) }, reserved: { recordedLectures: B(0), notes: B(0), submissions: B(0), profileImages: B(0) }, limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(500), subscription: null }) });
   assert.equal(reduced.isOverQuota, true, "a limit reduced below existing usage");
   assert.equal(reduced.overQuotaBytes, B(300));
   assert.equal(reduced.remainingBytes, B(0));
@@ -241,8 +248,8 @@ test("summary: exact totals, remaining, percentage, over-quota and fits-within d
   // Committed under the limit, committed + reserved over it: not "over quota", but nothing remains.
   const reservedOver = U.summarizeTeacherStorageUsage({
     ...usage,
-    committed: { recordedLectures: B(900), notes: B(0), submissions: B(0) },
-    reserved: { recordedLectures: B(0), notes: B(200), submissions: B(0) },
+    committed: { recordedLectures: B(900), notes: B(0), submissions: B(0), profileImages: B(0) },
+    reserved: { recordedLectures: B(0), notes: B(200), submissions: B(0), profileImages: B(0) },
     limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(1000), subscription: null }),
   });
   assert.deepEqual([reservedOver.isOverQuota, reservedOver.overQuotaBytes, reservedOver.remainingBytes, reservedOver.usagePercent], [false, B(0), B(0), 110]);
@@ -252,7 +259,7 @@ test("summary: exact totals, remaining, percentage, over-quota and fits-within d
   assert.deepEqual([unlimited.isUnlimited, unlimited.remainingBytes, unlimited.usagePercent, unlimited.isOverQuota, unlimited.overQuotaBytes], [true, null, null, false, null]);
   assert.equal(U.fitsWithinStorageLimit(unlimited, B("999999999999999999")), true);
 
-  const zero = U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(0), notes: B(0), submissions: B(0) }, reserved: { recordedLectures: B(0), notes: B(0), submissions: B(0) }, limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(0), subscription: null }) });
+  const zero = U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(0), notes: B(0), submissions: B(0), profileImages: B(0) }, reserved: { recordedLectures: B(0), notes: B(0), submissions: B(0), profileImages: B(0) }, limit: U.resolveEffectiveStorageLimit({ overrideBytes: B(0), subscription: null }) });
   assert.deepEqual([zero.isUnlimited, zero.remainingBytes, zero.usagePercent, zero.isOverQuota], [false, B(0), null, false]);
   assert.equal(U.fitsWithinStorageLimit(zero, B(1)), false, "a 0 limit allows nothing");
   assert.equal(U.fitsWithinStorageLimit(zero, B(0)), true);
@@ -263,8 +270,8 @@ test("summary: BigInt beyond Number.MAX_SAFE_INTEGER stays exact; serialization 
   const usage = U.summarizeTeacherStorageUsage({
     teacherId: T1,
     measuredAt: NOW,
-    committed: { recordedLectures: big, notes: B(1), submissions: B(1) },
-    reserved: { recordedLectures: B(0), notes: B(0), submissions: B(1) },
+    committed: { recordedLectures: big, notes: B(1), submissions: B(1), profileImages: B(0) },
+    reserved: { recordedLectures: B(0), notes: B(0), submissions: B(1), profileImages: B(0) },
     limit: U.resolveEffectiveStorageLimit({ overrideBytes: null, subscription: null }),
   });
   assert.equal(usage.committed.total, B("9007199254741003"));
@@ -277,7 +284,7 @@ test("summary: BigInt beyond Number.MAX_SAFE_INTEGER stays exact; serialization 
   assert.equal(parsed.limit.limitBytes, null);
   assert.equal(parsed.measuredAt, NOW.toISOString());
   assert.throws(() => JSON.stringify(usage), TypeError, "the raw usage object is never sent as JSON");
-  assert.throws(() => U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(-1), notes: B(0), submissions: B(0) } }));
+  assert.throws(() => U.summarizeTeacherStorageUsage({ ...usage, committed: { recordedLectures: B(-1), notes: B(0), submissions: B(0), profileImages: B(0) } }));
 });
 
 // ==== getTeacherStorageUsage ================================================================================
@@ -298,8 +305,8 @@ test("usage: the three categories, exact bytes; soft-deleted notes still count; 
   recording(T1, 5_000_000_000);
   recording(T1, 7, { status: 2 }); // deleted by the teacher, file not yet purged: counts
   const usage = await getTeacherStorageUsage(T1);
-  assert.deepEqual(usage.committed, { recordedLectures: B(5_000_000_007), notes: B(3000), submissions: B(700), total: B(5_000_003_707) });
-  assert.deepEqual(usage.reserved, { recordedLectures: B(0), notes: B(0), submissions: B(0), total: B(0) });
+  assert.deepEqual(usage.committed, { recordedLectures: B(5_000_000_007), notes: B(3000), submissions: B(700), profileImages: B(0), total: B(5_000_003_707) });
+  assert.deepEqual(usage.reserved, { recordedLectures: B(0), notes: B(0), submissions: B(0), profileImages: B(0), total: B(0) });
   assert.equal(usage.measuredAt, NOW, "database time (serverNow)");
 });
 
@@ -311,13 +318,13 @@ test("usage (3.6 / 3.7 lifecycle): pending deletions still count until finalized
   recording(T1, 40, { status: 2 }); // pending purge
   recording(T1, 50, { status: 1, purgedAt: new Date("2026-11-01") }); // purged
   let usage = await getTeacherStorageUsage(T1);
-  assert.deepEqual(usage.committed, { recordedLectures: B(40), notes: B(3000), submissions: B(300), total: B(3340) });
+  assert.deepEqual(usage.committed, { recordedLectures: B(40), notes: B(3000), submissions: B(300), profileImages: B(0), total: B(3340) });
   // Finalize: the rows are deleted (Note, submission) / the recording purged.
   db.tables.notes.splice(1, 1);
   db.tables.submissions.length = 0;
   db.tables.recordings[0].purgedAt = new Date("2026-11-02");
   usage = await getTeacherStorageUsage(T1);
-  assert.deepEqual(usage.committed, { recordedLectures: B(0), notes: B(1000), submissions: B(0), total: B(1000) });
+  assert.deepEqual(usage.committed, { recordedLectures: B(0), notes: B(1000), submissions: B(0), profileImages: B(0), total: B(1000) });
 });
 
 test("usage: recordings - only READY with a stored file and not purged; never counted twice with their session", async () => {

@@ -9,6 +9,7 @@ import { AppError, reportRouteError } from "@/lib/error-handler";
 import { getSharedFileStorage, invalidateSharedFileStorageForRootError } from "@/lib/file-storage/open-root";
 import { isStorageError } from "@/lib/file-storage/types";
 import { noteLegacyCopyPath, parseNoteStorageKey } from "@/lib/notes/storage-keys";
+import { parseProfilePhotoKey } from "@/lib/profile-images/storage-keys";
 
 /*
  * Unified storage (Stage 2): the ONE place where Lecture Notes and student
@@ -417,6 +418,72 @@ async function openFromStorage(kind: StoredFileKind, storageKey: string): Promis
     // NOT_FOUND, UNSAFE_PATH (a link / hard link / other entry), INVALID_KEY, IO errors: never echoed.
     throw new StoredFileError("FILE_UNAVAILABLE");
   }
+}
+
+// ---- Teacher profile photos (unified storage) ------------------------------------------------------------
+
+/**
+ * Opens a stored profile photo for streaming. The key must parse as a
+ * profile-photo key (Teachers/{t}/Profile/Photo/{32 hex}.{ext}); the caller
+ * has already checked that the database references it. No legacy fallback
+ * (legacy photos have their own route).
+ */
+export async function openProfilePhotoForRead(storageKey: string): Promise<OpenedStoredFile> {
+  if (!parseProfilePhotoKey(storageKey)) throw new StoredFileError("FILE_UNAVAILABLE");
+  const opened = await getSharedFileStorage();
+  if (!opened.ok) throw new StoredFileError("STORAGE_UNAVAILABLE");
+  try {
+    const { stream, size } = await opened.storage.openRead(storageKey);
+    return { stream, size, extension: extensionOf(storageKey), source: "storage" };
+  } catch (error) {
+    if (isStorageError(error) && invalidateSharedFileStorageForRootError(error.code)) throw new StoredFileError("STORAGE_UNAVAILABLE");
+    throw new StoredFileError("FILE_UNAVAILABLE");
+  }
+}
+
+/**
+ * Maintenance (the profile-photo orphan sweep): the entries of one folder of
+ * the shared storage, never following links ("other" = a link or anything
+ * that is not a plain file / directory). Throws StoredFileError
+ * STORAGE_UNAVAILABLE when the storage is not configured.
+ */
+export async function* listStoredDirectory(key: string, options: { limit?: number } = {}): AsyncGenerator<{ name: string; kind: "file" | "directory" | "other" }> {
+  const opened = await getSharedFileStorage();
+  if (!opened.ok) throw new StoredFileError("STORAGE_UNAVAILABLE");
+  yield* opened.storage.listDirectory(key, options);
+}
+
+/** Size and modification time of one stored file; null when missing. Throws for links and storage problems. */
+export async function statStoredFile(key: string): Promise<{ size: number; modifiedAtMs: number } | null> {
+  const opened = await getSharedFileStorage();
+  if (!opened.ok) throw new StoredFileError("STORAGE_UNAVAILABLE");
+  return opened.storage.stat(key);
+}
+
+/** Removes a folder only if it is empty (never recursively); false when missing or not empty. Never throws. */
+export async function removeEmptyStoredDirectoryQuietly(key: string): Promise<boolean> {
+  try {
+    const opened = await getSharedFileStorage();
+    if (!opened.ok) return false;
+    return await opened.storage.removeEmptyDirectory(key);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Legacy teacher profile photos (uploaded before unified storage) as the old
+ * route served them: <cwd>/storage/teachers/{name}. The name must match the
+ * old naming ({teacher id}-{time}.{raster extension}); SVG and every other
+ * type is refused. The same confined reader as legacy Notes: inside the root,
+ * no link below it, the opened file is the one checked. Read only: legacy
+ * photos are never moved or deleted.
+ */
+export const LEGACY_TEACHER_PHOTO_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.(jpg|jpeg|png|webp|gif)$/i;
+
+export async function openLegacyTeacherPhoto(name: unknown, appDir?: string): Promise<OpenedStoredFile> {
+  if (typeof name !== "string" || !LEGACY_TEACHER_PHOTO_NAME.test(name)) throw new StoredFileError("FILE_UNAVAILABLE");
+  return openLegacy(`teachers/${name}`, { allowLegacyUploads: false, appDir });
 }
 
 /** The legacy location of a fileUrl, exactly as the pre-Stage-2 routes computed it. */

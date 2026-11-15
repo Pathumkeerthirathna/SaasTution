@@ -409,6 +409,9 @@ test("migration: additive, exact, after the attendance migration; only approved 
     "20261114120000_add_recorded_lectures",
     "20261115120000_add_unified_file_storage_keys",
     "20261116120000_add_teacher_storage_accounting",
+    // teacher profile photos on unified storage (additive; tests/storage-quota/profile-image-migration-guard.test.cjs)
+    "20261117120000_add_profile_image_reservation_category",
+    "20261117120100_add_teacher_profile_image_storage",
   ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");

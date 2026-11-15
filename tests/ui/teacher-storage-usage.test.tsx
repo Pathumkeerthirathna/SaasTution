@@ -35,6 +35,7 @@ function view(over: Partial<TeacherStorageView> = {}): TeacherStorageView {
       recordedLectures: cat("3000000000", "500000000", "3500000000"),
       notes: cat("250000000", "0", "250000000"),
       submissions: cat("125000000", "25000000", "150000000"),
+      profileImages: cat("0", "0", "0"),
     },
     committedBytes: "3375000000",
     reservedBytes: "525000000",
@@ -85,6 +86,9 @@ test("category breakdown: stored, uploading and total for each of the three cate
   assert.match(t, /Recorded Lectures 3 GB 500 MB 3\.5 GB/);
   assert.match(t, /Notes & Materials 250 MB 0 bytes 250 MB/);
   assert.match(t, /Student Submissions 125 MB 25 MB 150 MB/);
+  assert.match(t, /Profile Images 0 bytes 0 bytes 0 bytes/, "the fourth category, shown separately");
+  const withPhoto = text(render(view({ categories: { ...view().categories, profileImages: cat("1500000", "200000", "1700000") } })));
+  assert.match(withPhoto, /Profile Images 1\.5 MB 200 KB 1\.7 MB/);
 });
 
 test("unlimited: 'Unlimited storage', usage and categories still shown, no remaining / percentage / bar", () => {
@@ -118,9 +122,9 @@ test("limit reached by uploads in progress (stored files within the limit): a so
 });
 
 test("zero usage: an explanatory empty state instead of an empty table; 0 limit shows no percentage", () => {
-  const zero = view({ categories: { recordedLectures: cat("0", "0", "0"), notes: cat("0", "0", "0"), submissions: cat("0", "0", "0") }, committedBytes: "0", reservedBytes: "0", totalBytes: "0", remainingBytes: "10000000000", usagePercent: 0 });
+  const zero = view({ categories: { recordedLectures: cat("0", "0", "0"), notes: cat("0", "0", "0"), submissions: cat("0", "0", "0"), profileImages: cat("0", "0", "0") }, committedBytes: "0", reservedBytes: "0", totalBytes: "0", remainingBytes: "10000000000", usagePercent: 0 });
   const t = text(render(zero));
-  assert.match(t, /You have no stored recordings, notes or student submissions yet\./);
+  assert.match(t, /You have no stored recordings, notes, student submissions or profile images yet\./);
   assert.match(t, /Used 0 bytes All stored/);
   assert.doesNotMatch(t, /Category Stored/);
   const none = text(render(view({ ...zero, limitBytes: "0", remainingBytes: "0", usagePercent: null })));

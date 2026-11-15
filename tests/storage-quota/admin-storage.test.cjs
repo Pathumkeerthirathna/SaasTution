@@ -133,6 +133,8 @@ function client(ctx) {
       },
       count: async ({ where }) => db.changes.filter((c) => c.teacherId === where.teacherId).length,
     },
+    // Profile photos (PROFILE_IMAGE): none unless a test adds db.profiles rows.
+    teacherProfile: { findUnique: async ({ where }) => (db.profiles ?? []).find((p) => p.teacherId === where.teacherId) ?? null },
     teacherSubscription: {
       async findFirst({ where }) {
         const rows = db.subscriptions.filter((s) => matchesSubscription(s, where)).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -232,8 +234,8 @@ test("GET: usage, limit, source, override and plan, with byte counts as strings 
   assert.equal(status, 200);
   const d = body.data;
   assert.deepEqual(d.teacher, { id: T1, name: "Nimal Perera", email: "nimal@example.test" });
-  assert.deepEqual(d.usage.committedBytes, { recordedLectures: "0", notes: "2500000000", submissions: "0", total: "2500000000" });
-  assert.deepEqual(d.usage.reservedBytes, { recordedLectures: "0", notes: "0", submissions: "0", total: "0" });
+  assert.deepEqual(d.usage.committedBytes, { recordedLectures: "0", notes: "2500000000", submissions: "0", profileImages: "0", total: "2500000000" });
+  assert.deepEqual(d.usage.reservedBytes, { recordedLectures: "0", notes: "0", submissions: "0", profileImages: "0", total: "0" });
   assert.deepEqual(d.usage.limit, { limitBytes: "10000000000", source: "PLAN", overrideBytes: null, planLimitBytes: "10000000000" });
   assert.deepEqual([d.usage.remainingBytes, d.usage.usagePercent, d.usage.isUnlimited, d.usage.isOverQuota, d.isOverLimitIncludingReservations], ["7500000000", 25, false, false, false]);
   assert.equal(d.override, null);

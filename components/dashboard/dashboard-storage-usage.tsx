@@ -115,10 +115,11 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
   );
 }
 
-const CATEGORIES: Array<["recordedLectures" | "notes" | "submissions", string]> = [
+const CATEGORIES: Array<["recordedLectures" | "notes" | "submissions" | "profileImages", string]> = [
   ["recordedLectures", "Recorded Lectures"],
   ["notes", "Notes & Materials"],
   ["submissions", "Student Submissions"],
+  ["profileImages", "Profile Images"],
 ];
 
 export function StorageUsageView({ view, onRefresh, refreshing }: { view: TeacherStorageView; onRefresh?: () => void; refreshing?: boolean }) {
@@ -202,7 +203,7 @@ export function StorageUsageView({ view, onRefresh, refreshing }: { view: Teache
 
       {empty ? (
         <p className="mt-4 rounded-xl border border-dashed border-sky-200 bg-sky-50 px-4 py-4 text-sm text-muted">
-          You have no stored recordings, notes or student submissions yet.
+          You have no stored recordings, notes, student submissions or profile images yet.
         </p>
       ) : (
         <table className="mt-4 w-full border-collapse text-sm">

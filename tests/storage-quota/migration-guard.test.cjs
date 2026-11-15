@@ -29,9 +29,13 @@ const statements = sql
   .map((s) => s.replace(/\s+/g, " ").trim())
   .filter(Boolean);
 
-test("the migration is the latest one; no earlier migration file changed (git)", () => {
+test("only approved migrations follow this one; no earlier migration file changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.equal(all[all.length - 1], MIGRATION);
+  // Teacher profile photos (tests/storage-quota/profile-image-migration-guard.test.cjs).
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) + 1), [
+    "20261117120000_add_profile_image_reservation_category",
+    "20261117120100_add_teacher_profile_image_storage",
+  ]);
   // The earlier, still uncommitted Stage 2 migration may differ from HEAD; every COMMITTED one must not.
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
@@ -126,7 +130,7 @@ test("schema: the three models and the enum, BigInt bytes, no database defaults 
   for (const name of ["TeacherStorageLimit", "TeacherStorageLimitChange", "StorageReservation"]) {
     assert.doesNotMatch(body(name), /DateTime\s+@default\(now\(\)\)|@updatedAt/, `${name}: timestamps come from serverNow()`);
   }
-  assert.match(schema, /enum StorageReservationCategory \{\n\s+NOTE\n\s+SUBMISSION\n\}/);
+  assert.match(schema, /enum StorageReservationCategory \{\n\s+NOTE\n\s+SUBMISSION\n\s+PROFILE_IMAGE\n\}/, 'PROFILE_IMAGE added later (migration 20261117120000)');
   const teacher = body("Teacher");
   assert.match(teacher, /storageLimit\s+TeacherStorageLimit\?/);
   assert.match(teacher, /storageLimitChanges TeacherStorageLimitChange\[\]/);

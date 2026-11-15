@@ -160,6 +160,9 @@ const APPROVED_IMPORTERS = [
   "lib/notes/storage-keys.ts",
   "lib/assignments/submission-keys.ts",
   "lib/stored-files/stored-file.ts",
+  // Teacher profile photos on unified storage: the key module only (joinStorageKey / parseStorageKey);
+  // files are written, read and deleted through lib/stored-files/stored-file.ts.
+  "lib/profile-images/storage-keys.ts",
 ];
 
 test("isolation: only the approved RL-3 upload service and routes import the recorded-lecture modules", () => {

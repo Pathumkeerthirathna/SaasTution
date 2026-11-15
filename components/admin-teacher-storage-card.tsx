@@ -19,7 +19,7 @@ import { bytesToGbInput, formatStorageBytes, parseStorageLimitGb } from "@/lib/s
 
 // ---- Types (the JSON of GET /api/admin/teachers/[teacherId]/storage) ---------------------------------------------
 
-type Categories = { recordedLectures: string; notes: string; submissions: string; total: string };
+type Categories = { recordedLectures: string; notes: string; submissions: string; profileImages: string; total: string };
 
 export type StorageLimitSource = "OVERRIDE" | "PLAN" | "UNLIMITED_PLAN" | "NO_ACTIVE_SUBSCRIPTION";
 
@@ -250,6 +250,7 @@ const CATEGORY_ROWS: Array<[keyof Omit<Categories, "total">, string]> = [
   ["recordedLectures", "Recorded Lectures"],
   ["notes", "Notes & Materials"],
   ["submissions", "Student Submissions"],
+  ["profileImages", "Profile Images"],
 ];
 
 export function CategoryBreakdown({ summary }: { summary: AdminStorageSummary }) {
@@ -257,7 +258,7 @@ export function CategoryBreakdown({ summary }: { summary: AdminStorageSummary })
   return (
     <div className="mt-3">
       <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">By category</h4>
-      <ul className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <ul className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {CATEGORY_ROWS.map(([key, label]) => (
           <li key={key} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
             <p className="text-[12px] font-semibold text-slate-900">{label}</p>

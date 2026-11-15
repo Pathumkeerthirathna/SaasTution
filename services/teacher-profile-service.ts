@@ -16,8 +16,6 @@ import {
 import { UpdateQualification } from "@/types/UpdateQualification";
 import { Prisma, TeacherTitle } from "@prisma/client";
 
-import { promises as fs } from "fs";
-import path from "path";
 
 export class TeacherProfileSetupRequiredError extends Error {
   teacherName: string;
@@ -1649,85 +1647,8 @@ export async function searchPublicTeachers(
 }
 
 
-export async function updateProfilePhoto(
-  teacherId: string,
-  file: File
-) {
-  const profile = await prisma.teacherProfile.findUnique({
-    where: {
-      teacherId,
-    },
-    select: {
-      profileImageUrl: true,
-    },
-  });
-
-  // Ensure upload folder exists
-  const uploadDir = path.join(
-    process.cwd(),
-    "storage",
-    "teachers"
-  );
-
-  await fs.mkdir(uploadDir, {
-    recursive: true,
-  });
-
-  // Delete previous image
-  if (profile?.profileImageUrl) {
-    try {
-      const oldFile = path.join(
-        process.cwd(),
-        "storage",
-        "teachers",
-        path.basename(profile.profileImageUrl)
-      );
-
-      await fs.unlink(oldFile);
-    } catch {
-      // Ignore if file doesn't exist
-    }
-  }
-
-  // Extension
-  const extension =
-    path.extname(file.name) || ".jpg";
-
-  // Unique filename
-  const fileName = `${teacherId}-${Date.now()}${extension}`;
-
-  const filePath = path.join(
-    uploadDir,
-    fileName
-  );
-
-  // Save file
-  const bytes = await file.arrayBuffer();
-
-  await fs.writeFile(
-    filePath,
-    Buffer.from(bytes)
-  );
-
-  const imageUrl =
-`/uploads/teachers/${fileName}`;
-
-  await prisma.teacherProfile.upsert({
-    where: {
-      teacherId,
-    },
-    create: {
-      teacherId,
-      slug: `teacher-${teacherId}`,
-      profileImageUrl: imageUrl,
-    },
-    update: {
-      profileImageUrl: imageUrl,
-    },
-  });
-
-  return getTeacherProfile(teacherId);
-}
+// Profile photo upload / replacement / removal: services/teacher-profile-photo-service.ts
+// (unified storage, quota PROFILE_IMAGE). Legacy photos are served by app/uploads/teachers.
 
 
 export async function getTeacherProfilePhoto(

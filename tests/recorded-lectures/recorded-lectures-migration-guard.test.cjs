@@ -237,6 +237,8 @@ const GENERATED_SQL = [
 const LATER_MIGRATIONS = [
   "20261115120000_add_unified_file_storage_keys", // unified storage Stage 2: tests/storage-migration/migration-guard.test.cjs
   "20261116120000_add_teacher_storage_accounting", // storage accounting Stage 3.1: tests/storage-quota/migration-guard.test.cjs
+  "20261117120000_add_profile_image_reservation_category", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
+  "20261117120100_add_teacher_profile_image_storage", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
 ];
 
 test("the migration exists, and only approved migrations follow it", () => {

@@ -34,6 +34,8 @@ const statements = withoutComments
 // Migrations approved to follow this one (each has its own guard test).
 const LATER_MIGRATIONS = [
   "20261116120000_add_teacher_storage_accounting", // Stage 3.1: tests/storage-quota/migration-guard.test.cjs
+  "20261117120000_add_profile_image_reservation_category", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
+  "20261117120100_add_teacher_profile_image_storage", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
 ];
 
 test("only approved migrations follow this one, and no earlier migration was changed (git)", () => {

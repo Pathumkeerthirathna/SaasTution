@@ -25,6 +25,13 @@ import {
 import { useState, useEffect, useRef } from "react";
 
 import Image from "next/image";
+import {
+  PROFILE_PHOTO_ACCEPT,
+  removeProfilePhotoRequest,
+  uploadProfilePhotoRequest,
+  validatePhotoUpload,
+  validateSelectedPhoto,
+} from "./profile-photo-client";
 
 import { Mail } from "lucide-react";
 import { Medium, TeacherMedium } from "./Medium/medium-types";
@@ -231,6 +238,13 @@ export default function TeacherProfileHeader({
 
   const [uploading, setUploading] =
     useState(false);
+
+  // Profile photo feedback: upload progress (when the browser reports it),
+  // the outcome of the last upload / removal, and a removal in progress.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
 
   const [profilePhoto, setProfilePhoto] =
     useState<string | null>(null);
@@ -655,6 +669,15 @@ export default function TeacherProfileHeader({
 
     if (!file) return;
 
+    setPhotoNotice(null);
+    const problem = validateSelectedPhoto(file);
+    if (problem) {
+      setPhotoError(problem);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setPhotoError(null);
+
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
@@ -666,48 +689,41 @@ export default function TeacherProfileHeader({
   }
 
   async function uploadProfilePhoto() {
-    if (!selectedImage) return;
+    if (!selectedImage || uploading) return;
+
+    setUploading(true);
+    setUploadProgress(null);
+    setPhotoError(null);
+    setPhotoNotice(null);
 
     try {
-      setUploading(true);
-
       // Upload the framed crop, not the raw file, so the stored photo is
       // already positioned the way the teacher set it in the preview.
       const croppedBlob = await cropToBlob();
-      const extension =
-        croppedBlob.type === "image/png" ? "png" : "jpg";
-      const croppedFile = new File(
-        [croppedBlob],
-        `profile-${Date.now()}.${extension}`,
-        { type: croppedBlob.type }
-      );
-
-      const form = new FormData();
-
-      form.append(
-        "photo",
-        croppedFile
-      );
-
-      const response = await fetch(
-        "/api/teacher/profile/photo",
-        {
-          method: "PUT",
-          body: form,
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error();
+      const problem = validatePhotoUpload(croppedBlob);
+      if (problem) {
+        setPhotoError(problem);
+        return;
       }
 
-      const data = await response.json();
+      const extension =
+        croppedBlob.type === "image/png" ? "png" : "jpg";
 
-      setProfilePhoto(
-        `${data.profileImageUrl}?v=${Date.now()}`
-      );
+      const result = await uploadProfilePhotoRequest(croppedBlob, {
+        fileName: `profile.${extension}`,
+        onProgress: (percent) => setUploadProgress(percent),
+      });
 
-      //setTeacher(updated);
+      if (!result.ok) {
+        // The previous photo is untouched on the server.
+        setPhotoError(result.message);
+        return;
+      }
+
+      // The URL is unique per upload (no cache-buster needed).
+      setImageLoading(true);
+      setProfilePhoto(result.profileImageUrl);
+      setPhotoNotice("Profile photo updated.");
 
       setPreviewOpen(false);
 
@@ -720,15 +736,36 @@ export default function TeacherProfileHeader({
 
       resetCropState();
 
-      // ✅ Reset file input so the same image can be selected again
+      // Reset file input so the same image can be selected again
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-
     } catch {
-      alert("Failed to upload image.");
+      setPhotoError("The photo could not be prepared. Please choose it again.");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
+  async function removeProfilePhoto() {
+    if (removingPhoto || uploading) return;
+    if (!window.confirm("Remove your profile photo? It will be deleted permanently.")) return;
+
+    setRemovingPhoto(true);
+    setPhotoError(null);
+    setPhotoNotice(null);
+    try {
+      const result = await removeProfilePhotoRequest();
+      if (!result.ok) {
+        setPhotoError(result.message);
+        return;
+      }
+      setProfilePhoto(null);
+      setImageLoading(false);
+      setPhotoNotice(result.message);
+    } finally {
+      setRemovingPhoto(false);
     }
   }
 
@@ -835,7 +872,7 @@ export default function TeacherProfileHeader({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={PROFILE_PHOTO_ACCEPT}
               className="hidden"
               onChange={handleImageSelected}
             />
@@ -898,13 +935,43 @@ export default function TeacherProfileHeader({
                 hover:bg-[#3B5776]
               "
               title="Change profile photo"
+              aria-label="Change profile photo"
             >
               <Camera className="h-3 w-3" />
             </button>)}
 
+            {/* Remove photo (own profile, when there is one) */}
+            {!isPublic && profilePhoto && (
+              <button
+                type="button"
+                onClick={() => void removeProfilePhoto()}
+                disabled={removingPhoto || uploading}
+                className="absolute bottom-0 left-0 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white text-rose-600 shadow-md transition-all duration-200 hover:scale-110 hover:bg-rose-50 disabled:opacity-60"
+                title="Remove profile photo"
+                aria-label="Remove profile photo"
+              >
+                {removingPhoto ? (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-rose-200 border-t-rose-600" />
+                ) : (
+                  <X className="h-3 w-3" />
+                )}
+              </button>
+            )}
+
+
           </div>
           {/* Content */}
           <div className="min-w-0 flex-1">
+
+            {/* Profile photo feedback (own profile) */}
+            {!isPublic && (photoError || photoNotice) && !previewOpen && (
+              <p
+                role={photoError ? "alert" : "status"}
+                className={`mb-1.5 break-words text-[12px] font-medium ${photoError ? "text-rose-600" : "text-emerald-700"}`}
+              >
+                {photoError ?? photoNotice}
+              </p>
+            )}
 
             {/* Name */}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2018,13 +2085,46 @@ export default function TeacherProfileHeader({
               />
             </div>
 
+            <p className="mt-3 text-[12px] text-slate-500">
+              JPEG, PNG or WebP. The framed photo must be at most 2 MB.
+            </p>
+
+            {uploading && (
+              <div className="mt-3" role="status" aria-live="polite">
+                <div
+                  className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200"
+                  role="progressbar"
+                  aria-label="Upload progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={uploadProgress ?? undefined}
+                >
+                  <div
+                    className={`h-full rounded-full bg-[#4D6C90] ${uploadProgress === null ? "w-1/3 animate-pulse" : ""}`}
+                    style={uploadProgress === null ? undefined : { width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  {uploadProgress === null ? "Uploading..." : `Uploading... ${uploadProgress}%`}
+                </p>
+              </div>
+            )}
+
+            {photoError && (
+              <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
+                {photoError}
+              </p>
+            )}
+
             <div className="mt-6 flex justify-end gap-3">
 
               <button
-                onClick={() =>
-                  setPreviewOpen(false)
-                }
-                className="rounded-lg border px-4 py-2 text-[14px]"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  setPhotoError(null);
+                }}
+                disabled={uploading}
+                className="rounded-lg border px-4 py-2 text-[14px] disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -2032,7 +2132,7 @@ export default function TeacherProfileHeader({
               <button
                 onClick={uploadProfilePhoto}
                 disabled={uploading}
-                className="rounded-lg bg-[#4D6C90] px-4 py-2 text-[14px] text-white hover:bg-[#3B5776]"
+                className="rounded-lg bg-[#4D6C90] px-4 py-2 text-[14px] text-white hover:bg-[#3B5776] disabled:opacity-60"
               >
                 {uploading
                   ? "Uploading..."

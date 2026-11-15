@@ -335,8 +335,12 @@ export async function scanLegacyFolders(roots: LegacyRoots, options: { maxEntrie
  * (Teachers/{t}/Lectures/{l}/Notes/... and .../Assignments/...). Recorded
  * Lectures folders (Teachers/{t}/Lectures/{l}/RecordedLectures) and System/
  * belong to another feature: they are listed as not scanned and never
- * entered. A file is "expected" when its path parses as a note or submission
- * key. Links and special files are reported, never entered.
+ * entered. So are teacher profile photos (Teachers/{t}/Profile): their
+ * references are TeacherProfile rows, checked by the profile-photo orphan
+ * sweep (services/teacher-profile-photo-service.ts), so they are never
+ * reported here as unexpected or unreferenced. A file is "expected" when its
+ * path parses as a note or submission key. Links and special files are
+ * reported, never entered.
  */
 export async function scanNewStorage(roots: LegacyRoots, options: { maxEntries?: number } = {}): Promise<ScanResult> {
   const result: ScanResult = { files: [], unexpected: [], folders: [], truncated: false };
@@ -350,11 +354,12 @@ export async function scanNewStorage(roots: LegacyRoots, options: { maxEntries?:
       result,
       counter,
       expected: (rel) => parseNoteStorageKey(rel) !== null || parseSubmissionStorageKey(rel) !== null,
-      skip: (rel) => /^Teachers\/[^/]+\/Lectures\/[^/]+\/RecordedLectures$/.test(rel),
+      skip: (rel) => /^Teachers\/[^/]+\/Lectures\/[^/]+\/RecordedLectures$/.test(rel) || /^Teachers\/[^/]+\/Profile$/.test(rel),
     },
     "Teachers"
   );
   result.folders.push({ relativePath: "fileStorage/Teachers/*/Lectures/*/RecordedLectures", scanned: false, reason: "OTHER_FEATURE" });
+  result.folders.push({ relativePath: "fileStorage/Teachers/*/Profile", scanned: false, reason: "OTHER_FEATURE" });
   result.folders.push({ relativePath: "fileStorage/System", scanned: false, reason: "OTHER_FEATURE" });
   return result;
 }

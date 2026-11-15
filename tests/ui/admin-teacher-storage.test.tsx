@@ -44,8 +44,8 @@ function summary(over: Partial<AdminStorageSummary["usage"]> = {}, rest: Partial
     usage: {
       teacherId: T1,
       measuredAt: "2026-11-16T12:00:00.000Z",
-      committedBytes: { recordedLectures: "3000000000", notes: "250000000", submissions: "125000000", total: "3375000000" },
-      reservedBytes: { recordedLectures: "500000000", notes: "0", submissions: "25000000", total: "525000000" },
+      committedBytes: { recordedLectures: "3000000000", notes: "250000000", submissions: "125000000", profileImages: "0", total: "3375000000" },
+      reservedBytes: { recordedLectures: "500000000", notes: "0", submissions: "25000000", profileImages: "0", total: "525000000" },
       totalUsedAndReservedBytes: "3900000000",
       limit: { limitBytes: "10000000000", source: "PLAN", overrideBytes: null, planLimitBytes: "10000000000" },
       isUnlimited: false,
@@ -86,6 +86,7 @@ test("category breakdown: committed and reserved for the three categories", () =
   assert.match(t, /Recorded Lectures Stored: 3 GB Reserved: 500 MB/);
   assert.match(t, /Notes & Materials Stored: 250 MB Reserved: 0 bytes/);
   assert.match(t, /Student Submissions Stored: 125 MB Reserved: 25 MB/);
+  assert.match(t, /Profile Images Stored: 0 bytes Reserved: 0 bytes/, "the fourth category, shown separately");
 });
 
 test("unlimited state: no bar, 'Unlimited' limit and remaining, the plan's explanation", () => {
@@ -103,7 +104,7 @@ test("unlimited state: no bar, 'Unlimited' limit and remaining, the plan's expla
 });
 
 test("over-limit state: badge, red bar capped at 100%, and the explanation that files are kept", () => {
-  const over = summary({ committedBytes: { recordedLectures: "12000000000", notes: "0", submissions: "0", total: "12000000000" }, totalUsedAndReservedBytes: "12000000000", remainingBytes: "0", usagePercent: 120, isOverQuota: true, overQuotaBytes: "2000000000" }, { isOverLimitIncludingReservations: true });
+  const over = summary({ committedBytes: { recordedLectures: "12000000000", notes: "0", submissions: "0", profileImages: "0", total: "12000000000" }, totalUsedAndReservedBytes: "12000000000", remainingBytes: "0", usagePercent: 120, isOverQuota: true, overQuotaBytes: "2000000000" }, { isOverLimitIncludingReservations: true });
   const html = renderToStaticMarkup(<StorageOverview summary={over} />);
   assert.match(text(html), /Over limit/);
   assert.match(html, /width:100%/);

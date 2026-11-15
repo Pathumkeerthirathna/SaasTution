@@ -335,8 +335,30 @@ model TeacherProfile {
   displayName String?
 
   // Profile images
+  // profileImageUrl is the DISPLAY URL every consumer reads (header, public
+  // profile, search, Jitsi photoUrl): a legacy "/uploads/teachers/..." path for
+  // photos uploaded before unified storage, or the versioned
+  // "/api/teacher-photos/{teacherId}/{storedName}" URL of a unified-storage photo.
   profileImageUrl String?
   coverImageUrl   String?
+
+  /// Unified storage (profile photos): the photo's RELATIVE key below
+  /// FILE_STORAGE_ROOT (Teachers/{teacherId}/Profile/Photo/{32 hex}.{jpg|png|webp}).
+  /// Null for no photo or a legacy photo (profileImageUrl only). Counted in the
+  /// teacher's storage quota (category PROFILE_IMAGE). The four profileImage*
+  /// columns are set and cleared together. While a removal is pending the key
+  /// stays and profileImageUrl is NULL (still counted until the file is gone).
+  /// CHECKs (hand-written in migration 20261117120100_add_teacher_profile_image_storage):
+  /// TeacherProfile_profileImage_all_or_none, TeacherProfile_profileImageStorageKey_format,
+  /// TeacherProfile_profileImageStorageKey_owner, TeacherProfile_profileImageSha256_format,
+  /// TeacherProfile_profileImageSizeBytes_range, TeacherProfile_profileImageMimeType_allowed.
+  profileImageStorageKey String? @unique @db.VarChar(512)
+  /// SHA-256 (64 lowercase hex) of the stored photo, computed while it was written.
+  profileImageSha256     String? @db.Char(64)
+  /// Exact stored size in bytes (1 .. 2,097,152).
+  profileImageSizeBytes  Int?
+  /// image/jpeg, image/png or image/webp (from the file's signature, never the client).
+  profileImageMimeType   String? @db.VarChar(32)
 
   // Professional title shown under teacher name
   // Examples:
@@ -2776,6 +2798,7 @@ model TeacherStorageLimitChange {
 enum StorageReservationCategory {
   NOTE
   SUBMISSION
+  PROFILE_IMAGE
 }
 
 /// Capacity reserved for a Notes / assignment submission upload while its

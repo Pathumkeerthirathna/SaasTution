@@ -30,13 +30,20 @@ import {
  *                      exist); teacher = Lecture -> Class.teacherId.
  *   Submissions        AssignmentSubmission.storageKey set; teacher =
  *                      Assignment -> Lecture -> Class.teacherId.
+ *   Profile images     TeacherProfile.profileImageStorageKey set (its
+ *                      profileImageSizeBytes; the database CHECKs keep key,
+ *                      size, digest and type together). A photo whose removal
+ *                      is pending (profileImageUrl cleared, key kept) still
+ *                      counts until its file is deleted. Legacy photos
+ *                      (profileImageUrl only) are never counted.
  *   Legacy rows (storageKey NULL), legacy rollback copies (the fileUrl copies
  *   below <cwd>/storage), temporary chunks and assemblies (System/), and
  *   unreferenced files are never counted.
  * RESERVED
  *   Recorded Lectures  ACTIVE / COMPLETING RecordingUploadSession rows, by
  *                      recordingSessionReservedBytes (the reservationRows rules).
- *   Notes / subs       StorageReservation rows with expiresAt > now.
+ *   Notes / subs /     StorageReservation rows with expiresAt > now
+ *   profile images     (categories NOTE / SUBMISSION / PROFILE_IMAGE).
  *
  * Times: `now` is database time (serverNow), as the Recorded Lectures expiry
  * rules use. Consistency: without a caller transaction, everything is read in
@@ -48,7 +55,7 @@ import {
 
 type UsageDb = Pick<
   Prisma.TransactionClient,
-  "recordingUploadSession" | "storageReservation" | "recordedLecture" | "teacherStorageLimit" | "teacherSubscription" | "$queryRaw"
+  "recordingUploadSession" | "storageReservation" | "recordedLecture" | "teacherStorageLimit" | "teacherSubscription" | "teacherProfile" | "$queryRaw"
 >;
 
 const ACTIVE_SESSION_STATES = ["ACTIVE", "COMPLETING"] as const;
@@ -100,7 +107,7 @@ async function computeUsage(db: UsageDb, teacherId: string, now: Date): Promise<
     where: { teacherId, expiresAt: { gt: now } },
     _sum: { bytes: true },
   });
-  const reservedOf = (category: "NOTE" | "SUBMISSION") => reservationGroups.find((g) => g.category === category)?._sum.bytes ?? BigInt(0);
+  const reservedOf = (category: "NOTE" | "SUBMISSION" | "PROFILE_IMAGE") => reservationGroups.find((g) => g.category === category)?._sum.bytes ?? BigInt(0);
 
   // 2. Committed storage.
   const recordings = await db.recordedLecture.aggregate({
@@ -108,6 +115,11 @@ async function computeUsage(db: UsageDb, teacherId: string, now: Date): Promise<
     _sum: { sizeBytes: true },
   });
   const { notes, submissions } = await readNoteAndSubmissionBytes(db, teacherId);
+  const profile = await db.teacherProfile.findUnique({
+    where: { teacherId },
+    select: { profileImageStorageKey: true, profileImageSizeBytes: true },
+  });
+  const profileImages = profile?.profileImageStorageKey ? BigInt(profile.profileImageSizeBytes ?? 0) : BigInt(0);
 
   // 3. The effective limit (override, else the ACTIVE subscription plan's storageGB, else unlimited).
   const override = await db.teacherStorageLimit.findUnique({ where: { teacherId }, select: { limitBytes: true } });
@@ -120,8 +132,13 @@ async function computeUsage(db: UsageDb, teacherId: string, now: Date): Promise<
   return summarizeTeacherStorageUsage({
     teacherId,
     measuredAt: now,
-    committed: { recordedLectures: recordings._sum.sizeBytes ?? BigInt(0), notes, submissions },
-    reserved: { recordedLectures: recordingReserved, notes: reservedOf("NOTE"), submissions: reservedOf("SUBMISSION") },
+    committed: { recordedLectures: recordings._sum.sizeBytes ?? BigInt(0), notes, submissions, profileImages },
+    reserved: {
+      recordedLectures: recordingReserved,
+      notes: reservedOf("NOTE"),
+      submissions: reservedOf("SUBMISSION"),
+      profileImages: reservedOf("PROFILE_IMAGE"),
+    },
     limit: resolveEffectiveStorageLimit({
       overrideBytes: override?.limitBytes ?? null,
       subscription: subscription ? { planStorageGB: subscription.plan.storageGB } : null,
