@@ -25,6 +25,15 @@ import {
 import { useState, useEffect, useRef } from "react";
 
 import Image from "next/image";
+import toast from "react-hot-toast";
+
+import { siteOrigin, teacherProfileUrl } from "@/lib/site-url";
+import {
+  buildProfileShareLinks,
+  copyProfileLink,
+  isShareCancelled,
+  nativeSharePayload,
+} from "./profile-share";
 import {
   PROFILE_PHOTO_ACCEPT,
   removeProfilePhotoRequest,
@@ -39,7 +48,7 @@ import TeacherMediumDrawer from "./Medium/TeacherMediumDrawer";
 import { QualificationForm, TeacherQualification } from "./qualification/qualification-types";
 import QualificationDrawer from "./qualification/QualificationDrawer";
 import { BsLink45Deg } from "react-icons/bs";
-import { FaWhatsapp, FaFacebookMessenger, FaTelegramPlane, FaFacebookF, FaLinkedinIn } from "react-icons/fa";
+import { FaWhatsapp, FaTelegramPlane, FaFacebookF, FaLinkedinIn } from "react-icons/fa";
 
 interface Props {
   teacher?: TeacherProfile;
@@ -538,32 +547,41 @@ export default function TeacherProfileHeader({
    // loadProfile();
   }, []);
 
+  // ONE profile URL for every share target: the configured site URL plus the CURRENT slug
+  // (teacherData follows edits; the original prop would go stale after a slug change).
+  const profileUrl = teacherProfileUrl(teacherData?.slug);
+  const siteHostLabel = new URL(siteOrigin()).host;
+  const shareName = getDisplayName(teacherData);
+  const shareLinks = buildProfileShareLinks(profileUrl, shareName);
+
+  const openShareTarget = (href: string) => {
+    if (!href) return;
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
+
+  const copyLink = async () => {
+    if (await copyProfileLink(profileUrl, typeof navigator !== "undefined" ? navigator.clipboard : undefined)) {
+      toast.success("Profile link copied.");
+    } else {
+      toast.error("Couldn't copy the link. Select it and copy it manually.");
+    }
+  };
+
   const handleShare = async () => {
-    console.log("Share clicked");
+    if (!profileUrl) return;
 
-    const url = `https://slclassroom.live/${teacher?.slug}`;
-
-    // Desktop always shows custom modal
-    if (window.innerWidth > 768) {
+    // Desktop (and browsers without the Web Share API): the share dialog.
+    if (window.innerWidth > 768 || typeof navigator.share !== "function") {
       setShowShareModal(true);
       return;
     }
 
-    // Mobile
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${teacher?.teacher.name} - Teacher Profile`,
-          text: "Check out this teacher profile",
-          url,
-        });
-        return;
-      } catch (e) {
-        console.log(e);
-      }
+    try {
+      await navigator.share(nativeSharePayload(profileUrl, shareName));
+    } catch (error) {
+      // Dismissing the share sheet is not an error; anything else falls back to the dialog.
+      if (!isShareCancelled(error)) setShowShareModal(true);
     }
-
-    setShowShareModal(true);
   };
 
   useEffect(() => {
@@ -1364,7 +1382,7 @@ export default function TeacherProfileHeader({
                   <div className="flex overflow-hidden rounded-lg border">
 
                     <div className="bg-slate-100 px-3 py-2 text-[13px] text-slate-500">
-                      slclassroom.live/
+                      {siteHostLabel}/
                     </div>
 
                     <input
@@ -1405,7 +1423,7 @@ export default function TeacherProfileHeader({
                       Public URL
                       <br />
                       <span className="font-medium text-emerald-600">
-                          https://slclassroom.live/{form.slug}
+                          {teacherProfileUrl(form.slug) || `${siteOrigin()}/`}
                       </span>
                   </p>
                 </div>
@@ -1758,14 +1776,7 @@ export default function TeacherProfileHeader({
               {/* WhatsApp */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `https://wa.me/?text=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.whatsapp)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25D366]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1783,45 +1794,10 @@ export default function TeacherProfileHeader({
 
               </button>
 
-              {/* Messenger */}
-
-              <button
-                onClick={() =>
-                  window.open(
-                    `https://www.facebook.com/dialog/send?link=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
-                className="group flex flex-col items-center"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0084FF]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
-
-                  <FaFacebookMessenger
-                    size={28}
-                    className="text-[#0084FF]"
-                  />
-
-                </div>
-
-                <span className="mt-2 text-[14px]">
-                  Messenger
-                </span>
-
-              </button>
-
               {/* Telegram */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `https://t.me/share/url?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.telegram)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#229ED9]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1842,14 +1818,7 @@ export default function TeacherProfileHeader({
               {/* Facebook */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.facebook)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1877F2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1870,14 +1839,7 @@ export default function TeacherProfileHeader({
               {/* LinkedIn */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.linkedin)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A66C2]/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1898,15 +1860,7 @@ export default function TeacherProfileHeader({
               {/* Email */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `mailto:?subject=${encodeURIComponent(
-                      `${teacherData?.teacher.name} - Teacher Profile`
-                    )}&body=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.email)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1927,14 +1881,7 @@ export default function TeacherProfileHeader({
               {/* X */}
 
               <button
-                onClick={() =>
-                  window.open(
-                    `https://twitter.com/intent/tweet?url=${encodeURIComponent(
-                      `https://slclassroom.live/${teacherData?.slug}`
-                    )}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => openShareTarget(shareLinks.x)}
                 className="group flex flex-col items-center"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-16 sm:w-16">
@@ -1955,13 +1902,7 @@ export default function TeacherProfileHeader({
 
               <button
                 onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `https://slclassroom.live/${teacherData?.slug}`
-                  );
-
-                  alert("Profile link copied.");
-
-                  setShowShareModal(false);
+                  await copyLink();
                 }}
                 className="group flex flex-col items-center"
               >
@@ -1996,18 +1937,12 @@ export default function TeacherProfileHeader({
 
               <input
                 readOnly
-                value={`https://slclassroom.live/${teacherData?.slug}`}
+                value={profileUrl}
                 className="flex-1 px-4 py-3 text-[16px] outline-none"
               />
 
               <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `https://slclassroom.live/${teacherData?.slug}`
-                  );
-
-                  alert("Copied");
-                }}
+                onClick={() => void copyLink()}
                 className="bg-[#4D6C90] px-4 text-[14px] font-semibold text-white transition hover:bg-[#3B5776]"
               >
                 Copy

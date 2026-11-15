@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "react-hot-toast";
 
 import GlobalErrorListener from "@/components/error-reporting/GlobalErrorListener";
+import { siteMetadataBase } from "@/lib/site-url";
 
 
 const manrope = Manrope({
@@ -22,12 +23,23 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Absolute URLs in metadata (canonical, og:image, twitter:image): the configured
+  // public site URL, never localhost in production (lib/site-url.ts).
+  metadataBase: siteMetadataBase(),
   title: {
     default: "SL Classroom — Teach, Manage & Grow Online",
     template: "%s | SL Classroom",
   },
   description:
     "Live classes, whiteboard and breakout rooms, attendance, assignments, quizzes, fees and guardian access — one platform for teachers.",
+  openGraph: {
+    siteName: "SL Classroom",
+    type: "website",
+    locale: "en_LK",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({

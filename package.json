@@ -47,6 +47,7 @@
     "test:storage-migration-db": "node --test --test-concurrency=1 tests/storage-migration/inventory.db.test.cjs tests/storage-migration/stage2.db.test.cjs",
     "test:storage-quota": "node --test tests/storage-quota/usage.test.cjs tests/storage-quota/locks.test.cjs tests/storage-quota/migration-guard.test.cjs tests/storage-quota/enforcement.test.cjs tests/storage-quota/recorded-lectures.test.cjs tests/storage-quota/admin-storage.test.cjs tests/storage-quota/teacher-storage.test.cjs tests/storage-quota/permanent-deletion.test.cjs tests/storage-quota/profile-image-migration-guard.test.cjs tests/storage-quota/profile-photo.test.cjs",
     "test:storage-quota-db": "node --test --test-concurrency=1 tests/storage-quota/usage.db.test.cjs tests/storage-quota/enforcement.db.test.cjs",
+    "test:teacher-profile": "node --test tests/teacher-profile/social-sharing.test.cjs",
     "codec:links": "tsx --env-file=.env scripts/codec-test-links.ts",
     "codec:stats": "tsx scripts/codec-test-stats.ts",
     "jibri:worker": "tsx scripts/jibri-stop-worker.ts",

@@ -3,7 +3,9 @@ import { TeacherTitle } from "@prisma/client";
 export interface TeacherProfile {
 
   // Profile
-  profileId: string;
+  /** Owner views only; never sent on the PUBLIC profile page. */
+  profileId?: string;
+  /** Needed by the public sections (they load their data by teacher id). */
   teacherId: string;
   slug: string;
 
@@ -80,13 +82,16 @@ export interface TeacherClass {
   /** Public profile slug of the class owner, when the teacher has a profile. */
   teacherSlug?: string | null;
   schedules: TeacherClassSchedule[];
-  students: TeacherClassStudent[];
+  /** Owner views only; the PUBLIC profile never sends enrolment rows. */
+  students?: TeacherClassStudent[];
 }
 
 export interface Teacher {
-  id: string;
+  /** Owner views only (the public profile already has teacherId). */
+  id?: string;
   name: string;
-  email: string;
+  /** Owner views only: the PUBLIC profile never includes the account email. */
+  email?: string;
 }
 
 export interface TeacherMedium {

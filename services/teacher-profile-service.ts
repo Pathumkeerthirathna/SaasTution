@@ -15,6 +15,12 @@ import {
 } from "@/lib/teacher-achievement-image";
 import { UpdateQualification } from "@/types/UpdateQualification";
 import { Prisma, TeacherTitle } from "@prisma/client";
+import * as React from "react";
+// React.cache (per-request memoization) exists in the React that Next.js bundles for the app router;
+// outside it (tests, scripts) the plain function is used.
+const cache: <T extends (...args: never[]) => unknown>(fn: T) => T =
+  (React as unknown as { cache?: <T extends (...args: never[]) => unknown>(fn: T) => T }).cache ?? ((fn) => fn);
+import { formatTeacherFullName } from "@/lib/teacher-title";
 
 
 export class TeacherProfileSetupRequiredError extends Error {
@@ -399,9 +405,21 @@ export async function createTeacherProfile(
   return getTeacherProfile(teacherId);
 }
 
-export async function GetTeacherPublicProfileBySlug(
+/**
+ * The PUBLIC teacher profile page's data, or null when there is no profile
+ * with this slug or it is private (both are a 404 for visitors). Database
+ * errors are NOT caught: they surface as errors, never as "not found".
+ *
+ * Only what the public page shows (or needs to load its sections) is
+ * returned: never the account email, enrolment rows, or internal ids other
+ * than the teacher id (the public sections load their data by it).
+ * Cached per request (React cache): the page and generateMetadata share it.
+ */
+export const findPublicTeacherProfileBySlug = cache(async function findPublicTeacherProfileBySlug(
   slug: string
-): Promise<TeacherProfile> {
+): Promise<TeacherProfile | null> {
+  if (typeof slug !== "string" || slug.trim() === "" || slug.length > 191) return null;
+
   const teacherProfileSelect = {
     id: true,
     teacherId: true,
@@ -461,9 +479,7 @@ export async function GetTeacherPublicProfileBySlug(
 
     teacher: {
       select: {
-        id: true,
         name: true,
-        email: true,
 
         classes: {
           where: {
@@ -493,13 +509,6 @@ export async function GetTeacherPublicProfileBySlug(
                 { dayOfWeek: "asc" },
                 { startTime: "asc" },
               ],
-            },
-
-            students: {
-              select: {
-                id: true,
-                isActive: true,
-              },
             },
           },
         },
@@ -538,16 +547,9 @@ export async function GetTeacherPublicProfileBySlug(
     select: teacherProfileSelect,
   });
 
-  if (!profile) {
-    throw new Error("Teacher not found.");
-  }
-
-  if (!profile.isPublic) {
-    throw new Error("This profile is private.");
-  }
+  if (!profile || !profile.isPublic) return null;
 
   const result: TeacherProfile = {
-    profileId: profile.id,
     teacherId: profile.teacherId,
     slug: profile.slug,
 
@@ -569,11 +571,6 @@ export async function GetTeacherPublicProfileBySlug(
         dayOfWeek: s.dayOfWeek,
         startTime: s.startTime,
         endTime: s.endTime,
-      })),
-
-      students: cls.students.map((st) => ({
-        id: st.id,
-        isActive: st.isActive,
       })),
     })),
 
@@ -619,9 +616,7 @@ export async function GetTeacherPublicProfileBySlug(
     updatedAt: profile.updatedAt.toISOString(),
 
     teacher: {
-      id: profile.teacher.id,
       name: profile.teacher.name,
-      email: profile.teacher.email,
     },
 
     mediums: profile.mediums.map((m) => ({
@@ -631,7 +626,74 @@ export async function GetTeacherPublicProfileBySlug(
   };
 
   return result;
+});
+
+/** The public profile, throwing when it does not exist or is private (kept for existing callers). */
+export async function GetTeacherPublicProfileBySlug(slug: string): Promise<TeacherProfile> {
+  const profile = await findPublicTeacherProfileBySlug(slug);
+  if (!profile) throw new Error("Teacher not found.");
+  return profile;
 }
+
+// ---- Social sharing (metadata and the Open Graph image) ------------------------------------------------------
+
+/** Only what a link preview may show. Nothing private: no email, phone, ids or enrolment data. */
+export type PublicTeacherShareData = {
+  /** The slug as stored (its capitals), for the canonical URL. */
+  slug: string;
+  /** e.g. "Mr. Pathum Kumara" (title + public display name, else account name). */
+  name: string;
+  designation: string | null;
+  headline: string | null;
+  aboutMe: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  /** The display URL of the CURRENT photo (relative), or null. */
+  profileImageUrl: string | null;
+  /** Set for a unified-storage photo (lets the image generator read it without a URL). */
+  profileImageStorageKey: string | null;
+  updatedAt: Date;
+};
+
+/**
+ * The share data of a PUBLIC profile; null for an unknown or private one
+ * (the same visibility rule as the page). Database errors propagate.
+ * Cached per request.
+ */
+export const getPublicTeacherShareData = cache(async function getPublicTeacherShareData(slug: string): Promise<PublicTeacherShareData | null> {
+  if (typeof slug !== "string" || slug.trim() === "" || slug.length > 191) return null;
+  const profile = await prisma.teacherProfile.findFirst({
+    where: { slug: { equals: slug, mode: "insensitive" } },
+    select: {
+      slug: true,
+      isPublic: true,
+      title: true,
+      displayName: true,
+      designation: true,
+      headline: true,
+      aboutMe: true,
+      seoTitle: true,
+      seoDescription: true,
+      profileImageUrl: true,
+      profileImageStorageKey: true,
+      updatedAt: true,
+      teacher: { select: { name: true } },
+    },
+  });
+  if (!profile || !profile.isPublic) return null;
+  return {
+    slug: profile.slug,
+    name: formatTeacherFullName({ name: profile.teacher.name, profile: { title: profile.title, displayName: profile.displayName } }),
+    designation: profile.designation,
+    headline: profile.headline,
+    aboutMe: profile.aboutMe,
+    seoTitle: profile.seoTitle,
+    seoDescription: profile.seoDescription,
+    profileImageUrl: profile.profileImageUrl,
+    profileImageStorageKey: profile.profileImageStorageKey,
+    updatedAt: profile.updatedAt,
+  };
+});
 
 
 export async function updateTeacherProfile(
