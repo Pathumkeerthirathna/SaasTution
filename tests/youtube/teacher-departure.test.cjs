@@ -837,7 +837,10 @@ test("instrumentation: the Node-only import sits inside the constant NEXT_RUNTIM
     // Stage 3.6 added the second one (the Recorded Lectures maintenance scheduler), in the same branch.
     const schedulerAt = code.indexOf('await import("./services/recorded-lecture-maintenance-scheduler")');
     assert.ok(schedulerAt > importAt, "the scheduler import is inside it too");
-    assert.equal((code.match(/import\(/g) || []).length, 2, "these two dynamic imports, no other");
+    // Student onboarding added the third (the background email worker), in the same branch.
+    const emailWorkerAt = code.indexOf('await import("./services/email-delivery-worker")');
+    assert.ok(emailWorkerAt > schedulerAt, "the email worker import is inside it too");
+    assert.equal((code.match(/import\(/g) || []).length, 3, "these three dynamic imports, no other");
     assert.doesNotMatch(code, /^import /m, "no static import (it would be compiled for Edge)");
     assert.doesNotMatch(code, /NEXT_RUNTIME !== /, "no early-return form");
 });

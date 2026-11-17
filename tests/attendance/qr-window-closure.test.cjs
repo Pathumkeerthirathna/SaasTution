@@ -412,6 +412,10 @@ test("migration: additive, exact, after the attendance migration; only approved 
     // teacher profile photos on unified storage (additive; tests/storage-quota/profile-image-migration-guard.test.cjs)
     "20261117120000_add_profile_image_reservation_category",
     "20261117120100_add_teacher_profile_image_storage",
+    // simplified student registration (additive; tests/students/first-login-migration-guard.test.cjs)
+    "20261118120000_add_student_password_setup_pending",
+    // student email delivery outbox (additive; tests/students/email-delivery-migration-guard.test.cjs)
+    "20261119120000_add_email_delivery_tracking",
   ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");

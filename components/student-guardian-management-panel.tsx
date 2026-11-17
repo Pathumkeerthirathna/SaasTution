@@ -50,6 +50,7 @@ import { Grade, StudentConfirmationStatus } from "@prisma/client";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
+import { StudentEmailDeliveryHistory, type EmailHistoryScope } from "@/components/student-email-delivery-history";
 import {
   apiErrorMessage,
   CONFIRM_ALL_PROMPT,
@@ -80,10 +81,14 @@ export type StudentListItem = {
   createdAt: string;
 };
 
-/** Mirrors the server's checks (resend-registration-emails); the server re-checks. */
+/**
+ * "Resend login details" (a fresh temporary password by email), for every
+ * eligible student whatever their email-confirmation status. Mirrors the
+ * server's checks; the server re-checks ownership, status, email and
+ * declined registration, and applies the cooldown and rate limits.
+ */
 function canResendRegistrationEmails(student: StudentListItem) {
   return (
-    student.emailConfirmed === false &&
     student.status !== 2 &&
     !!student.email?.trim() &&
     student.StudentConfirmationStatus !== "REJECTED"
@@ -264,6 +269,35 @@ export function StudentGuardianManagementPanel() {
     useState<StudentListItem | null>(null);
   const [isResendingEmails, setIsResendingEmails] = useState(false);
   const isResendingEmailsRef = useRef(false);
+  const [emailHistoryScope, setEmailHistoryScope] = useState<EmailHistoryScope | null>(null);
+
+  /** After queueing: follows the email briefly and reports its real outcome. */
+  async function followResendDelivery(deliveryId: string, studentName: string) {
+    for (let i = 0; i < 15; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const response = await fetch(`/api/students/email-deliveries?deliveryId=${encodeURIComponent(deliveryId)}`, { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        const item = payload?.data?.items?.[0];
+        if (!response.ok || !item) continue;
+        if (item.status === "SENT" && item.activation?.state === "ACTIVE") {
+          toast.success(`New login details for ${studentName} were accepted by the email service. The new password is now active; the previous one no longer works.`, { duration: 9000 });
+          return;
+        }
+        if (item.status === "SENT" && item.activation?.state === "NOT_ACTIVATED") {
+          toast.error(`The email to ${studentName} was accepted, but the new password is NOT active (the account changed meanwhile). The previous password still works.`, { duration: 12000 });
+          return;
+        }
+        if (item.status === "FAILED") {
+          toast.error(`New login details for ${studentName} could not be sent: ${item.lastErrorMessage ?? "email failed"}. The current password still works.`, { duration: 12000 });
+          return;
+        }
+      } catch {
+        // Keep following; the history shows the final state.
+      }
+    }
+    toast(`New login details for ${studentName} are still being sent (automatic retries). Check Email Delivery for the outcome.`, { duration: 8000 });
+  }
 
   async function handleResendRegistrationEmails(student: StudentListItem) {
     // Ignore double clicks before the disabled state renders.
@@ -282,34 +316,29 @@ export function StudentGuardianManagementPanel() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok || !payload?.success) {
-        if (payload?.error?.code === "EMAIL_ALREADY_VERIFIED") {
-          setStudents((prev) =>
-            prev.map((s) =>
-              s.id === student.id ? { ...s, emailConfirmed: true } : s
-            )
-          );
-        }
-
+        // The server's message says whether the password was changed.
         toast.error(
-          payload?.error?.message ?? "Failed to resend registration emails.",
-          { duration: 6000 }
+          payload?.error?.message ??
+            "New login details could not be sent. The student's current password was not changed.",
+          { duration: 10000 }
         );
         return;
       }
 
-      if (payload.data?.outcome === "SENT") {
-        toast.success(
-          payload.message ?? "Registration emails resent.",
-          { duration: 6000 }
-        );
-      } else {
-        toast.error(
-          payload.message ?? "Only one registration email could be sent.",
-          { duration: 8000 }
-        );
+      toast.success(
+        payload.message ??
+          "New login details are queued. The current password keeps working until the email is accepted.",
+        { duration: 8000 }
+      );
+      if (typeof payload.data?.deliveryId === "string") {
+        void followResendDelivery(payload.data.deliveryId, student.name);
       }
     } catch {
-      toast.error("Unable to resend registration emails right now.");
+      // No answer: the outcome is unknown (the request may still have completed).
+      toast.error(
+        "No answer from the server, so we can't tell whether new login details were sent. If the student doesn't receive them, send them again.",
+        { duration: 10000 }
+      );
     } finally {
       isResendingEmailsRef.current = false;
       setIsResendingEmails(false);
@@ -1105,6 +1134,38 @@ const pendingCount = pendingStudents.length;
         toast.success(
           `${result.count} students imported successfully.`
         );
+
+        // Welcome emails are queued (sent in the background, with retries);
+        // the teacher follows them per student in Email Delivery.
+        const queuedEmails = Number(result.welcomeEmails?.queued ?? 0);
+        const notQueuedEmails = Number(result.welcomeEmails?.notQueued ?? 0);
+        const importBatchId: string | undefined = result.welcomeEmails?.importBatchId;
+        if (queuedEmails > 0) {
+          toast.success(
+            (t) => (
+              <span className="text-sm">
+                {queuedEmails} welcome email{queuedEmails === 1 ? "" : "s"} queued; they are sent in the background.{" "}
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    setEmailHistoryScope({ importBatchId });
+                  }}
+                >
+                  View delivery status
+                </button>
+              </span>
+            ),
+            { duration: 10000 }
+          );
+        }
+        if (notQueuedEmails > 0) {
+          toast.error(
+            `${notQueuedEmails} welcome email${notQueuedEmails === 1 ? "" : "s"} could not be queued (server email encryption is not configured). The students were imported; send their login details once it is configured.`,
+            { duration: 12000 }
+          );
+        }
       }
     } catch (error) {
       console.error(error);
@@ -1436,6 +1497,15 @@ const handleConfirmAllStudents = async () => {
             >
               <FileSpreadsheet size={12} />
               Export Excel
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEmailHistoryScope({})}
+              className="btn-secondary h-7 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] text-slate-700 hover:border-[#8fb0cd] hover:bg-[#eef3f8] hover:text-[#264867]"
+            >
+              <Mail size={12} />
+              Email Delivery
             </button>
 
             <button
@@ -1903,17 +1973,28 @@ const handleConfirmAllStudents = async () => {
                         </div>
 
                         {/* Own line, so it never widens the Actions column. */}
+                        {!!student.email?.trim() && (
+                          <div className="mt-1.5 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setEmailHistoryScope({ studentId: student.id, studentName: student.name })}
+                              className="inline-flex h-7 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-[#32598A] hover:underline"
+                            >
+                              Email history
+                            </button>
+                          </div>
+                        )}
                         {canResendRegistrationEmails(student) && (
                           <div className="mt-1.5 flex justify-end">
                             <button
                               type="button"
                               onClick={() => setResendEmailsStudent(student)}
                               disabled={isResendingEmails}
-                              title="Email not verified — resend the registration emails"
+                              title="Email a new temporary password (replaces the current one)"
                               className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-sky-200 bg-white px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                             >
                               <Mail size={13} />
-                              Resend Registration Emails
+                              Resend Login Details
                             </button>
                           </div>
                         )}
@@ -2373,6 +2454,16 @@ const handleConfirmAllStudents = async () => {
                     </button>
                   )}
 
+                  {!!student.email?.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setEmailHistoryScope({ studentId: student.id, studentName: student.name })}
+                      className="col-span-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-[#32598A] transition hover:bg-slate-50"
+                    >
+                      Email history
+                    </button>
+                  )}
+
                   {canResendRegistrationEmails(student) && (
                     <button
                       type="button"
@@ -2381,7 +2472,7 @@ const handleConfirmAllStudents = async () => {
                       className="col-span-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-white px-2.5 text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50"
                     >
                       <Mail size={13} />
-                      Resend Registration Emails
+                      Resend Login Details
                     </button>
                   )}
 
@@ -3698,10 +3789,10 @@ const handleConfirmAllStudents = async () => {
                   id="resend-registration-emails-title"
                   className="text-sm font-semibold text-slate-900"
                 >
-                  Resend registration emails?
+                  Send new login details?
                 </h3>
                 <p className="mt-0.5 text-[12px] leading-5 text-slate-500">
-                  {resendEmailsStudent.name}&apos;s email address has not been verified yet.
+                  For {resendEmailsStudent.name}
                 </p>
               </div>
             </div>
@@ -3716,10 +3807,12 @@ const handleConfirmAllStudents = async () => {
             </div>
 
             <p className="mt-3 text-[12px] leading-5 text-slate-600">
-              Both original registration emails will be sent again: the
-              welcome email with the student&apos;s registration details, and
-              the email confirmation code. A new confirmation code replaces
-              any earlier one.
+              A new temporary password will be created and emailed with the
+              student&apos;s registration number (sent in the background, with
+              automatic retries). The current password keeps working until the
+              email service accepts the email; only then does the new password
+              replace it and the student is signed out everywhere. If the email
+              can&apos;t be sent, nothing changes. Approved devices stay approved.
             </p>
 
             <div className="mt-4 flex justify-end gap-2">
@@ -3742,11 +3835,14 @@ const handleConfirmAllStudents = async () => {
                 {isResendingEmails && (
                   <Loader2 size={13} className="animate-spin" />
                 )}
-                {isResendingEmails ? "Sending..." : "Resend emails"}
+                {isResendingEmails ? "Sending..." : "Send new password"}
               </button>
             </div>
           </div>
         </div>
+      )}
+      {emailHistoryScope && (
+        <StudentEmailDeliveryHistory scope={emailHistoryScope} onClose={() => setEmailHistoryScope(null)} />
       )}
     </section>
   );

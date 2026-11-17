@@ -52,6 +52,11 @@ export type LoginResult =
       };
       /** From the authenticated student record; signed into the JWT as `sv`. */
       sessionVersion: number;
+      /**
+       * The password is still the emailed temporary one and the optional
+       * "Secure Your Account" step has not been answered (Student.passwordSetupPending).
+       */
+      passwordSetupPending: boolean;
     };
 
 /**
@@ -327,14 +332,10 @@ export async function loginStudent(registrationNumber: string, password: string,
     );
   }
 
-  if (!student.emailConfirmed) {
-    throw new AppError(
-      "Please confirm your email before signing in. We've sent a confirmation code to your inbox.",
-      403,
-      "EMAIL_NOT_CONFIRMED",
-      { email: student.email }
-    );
-  }
+  // Simplified student registration: students no longer confirm their email
+  // before signing in (their login details were sent to it, and every new
+  // device still needs the teacher's approval). Teachers keep the email
+  // confirmation step (loginTeacher, unchanged).
 
   if (student.confirmationStatus === StudentConfirmationStatus.PENDING) {
     const profile = await prisma.teacherProfile.findUnique({
@@ -401,6 +402,7 @@ export async function loginStudent(registrationNumber: string, password: string,
     // The record loaded above (no extra query, no new select). Absent until the
     // sessionVersion migration is applied and the client regenerated: then 0.
     sessionVersion: studentSessionVersionOf(student),
+    passwordSetupPending: student.passwordSetupPending === true,
   };
 }
 
@@ -438,7 +440,101 @@ export async function loginByLoginId(loginId: string, password: string, studentC
       isConfirmed:authenticatedStudent.confirmationStatus==StudentConfirmationStatus.APPROVED?true:false
     },
     sessionVersion: authenticatedStudent.sessionVersion,
+    passwordSetupPending: authenticatedStudent.passwordSetupPending,
   };
+}
+
+// ---- First login: the optional "Secure Your Account" step --------------------------------------------
+
+export type StudentPasswordSetupChoice =
+  | { action: "skip" }
+  | { action: "set"; newPassword: string; confirmPassword: string };
+
+/** The login request's optional `passwordSetup` field; null when absent or malformed. */
+export function parseStudentPasswordSetupChoice(value: unknown): StudentPasswordSetupChoice | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.action === "skip") return { action: "skip" };
+  if (record.action === "set" && typeof record.newPassword === "string" && typeof record.confirmPassword === "string") {
+    return { action: "set", newPassword: record.newPassword, confirmPassword: record.confirmPassword };
+  }
+  return null;
+}
+
+/**
+ * Applies the student's first-login choice. The caller (the login route) has
+ * just verified the student's CURRENT password through loginStudent (rate
+ * limits and every account check included) and passes it as
+ * `currentPassword`; nothing here grants a session or touches devices.
+ *
+ *   skip: the temporary password stays valid; the step is not offered again.
+ *   set:  the student password rules (SP-5.6: 8-64 characters, <= 72 bytes),
+ *         confirmation must match, never the registration number (SP-6C) or
+ *         the current password; hashed at cost 12. Conditional on the step
+ *         still being pending (a concurrent answer cannot apply twice). No
+ *         session exists yet for a pending student, so sessionVersion is
+ *         unchanged; unused reset links are retired, and the usual
+ *         "password changed" notice is sent.
+ */
+export async function applyStudentPasswordSetupChoice(input: {
+  studentId: string;
+  currentPassword: string;
+  choice: StudentPasswordSetupChoice;
+}): Promise<void> {
+  if (input.choice.action === "skip") {
+    await prisma.student.updateMany({
+      where: { id: input.studentId, passwordSetupPending: true },
+      data: { passwordSetupPending: false },
+    });
+    return;
+  }
+
+  const { newPassword, confirmPassword } = input.choice;
+  const parsed = studentNewPasswordSchema.safeParse(newPassword);
+  if (!parsed.success) {
+    throw new AppError(parsed.error.issues[0]?.message ?? PASSWORD_MESSAGES.newRequired, 400, "VALIDATION_ERROR", { field: "newPassword" });
+  }
+  if (confirmPassword !== newPassword) {
+    throw new AppError(PASSWORD_MESSAGES.mismatch, 400, "VALIDATION_ERROR", { field: "confirmPassword" });
+  }
+  if (newPassword === input.currentPassword) {
+    throw new AppError(PASSWORD_MESSAGES.unchanged, 400, "VALIDATION_ERROR", { field: "newPassword" });
+  }
+
+  const student = await prisma.student.findUnique({
+    where: { id: input.studentId },
+    select: { registrationNumber: true, email: true },
+  });
+  if (!student) throw new AppError("Account not found.", 404, "ACCOUNT_NOT_FOUND");
+  if (isRegistrationNumberPassword(newPassword, student.registrationNumber)) {
+    throw new AppError(PASSWORD_MESSAGES.registrationNumber, 400, "VALIDATION_ERROR", { field: "newPassword" });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, HASH_ROUNDS);
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.student.updateMany({
+      where: { id: input.studentId, passwordSetupPending: true, status: 0 },
+      data: { password: passwordHash, passwordSetupPending: false },
+    });
+    if (result.count === 1) {
+      await tx.passwordResetToken.updateMany({
+        where: { role: "STUDENT", userId: input.studentId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+    }
+    return result.count;
+  });
+  if (updated !== 1) {
+    throw new AppError("Your password could not be changed. Please sign in again.", 409, "PASSWORD_SETUP_CONFLICT");
+  }
+
+  if (student.email) {
+    try {
+      await sendPasswordChangedEmail({ to: student.email });
+    } catch (error) {
+      console.error(`[first-login] Password-changed notification failed (${error instanceof Error ? error.name : "unknown error"}).`);
+    }
+  }
 }
 
 async function resolveAccountByLoginId(loginId: string): Promise<
@@ -776,7 +872,7 @@ async function confirmStudentPasswordReset(resetRecord: ResetTokenRecord, newPas
 
       const updated = await tx.student.updateMany({
         where: { id: resetRecord.userId, status: student.status, sessionVersion: student.sessionVersion },
-        data: { password: passwordHash, sessionVersion: { increment: 1 } },
+        data: { password: passwordHash, sessionVersion: { increment: 1 }, passwordSetupPending: false },
       });
       // Changed since it was read (deleted, deactivated, or another session
       // revocation committed first): roll everything back.

@@ -7,7 +7,7 @@ import { clientKey } from "@/lib/error-logging/request-trust";
 import { LoginRateLimitedError } from "@/lib/student-login-rate-limit";
 import { markTeacherLoggedIn } from "@/lib/login-tracker";
 import { verifySessionInviteToken } from "@/lib/session-invite";
-import { loginByLoginId } from "@/services/auth-service";
+import { applyStudentPasswordSetupChoice, loginByLoginId, parseStudentPasswordSetupChoice } from "@/services/auth-service";
 import { validateStudentDevice } from "@/services/student-device.service";
 
 const ADMIN_LOGIN_ID = "pathum";
@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       email?: string;
       password?: string;
       inviteToken?: string;
+      /** First login only: the answer to "Secure Your Account" ({ action: "skip" } or { action: "set", newPassword, confirmPassword }). */
+      passwordSetup?: unknown;
        device?: {
         deviceId: string;
         fingerprint?: string;
@@ -106,6 +108,26 @@ export async function POST(request: Request) {
           403,
           "ACCOUNT_DEACTIVATED"
         );
+      }
+
+      // First login (simplified registration): the password is still the emailed
+      // temporary one. The credentials and every account check above have just
+      // passed; the optional "Secure Your Account" step is answered BEFORE the
+      // device check, and NO session is issued for it: the student continues
+      // through the unchanged device approval below (set or skip alike).
+      if (loginResult.passwordSetupPending) {
+        const choice = parseStudentPasswordSetupChoice(body.passwordSetup);
+        if (!choice) {
+          return apiSuccess(
+            { passwordSetupOffered: true },
+            { message: "You can set your own password now or do this later." }
+          );
+        }
+        await applyStudentPasswordSetupChoice({
+          studentId: loginResult.user.id,
+          currentPassword: parsed.data.password,
+          choice,
+        });
       }
 
       try {

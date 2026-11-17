@@ -292,7 +292,8 @@ test("success: verify, then hash (cost 12), one transaction (password + sessionV
   assert.deepEqual(bcryptOps(), ["compare", "hash"], "the current password is verified before any hashing");
   assert.equal(ops("hash")[0].rounds, 12);
   assert.deepEqual(ops("student.updateMany")[0].where, { id, status: 0, sessionVersion: 2 });
-  assert.deepEqual(ops("student.updateMany")[0].data, { password: "<hash>", sessionVersion: { increment: 1 } });
+  // A password the student chooses also answers the optional first-login step.
+  assert.deepEqual(ops("student.updateMany")[0].data, { password: "<hash>", sessionVersion: { increment: 1 }, passwordSetupPending: false });
   assert.deepEqual(ops("passwordResetToken.updateMany")[0].where, { role: "STUDENT", userId: id, usedAt: null });
   assert.deepEqual(state.transactions, [{ maxWait: 5_000, timeout: 15_000 }]);
   assert.deepEqual([ops("student.updateMany")[0].viaTx, ops("passwordResetToken.updateMany")[0].viaTx], [true, true], "both writes inside the transaction");

@@ -5,7 +5,6 @@ import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
-import { sendEmailConfirmationCode } from "@/services/auth-service";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
 import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
@@ -18,8 +17,13 @@ import { requireTeacherSession } from "@/lib/auth-session";
 
 import {
   sendEmail,
-  sendStudentRegistrationEmail,
 } from "@/lib/mailer";
+import {
+  issueTemporaryStudentPassword,
+  type IssuedTemporaryPassword,
+} from "@/services/student-welcome-credentials-service";
+import { EMAIL_DELIVERY_INITIATORS, queueStudentWelcomeEmails } from "@/services/student-email-delivery-service";
+import { wakeEmailDeliveryWorker } from "@/services/email-delivery-worker";
 
 import {
   getStudentRegistrationEmail,
@@ -243,20 +247,26 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
     await assertEmailAvailable(input.email, { type: "STUDENT", teacherId: teacher.id });
   }
 
+  // Simplified registration: a random temporary password (never the guessable
+  // registration number, SP-6C), emailed once after the account is created.
+  // Without an email address nothing could deliver it (and signing in needs
+  // an email), so such a student keeps no password, as before.
+  const credentials: IssuedTemporaryPassword | null = input.email ? await issueTemporaryStudentPassword() : null;
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const registrationNumber = await generateStudentRegistrationNumber(teacher.name);
 
     try {
-      const student = await prisma.student.create({
+      // The account and its welcome email record in ONE transaction (outbox):
+      // a failed attempt queues nothing; a created account always has its email queued.
+      const student = await prisma.$transaction(async (tx) => {
+      const student = await tx.student.create({
         data: {
           registrationNumber:requestedRegistrationNumber??registrationNumber,
           name: input.name,
           gradeId: input.gradeId,
-          // Student Profile SP-6C: no initial password (the registration number
-          // is guessable). Like imported and self-registered students, the
-          // student sets one through "Forgot Password" (the registration email
-          // already says so), which proves they own the email address.
-          password: null,
+          password: credentials?.passwordHash ?? null,
+          passwordSetupPending: credentials !== null,
           contact: input.contact01??"",
           contact01: input.contact01,
           contact02: input.contact02,
@@ -277,26 +287,23 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
         },
       });
 
-       if (student.email) {
-        try {
-          await sendStudentRegistrationEmail({
-            to: student.email,
-            studentName: student.name,
-            registrationNumber: student.registrationNumber??"",
-            teacherName: teacher.name,
-            className: "No classes assigned yet", // or another value if you want
-            registrationDate: new Date().toLocaleDateString(),
-          });
-        } catch (err) {
-          console.error("Email sending failed:", err);
-        }
-
-        try {
-          await sendEmailConfirmationCode("STUDENT", student.id, student.email);
-        } catch (err) {
-          console.error("Failed to send student email confirmation code:", err);
-        }
+      // Exactly one welcome email, queued with the account (sent by the background worker).
+      if (student.email && credentials) {
+        await queueStudentWelcomeEmails(tx, [
+          {
+            studentId: student.id,
+            teacherId: teacher.id,
+            recipientEmail: student.email,
+            temporaryPassword: credentials.temporaryPassword,
+            passwordHash: credentials.passwordHash,
+            initiatedBy: EMAIL_DELIVERY_INITIATORS.TEACHER_ADD,
+          },
+        ]);
       }
+      return student;
+      });
+
+      if (student.email && credentials) wakeEmailDeliveryWorker();
 
       return student;
 
@@ -595,7 +602,7 @@ const orderBy: Prisma.StudentOrderByWithRelationInput[] = [
       StudentConfirmationStatus:student.confirmationStatus,
       confirmedAt:student.confirmedAt,
       registeredAt:student.registeredAt,
-      // Read-only: lets the page show "Resend Registration Emails".
+      // Read-only: lets the page show "Resend Login Details".
       emailConfirmed: student.emailConfirmed,
       classes: student.classes.map((entry) => ({
         id: entry.id,
@@ -2033,6 +2040,10 @@ export async function RegisterStudentViaPublicClasses(
     where: { id: cls.teacherId },
   });
 
+  // Simplified registration: one temporary password for this registration
+  // (whatever attempt below succeeds), emailed once after the commit.
+  const credentials = await issueTemporaryStudentPassword();
+
   // The lowest free number; if a concurrent registration takes it between
   // generating and saving (database unique index), generate again.
   let regNo = "";
@@ -2058,6 +2069,9 @@ export async function RegisterStudentViaPublicClasses(
             publicClassId: cls.id,
 
             confirmationStatus: "PENDING",
+
+            password: credentials.passwordHash,
+            passwordSetupPending: true,
 
           },
         });
@@ -2086,6 +2100,19 @@ export async function RegisterStudentViaPublicClasses(
         // teacher's Fee Sheet already uses — see class-student-fee-service.ts.
         await ensureCurrentMonthFeeForClassStudent(tx, classStudentRecord.id);
 
+        // Exactly one welcome email, queued in this transaction (outbox): a
+        // rolled-back registration queues nothing. Sent by the background worker.
+        await queueStudentWelcomeEmails(tx, [
+          {
+            studentId: student.id,
+            teacherId: cls.teacherId,
+            recipientEmail: emailValue.toLowerCase(),
+            temporaryPassword: credentials.temporaryPassword,
+            passwordHash: credentials.passwordHash,
+            initiatedBy: EMAIL_DELIVERY_INITIATORS.PUBLIC_REGISTRATION,
+          },
+        ]);
+
         // await sendStudentRegistrationEmail({
         //   to: request.email!,
         //   studentName: student.name,
@@ -2096,7 +2123,11 @@ export async function RegisterStudentViaPublicClasses(
         // });
 
         return student;
-      });
+        // About a dozen sequential statements (student, enrolment, history, the
+        // month's fee with its waiver lookups, the queued email): over a remote
+        // database they can exceed Prisma's default 5 s, which expires the
+        // transaction mid-way (P2028). Same explicit options as the decisions.
+      }, STUDENT_DECISION_TRANSACTION_OPTIONS);
     } catch (error) {
       if (!isRegistrationNumberConflict(error)) {
         throw error;
@@ -2108,26 +2139,8 @@ export async function RegisterStudentViaPublicClasses(
     throw new AppError("Failed to generate registration number. Please retry.", 500, "REGISTRATION_NUMBER_GENERATION_FAILED");
   }
 
-  try {
-    await sendStudentRegistrationEmail({
-        to: request.email!,
-        studentName: student.name,
-        registrationNumber: regNo,
-        teacherName: teacher?.name ?? "",
-        className: cls.name,
-        registrationDate: new Date().toLocaleDateString(),
-    });
-    } catch (err) {
-        console.error("Email sending failed:", err);
-    }
-
-  if (emailValue) {
-    try {
-      await sendEmailConfirmationCode("STUDENT", student.id, emailValue.toLowerCase());
-    } catch (err) {
-      console.error("Failed to send student email confirmation code:", err);
-    }
-  }
+  // The welcome email was queued with the registration; ask the worker to send it now.
+  wakeEmailDeliveryWorker();
 
   return {
     student,

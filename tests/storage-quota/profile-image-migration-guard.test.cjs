@@ -29,9 +29,12 @@ const statementsOf = (name) =>
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-test("placement: the two migrations are the latest, in this order; no committed migration changed (git)", () => {
+test("placement: the two migrations follow the storage accounting one, in this order (only approved migrations after them); no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(-3), ["20261116120000_add_teacher_storage_accounting", ENUM_MIGRATION, MIGRATION]);
+  const at = all.indexOf("20261116120000_add_teacher_storage_accounting");
+  assert.deepEqual(all.slice(at, at + 3), ["20261116120000_add_teacher_storage_accounting", ENUM_MIGRATION, MIGRATION]);
+  // Approved later migrations (each with its own guard test).
+  assert.deepEqual(all.slice(at + 3), ["20261118120000_add_student_password_setup_pending", "20261119120000_add_email_delivery_tracking"]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });

@@ -37,6 +37,7 @@ model Teacher {
 
   classes                Class[]
   students               Student[]
+  studentEmailDeliveries EmailDelivery[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
   paperSupportMessages   PaperSupportMessage[]
   paymentMessages        PaymentMessage[]
@@ -658,6 +659,13 @@ model Student {
   emailConfirmed   Boolean   @default(false)
   emailConfirmedAt DateTime?
 
+  /// The student's password is a system-generated TEMPORARY password (emailed
+  /// at registration) and the optional "Secure Your Account" step has not been
+  /// answered yet. Cleared when the student sets their own password (first
+  /// login, account security or Forgot Password) or skips the step. Existing
+  /// students: false (never prompted). Migration 20261118120000.
+  passwordSetupPending Boolean @default(false)
+
   registeredAt DateTime @default(now())
 
   devices      StudentDevice[]
@@ -683,6 +691,7 @@ model Student {
   breakoutRoomMemberships       BreakoutRoomMember[]
   qrTokens                      StudentQrToken[]
   confirmationHistory           StudentConfirmationHistory[]
+  emailDeliveries               EmailDelivery[]
   lectureAttendances            LectureAttendance[]
   attendanceScanEvents          AttendanceScanEvent[]
   teacher                       Teacher                        @relation(fields: [teacherId], references: [id])
@@ -2822,4 +2831,93 @@ model StorageReservation {
 
   @@index([teacherId, expiresAt])
   @@index([expiresAt])
+}
+
+/// Kind of a tracked email (EmailDelivery). Extensible: add a value per new notification type.
+enum EmailDeliveryType {
+  /// The one welcome email of a new student (registration number + temporary password).
+  STUDENT_WELCOME
+  /// Teacher "Resend Login Details": a NEW temporary password, activated only after the email was accepted.
+  STUDENT_CREDENTIAL_RESEND
+}
+
+/// PENDING: waiting for (another) attempt at nextRetryAt. PROCESSING: claimed by a worker
+/// (lease until processingLeaseExpiresAt). SENT: ACCEPTED by the email provider (not proof of
+/// inbox delivery). FAILED: no further automatic attempt (lastErrorCode says why).
+enum EmailDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+/// Persistent email delivery tracking / outbox (services/student-email-delivery-service.ts,
+/// worker: services/email-delivery-worker.ts). Rows are kept after sending (history).
+///
+/// Never stores a plaintext password or email body. encryptedPayload holds the temporary
+/// password ONLY, AES-256-GCM encrypted with EMAIL_PAYLOAD_ENCRYPTION_KEY (kept outside the
+/// database), bound to the row id; it is cleared once no longer needed (sent, superseded,
+/// or payloadExpiresAt passed). Fingerprints are SHA-256 of bcrypt HASHES (never of passwords).
+/// All timestamps are written by the application (real UTC instants).
+model EmailDelivery {
+  id             String              @id @default(uuid())
+  emailType      EmailDeliveryType
+  status         EmailDeliveryStatus @default(PENDING)
+  studentId      String
+  /// The student's teacher (ownership for the teacher-facing history / retry).
+  teacherId      String
+  /// PUBLIC_REGISTRATION | TEACHER_ADD | BULK_IMPORT | TEACHER_RESEND
+  initiatedBy    String              @db.VarChar(32)
+  /// Bulk import run that created the student (import summary); null otherwise.
+  importBatchId  String?             @db.VarChar(64)
+  /// Address used by the latest attempt (the student's current email at send time).
+  recipientEmail String              @db.VarChar(320)
+  /// One welcome per student ("student-welcome:<studentId>"); one per resend operation.
+  idempotencyKey String              @unique @db.VarChar(200)
+
+  attemptCount             Int       @default(0)
+  maxAttempts              Int
+  nextRetryAt              DateTime?
+  lastAttemptAt            DateTime?
+  processingStartedAt      DateTime?
+  processingLeaseExpiresAt DateTime?
+  /// Fencing token of the current claim (only its holder may finish the attempt).
+  leaseToken               String?   @db.VarChar(64)
+  /// Accepted by the provider (status SENT).
+  sentAt                   DateTime?
+  providerMessageId        String?   @db.VarChar(256)
+  lastErrorCode            String?   @db.VarChar(64)
+  /// Sanitized (no addresses, no credentials), at most 500 characters.
+  lastErrorMessage         String?   @db.VarChar(500)
+  /// The latest failure's outcome was unknown (timeout / connection lost): the email may have been sent.
+  lastOutcomeAmbiguous     Boolean   @default(false)
+
+  encryptedPayload      String?
+  payloadExpiresAt      DateTime?
+  /// SHA-256 of the bcrypt hash that the emailed password matches.
+  credentialFingerprint String?   @db.Char(64)
+
+  // STUDENT_CREDENTIAL_RESEND only: activation after the provider accepted the email.
+  /// SHA-256 of the student's password hash when the resend was requested (unchanged = safe to activate).
+  basePasswordFingerprint String?   @db.Char(64)
+  baseSessionVersion      Int?
+  /// bcrypt hash of the NEW temporary password, made the student's password only after acceptance.
+  pendingPasswordHash     String?
+  /// "resend:<studentId>" while the resend is unresolved: at most one per student (NULLs never clash).
+  activeOperationKey      String?   @unique @db.VarChar(80)
+  activatedAt             DateTime?
+  /// Set when the new password could NOT be activated (e.g. ACCOUNT_CHANGED); the old one still works.
+  activationErrorCode     String?   @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([status, nextRetryAt])
+  @@index([status, processingLeaseExpiresAt])
+  @@index([teacherId, createdAt])
+  @@index([studentId, createdAt])
+  @@index([importBatchId])
 }

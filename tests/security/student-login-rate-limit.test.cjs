@@ -406,11 +406,13 @@ test("a wrong password never reveals the account's state; a correct one keeps th
   for (const id of ["unconf", "pend", "off", "noemail", "dev"]) {
     assert.deepEqual((await wrong(`REG-${id.toUpperCase()}`)).body, GENERIC_401, id);
   }
-  const expected = { unconf: "EMAIL_NOT_CONFIRMED", pend: "STUDENT_PENDING_APPROVAL", off: "STUDENT_DEACTIVATED", noemail: "STUDENT_EMAIL_MISSING", dev: "DEVICE_PENDING" };
+  const expected = { pend: "STUDENT_PENDING_APPROVAL", off: "STUDENT_DEACTIVATED", noemail: "STUDENT_EMAIL_MISSING", dev: "DEVICE_PENDING" };
   for (const [id, code] of Object.entries(expected)) {
     const answer = await right(`REG-${id.toUpperCase()}`);
     assert.deepEqual([answer.status, answer.body.error.code], [403, code], id);
   }
+  // Simplified registration: students no longer confirm their email before signing in.
+  assert.equal((await right("REG-UNCONF")).status, 200, "an unconfirmed email no longer blocks a student");
   // Six more correct-password logins answered 403: still not locked by failures (only the attempt cap applies).
   for (let i = 0; i < 6; i += 1) assert.equal((await right("REG-DEV")).body.error.code, "DEVICE_PENDING");
 });

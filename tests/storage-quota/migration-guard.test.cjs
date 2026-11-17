@@ -35,6 +35,8 @@ test("only approved migrations follow this one; no earlier migration file change
   assert.deepEqual(all.slice(all.indexOf(MIGRATION) + 1), [
     "20261117120000_add_profile_image_reservation_category",
     "20261117120100_add_teacher_profile_image_storage",
+    "20261118120000_add_student_password_setup_pending", // student first login (tests/students/first-login-migration-guard.test.cjs)
+    "20261119120000_add_email_delivery_tracking", // student email outbox (tests/students/email-delivery-migration-guard.test.cjs)
   ]);
   // The earlier, still uncommitted Stage 2 migration may differ from HEAD; every COMMITTED one must not.
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();

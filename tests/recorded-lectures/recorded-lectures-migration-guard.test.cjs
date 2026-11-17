@@ -239,6 +239,8 @@ const LATER_MIGRATIONS = [
   "20261116120000_add_teacher_storage_accounting", // storage accounting Stage 3.1: tests/storage-quota/migration-guard.test.cjs
   "20261117120000_add_profile_image_reservation_category", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
   "20261117120100_add_teacher_profile_image_storage", // profile photos: tests/storage-quota/profile-image-migration-guard.test.cjs
+  "20261118120000_add_student_password_setup_pending", // student first login: tests/students/first-login-migration-guard.test.cjs
+  "20261119120000_add_email_delivery_tracking", // student email outbox: tests/students/email-delivery-migration-guard.test.cjs
 ];
 
 test("the migration exists, and only approved migrations follow it", () => {

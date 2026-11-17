@@ -11,7 +11,7 @@ import {
 
 import { Grade } from "@/types/grade";
 import { useEffect, useState } from "react";
-import toast from "react-hot-toast/headless";
+import toast from "react-hot-toast";
 
 interface Props {
   classId: string;
@@ -65,18 +65,20 @@ export default function ClassRegisterCard({
       const response = await fetch(`/api/students/check-email?registrationNumber=${encodeURIComponent(regNo)}&teacherId=${encodeURIComponent(teacherId)}`
       );
 
-      const result = await response.json();
+      // Teacher-only endpoint: an anonymous visitor gets 401 (the server's
+      // duplicate check at registration still applies). Only a real answer counts.
+      const result = response.ok ? await response.json() : null;
 
-      if (result.exists) {
+      if (result?.exists === true) {
         setEmailError("Email already exists.");
       } else {
         setEmailError("");
       }
 
-      setIsCheckinEmail(false);
-
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCheckinEmail(false);
     }
   };
 
@@ -97,18 +99,18 @@ export default function ClassRegisterCard({
       const response = await fetch(`/api/students/check-name?registrationNumber=${encodeURIComponent(regNo)}&teacherId=${encodeURIComponent(teacherId)}`
       );
 
-      const result = await response.json();
+      const result = response.ok ? await response.json() : null;
 
-      if (result.exists) {
+      if (result?.exists === true) {
         setNameError("Name already exists.");
       } else {
         setNameError("");
       }
 
-      setIsCheckingName(false);
-
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCheckingName(false);
     }
   };
 
@@ -244,9 +246,9 @@ export default function ClassRegisterCard({
     } catch (error) {
       console.error(error);
       toast.error("Something went wrong. Please try again.");
+    } finally {
+      setIsRegistering(false);
     }
-
-    setIsRegistering(false);
   }
 
   return (

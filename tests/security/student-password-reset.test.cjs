@@ -454,7 +454,8 @@ test("student: success updates the password and increments sessionVersion exactl
   assert.equal(updates.length, 1);
   assert.equal(updates[0].viaTx, true);
   assert.deepEqual(updates[0].where, { id: studentId, status: 0, sessionVersion: 4 });
-  assert.deepEqual(updates[0].data, { password: "<hash>", sessionVersion: { increment: 1 } });
+  // A password chosen through Forgot Password also answers the optional first-login step.
+  assert.deepEqual(updates[0].data, { password: "<hash>", sessionVersion: { increment: 1 }, passwordSetupPending: false });
   assert.equal(ops("tx.commit").length, 1);
 });
 

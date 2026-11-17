@@ -35,5 +35,12 @@ export async function register() {
     const { startRecordedLectureMaintenance } = await import("./services/recorded-lecture-maintenance-scheduler");
 
     startRecordedLectureMaintenance();
+
+    // Student onboarding emails (EmailDelivery outbox): the background email
+    // worker, once per process. Its first pass recovers rows a previous
+    // process left PROCESSING. EMAIL_WORKER_ENABLED=false disables it.
+    const { startEmailDeliveryWorker } = await import("./services/email-delivery-worker");
+
+    startEmailDeliveryWorker();
   }
 }

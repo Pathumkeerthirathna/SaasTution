@@ -339,7 +339,6 @@ test("existing login validation is unchanged: wrong password, email, approval, d
     [{ loginId: "REG-S1", password: "wrong-password" }, 401, "INVALID_CREDENTIALS"],
     [{ loginId: "REG-UNKNOWN", password: PASSWORD }, 401, "INVALID_CREDENTIALS"],
     [{ loginId: "REG-NOEMAIL", password: PASSWORD }, 403, "STUDENT_EMAIL_MISSING"],
-    [{ loginId: "REG-UNCONFIRMED", password: PASSWORD }, 403, "EMAIL_NOT_CONFIRMED"],
     [{ loginId: "REG-PENDING", password: PASSWORD }, 403, "STUDENT_PENDING_APPROVAL"],
     [{ loginId: "REG-REJECTED", password: PASSWORD }, 403, "STUDENT_REGISTRATION_REJECTED"],
     [{ loginId: "", password: PASSWORD }, 400, "VALIDATION_ERROR"],
@@ -349,6 +348,11 @@ test("existing login validation is unchanged: wrong password, email, approval, d
     const result = await login(body);
     assert.deepEqual([result.status, result.body.error.code, result.token], [status, code, null], JSON.stringify(body));
   }
+  // Simplified registration: an unconfirmed email no longer blocks a student (the approved device of
+  // this fake still decides; teachers keep their email confirmation step).
+  const unconfirmed = await login({ loginId: "REG-UNCONFIRMED", password: PASSWORD });
+  assert.equal(unconfirmed.status, 200);
+  assert.ok(unconfirmed.token, "signed in");
   state.device = new DeviceApprovalException("DEVICE_PENDING", "Waiting for approval.", 403, { requestId: "r-1" });
   const device = await login({ loginId: "REG-S1", password: PASSWORD });
   assert.deepEqual([device.status, device.body.error.code, device.token], [403, "DEVICE_PENDING", null]);

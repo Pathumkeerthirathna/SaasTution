@@ -1,3 +1,4 @@
+import { registerShutdownTask } from "@/lib/process-shutdown";
 import { abandonRunningCompletions } from "@/services/recorded-lecture-completion-service";
 import { runRecordedLectureMaintenance, type MaintenanceReport } from "@/services/recorded-lecture-maintenance-service";
 import { retryPendingDeletions, type PendingDeletionReport } from "@/services/permanent-deletion-service";
@@ -29,10 +30,12 @@ import {
  *   - runs never overlap (a tick during a run is skipped); a failing run is
  *     logged by the maintenance service and simply retried by the next tick;
  *   - the timers do not keep the process alive;
- *   - graceful shutdown (SIGTERM / SIGINT): the timers stop and every
- *     completion claim running here is abandoned (made stale, fenced), so the
- *     next process recovers it at once. The signal then takes its normal
- *     course (another handler, or the default exit).
+ *   - graceful shutdown (SIGTERM / SIGINT, through the shared coordinator
+ *     lib/process-shutdown.ts, together with the email worker): the timers
+ *     stop and every completion claim running here is abandoned (made stale,
+ *     fenced), so the next process recovers it at once. The signal then takes
+ *     its normal course once every registered task finished (Next's own
+ *     handler, or the default exit).
  * Only on a long-running production Node server (not serverless), and only
  * when the recorded-lecture storage is configured.
  */
@@ -52,7 +55,8 @@ export const SHUTDOWN_ABANDON_TIMEOUT_MS = 1_000;
 type SchedulerState = {
   timer: ReturnType<typeof setInterval> | null;
   startupTimer: ReturnType<typeof setTimeout> | null;
-  signalHandlers: Array<{ signal: NodeJS.Signals; handler: () => void }>;
+  /** Removes this scheduler's task from the shared shutdown coordinator. */
+  unregisterShutdown: (() => void) | null;
 };
 
 /** Run bookkeeping, shared by scheduled and manual ticks (overlap guard, sweep cadence). */
@@ -123,7 +127,7 @@ export async function runMaintenanceTick(
 }
 
 function newState(): SchedulerState {
-  return { timer: null, startupTimer: null, signalHandlers: [] };
+  return { timer: null, startupTimer: null, unregisterShutdown: null };
 }
 
 /**
@@ -147,17 +151,7 @@ export function startRecordedLectureMaintenance(
   state.timer.unref?.();
 
   if (options.installSignalHandlers !== false) {
-    for (const signal of ["SIGTERM", "SIGINT"] as const) {
-      const handler = () => {
-        void shutdownRecordedLectureMaintenance().finally(() => {
-          // Ours was a once-listener: with no other listener left, the signal's
-          // default action (exit) must still happen.
-          if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
-        });
-      };
-      process.once(signal, handler);
-      state.signalHandlers.push({ signal, handler });
-    }
+    state.unregisterShutdown = registerShutdownTask("recorded-lecture-maintenance", () => shutdownRecordedLectureMaintenance());
   }
   return true;
 }
@@ -168,7 +162,8 @@ export function stopRecordedLectureMaintenance() {
   if (!state) return;
   if (state.timer) clearInterval(state.timer);
   if (state.startupTimer) clearTimeout(state.startupTimer);
-  for (const { signal, handler } of state.signalHandlers) process.removeListener(signal, handler);
+  state.unregisterShutdown?.();
+  state.unregisterShutdown = null;
   delete holder.slRecordedLectureMaintenance;
 }
 

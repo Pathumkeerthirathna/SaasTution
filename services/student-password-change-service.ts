@@ -72,7 +72,7 @@ export async function changeStudentPassword(input: {
     await prisma.$transaction(async (tx) => {
       const updated = await tx.student.updateMany({
         where: { id: studentId, status: ACTIVE_STATUS, sessionVersion: expectedVersion },
-        data: { password: passwordHash, sessionVersion: { increment: 1 } },
+        data: { password: passwordHash, sessionVersion: { increment: 1 }, passwordSetupPending: false },
       });
       if (updated.count !== 1) throw new ConflictSignal();
 

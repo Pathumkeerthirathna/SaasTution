@@ -7,7 +7,10 @@
  *    update, updateMany, deleteMany; `select` projection.
  *  - Where clauses: equality (undefined = no filter; null matches a column
  *    never set), { equals, in, not, gt, startsWith, contains } with
- *    mode: "insensitive", and OR / AND / NOT.
+ *    mode: "insensitive", { lt, lte, gte } (a null / missing value never
+ *    satisfies a range), and OR / AND / NOT.
+ *  - EmailDelivery: idempotencyKey and activeOperationKey are unique
+ *    (NULLs never clash), enforced on every write with Prisma P2002.
  *  - The Student table enforces the partial unique index
  *    "Student_registrationNumber_not_deleted_key" (registrationNumber unique
  *    among rows with status <> 2, case-sensitive, NULLs never clash) by
@@ -52,7 +55,10 @@ function createFakePrisma() {
     if ("equals" in cond && norm(actual) !== norm(cond.equals)) return false;
     if ("in" in cond && !cond.in.map(norm).includes(norm(actual))) return false;
     if ("not" in cond && actual === cond.not) return false;
-    if ("gt" in cond && !(actual > cond.gt)) return false;
+    if ("gt" in cond && (actual == null || !(actual > cond.gt))) return false;
+    if ("gte" in cond && (actual == null || !(actual >= cond.gte))) return false;
+    if ("lt" in cond && (actual == null || !(actual < cond.lt))) return false;
+    if ("lte" in cond && (actual == null || !(actual <= cond.lte))) return false;
     if ("startsWith" in cond && !(typeof actual === "string" && norm(actual).startsWith(norm(cond.startsWith)))) return false;
     if ("contains" in cond && !(typeof actual === "string" && norm(actual).includes(norm(cond.contains)))) return false;
     return true;
@@ -82,6 +88,27 @@ function createFakePrisma() {
       clientVersion: "5.22.0",
       meta: { target: ["registrationNumber"] },
     });
+  }
+
+  const UNIQUE = { emailDelivery: ["idempotencyKey", "activeOperationKey"] };
+
+  /** Plain unique columns (UNIQUE): `rows` (new versions) against the rest of the table. */
+  function assertUnique(table, rows, tableRows) {
+    for (const column of UNIQUE[table] ?? []) {
+      const ids = new Set(rows.map((r) => r.id));
+      const seen = new Set(tableRows.filter((r) => !ids.has(r.id) && r[column] != null).map((r) => r[column]));
+      for (const row of rows) {
+        if (row[column] == null) continue;
+        if (seen.has(row[column])) {
+          throw new Prisma.PrismaClientKnownRequestError(`Unique constraint failed on the fields: (\`${column}\`)`, {
+            code: "P2002",
+            clientVersion: "5.22.0",
+            meta: { target: [column] },
+          });
+        }
+        seen.add(row[column]);
+      }
+    }
   }
 
   /** The partial unique index, checked for `rows` against the table plus each other. */
@@ -132,6 +159,7 @@ function createFakePrisma() {
         await beforeWrite("create", data);
         const row = withDefaults(table, data);
         if (table === "student") assertStudentIndex([row], rows());
+        assertUnique(table, [row], rows());
         rows().push(row);
         return project(row, select);
       },
@@ -140,6 +168,7 @@ function createFakePrisma() {
         await beforeWrite("createMany", data);
         const created = data.map((d) => withDefaults(table, d));
         if (table === "student") assertStudentIndex(created, rows());
+        assertUnique(table, created, rows());
         rows().push(...created);
         return { count: created.length };
       },
@@ -150,6 +179,7 @@ function createFakePrisma() {
         if (!row) throw new Error(`${table}.update: record not found`);
         const next = applyData({ ...row }, data);
         if (table === "student") assertStudentIndex([next], rows());
+        assertUnique(table, [next], rows());
         Object.assign(row, next);
         return project(row, select);
       },
@@ -157,7 +187,9 @@ function createFakePrisma() {
         guard("updateMany");
         await beforeWrite("updateMany", data);
         const hit = rows().filter((r) => matches(r, where));
-        hit.forEach((r) => applyData(r, data));
+        const next = hit.map((r) => applyData({ ...r }, data));
+        assertUnique(table, next, rows());
+        hit.forEach((r, i) => Object.assign(r, next[i]));
         return { count: hit.length };
       },
       async deleteMany({ where } = {}) {

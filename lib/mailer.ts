@@ -5,6 +5,12 @@ import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getPasswordChangedEmail, passwordChangedText, type PasswordChangedBy } from "@/emails/PasswordChangedEmail";
 import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
 import { getStudentRegistrationEmail, StudentRegistrationEmailProps } from "@/emails/StudentRegistrationEmail";
+import {
+  getStudentWelcomeCredentialsEmail,
+  getStudentWelcomeCredentialsText,
+  STUDENT_WELCOME_SUBJECT,
+  type StudentWelcomeCredentialsEmailProps,
+} from "@/emails/StudentWelcomeCredentialsEmail";
 import { getDeviceApprovalRequestEmail, DeviceApprovalRequestEmailProps } from "@/emails/DeviceApprovalRequestEmail";
 import { getDeviceDecisionEmail, DeviceDecisionEmailProps } from "@/emails/DeviceDecisionEmail";
 import { getTeacherAccountConfirmedEmail, TeacherAccountConfirmedEmailProps } from "@/emails/TeacherAccountConfirmedEmail";
@@ -16,6 +22,7 @@ import { getGuardianRegistrationEmail, GuardianRegistrationEmailProps } from "@/
 // text, so it can't be fooled by a template change.
 export type EmailPurpose =
   | "StudentRegistration"
+  | "StudentWelcomeCredentials"
   | "TeacherAccountConfirmed"
   | "GuardianRegistration"
   | "PasswordReset"
@@ -165,6 +172,12 @@ export function buildLiveSessionInviteLoginLink(inviteToken: string, appBaseUrl?
 }
 
 export function buildTeacherLoginLink(appBaseUrl?: string) {
+  const baseUrl = appBaseUrl?.trim() || getBaseUrl();
+  return new URL("/login", baseUrl).toString();
+}
+
+/** The student login page (the same /login page teachers use). */
+export function buildStudentLoginLink(appBaseUrl?: string) {
   const baseUrl = appBaseUrl?.trim() || getBaseUrl();
   return new URL("/login", baseUrl).toString();
 }
@@ -515,6 +528,21 @@ export async function sendStudentRegistrationEmail(
     getStudentRegistrationEmail(input),
     undefined,
     "StudentRegistration"
+  );
+}
+
+/**
+ * The one welcome email of a newly created student (registration number,
+ * temporary password, login link). The central sender logs only the purpose,
+ * the masked recipient and the subject - never the body or the password.
+ */
+export async function sendStudentWelcomeCredentialsEmail(input: StudentWelcomeCredentialsEmailProps & { to: string }) {
+  return sendEmail(
+    input.to,
+    STUDENT_WELCOME_SUBJECT,
+    getStudentWelcomeCredentialsEmail(input),
+    getStudentWelcomeCredentialsText(input),
+    "StudentWelcomeCredentials"
   );
 }
 

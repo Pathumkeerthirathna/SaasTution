@@ -1,9 +1,13 @@
 import { reportRouteError } from "@/lib/error-handler";
+import { randomUUID } from "node:crypto";
+import { issueTemporaryStudentPassword } from "@/services/student-welcome-credentials-service";
+import { EMAIL_DELIVERY_INITIATORS, queueStudentWelcomeEmails, type WelcomeEmailToQueue } from "@/services/student-email-delivery-service";
+import { wakeEmailDeliveryWorker } from "@/services/email-delivery-worker";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
-import { StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
+import { Prisma, StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 import {
     generateAvailableRegistrationNumbers,
     isRegistrationNumberConflict,
@@ -506,7 +510,12 @@ export async function POST(request: Request) {
         registrationNumbers
     );
 
-    const studentsToCreate = [];
+    const studentsToCreate: Prisma.StudentCreateManyInput[] = [];
+    // Simplified registration: each new student gets a temporary password (only
+    // its hash is saved) and one welcome email, queued in the import's
+    // transaction and sent by the background worker (never awaited here).
+    const importBatchId = randomUUID();
+    const welcomeByRegistrationNumber = new Map<string, Omit<WelcomeEmailToQueue, "studentId">>();
 
     for (const student of students) {
     const registrationNumber =
@@ -514,8 +523,20 @@ export async function POST(request: Request) {
         ? normalizeRegistrationNumber(student.registrationNumber)
         : generatedNumbers.shift()!;
 
+    const credentials = await issueTemporaryStudentPassword();
+    welcomeByRegistrationNumber.set(registrationNumber, {
+        teacherId: session.teacherId,
+        recipientEmail: student.email!.trim(),
+        temporaryPassword: credentials.temporaryPassword,
+        passwordHash: credentials.passwordHash,
+        initiatedBy: EMAIL_DELIVERY_INITIATORS.BULK_IMPORT,
+        importBatchId,
+    });
+
     studentsToCreate.push({
         registrationNumber,
+        password: credentials.passwordHash,
+        passwordSetupPending: true,
 
         name: student.studentName.trim(),
 
@@ -551,10 +572,30 @@ export async function POST(request: Request) {
     // Save All Or Nothing
     // ----------------------------------
 
+    let welcomeEmails: { queued: number; notQueued: number };
     try {
-        await prisma.student.createMany({
-            data: studentsToCreate,
-        });
+        welcomeEmails = await prisma.$transaction(async (tx) => {
+            await tx.student.createMany({
+                data: studentsToCreate,
+            });
+            // Same transaction (outbox): one welcome email record per created
+            // student; if the import rolls back, no email is queued.
+            const created = await tx.student.findMany({
+                where: {
+                    teacherId: session.teacherId,
+                    status: { not: 2 },
+                    registrationNumber: { in: Array.from(welcomeByRegistrationNumber.keys()) },
+                },
+                select: { id: true, registrationNumber: true },
+            });
+            if (created.length !== studentsToCreate.length) {
+                throw new Error("Imported students could not be matched to their welcome emails.");
+            }
+            return queueStudentWelcomeEmails(
+                tx,
+                created.map((row) => ({ ...welcomeByRegistrationNumber.get(row.registrationNumber!)!, studentId: row.id }))
+            );
+        }, { timeout: 60_000 });
     } catch (error) {
         // A number was taken by a concurrent registration after the checks
         // above (database unique index). Nothing was saved.
@@ -580,9 +621,14 @@ export async function POST(request: Request) {
         throw error;
     }
 
+    // The emails are sent by the background worker; the teacher follows them
+    // in the email delivery history (filtered by importBatchId).
+    if (welcomeEmails.queued > 0) wakeEmailDeliveryWorker();
+
     return NextResponse.json({
     success: true,
     count: studentsToCreate.length,
+    welcomeEmails: { ...welcomeEmails, importBatchId },
     });
 
     } catch (error) {

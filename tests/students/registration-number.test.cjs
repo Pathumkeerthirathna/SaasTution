@@ -24,6 +24,8 @@ const path = require("node:path");
 const Module = require("node:module");
 const bcrypt = require("bcryptjs");
 
+// Welcome emails are queued encrypted (email outbox); a test-only key.
+process.env.EMAIL_PAYLOAD_ENCRYPTION_KEY = "b2".repeat(32);
 require("tsx/cjs/api").register();
 
 const root = path.resolve(__dirname, "..", "..");
@@ -96,12 +98,16 @@ fake("lib/auth-session.ts", {
     return { teacherId: teacher.id, name: teacher.name, email: teacher.email, role: "TEACHER" };
   },
 });
+// Welcome emails (simplified registration) are recorded: { to, registrationNumber, temporaryPassword, loginUrl }.
+const welcomeEmails = [];
 fake("lib/mailer.ts", {
   buildPasswordResetLink: () => "",
+  buildStudentLoginLink: () => "https://slclassroom.live/login",
   sendPasswordResetEmail: async () => {},
   sendEmailVerificationCodeEmail: async () => {},
   sendEmail: async () => {},
   sendStudentRegistrationEmail: async () => {},
+  sendStudentWelcomeCredentialsEmail: async (input) => ({ messageId: `<welcome-${welcomeEmails.push(input)}@test>` }),
 });
 fake("services/class-student-fee-service.ts", { ensureCurrentMonthFeeForClassStudent: async () => {} });
 
@@ -110,6 +116,9 @@ const auth = require(path.join(root, "services", "auth-service.ts"));
 const nextNumberRoute = require(path.join(root, "app", "api", "student", "next-registration-number", "route.ts"));
 const checkRoute = require(path.join(root, "app", "api", "students", "check-registration-number", "route.ts"));
 const importRoute = require(path.join(root, "app", "api", "students", "import", "route.ts"));
+const OUTBOX = require(path.join(root, "services", "student-email-delivery-service.ts"));
+/** Registration only queues; one worker pass sends the queued welcome emails (into welcomeEmails). */
+const sendQueued = () => quiet(() => OUTBOX.processEmailDeliveries({ batchSize: 50 }));
 
 async function quiet(fn) {
   const { log, error } = console;
@@ -384,41 +393,82 @@ test("login: a number held only by a deleted student cannot log in", async () =>
   await assert.rejects(auth.loginStudent(pat(1), PASSWORD), (e) => e.statusCode === 401 && e.code === "INVALID_CREDENTIALS");
 });
 
-// ---- SP-6C: no initial password ------------------------------------------------------------------
+// ---- Simplified registration: a random temporary password, emailed once (replaces SP-6C's "no password") ----
 
-test("add: a new teacher-created student has no password (null), with a generated or a typed number; onboarding email unchanged", async () => {
+test("add: a new teacher-created student gets a random temporary password (hash only), the first-login step and ONE welcome email; the registration number is never a way in", async () => {
   setup([]);
-  const mailer = require.cache[path.join(root, "lib", "mailer.ts")].exports;
-  const original = mailer.sendStudentRegistrationEmail;
-  const sent = [];
-  mailer.sendStudentRegistrationEmail = async (input) => sent.push(input);
-  try {
-    const generated = await quiet(() => service.createStudent(PATHUM, { name: "Generated Number", gradeId: 6, contact01: "0771234567", email: "generated@mail.com" }));
-    const typed = await quiet(() => service.createStudent(PATHUM, addInput(pat(42))));
-    for (const created of [generated, typed]) {
-      const row = db.student.find((s) => s.id === created.id);
-      assert.equal(row.password, null, `${row.registrationNumber}: no password`);
-      assert.ok(row.registrationNumber, "a registration number is still assigned");
-      assert.equal("password" in created, false, "never returned");
-    }
-    assert.equal(db.student.find((s) => s.id === generated.id).registrationNumber, pat(1));
-    assert.deepEqual(sent.map((m) => [m.to, m.registrationNumber]), [["generated@mail.com", pat(1)], [`new-${pat(42).toLowerCase()}@mail.com`, pat(42)]]);
-    assert.equal(sent.some((m) => "password" in m), false, "no password is emailed");
+  welcomeEmails.length = 0;
+  const generated = await quiet(() => service.createStudent(PATHUM, { name: "Generated Number", gradeId: 6, contact01: "0771234567", email: "generated@mail.com" }));
+  const typed = await quiet(() => service.createStudent(PATHUM, addInput(pat(42))));
+  assert.equal(welcomeEmails.length, 0, "registration only queues");
+  assert.equal(db.emailDelivery.length, 2, "exactly one queued welcome email per created student");
+  await sendQueued();
+  assert.equal(welcomeEmails.length, 2, "exactly one welcome email per created student");
+  for (const created of [generated, typed]) {
+    const row = db.student.find((s) => s.id === created.id);
+    const mail = welcomeEmails.find((m) => m.registrationNumber === row.registrationNumber);
+    assert.ok(mail, row.registrationNumber);
+    assert.equal(mail.to, row.email);
+    assert.equal(mail.loginUrl, "https://slclassroom.live/login");
+    assert.match(mail.temporaryPassword, /^[A-HJ-NP-Za-km-z2-9]{12}$/);
+    assert.match(row.password, /^\$2[aby]\$10\$/, "only a bcrypt hash is stored");
+    assert.notEqual(row.password, mail.temporaryPassword);
+    assert.equal(bcrypt.compareSync(mail.temporaryPassword, row.password), true);
+    assert.equal(row.passwordSetupPending, true);
+    assert.equal("password" in created, false, "never returned");
+  }
+  assert.notEqual(welcomeEmails[0].temporaryPassword, welcomeEmails[1].temporaryPassword);
+  assert.equal(db.student.find((s) => s.id === generated.id).registrationNumber, pat(1));
 
-    // The registration number is not a way in: the student sets a password through Forgot Password.
-    await assert.rejects(auth.loginStudent(pat(1), pat(1)), (e) => e.statusCode === 401 && e.code === "INVALID_CREDENTIALS");
-  } finally {
-    mailer.sendStudentRegistrationEmail = original;
+  // The emailed credentials sign in (no email confirmation); the registration number never does (SP-6C).
+  const login = await auth.loginStudent(pat(1), welcomeEmails.find((m) => m.registrationNumber === pat(1)).temporaryPassword);
+  assert.equal(login.passwordSetupPending, true);
+  await assert.rejects(auth.loginStudent(pat(1), pat(1)), (e) => e.statusCode === 401 && e.code === "INVALID_CREDENTIALS");
+
+  // Without an email address nothing could deliver a password: none is set and no email is sent.
+  welcomeEmails.length = 0;
+  const noEmail = await quiet(() => service.createStudent(PATHUM, { name: "No Email", gradeId: 6, contact01: "0771234567" }));
+  await sendQueued();
+  const noEmailRow = db.student.find((s) => s.id === noEmail.id);
+  assert.deepEqual([noEmailRow.password ?? null, noEmailRow.passwordSetupPending ?? false, welcomeEmails.length], [null, false, 0]);
+  assert.equal(db.emailDelivery.filter((d) => d.studentId === noEmail.id).length, 0, "nothing queued without an address");
+});
+
+test("CSV import: every imported student gets a temporary password (hash) and exactly one welcome email, sent after the import", async () => {
+  setup([]);
+  welcomeEmails.length = 0;
+  const { status, body } = await runImport([row("Csv One"), row("Csv Two", `pat-${Y}-050`)]);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.welcomeEmails.queued, 2);
+  assert.equal(body.welcomeEmails.notQueued, 0);
+  assert.equal(typeof body.welcomeEmails.importBatchId, "string");
+  const imported = db.student.filter((s) => s.name.startsWith("Csv "));
+  assert.equal(imported.length, 2);
+  assert.equal(welcomeEmails.length, 0, "the import never waits for the emails");
+  // One queued record per created student, tagged with the import batch.
+  assert.deepEqual(
+    db.emailDelivery.map((d) => [d.initiatedBy, d.importBatchId]).sort(),
+    imported.map(() => ["BULK_IMPORT", body.welcomeEmails.importBatchId])
+  );
+  assert.deepEqual(new Set(db.emailDelivery.map((d) => d.studentId)), new Set(imported.map((s) => s.id)));
+  await sendQueued();
+  assert.equal(welcomeEmails.length, 2);
+  for (const s of imported) {
+    const mail = welcomeEmails.find((m) => m.registrationNumber === s.registrationNumber);
+    assert.ok(mail, s.name);
+    assert.equal(bcrypt.compareSync(mail.temporaryPassword, s.password), true, s.name);
+    assert.equal(s.passwordSetupPending, true);
   }
 });
 
-test("CSV import: unchanged, imported students still have no password", async () => {
+test("CSV import: a refused import creates nobody and sends no welcome email", async () => {
   setup([]);
-  const { status, body } = await runImport([row("Csv One"), row("Csv Two", `pat-${Y}-050`)]);
-  assert.equal(status, 200, JSON.stringify(body));
-  const imported = db.student.filter((s) => s.name.startsWith("Csv "));
-  assert.equal(imported.length, 2);
-  for (const s of imported) assert.equal(s.password ?? null, null, s.name);
+  welcomeEmails.length = 0;
+  const { status } = await runImport([row("Bad Row", "x".repeat(65))]);
+  assert.notEqual(status, 200);
+  await sendQueued();
+  assert.equal(welcomeEmails.length, 0);
+  assert.equal((db.emailDelivery ?? []).length, 0, "nothing queued");
 });
 
 // ---- SP-6G: one 64-character limit for creating, editing, importing and logging in -------------------------

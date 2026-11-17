@@ -206,6 +206,10 @@ const STORAGE_ACCOUNTING_MIGRATION = "20261116120000_add_teacher_storage_account
 // Teacher profile photos on unified storage (additive enum value, nullable TeacherProfile columns;
 // guarded by tests/storage-quota/profile-image-migration-guard.test.cjs).
 const PROFILE_IMAGE_MIGRATIONS = ["20261117120000_add_profile_image_reservation_category", "20261117120100_add_teacher_profile_image_storage"];
+// Simplified student registration: one additive Student column (tests/students/first-login-migration-guard.test.cjs).
+const STUDENT_PASSWORD_SETUP_MIGRATION = "20261118120000_add_student_password_setup_pending";
+// Student email delivery outbox: one additive table (tests/students/email-delivery-migration-guard.test.cjs).
+const EMAIL_DELIVERY_MIGRATION = "20261119120000_add_email_delivery_tracking";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -216,7 +220,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS, STUDENT_PASSWORD_SETUP_MIGRATION, EMAIL_DELIVERY_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------

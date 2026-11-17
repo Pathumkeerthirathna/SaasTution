@@ -7,6 +7,7 @@ import { IdCard, Lock, LogIn, ShieldCheck } from "lucide-react";
 
 import { AuthShell } from "@/components/auth-shell";
 import { AuthIllustration } from "@/components/auth-illustration";
+import { StudentPasswordSetupForm, type PasswordSetupSubmit } from "@/components/student-password-setup-form";
 import { VerifyEmailCodeForm } from "@/components/verify-email-code-form";
 import { getCurrentDevice } from "@/lib/current-device";
 import { RejectedDeviceCard } from "./RejectedDeviceCard";
@@ -31,6 +32,9 @@ export function LoginForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState("");
+  // First student login: the optional "Secure Your Account" step (the server offered it).
+  const [passwordSetupOffered, setPasswordSetupOffered] = useState(false);
+  const [passwordSetupError, setPasswordSetupError] = useState<string | null>(null);
 
   type DeviceApprovalData = {
     currentDevice?: {
@@ -62,9 +66,12 @@ export function LoginForm() {
     await performLogin();
   }
 
-  async function performLogin() {
+  type PasswordSetupChoice = Parameters<PasswordSetupSubmit>[0];
+
+  async function performLogin(passwordSetup?: PasswordSetupChoice) {
     setIsSubmitting(true);
     setErrorMessage(null);
+    setPasswordSetupError(null);
     setNeedsEmailConfirmation(false);
 
     const device = await getCurrentDevice();
@@ -79,7 +86,8 @@ export function LoginForm() {
           loginId: formState.loginId,
           password: formState.password,
           inviteToken,
-          device
+          device,
+          ...(passwordSetup ? { passwordSetup } : {}),
         }),
       });
 
@@ -103,6 +111,20 @@ export function LoginForm() {
       if (!response.ok) {
         const err = payload.error ?? {};
         let message = err.message ?? "Unable to sign in.";
+
+        // The "Secure Your Account" answer was refused (password rules, or a concurrent
+        // change): stay on that step and show why; nothing was changed.
+        if (passwordSetup && (err.code === "VALIDATION_ERROR" || err.code === "PASSWORD_SETUP_CONFLICT")) {
+          setPasswordSetupError(message);
+          return;
+        }
+
+        // A new password was saved before the device check: further attempts use it.
+        if (passwordSetup?.action === "set" && (err.code === "DEVICE_PENDING" || err.code === "DEVICE_REJECTED")) {
+          setFormState((prev) => ({ ...prev, password: passwordSetup.newPassword }));
+          toast.success("Your new password has been saved.");
+        }
+        setPasswordSetupOffered(false);
 
         // Student login limits (SP-6D): a fixed message, whatever the account.
         if (response.status === 429 || err.code === "LOGIN_RATE_LIMITED") {
@@ -141,6 +163,13 @@ export function LoginForm() {
 
       if (!payload.success) {
         setErrorMessage(payload.error?.message ?? "Unable to sign in. Please try again.");
+        return;
+      }
+
+      // First login: credentials accepted, no session yet. Offer the optional step;
+      // the device approval check runs after the student answers it.
+      if (payload.data?.passwordSetupOffered) {
+        setPasswordSetupOffered(true);
         return;
       }
 
@@ -327,6 +356,28 @@ export function LoginForm() {
       />
     ) : undefined;
 
+  if (passwordSetupOffered) {
+    return (
+      <AuthShell
+        title="Secure Your Account"
+        subtitle="You can set your own password now or do this later."
+        footerText="Need a teacher account?"
+        footerLinkHref="/register"
+        footerLinkLabel="Register"
+        icon={<ShieldCheck className="h-5 w-5" />}
+        illustration={<AuthIllustration />}
+        showBackToHome
+      >
+        <StudentPasswordSetupForm
+          currentPassword={formState.password}
+          isSubmitting={isSubmitting}
+          serverError={passwordSetupError}
+          onSubmit={(choice) => performLogin(choice)}
+        />
+      </AuthShell>
+    );
+  }
+
   if (needsEmailConfirmation) {
     return (
       <AuthShell
@@ -342,7 +393,7 @@ export function LoginForm() {
         <VerifyEmailCodeForm
           loginId={formState.loginId}
           email={confirmationEmail}
-          onVerified={performLogin}
+          onVerified={() => performLogin()}
           onCancel={() => setNeedsEmailConfirmation(false)}
         />
       </AuthShell>

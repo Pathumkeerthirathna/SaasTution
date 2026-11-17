@@ -18,8 +18,18 @@ const PROTECTED_ROUTES = [
   "/api/lectures",
 ];
 
+// Anonymous endpoints under a protected prefix. Exact paths only: every other
+// /api/students route stays protected. The public class Register button posts
+// here; the route itself checks the class (active) and the email (format, duplicates).
+const PUBLIC_API_ROUTES = new Set(["/api/students/public/Register"]);
+
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+
+  if (PUBLIC_API_ROUTES.has(path)) {
+    return NextResponse.next();
+  }
+
   const isProtectedPath = PROTECTED_ROUTES.some((route) => path.startsWith(route));
 
   if (!isProtectedPath) {
