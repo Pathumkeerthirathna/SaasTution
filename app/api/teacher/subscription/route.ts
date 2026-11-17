@@ -24,8 +24,16 @@ export async function POST(request: Request) {
   try {
     const teacherSession = await requireTeacherSession();
 
-    const body = await request.json();
-    const planId = typeof body?.planId === "string" ? body.planId : "";
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiError("Invalid request body.", 400, "VALIDATION_ERROR");
+    }
+    const planId =
+      typeof (body as { planId?: unknown } | null)?.planId === "string"
+        ? (body as { planId: string }).planId
+        : "";
 
     if (!planId) {
       return apiError("planId is required.", 400, "VALIDATION_ERROR");

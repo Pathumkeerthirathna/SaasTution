@@ -2,9 +2,17 @@ import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 
 const links = [
+  { href: "/pricing", label: "Pricing" },
   { href: "/login", label: "Login" },
   { href: "/register", label: "Register" },
   { href: "/guardian/login", label: "Guardian Login" },
+];
+
+// Public policy pages (app/terms, app/privacy, app/refund-policy).
+const legalLinks = [
+  { href: "/terms", label: "Terms & Conditions" },
+  { href: "/privacy", label: "Privacy Policy" },
+  { href: "/refund-policy", label: "Refund & Cancellation Policy" },
 ];
 
 export default function Footer() {
@@ -29,6 +37,23 @@ export default function Footer() {
               key={link.href}
               href={link.href}
               className="text-[13px] font-medium text-slate-600 transition hover:text-emerald-600"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
+      <div className="border-t border-slate-200">
+        <nav
+          aria-label="Legal"
+          className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-center gap-x-5 gap-y-2 px-4 py-4 sm:justify-start sm:px-6 lg:px-8"
+        >
+          {legalLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-[12.5px] font-medium text-slate-500 transition hover:text-emerald-600"
             >
               {link.label}
             </Link>

@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
-  Package,
   Phone,
   Search,
   Unlock,
@@ -17,6 +16,7 @@ import {
 import toast from "react-hot-toast";
 
 import { AdminTeacherStorageCard } from "./admin-teacher-storage-card";
+import { AdminTeacherSubscriptionCard } from "./admin-teacher-subscription-card";
 
 type TeacherAccount = {
   id: string;
@@ -41,20 +41,6 @@ type TeacherClass = {
   schedule: string;
   studentCount: number;
   createdAt: string;
-};
-
-type TeacherSubscription = {
-  id: string;
-  status: string;
-  price: number;
-  currency: string;
-  startDate: string;
-  endDate: string | null;
-  plan: {
-    id: string;
-    name: string;
-    interval: string;
-  };
 };
 
 type DateFilter = "ALL" | "MONTH" | "QUARTER" | "YEAR";
@@ -132,7 +118,6 @@ export function AdminTeacherAccountsPanel() {
 
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [teacherClasses, setTeacherClasses] = useState<TeacherClass[]>([]);
-  const [teacherSubscription, setTeacherSubscription] = useState<TeacherSubscription | null>(null);
   const [loadingClasses, setLoadingClasses] = useState(false);
 
   const [blockTarget, setBlockTarget] = useState<TeacherAccount | null>(null);
@@ -220,7 +205,6 @@ export function AdminTeacherAccountsPanel() {
   async function loadTeacherClasses(teacherId: string) {
     setSelectedTeacherId(teacherId);
     setTeacherClasses([]);
-    setTeacherSubscription(null);
     setLoadingClasses(true);
 
     try {
@@ -232,7 +216,6 @@ export function AdminTeacherAccountsPanel() {
       }
 
       setTeacherClasses(payload.data.classes as TeacherClass[]);
-      setTeacherSubscription(payload.data.subscription as TeacherSubscription | null);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Unable to load classes."
@@ -615,31 +598,8 @@ export function AdminTeacherAccountsPanel() {
           )}
         </div>
 
-        {!loadingClasses && selectedTeacher && teacherSubscription && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2.5">
-            <div className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-violet-600" />
-              <div>
-                <p className="text-[12.5px] font-semibold text-violet-900">
-                  {teacherSubscription.plan.name}
-                </p>
-                <p className="text-[11px] text-violet-600">
-                  {teacherSubscription.currency} {teacherSubscription.price.toLocaleString()} /{" "}
-                  {teacherSubscription.plan.interval === "MONTHLY" ? "mo" : "yr"}
-                </p>
-              </div>
-            </div>
-            <span
-              className={`rounded-full px-2.5 py-1 text-[10.5px] font-semibold ${
-                teacherSubscription.status === "ACTIVE"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-slate-200 text-slate-600"
-              }`}
-            >
-              {teacherSubscription.status}
-            </span>
-          </div>
-        )}
+        {/* Subscription: current plan and administrator plan assignment */}
+        {selectedTeacher && <AdminTeacherSubscriptionCard key={selectedTeacher.id} teacherId={selectedTeacher.id} />}
 
         {/* Storage usage and the individual storage limit (Stage 3.4) */}
         {selectedTeacher && <AdminTeacherStorageCard key={selectedTeacher.id} teacherId={selectedTeacher.id} />}

@@ -13,7 +13,16 @@ const links = [
   { href: "#security", label: "Security" },
 ];
 
-export default function Navbar() {
+type NavbarProps = {
+  /**
+   * Prefix for the section links (#platform, …), which point at sections of
+   * the home page: "" on the home page itself, "/" on other public pages
+   * (e.g. the legal pages) so they lead back to the home page's sections.
+   */
+  sectionLinkBase?: "" | "/";
+};
+
+export default function Navbar({ sectionLinkBase = "" }: NavbarProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -38,7 +47,7 @@ export default function Navbar() {
           {links.map((link) => (
             <Link
               key={link.href}
-              href={link.href}
+              href={`${sectionLinkBase}${link.href}`}
               className="text-[13.5px] font-medium text-slate-600 transition hover:text-emerald-600"
             >
               {link.label}
@@ -89,7 +98,7 @@ export default function Navbar() {
             {links.map((link) => (
               <Link
                 key={link.href}
-                href={link.href}
+                href={`${sectionLinkBase}${link.href}`}
                 onClick={() => setOpen(false)}
                 className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
               >
