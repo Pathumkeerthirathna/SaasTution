@@ -61,7 +61,8 @@ import {
   type ScanQueueSnapshot,
   type ScannerAvailability,
 } from "@/components/attendance/qr-scanner-logic";
-import { createBrowserScanAnnouncer, shouldAnnounceScan } from "@/components/attendance/scan-audio";
+import { createBrowserScanAnnouncer, SCAN_FEEDBACK_TEXT, scanFeedbackFor } from "@/components/attendance/scan-audio";
+import { createPaymentSnapshot, IDLE_PAYMENT_SNAPSHOT, type PaymentSnapshot, type PaymentSnapshotState } from "@/components/attendance/payment-snapshot";
 
 // =========================================================================================
 // Views (pure: rendered with react-dom/server in the tests)
@@ -415,7 +416,34 @@ export type ScannerViewProps = {
   onManualChange: (value: string) => void;
   onManualSubmit: () => void;
   onRetry: (id: string) => void;
+  /** The payment snapshot's status (payment alerts); absent: nothing shown. */
+  paymentStatus?: PaymentSnapshotState["status"];
+  onRetryPaymentStatus?: () => void;
 };
+
+export const PAYMENT_STATUS_FAILED_MESSAGE = "Payment status could not be loaded. Payment alerts are temporarily unavailable.";
+
+/** Non-blocking: scanning is unaffected; Retry loads a fresh snapshot. */
+export function PaymentStatusNotice({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <p className="flex min-w-0 items-start gap-2">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+        {PAYMENT_STATUS_FAILED_MESSAGE}
+      </p>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-amber-400 px-3 py-2 text-sm font-semibold hover:bg-amber-100"
+        >
+          <RefreshCw size={14} aria-hidden />
+          Retry
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 /** The whole scanner page from its state (no effects). */
 export function ScannerView(props: ScannerViewProps) {
@@ -431,6 +459,7 @@ export function ScannerView(props: ScannerViewProps) {
           The register could not be refreshed. The counts above may be out of date; scanning still checks everything on the server.
         </p>
       ) : null}
+      {props.paymentStatus === "failed" ? <PaymentStatusNotice onRetry={props.onRetryPaymentStatus} /> : null}
       {availability.available ? null : <ScannerUnavailableView availability={availability} onRefresh={props.onRefresh} />}
       <CameraSection camera={props.camera} disabled={inputDisabled} onStart={props.onStartCamera} onStop={props.onStopCamera} videoRef={props.videoRef} hint={props.hint} />
       <ManualEntryForm value={props.manualValue} problem={props.manualProblem} disabled={inputDisabled} onChange={props.onManualChange} onSubmit={props.onManualSubmit} inputRef={props.inputRef} />
@@ -457,6 +486,8 @@ type LoadState = { kind: "loading" } | { kind: "error"; error: AttendanceApiErro
 
 const EMPTY_SNAPSHOT: ScanQueueSnapshot = { pending: [], feed: [], pausedUntil: null, signedOut: false };
 const NOT_OPEN_RECHECK_LIMIT_MS = 6 * 60 * 60 * 1000;
+/** User-activation events that may unlock audio (capture phase, on this page only). */
+const AUDIO_UNLOCK_EVENTS = ["pointerdown", "keydown", "touchend", "click"] as const;
 
 type Decoder = (data: Uint8ClampedArray, width: number, height: number, options?: { inversionAttempts?: "dontInvert" | "onlyInvert" | "attemptBoth" | "invertFirst" }) => { data: string } | null;
 
@@ -483,6 +514,8 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
   const refresherRef = useRef<ReturnType<typeof createDebouncedRefresh> | null>(null);
   const loadSeq = useRef(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paymentRef = useRef<PaymentSnapshot | null>(null);
+  const [payment, setPayment] = useState<PaymentSnapshotState>(IDLE_PAYMENT_SNAPSHOT);
 
   // ---- Register load (a refresh keeps the shown register on failure) ----
   const load = useCallback(
@@ -514,17 +547,27 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
     void load("initial");
     const refresher = createDebouncedRefresh({ refresh: () => load("refresh") });
     refresherRef.current = refresher;
-    // Spoken confirmation (chime fallback) of a NEW attendance mark, once per student while this
-    // scanner is open; the name comes from the server's answer (components/attendance/scan-audio.ts).
+    // Audio feedback from the server's answers only (components/attendance/scan-audio.ts): a NEW mark
+    // plays a cue once per student while this scanner is open, chosen by the server's studentId from
+    // the payment snapshot (read only, never fetched here; loading / failed → the neutral chime);
+    // other answers and terminal failures speak a short phrase.
     const announcer = createBrowserScanAnnouncer();
     const announced = new Set<string>();
     const queue = createScanQueue({
       lectureId,
       onChange: setSnapshot,
       onAnswered: (outcome) => {
-        if (!outcome.student || !shouldAnnounceScan(outcome, announced)) return;
-        announced.add(outcome.student.studentId);
-        announcer.announce(outcome.student.name);
+        const feedback = scanFeedbackFor(outcome, announced, paymentRef.current?.current());
+        if (!feedback) return;
+        if (feedback.kind === "CUE") {
+          announced.add(feedback.studentId);
+          announcer.cue(feedback.cue);
+        } else {
+          announcer.say(feedback.text);
+        }
+      },
+      onFailed: () => {
+        announcer.say(SCAN_FEEDBACK_TEXT.FAILED);
       },
       onEvent: (event) => {
         if (event.kind === "STATE_CHANGED") void refresher.flush();
@@ -582,9 +625,14 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
 
     const onPageHide = () => cameraController.stop();
     window.addEventListener("pagehide", onPageHide);
+    // Browsers allow audio only after a user gesture: the teacher's own clicks / key presses on this
+    // page (Start camera, Send, a handheld scanner's Enter) prepare the cues and the chime.
+    const onUserGesture = () => announcer.unlock();
+    for (const type of AUDIO_UNLOCK_EVENTS) window.addEventListener(type, onUserGesture, true);
 
     return () => {
       window.removeEventListener("pagehide", onPageHide);
+      for (const type of AUDIO_UNLOCK_EVENTS) window.removeEventListener(type, onUserGesture, true);
       cameraController.dispose();
       frames.stop();
       queue.dispose();
@@ -601,6 +649,23 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
 
   const register = state.kind === "ready" ? state.register : null;
   const availability = useMemo<ScannerAvailability | null>(() => (register ? scannerAvailability(register) : null), [register]);
+
+  // Payment snapshot (components/attendance/payment-snapshot.ts): one fetch per class once the
+  // register names it (scanner opened, class changed, Retry), never per scan; independent of the
+  // scan queue. A new class / unmount drops the snapshot and aborts its request.
+  const classId = register?.lecture.classId ?? null;
+  useEffect(() => {
+    if (!classId) return;
+    const snapshot = createPaymentSnapshot({ onChange: setPayment });
+    paymentRef.current = snapshot;
+    void snapshot.load(classId);
+    return () => {
+      snapshot.dispose();
+      if (paymentRef.current === snapshot) paymentRef.current = null;
+      setPayment(IDLE_PAYMENT_SNAPSHOT);
+    };
+  }, [classId]);
+  const retryPaymentStatus = useCallback(() => void paymentRef.current?.retry(), []);
 
   // Scanning stops when the server says the QR window is no longer open.
   useEffect(() => {
@@ -731,6 +796,8 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
       }}
       onManualSubmit={submitManual}
       onRetry={retry}
+      paymentStatus={payment.status}
+      onRetryPaymentStatus={retryPaymentStatus}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { AppError } from "@/lib/error-handler";
-import { feePaymentState, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
+import { feePaymentState, PAYMENT_STATE_SELECT, type FeePaymentState } from "@/lib/fee-payment-state";
 import { prisma } from "@/lib/prisma";
 import { nowInSriLanka } from "@/lib/time";
 
@@ -209,6 +209,57 @@ export async function updateClassAccessSettings(
     select: { restrictUnpaidStudentAccess: true, paymentGracePeriodDays: true },
   });
   return updated;
+}
+
+// ---- Outstanding students of a class (QR attendance payment warning) ------------------
+
+/**
+ * Pure: whether a fee still owes money that no awaiting slip covers.
+ *
+ * `outstanding` is the shared calculation (finalAmount minus CONFIRMED, not
+ * reversed payments; 0 with a Free Card), so PENDING / NEEDS_CLARIFICATION
+ * slips are never received money. A slip awaiting processing is, however,
+ * not itself a reason to warn: its amount is set by the server to the whole
+ * outstanding balance when it is submitted (app/api/student/payments), so it
+ * normally covers the fee. Only what remains beyond the awaiting slips (for
+ * example after a reversal or a fee increase since the slip) still counts.
+ */
+export function feeOwesBeyondAwaitingSlips(state: Pick<FeePaymentState, "outstanding" | "pendingTotal" | "clarificationTotal">): boolean {
+  return state.outstanding - state.pendingTotal - state.clarificationTotal > 0;
+}
+
+/**
+ * The unique ids of the students of the teacher's class who still owe money
+ * on any existing fee month of an ACTIVE enrolment (non-deleted students
+ * only), by the shared payment calculation. Any positive balance counts,
+ * whatever the due date. Read-only: never creates or changes fee rows.
+ * 404 CLASS_NOT_FOUND when the class is not the teacher's (or is deleted).
+ */
+export async function getOutstandingStudentIdsForClass(teacherId: string, classId: string): Promise<string[]> {
+  await ownedClass(teacherId, classId);
+
+  // freeCard / finalAmount > 0: the same safe pre-filter as getClassAccessRestrictions
+  // (feePaymentState gives 0 outstanding for every fee it leaves out).
+  const fees = await prisma.classStudentFee.findMany({
+    where: {
+      freeCard: false,
+      finalAmount: { gt: 0 },
+      classStudent: { classId, isActive: true, student: { status: 0 } },
+    },
+    select: {
+      finalAmount: true,
+      freeCard: true,
+      payments: { select: PAYMENT_STATE_SELECT },
+      classStudent: { select: { studentId: true } },
+    },
+  });
+
+  const ids = new Set<string>();
+  for (const fee of fees) {
+    if (ids.has(fee.classStudent.studentId)) continue;
+    if (feeOwesBeyondAwaitingSlips(feePaymentState(fee, fee.payments))) ids.add(fee.classStudent.studentId);
+  }
+  return [...ids].sort();
 }
 
 // ---- Enforcement entry points for the student content / action routes ----------------

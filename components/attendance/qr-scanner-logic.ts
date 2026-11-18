@@ -489,6 +489,13 @@ export type ScanQueueDeps = {
    * throws never affects the queue.
    */
   onAnswered?: (outcome: QrScanResponse) => void;
+  /**
+   * A scan that finally failed without a server answer (any HTTP error, or
+   * no answer after the automatic retries), after it is in the feed. Never
+   * called while it is still being retried; a callback that throws never
+   * affects the queue.
+   */
+  onFailed?: (error: AttendanceApiError) => void;
   submit?: (lectureId: string, body: ScanRequestBody, options: { signal: AbortSignal }) => Promise<ScanSubmitOutcome>;
   /** A fresh clientScanId (default crypto.randomUUID()). */
   newClientScanId?: () => string;
@@ -629,6 +636,11 @@ export function createScanQueue(deps: ScanQueueDeps) {
         replayed: false,
         retryable: scanErrorRetryable(result) && result.code !== "UNAUTHORIZED",
       });
+      try {
+        deps.onFailed?.(result);
+      } catch {
+        // Feedback (audio) must never break scanning.
+      }
       if (STATE_CHANGE_CODES.has(result.code)) event({ kind: "STATE_CHANGED" });
       return;
     }
