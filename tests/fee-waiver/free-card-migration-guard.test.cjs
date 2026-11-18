@@ -24,13 +24,13 @@ const normalize = (sql) =>
   sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").replace(/\s+/g, " ").trim();
 const sql = normalize(fs.readFileSync(path.join(migrationsDir, MIGRATION, "migration.sql"), "utf8"));
 
-test("placement: after every earlier migration; only the approved payment access control and partial payment migrations follow", () => {
+test("placement: after every earlier migration; only the approved payment access control, partial payment and Free Card eligibility migrations follow", () => {
   const names = fs
     .readdirSync(migrationsDir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort();
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION)), [MIGRATION, "20261121120000_add_class_payment_access_control", "20261122120000_add_class_payment_source_and_reversal"]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION)), [MIGRATION, "20261121120000_add_class_payment_access_control", "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible"]);
 });
 
 test("the three columns, with a false default for existing rows", () => {

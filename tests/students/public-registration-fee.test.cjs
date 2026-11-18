@@ -93,12 +93,30 @@ function delegateFor(model, tx) {
   });
 }
 
+function rawQueryFor(tx) {
+  return async (strings, ...values) => {
+    if (tx) {
+      if (tx.expired) throw p2028("Transaction API error: Transaction not found.");
+      tx.elapsedMs += sim.latencyMs;
+      sim.txStatements.push("$queryRaw");
+      if (tx.elapsedMs > tx.timeoutMs) {
+        tx.expired = true;
+        throw p2028("Transaction API error: Transaction not found.");
+      }
+    }
+    return fee.client.$queryRaw(strings, ...values);
+  };
+}
+
 function clientFor(tx) {
   return new Proxy(
     {},
     {
       get(_, prop) {
         if (prop === "$transaction") return $transaction;
+        // The fee row's enrolment lock (FOR SHARE, automatic Free Cards): one
+        // more statement in the transaction, timed like every other one.
+        if (prop === "$queryRaw") return rawQueryFor(tx);
         if (typeof prop !== "string" || prop.startsWith("$") || prop === "then") return undefined;
         return delegateFor(prop, tx);
       },

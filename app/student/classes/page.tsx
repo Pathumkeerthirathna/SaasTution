@@ -14,6 +14,7 @@ import {
   Video,
 } from "lucide-react";
 
+import { FreeCardStudentBadge } from "@/components/free-card-eligibility-actions";
 import { StudentClassLiveBadge } from "@/components/student-portal/student-class-live-badge";
 import { RealtimeRefresh } from "@/components/student-portal/realtime-refresh";
 import {
@@ -55,6 +56,8 @@ export default async function StudentClassesPage() {
       assignedAt: true,
       removedAt: true,
       removeReason: true,
+      // Class-level Free Card eligibility of this enrolment ("Free Card Student").
+      freeCardEligible: true,
       class: {
         select: {
           id: true,
@@ -156,6 +159,8 @@ export default async function StudentClassesPage() {
                   <span className={`h-1.5 w-1.5 rounded-full ${theme.badgeDot}`} />
                   {past ? "Past" : "Enrolled"}
                 </span>
+                {/* This (current) enrolment's own eligibility. */}
+                {!past ? <FreeCardStudentBadge eligible={enrollment.freeCardEligible} /> : null}
               </div>
 
               <div className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${theme.metaText}`}>

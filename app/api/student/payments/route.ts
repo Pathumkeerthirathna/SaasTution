@@ -58,11 +58,12 @@ export async function GET(request: Request) {
       select: { id: true },
     });
 
-    await Promise.all(
-      activeClassStudents.map((entry) =>
-        ensureCurrentMonthFeeForClassStudent(prisma, entry.id)
-      )
-    );
+    // One enrolment at a time: a missing row is created in its own short
+    // transaction (enrolment lock, automatic Free Cards), so this request
+    // holds at most one database connection for it.
+    for (const entry of activeClassStudents) {
+      await ensureCurrentMonthFeeForClassStudent(prisma, entry.id);
+    }
 
     const fees = await prisma.classStudentFee.findMany({
       where: {

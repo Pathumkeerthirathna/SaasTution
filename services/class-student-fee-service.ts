@@ -244,6 +244,51 @@ function newRowWaiverColumns(
   return result.kind === "AUTO" ? joinWaiverColumns(result, new Date()) : {};
 }
 
+// ---- Class-level automatic Free Cards (ClassStudent.freeCardEligible) -------------
+
+/**
+ * The existing Free Card columns for a NEW current-month fee row of an
+ * eligible enrolment (nothing for any other row, which is then created exactly
+ * as before). Never used to update an existing row: a fee that already exists
+ * (paid, partly paid, with a slip, or whose card the teacher revoked) is never
+ * given a card automatically. The caller passes the same flag to
+ * computeFinalAmount.
+ */
+function automaticFreeCardColumns(eligible: boolean, classTeacherId: string, issuedAt: Date) {
+  return eligible
+    ? { freeCard: true, freeCardIssuedAt: issuedAt, freeCardIssuedByTeacherId: classTeacherId }
+    : {};
+}
+
+/** FOR SHARE locks on the enrolment rows, in id order (no deadlock between two creators). */
+async function lockEnrolmentsForShare(tx: Db, classStudentIds: string[]) {
+  const ids = [...new Set(classStudentIds)].sort();
+  await tx.$queryRaw`SELECT "id" FROM "ClassStudent" WHERE "id" = ANY(${ids}) ORDER BY "id" FOR SHARE`;
+  return ids;
+}
+
+/** Transaction options for the short eligibility-lock + insert transactions. */
+const AUTOMATIC_FREE_CARD_TX = { maxWait: 5_000, timeout: 15_000 } as const;
+
+/**
+ * Locks the enrolments FOR SHARE (in id order) and returns those that are
+ * active and Free Card eligible, of a non-deleted student (as path A and the
+ * apply step require), read after the lock. Must run in the same
+ * transaction as the fee insert: an eligibility change (an UPDATE of the
+ * enrolment row, which conflicts with FOR SHARE) then either committed before
+ * this read, and is seen, or waits until the new fee rows are committed, and
+ * then finds them as existing rows (never changed by eligibility).
+ */
+async function lockEligibleEnrolments(tx: Db, classStudentIds: string[]): Promise<Set<string>> {
+  if (classStudentIds.length === 0) return new Set();
+  const ids = await lockEnrolmentsForShare(tx, classStudentIds);
+  const eligible = await tx.classStudent.findMany({
+    where: { id: { in: ids }, isActive: true, freeCardEligible: true, student: { status: 0 } },
+    select: { id: true },
+  });
+  return new Set(eligible.map((entry) => entry.id));
+}
+
 /**
  * Writes an automatic-waiver update only if the row is still automatic and
  * unpaid — and, with `updatedAt`, unchanged since it was read. A concurrent
@@ -380,6 +425,34 @@ export async function ensureCurrentMonthFeeForClassStudent(
   db: Db,
   classStudentId: string
 ): Promise<void> {
+  // The plain client (the student payments page backfill): run in an own
+  // transaction, so the enrolment's eligibility lock lasts until the new row
+  // is committed. A caller's transaction (assignment, public registration)
+  // is used as it is.
+  if ((db as unknown) === prisma) {
+    // Usual case: this month's row exists, nothing to do, so no transaction
+    // (no connection held). A missing row is re-checked under the lock.
+    const now = nowInSriLanka();
+    const exists = await prisma.classStudentFee.findFirst({
+      where: { classStudentId, year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 },
+      select: { id: true },
+    });
+    if (exists) return;
+
+    await prisma.$transaction(
+      (tx) => ensureCurrentMonthFeeInTransaction(tx, classStudentId),
+      AUTOMATIC_FREE_CARD_TX
+    );
+    return;
+  }
+  await ensureCurrentMonthFeeInTransaction(db, classStudentId);
+}
+
+async function ensureCurrentMonthFeeInTransaction(db: Db, classStudentId: string): Promise<void> {
+  // Locked before the read below: the eligibility used for the new row is
+  // the committed one (see lockEligibleEnrolments).
+  await lockEnrolmentsForShare(db, [classStudentId]);
+
   const classStudent = await db.classStudent.findFirst({
     where: {
       id: classStudentId,
@@ -391,7 +464,8 @@ export async function ensureCurrentMonthFeeForClassStudent(
       id: true,
       classId: true,
       studentId: true,
-      class: { select: { monthlyFee: true, paymentDueWeek: true } },
+      freeCardEligible: true,
+      class: { select: { monthlyFee: true, paymentDueWeek: true, teacherId: true } },
     },
   });
 
@@ -429,6 +503,9 @@ export async function ensureCurrentMonthFeeForClassStudent(
   );
   const waiver = newRowWaiverColumns(waiverContext, classStudent.studentId, classStudentId, currentFee);
   const lateJoinDeduct = waiver.lateJoinDeduct ?? 0;
+  // Always the current month here: an eligible active enrolment's new row
+  // gets the card (components kept underneath, as for a manual card).
+  const freeCard = classStudent.freeCardEligible;
 
   await db.classStudentFee.create({
     data: {
@@ -440,7 +517,8 @@ export async function ensureCurrentMonthFeeForClassStudent(
       lateJoinDeduct: 0,
       waiverAmount: 0,
       ...waiver,
-      finalAmount: computeFinalAmount(currentFee, 0, lateJoinDeduct, 0),
+      ...automaticFreeCardColumns(freeCard, classStudent.class.teacherId, new Date()),
+      finalAmount: computeFinalAmount(currentFee, 0, lateJoinDeduct, 0, freeCard),
       dueDate,
       status: 0,
       createdAt: now,
@@ -456,12 +534,14 @@ export async function ensureCurrentMonthFeeForClassStudent(
  */
 async function processCurrentMonthFees(params: {
   classId: string;
+  /** The class's teacher: issuer of automatic Free Cards on new rows. */
+  teacherId: string;
   paymentDueWeek: number;
   currentFee: number;
   year: number;
   month: number;
 }) {
-  const { classId, paymentDueWeek, currentFee, year, month } = params;
+  const { classId, teacherId, paymentDueWeek, currentFee, year, month } = params;
 
   const dueDate = computeDueDate(year, month, paymentDueWeek);
   const now = nowInSriLanka();
@@ -499,31 +579,40 @@ async function processCurrentMonthFees(params: {
   );
 
   if (missing.length > 0) {
-    await prisma.classStudentFee.createMany({
-      data: missing.map((classStudentId) => {
-        const waiver = newRowWaiverColumns(
-          waiverContext,
-          studentIdByEnrolment.get(classStudentId)!,
-          classStudentId,
-          currentFee
-        );
-        return {
-          classStudentId,
-          year,
-          month,
-          amount: currentFee,
-          discount: 0,
-          lateJoinDeduct: 0,
-          waiverAmount: 0,
-          ...waiver,
-          finalAmount: computeFinalAmount(currentFee, 0, waiver.lateJoinDeduct ?? 0, 0),
-          dueDate,
-          status: 0,
-          createdAt: now,
-        };
-      }),
-      skipDuplicates: true,
-    });
+    // New current-month rows: eligible active enrolments get an automatic
+    // Free Card. Eligibility is read under the enrolment lock, in the same
+    // transaction as the insert (see lockEligibleEnrolments).
+    await prisma.$transaction(async (tx) => {
+      const eligible = await lockEligibleEnrolments(tx, missing);
+      const issuedAt = new Date();
+      await tx.classStudentFee.createMany({
+        data: missing.map((classStudentId) => {
+          const waiver = newRowWaiverColumns(
+            waiverContext,
+            studentIdByEnrolment.get(classStudentId)!,
+            classStudentId,
+            currentFee
+          );
+          const freeCard = eligible.has(classStudentId);
+          return {
+            classStudentId,
+            year,
+            month,
+            amount: currentFee,
+            discount: 0,
+            lateJoinDeduct: 0,
+            waiverAmount: 0,
+            ...waiver,
+            ...automaticFreeCardColumns(freeCard, teacherId, issuedAt),
+            finalAmount: computeFinalAmount(currentFee, 0, waiver.lateJoinDeduct ?? 0, 0, freeCard),
+            dueDate,
+            status: 0,
+            createdAt: now,
+          };
+        }),
+        skipDuplicates: true,
+      });
+    }, AUTOMATIC_FREE_CARD_TX);
   }
 
   for (const row of existing) {
@@ -748,14 +837,15 @@ export async function reprocessMonthlyFees(params: {
     const missing = classStudentIds.filter((id) => !existingSet.has(id));
 
     if (missing.length > 0) {
-      await prisma.classStudentFee.createMany({
-        data: missing.map((classStudentId) => {
+      const newRows = (eligible: Set<string>, issuedAt: Date) =>
+        missing.map((classStudentId) => {
           const waiver = newRowWaiverColumns(
             waiverContext,
             studentIdByEnrolment.get(classStudentId)!,
             classStudentId,
             periodFee
           );
+          const freeCard = eligible.has(classStudentId);
           return {
             classStudentId,
             year,
@@ -765,14 +855,26 @@ export async function reprocessMonthlyFees(params: {
             lateJoinDeduct: 0,
             waiverAmount: 0,
             ...waiver,
-            finalAmount: computeFinalAmount(periodFee, 0, waiver.lateJoinDeduct ?? 0, 0),
+            ...automaticFreeCardColumns(freeCard, teacherId, issuedAt),
+            finalAmount: computeFinalAmount(periodFee, 0, waiver.lateJoinDeduct ?? 0, 0, freeCard),
             dueDate,
             status: 0,
             createdAt: now,
           };
-        }),
-        skipDuplicates: true,
-      });
+        });
+
+      if (year === nowYear && month === nowMonth) {
+        // Current month: new rows of eligible ACTIVE enrolments get an
+        // automatic Free Card (removed enrolments never do), eligibility read
+        // under the enrolment lock in the insert's transaction.
+        await prisma.$transaction(async (tx) => {
+          const eligible = await lockEligibleEnrolments(tx, missing);
+          await tx.classStudentFee.createMany({ data: newRows(eligible, new Date()), skipDuplicates: true });
+        }, AUTOMATIC_FREE_CARD_TX);
+      } else {
+        // Past month: never an automatic card (exactly the existing insert).
+        await prisma.classStudentFee.createMany({ data: newRows(new Set(), new Date()), skipDuplicates: true });
+      }
     }
 
     for (const row of existing) {
@@ -894,6 +996,7 @@ export async function getMonthlyFeeSheet(params: {
   if (current) {
     await processCurrentMonthFees({
       classId,
+      teacherId,
       paymentDueWeek: classInfo.paymentDueWeek,
       currentFee: periodFee,
       year,
@@ -1675,7 +1778,9 @@ export type FreeCardSkipReason =
   | "PENDING_PAYMENT"
   | "CLARIFICATION_PAYMENT"
   | "ALREADY_FREE_CARD"
-  | "NO_FREE_CARD";
+  | "NO_FREE_CARD"
+  /** Eligibility apply only: no longer an active, eligible enrolment. */
+  | "NOT_ELIGIBLE";
 
 const FREE_CARD_SKIP_MESSAGES: Record<FreeCardSkipReason, string> = {
   NOT_IN_SHEET: "Not a fee of this class and month.",
@@ -1684,6 +1789,7 @@ const FREE_CARD_SKIP_MESSAGES: Record<FreeCardSkipReason, string> = {
   CLARIFICATION_PAYMENT: "A payment slip is waiting for the student's clarification.",
   ALREADY_FREE_CARD: "Already has a Free Card for this month.",
   NO_FREE_CARD: "Has no Free Card for this month.",
+  NOT_ELIGIBLE: "No longer a Free Card student of this class.",
 };
 
 export type FreeCardResult = {
@@ -1764,10 +1870,17 @@ export async function setFreeCards(params: {
   month: number;
   feeIds: string[];
   action: FreeCardAction;
+  /**
+   * Internal (issueFreeCardsForEligibleEnrolments only; the route never sets
+   * it): issue only while the fee's enrolment is active and Free Card
+   * eligible, checked under a FOR SHARE lock on the enrolment.
+   */
+  eligibleEnrolmentsOnly?: boolean;
 }): Promise<FreeCardResult> {
   const { teacherId, classId, year, month, feeIds, action } = params;
   const classInfo = await assertTeacherOwnsClass(teacherId, classId);
   const issue = action === "issue";
+  const eligibleOnly = issue && params.eligibleEnrolmentsOnly === true;
 
   type Outcome = { processed: FreeCardResult["processed"]; skipped: FreeCardResult["skipped"] };
 
@@ -1776,6 +1889,22 @@ export async function setFreeCards(params: {
     outcome = await prisma.$transaction(
       async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${FREE_CARD_LOCK_TIMEOUT_MS}ms'`);
+
+        // Eligibility apply only: the fees' enrolments are locked FOR SHARE
+        // first (enrolment before fee, the order fee creation uses). An
+        // eligibility change or a removal (an UPDATE of the enrolment) either
+        // committed before, and is seen in the check below, or waits until
+        // this transaction ends. A fee's classStudentId never changes, so
+        // reading it before the lock is safe.
+        if (eligibleOnly) {
+          const owners = await tx.classStudentFee.findMany({
+            where: { id: { in: feeIds } },
+            select: { classStudentId: true },
+          });
+          if (owners.length > 0) {
+            await lockEnrolmentsForShare(tx, owners.map((owner) => owner.classStudentId));
+          }
+        }
 
         // Lock in a fixed order so two overlapping bulk requests never deadlock.
         for (const feeId of [...feeIds].sort()) {
@@ -1796,7 +1925,9 @@ export async function setFreeCards(params: {
             lateJoinDeduct: true,
             waiverAmount: true,
             freeCard: true,
-            classStudent: { select: { student: { select: { name: true } } } },
+            classStudent: {
+              select: { isActive: true, freeCardEligible: true, student: { select: { name: true } } },
+            },
             payments: { select: { status: true } },
           },
         });
@@ -1822,6 +1953,11 @@ export async function setFreeCards(params: {
           }
 
           if (issue) {
+            // Read under the enrolment lock taken above.
+            if (eligibleOnly && !(fee.classStudent.isActive && fee.classStudent.freeCardEligible)) {
+              skip(feeId, studentName, "NOT_ELIGIBLE");
+              continue;
+            }
             if (fee.freeCard) {
               skip(feeId, studentName, "ALREADY_FREE_CARD");
               continue;
@@ -1901,6 +2037,62 @@ export async function setFreeCards(params: {
     skipped: outcome.skipped,
     sheet: await buildReadOnlySheet(classInfo, year, month),
   };
+}
+
+/**
+ * Optional "also apply to this month" for class-level Free Card eligibility:
+ * issues Free Cards on the EXISTING current-month fee rows of the given
+ * enrolments that are active and eligible, through setFreeCards (its row
+ * locks, payment / slip / existing-card skip rules and audit fields; nothing
+ * is re-implemented). Enrolments of another class or teacher, inactive or
+ * not eligible are ignored. Enrolments without a current-month row yet need
+ * nothing: the row gets the card when it is created.
+ */
+export async function issueFreeCardsForEligibleEnrolments(params: {
+  teacherId: string;
+  classId: string;
+  classStudentIds: string[];
+}): Promise<FreeCardResult> {
+  const { teacherId, classId } = params;
+  const classStudentIds = Array.from(new Set(params.classStudentIds));
+
+  if (classStudentIds.length === 0) {
+    throw new AppError("Select at least one student.", 400, "VALIDATION_ERROR");
+  }
+  if (classStudentIds.length > FREE_CARD_MAX_FEES) {
+    throw new AppError(`Select at most ${FREE_CARD_MAX_FEES} students at a time.`, 400, "VALIDATION_ERROR");
+  }
+
+  const classInfo = await assertTeacherOwnsClass(teacherId, classId);
+  const now = nowInSriLanka();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+
+  const fees = await prisma.classStudentFee.findMany({
+    where: {
+      year,
+      month,
+      classStudentId: { in: classStudentIds },
+      classStudent: { classId, isActive: true, freeCardEligible: true, student: { status: 0 } },
+    },
+    select: { id: true },
+  });
+
+  if (fees.length === 0) {
+    return { action: "issue", processed: [], skipped: [], sheet: await buildReadOnlySheet(classInfo, year, month) };
+  }
+
+  // The eligibility read above is only a pre-filter: setFreeCards re-checks
+  // it under the enrolment lock before issuing.
+  return setFreeCards({
+    teacherId,
+    classId,
+    year,
+    month,
+    feeIds: fees.map((fee) => fee.id),
+    action: "issue",
+    eligibleEnrolmentsOnly: true,
+  });
 }
 
 /**

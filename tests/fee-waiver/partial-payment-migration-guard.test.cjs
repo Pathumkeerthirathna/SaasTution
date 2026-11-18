@@ -20,9 +20,13 @@ const normalize = (sql) => sql.replace(/--[^\n]*/g, " ").replace(/\s+/g, " ").tr
 const sql = normalize(fs.readFileSync(path.join(migrationsDir, MIGRATION, "migration.sql"), "utf8"));
 const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
 
-test("placement: the latest migration, right after the payment access one; no committed migration changed (git)", () => {
+test("placement: right after the payment access one; only the approved Free Card eligibility migration follows; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(-2), ["20261121120000_add_class_payment_access_control", MIGRATION]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), [
+    "20261121120000_add_class_payment_access_control",
+    MIGRATION,
+    "20261123120000_add_class_student_free_card_eligible",
+  ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });

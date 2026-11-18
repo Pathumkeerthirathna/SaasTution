@@ -91,7 +91,10 @@ function createFakeDb() {
   let idCounter = 0;
   let tick = 0;
   const writes = [];
-  const hooks = { beforeUpdateMany: null, failOn: null };
+  const enrolmentLocks = [];
+  // Every enrolment lock, both kinds, in the order taken.
+  const lockLog = [];
+  const hooks = { beforeUpdateMany: null, failOn: null, onEnrolmentLock: null };
 
   const nextTick = () => new Date(Date.UTC(2030, 0, 1) + ++tick);
   const nextId = (model) => `${model.toLowerCase()}-${++idCounter}`;
@@ -234,6 +237,8 @@ function createFakeDb() {
     const base = { id: nextId(model), createdAt: new Date(Date.UTC(2026, 0, 1)), updatedAt: nextTick() };
     if (model === "ClassStudentFee") return { ...base, ...FEE_DEFAULTS, ...data, updatedAt: nextTick() };
     if (model === "ClassFeeWaiverRule") return { ...base, status: 0, ...data };
+    // Class-level Free Card eligibility (migration 20261123120000): database default.
+    if (model === "ClassStudent") return { ...base, freeCardEligible: false, ...data };
     if (model === "ClassPayment") return { ...base, status: "PENDING", source: "STUDENT_SLIP", paymentMethod: null, receivedAt: null, recordedByTeacherId: null, requestKey: null, submittedAt: new Date(), ...data }; // schema defaults
     return { ...base, ...data };
   }
@@ -358,6 +363,26 @@ function createFakeDb() {
   };
   client.$queryRaw = async (strings, ...values) => {
     const sql = Array.isArray(strings) ? strings.join("?") : String(strings);
+    // Automatic Free Cards: fee creation locks the enrolments FOR SHARE (in
+    // id order) before reading their eligibility. Recorded for the tests.
+    // Eligibility changes lock the selected enrolments FOR NO KEY UPDATE (in
+    // id order) before validating and updating them. Recorded for the tests.
+    if (/^SELECT "id" FROM "ClassStudent" WHERE "id" = ANY\(\?\) ORDER BY "id" FOR NO KEY UPDATE$/.test(sql)) {
+      const ids = values[0];
+      lockLog.push({ mode: "NO KEY UPDATE", ids: [...ids] });
+      return tables.ClassStudent.filter((r) => ids.includes(r.id))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((r) => ({ id: r.id }));
+    }
+    if (/^SELECT "id" FROM "ClassStudent" WHERE "id" = ANY\(\?\) ORDER BY "id" FOR SHARE$/.test(sql)) {
+      const ids = values[0];
+      enrolmentLocks.push([...ids]);
+      lockLog.push({ mode: "SHARE", ids: [...ids] });
+      if (hooks.onEnrolmentLock) hooks.onEnrolmentLock(ids, api);
+      return tables.ClassStudent.filter((r) => ids.includes(r.id))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((r) => ({ id: r.id }));
+    }
     // Stage 5.4e: lecture schedule edits, cancelling and deleting lock the
     // lecture (and look for an attendance register: none here).
     if (/FROM "Lecture" WHERE "id" = \? FOR NO KEY UPDATE/.test(sql)) {
@@ -382,6 +407,8 @@ function createFakeDb() {
     client,
     tables,
     writes,
+    enrolmentLocks,
+    lockLog,
     hooks,
     insert(model, data) {
       const row = withDefaults(model, data);
@@ -399,6 +426,9 @@ function createFakeDb() {
     reset() {
       for (const key of Object.keys(tables)) tables[key].length = 0;
       writes.length = 0;
+      enrolmentLocks.length = 0;
+      lockLog.length = 0;
+      hooks.onEnrolmentLock = null;
       hooks.beforeUpdateMany = null;
       hooks.beforeCreate = null;
       hooks.failOn = null;

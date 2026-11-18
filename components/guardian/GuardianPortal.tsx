@@ -12,6 +12,8 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { FreeCardStudentBadge } from "@/components/free-card-eligibility-actions";
+
 type GuardianStudent = {
   id: string;
   name: string;
@@ -399,20 +401,27 @@ function Stat({
 /* Classes                                                             */
 /* ------------------------------------------------------------------ */
 
-type ClassRow = {
+export type GuardianClassRow = {
   id: string;
   class: { id: string; name: string; description: string | null; schedule: string; monthlyFee: number };
   isActive: boolean;
+  /** Class-level Free Card eligibility of this enrolment (ClassStudent.freeCardEligible). */
+  freeCardEligible?: boolean;
 };
 
 function ClassesTab({ studentId }: { studentId: string }) {
-  const { data, error } = useTabData<ClassRow[]>(
+  const { data, error } = useTabData<GuardianClassRow[]>(
     `/api/guardian/students/${studentId}/classes`
   );
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
 
-  const active = data.filter((c) => c.isActive);
+  return <GuardianClassList rows={data} />;
+}
+
+/** The student's active classes (the Classes tab's list). */
+export function GuardianClassList({ rows }: { rows: GuardianClassRow[] }) {
+  const active = rows.filter((c) => c.isActive);
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -421,7 +430,10 @@ function ClassesTab({ studentId }: { studentId: string }) {
       ) : (
         active.map((row) => (
           <Card key={row.id}>
-            <h3 className="text-[13px] font-semibold text-slate-900">{row.class.name}</h3>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="text-[13px] font-semibold text-slate-900">{row.class.name}</h3>
+              <FreeCardStudentBadge eligible={row.freeCardEligible} />
+            </div>
             <p className="mt-1 text-[11px] text-slate-500">{row.class.schedule}</p>
             {row.class.description ? (
               <p className="mt-2 line-clamp-3 text-[12px] text-slate-600">

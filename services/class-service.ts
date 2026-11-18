@@ -112,6 +112,8 @@ export async function listClassesByTeacher(params: ListClassesParams) {
             assignedAt: true,
             removedAt: true,
             removeReason: true,
+            // Class-level Free Card eligibility of this enrolment (Students panel).
+            freeCardEligible: true,
             student: {
               select: {
                 id: true,

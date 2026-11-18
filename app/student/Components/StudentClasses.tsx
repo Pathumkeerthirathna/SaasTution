@@ -19,6 +19,7 @@ import {
   getClassCardTheme,
   getClassNumber,
 } from "@/components/class-card-visuals";
+import { FreeCardStudentBadge } from "@/components/free-card-eligibility-actions";
 import { formatStoredSriLankaDate, formatStoredSriLankaDateTime } from "@/lib/time";
 
 interface ClassPaymentRecord {
@@ -74,6 +75,8 @@ interface StudentClass {
   removeReason?: string | null;
   /** This enrolment's Free Card fees (absent from older API responses). */
   fees?: FreeCardFee[];
+  /** Class-level Free Card eligibility of this enrolment (ClassStudent.freeCardEligible). */
+  freeCardEligible?: boolean;
   class: ClassInfo;
 }
 
@@ -90,6 +93,12 @@ interface GroupedClass {
   removedAt: string | null;
   removeReason: string | null;
   enrolmentCount: number;
+  /**
+   * The current (active) enrolment is a Free Card student of this class.
+   * From the enrolment's own flag only, never from Free Card fees; a removed
+   * enrolment's eligibility is not shown.
+   */
+  freeCardStudent: boolean;
   payments: ClassPaymentRecord[];
   /** Months settled by a Free Card, newest first. */
   freeCards: FreeCardFee[];
@@ -172,6 +181,7 @@ export function groupByClass(rows: StudentClass[]): GroupedClass[] {
       removedAt: isActive ? null : removedRow?.removedAt ?? null,
       removeReason: isActive ? null : removedRow?.removeReason ?? null,
       enrolmentCount: sorted.length,
+      freeCardStudent: sorted.some((row) => row.isActive && row.freeCardEligible === true),
       payments,
       freeCards,
       records: [
@@ -331,6 +341,7 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                       />
                       {group.isActive ? "Active" : "Removed"}
                     </span>
+                    <FreeCardStudentBadge eligible={group.freeCardStudent} />
                   </div>
 
                   <div

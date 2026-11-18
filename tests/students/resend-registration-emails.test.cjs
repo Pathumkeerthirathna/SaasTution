@@ -63,6 +63,15 @@ const fakePrisma = new Proxy(
           return Array.isArray(arg) ? Promise.all(arg) : arg(fakePrisma);
         };
       }
+      // The fee row's enrolment lock (SELECT ... FOR SHARE, automatic Free
+      // Cards): no concurrency here, so a no-op.
+      if (prop === "$queryRaw") {
+        return async (strings) => {
+          const sql = strings.join("?");
+          if (sql === 'SELECT "id" FROM "ClassStudent" WHERE "id" = ANY(?) ORDER BY "id" FOR SHARE') return [];
+          throw new Error(`unexpected raw SQL: ${sql}`);
+        };
+      }
       return basePrisma[prop];
     },
   }

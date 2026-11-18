@@ -1334,6 +1334,10 @@ model ClassStudent {
   assignedAt   DateTime  @default(now())
   removedAt    DateTime?
   removeReason String?
+  /// Class-level automatic Free Card eligibility of THIS enrolment only.
+  /// Every new enrolment (a re-enrolment included) starts false: it is never
+  /// copied from an earlier enrolment of the same student and class.
+  freeCardEligible Boolean @default(false)
   class        Class     @relation(fields: [classId], references: [id])
   student      Student   @relation(fields: [studentId], references: [id])
 

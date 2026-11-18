@@ -14,11 +14,7 @@ import { recalculateAfterStudentDecision } from "@/services/fee-waiver-events";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
-import { requireTeacherSession } from "@/lib/auth-session";
 
-import {
-  sendEmail,
-} from "@/lib/mailer";
 import {
   issueTemporaryStudentPassword,
   type IssuedTemporaryPassword,
@@ -26,9 +22,6 @@ import {
 import { EMAIL_DELIVERY_INITIATORS, queueStudentWelcomeEmails } from "@/services/student-email-delivery-service";
 import { wakeEmailDeliveryWorker } from "@/services/email-delivery-worker";
 
-import {
-  getStudentRegistrationEmail,
-} from "@/emails/StudentRegistrationEmail";
 import { ClassroomStudent } from "@/components/Jitsi/types";
 
 
@@ -1180,6 +1173,9 @@ export async function getStudentClassesForTeacher(
       assignedAt: true,
       removedAt: true,
       removeReason: true,
+      // Class-level Free Card eligibility of THIS enrolment ("Free Card
+      // Student" label); never derived from the fees below.
+      freeCardEligible: true,
 
       // This enrolment's fees settled by a teacher-issued Free Card (they
       // have no payment record, so the payment list alone would miss them).
@@ -1236,7 +1232,7 @@ export async function getStudentClassesForTeacher(
   });
 }
 
-export async function getStudentPaymentHistoryForTeacher(studentId: string) {
+export async function getStudentPaymentHistoryForTeacher() {
 
 }
 
@@ -2945,7 +2941,13 @@ export async function getStudentQuizAnalytics(
   const recent = recentPool
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 5)
-    .map(({ ts: _ts, ...rest }) => rest);
+    .map(({ id, title, scorePercent, attempts, submittedAt }): QuizAnalyticsRecent => ({
+      id,
+      title,
+      scorePercent,
+      attempts,
+      submittedAt,
+    }));
 
   return {
     period,

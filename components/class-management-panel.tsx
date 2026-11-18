@@ -7,29 +7,38 @@ import { buildClassFormPayload, classGraceInput, DEFAULT_CLASS_GRACE_INPUT } fro
 import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ExternalLink, Eye } from "lucide-react";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import {
+  allEnrolmentsSelected,
+  buildEligibilityRequest,
+  EligibilityConfirmDialog,
+  EligibilityNoticeView,
+  eligibilityNotice,
+  eligibilityPanelReducer,
+  EligibilitySelectionBar,
+  EnrolmentCheckbox,
+  FreeCardStudentBadge,
+  initialEligibilityPanelState,
+  selectableEnrolmentIds,
+  shouldRefreshAfter,
+  submitFreeCardEligibility,
+} from "@/components/free-card-eligibility-actions";
 import {
   AlertTriangle,
-  Atom,
   BookOpen,
-  Calculator,
   Calendar,
   CalendarDays,
   CheckSquare2,
   CircleHelp,
   Clock,
-  Compass,
   FileText,
-  FlaskConical,
   GraduationCap,
   History,
   Layers3,
-  Microscope,
   Pencil,
   Plus,
   RotateCcw,
   Search,
-  Sigma,
   Square,
   Trash2,
   UserMinus,
@@ -93,6 +102,8 @@ export type ClassItem = {
     assignedAt: string;
     removedAt: string | null;
     removeReason: string | null;
+    /** Class-level Free Card eligibility of this enrolment (ClassStudent.freeCardEligible). */
+    freeCardEligible?: boolean;
     student: {
       id: string;
       name: string;
@@ -148,16 +159,6 @@ type FilterState = {
   grade: string;
 };
 
-type TeacherStudent = {
-  id: string;
-  name: string;
-  grade: { id: string; GradeDesc: string } | null;
-  registrationNumber: string | null;
-  email: string | null;
-  contact01: string | null;
-  status: number;
-  classes: { id: string; class: { name: string } }[];
-};
 
 const PAGE_SIZE = 4;
 const CLASS_CONFIG_UPDATED_EVENT = "saastution:class-config-updated";
@@ -312,17 +313,25 @@ export function ClassManagementPanel() {
   
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [isAssigning, setIsAssigning] = useState(false);
-  const [isLoadingList, setIsLoadingList] = useState(false);
+  const [isLoadingList] = useState(false);
   const [pageSize, setPageSize] = useState(10);
-  const [students, setStudents] = useState<StudentListItem[]>([]);
+  const [, setStudents] = useState<StudentListItem[]>([]);
   const [studentPage, setStudentPage] = useState(1);
   const [studentTotalPages, setStudentTotalPages] = useState(1);
-  const [studentTotalItems, setStudentTotalItems] = useState(0);
+  const [, setStudentTotalItems] = useState(0);
 
   // Remove-student confirmation
   const [removingEntry, setRemovingEntry] = useState<{ studentId: string; name: string } | null>(null);
   const [removeReason, setRemoveReason] = useState("");
   const [isRemoving, setIsRemoving] = useState(false);
+
+  // Class-level Free Card eligibility (selection by enrolment id, bulk actions).
+  const [eligibility, dispatchEligibility] = useReducer(
+    eligibilityPanelReducer,
+    undefined,
+    initialEligibilityPanelState
+  );
+  const [isSavingEligibility, setIsSavingEligibility] = useState(false);
   const hasData = useMemo(() => items.length > 0, [items]);
   const studentsPanelClass = useMemo(
     () => items.find((item) => item.id === studentsPanelClassId) ?? null,
@@ -449,6 +458,36 @@ const hasStudentFilter = Boolean(
       setStudentsPanelClassId(null);
     }
   }, [items, studentsPanelClassId]);
+
+  // Another class, or the panel closed (null): no selection, dialog or notice carried over.
+  useEffect(() => {
+    dispatchEligibility({ type: "reset" });
+  }, [studentsPanelClassId]);
+
+  // After a reload, only still-active enrolments stay selected.
+  useEffect(() => {
+    dispatchEligibility({ type: "sync", enrolments: studentsPanelActiveStudents });
+  }, [studentsPanelActiveStudents]);
+
+  async function handleEligibilityConfirm() {
+    const action = eligibility.confirming;
+    const classId = studentsPanelClassId;
+    if (!action || !classId || eligibility.selected.size === 0 || isSavingEligibility) return;
+
+    setIsSavingEligibility(true);
+    try {
+      const outcome = await submitFreeCardEligibility(
+        classId,
+        buildEligibilityRequest(eligibility.selected, action, eligibility.applyToCurrentMonth)
+      );
+      const notice = eligibilityNotice(outcome);
+      // Saved (also when the optional apply step failed): the selection is cleared.
+      dispatchEligibility(outcome.kind === "saved" ? { type: "saved", notice } : { type: "failed", notice });
+      if (shouldRefreshAfter(outcome)) await loadClasses(page);
+    } finally {
+      setIsSavingEligibility(false);
+    }
+  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -750,7 +789,7 @@ const hasStudentFilter = Boolean(
             setIsLoadingAvailableStudents(false);
           }
         },
-        [sortBy, sortOrder]
+        [sortBy, sortOrder, pageSize]
       );
 
   // const loadAvailableStudents = useCallback(async () => {
@@ -2115,6 +2154,24 @@ const hasStudentFilter = Boolean(
                 Active students ({studentsPanelActiveStudents.length})
               </p>
             </div>
+            <EligibilitySelectionBar
+              selectedCount={eligibility.selected.size}
+              selectableCount={selectableEnrolmentIds(studentsPanelActiveStudents).length}
+              allSelected={allEnrolmentsSelected(eligibility.selected, studentsPanelActiveStudents)}
+              busy={isSavingEligibility}
+              onToggleAll={() => dispatchEligibility({ type: "toggleAll", enrolments: studentsPanelActiveStudents })}
+              onMark={() => dispatchEligibility({ type: "confirm", action: "enable" })}
+              onRemove={() => dispatchEligibility({ type: "confirm", action: "disable" })}
+              onClear={() => dispatchEligibility({ type: "reset" })}
+            />
+            {eligibility.notice ? (
+              <div className="border-b border-gray-100 px-4 py-2">
+                <EligibilityNoticeView
+                  notice={eligibility.notice}
+                  onDismiss={() => dispatchEligibility({ type: "dismissNotice" })}
+                />
+              </div>
+            ) : null}
             {studentsPanelActiveStudents.length === 0 ? (
               <div className="px-5 py-6 text-center">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
@@ -2131,6 +2188,12 @@ const hasStudentFilter = Boolean(
                     className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
+                      <EnrolmentCheckbox
+                        checked={eligibility.selected.has(entry.id)}
+                        disabled={isSavingEligibility}
+                        studentName={entry.student.name}
+                        onToggle={() => dispatchEligibility({ type: "toggle", enrolment: entry })}
+                      />
                       <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#eef3f8] text-[11px] font-semibold text-[#264867]">
                         {entry.student.name.slice(0, 2).toUpperCase()}
                       </span>
@@ -2149,6 +2212,7 @@ const hasStudentFilter = Boolean(
                             <Calendar size={10} />
                             {formatStoredSriLankaDate(entry.assignedAt)}
                           </span>
+                          <FreeCardStudentBadge eligible={entry.freeCardEligible} />
                         </div>
                       </div>
                     </div>
@@ -2767,6 +2831,20 @@ const hasStudentFilter = Boolean(
           </div>
         </div>
       )}
+
+      {/* ── Free Card eligibility confirmation ─────────────────────── */}
+      {eligibility.confirming && studentsPanelClassId ? (
+        <EligibilityConfirmDialog
+          action={eligibility.confirming}
+          count={eligibility.selected.size}
+          className={studentsPanelClass?.name ?? "this class"}
+          applyToCurrentMonth={eligibility.applyToCurrentMonth}
+          busy={isSavingEligibility}
+          onApplyChange={(value) => dispatchEligibility({ type: "setApply", value })}
+          onCancel={() => dispatchEligibility({ type: "cancel" })}
+          onConfirm={() => void handleEligibilityConfirm()}
+        />
+      ) : null}
 
       {feeHistoryClass && (
         <div

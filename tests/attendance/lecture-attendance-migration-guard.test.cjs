@@ -216,6 +216,8 @@ const FREE_CARD_MIGRATION = "20261120120000_add_class_student_fee_free_card";
 const PAYMENT_ACCESS_MIGRATION = "20261121120000_add_class_payment_access_control";
 // Partial payments Stage 1: additive ClassPayment columns + ClassPaymentReversal (tests/fee-waiver/partial-payment-migration-guard.test.cjs).
 const PARTIAL_PAYMENT_MIGRATION = "20261122120000_add_class_payment_source_and_reversal";
+// Free Card eligibility Stage 1: one additive ClassStudent column (tests/fee-waiver/free-card-eligibility-migration-guard.test.cjs).
+const FREE_CARD_ELIGIBILITY_MIGRATION = "20261123120000_add_class_student_free_card_eligible";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -226,7 +228,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS, STUDENT_PASSWORD_SETUP_MIGRATION, EMAIL_DELIVERY_MIGRATION, FREE_CARD_MIGRATION, PAYMENT_ACCESS_MIGRATION, PARTIAL_PAYMENT_MIGRATION]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS, STUDENT_PASSWORD_SETUP_MIGRATION, EMAIL_DELIVERY_MIGRATION, FREE_CARD_MIGRATION, PAYMENT_ACCESS_MIGRATION, PARTIAL_PAYMENT_MIGRATION, FREE_CARD_ELIGIBILITY_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------
