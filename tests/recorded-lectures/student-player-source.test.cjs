@@ -172,6 +172,11 @@ test("separation: lecture-list-client.tsx and the YouTube / lecture APIs are unc
     "app/api/student/lectures/[lectureId]/route.ts",
     "app/api/student/lectures/[lectureId]/notes/[noteId]/file/route.ts",
     "services/lecture-service.ts",
+    // Changed on purpose by payment-due access control (one access check
+    // each; tests/class-access), not by Recorded Lectures.
+    "app/api/student/lectures/[lectureId]/notes/route.ts",
+    "app/api/student/lectures/[lectureId]/whiteboards/route.ts",
+    "app/api/student/lectures/[lectureId]/whiteboards/[whiteboardId]/route.ts",
   ].map((file) => `:(exclude,literal)${file}`);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...files, ...stage2], { cwd: root, encoding: "utf8" });
   assert.equal(diff.trim(), "", diff);

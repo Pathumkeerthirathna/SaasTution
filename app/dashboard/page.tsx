@@ -29,6 +29,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { formatTeacherFullName } from "@/lib/teacher-title";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
+import { getEnrolmentPaymentStates, getFreeCardEnrolmentIds } from "@/services/class-student-fee-service";
 import { DashboardCountdown } from "@/components/dashboard/dashboard-countdown";
 import { LiveBroadcastCard } from "@/components/dashboard/live-broadcast-card";
 import { DashboardMetricCards } from "@/components/dashboard/dashboard-metric-cards";
@@ -134,10 +135,12 @@ export default async function DashboardPage() {
             paymentDueWeek: 2,
             students: [
               {
+                id: "demo-enrolment-1",
                 studentId: "demo-student-1",
                 student: { name: "Nimal Perera", registrationNumber: "ST20260014" },
               },
               {
+                id: "demo-enrolment-2",
                 studentId: "demo-student-2",
                 student: { name: "Kavindi Silva", registrationNumber: "ST20260021" },
               },
@@ -150,6 +153,7 @@ export default async function DashboardPage() {
             paymentDueWeek: 1,
             students: [
               {
+                id: "demo-enrolment-3",
                 studentId: "demo-student-3",
                 student: { name: "Sachini Fernando", registrationNumber: "ST20260033" },
               },
@@ -224,6 +228,8 @@ export default async function DashboardPage() {
               students: {
                 where: { isActive: true, student: { status: 0 } },
                 select: {
+                  // The enrolment itself: matched against Free Card fees.
+                  id: true,
                   studentId: true,
                   student: { select: { name: true, registrationNumber: true } },
                 },
@@ -236,6 +242,8 @@ export default async function DashboardPage() {
             where: {
               class: { teacherId: teacher.id, status: 0 },
               classStudentFee: { year: currentYearNum, month: currentMonthNum },
+              // A reversed payment is no longer received money (kept in the history).
+              reversal: { is: null },
             },
             select: { classId: true, studentId: true, amount: true, status: true },
           }),
@@ -530,24 +538,50 @@ export default async function DashboardPage() {
 
   const nowSriLanka = nowInSriLanka();
 
+  // Active enrolments whose own fee for this month carries a teacher-issued
+  // Free Card: those students owe nothing, so they are not due. Keyed by the
+  // enrolment, so a card on an earlier (removed) enrolment never hides the
+  // payable fee of a re-enrolment. None in the pending teacher's sample.
+  const freeCardEnrolmentIds = isPending
+    ? new Set<string>()
+    : await getFreeCardEnrolmentIds({ teacherId: teacher.id, year: currentYearNum, month: currentMonthNum });
+
+  // Each active enrolment's fee for this month, through the shared payment
+  // calculation (lib/fee-payment-state.ts). Due: no fee row yet (as before),
+  // or an amount still outstanding with no slip awaiting processing; a partly
+  // paid student is due for the rest. The pending teacher's sample keeps the
+  // payment-record rule.
+  const enrolmentPaymentStates = isPending
+    ? null
+    : await getEnrolmentPaymentStates({ teacherId: teacher.id, year: currentYearNum, month: currentMonthNum });
+
   const dueStudentsFlat = classesWithStudents
     .flatMap((cls) => {
       const dueDate = getPaymentDueDate(currentMonthKey, cls.paymentDueWeek as 1 | 2 | 3 | 4);
       const dueStatus = getPaymentDueStatus(dueDate, nowSriLanka);
+      const isDue = (e: (typeof cls.students)[number]) => {
+        if (!enrolmentPaymentStates) return !paymentsByKey.has(`${cls.id}:${e.studentId}`);
+        const position = enrolmentPaymentStates.get(e.id);
+        return !position || (position.outstanding > 0 && !position.awaiting);
+      };
 
       return cls.students
-        .filter((e) => !paymentsByKey.has(`${cls.id}:${e.studentId}`))
-        .map((e) => ({
-          studentId: e.studentId,
-          studentName: e.student.name,
-          registrationNumber: e.student.registrationNumber,
-          classId: cls.id,
-          className: cls.name,
-          dueWeek: cls.paymentDueWeek,
-          dueDate,
-          dueStatus,
-          amount: cls.monthlyFee,
-        }));
+        .filter(isDue)
+        .filter((e) => !freeCardEnrolmentIds.has(e.id))
+        .map((e) => {
+          const position = enrolmentPaymentStates?.get(e.id);
+          return {
+            studentId: e.studentId,
+            studentName: e.student.name,
+            registrationNumber: e.student.registrationNumber,
+            classId: cls.id,
+            className: cls.name,
+            dueWeek: cls.paymentDueWeek,
+            dueDate,
+            dueStatus,
+            amount: position?.state === "PARTIAL" ? position.outstanding : cls.monthlyFee,
+          };
+        });
     })
     .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
 

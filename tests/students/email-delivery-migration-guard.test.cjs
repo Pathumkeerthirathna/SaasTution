@@ -27,9 +27,15 @@ const statements = () =>
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-test("placement: the latest migration, right after the student first-login one; no committed migration changed (git)", () => {
+test("placement: right after the student first-login one; only the approved Free Card migration follows; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(-2), ["20261118120000_add_student_password_setup_pending", MIGRATION]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), [
+    "20261118120000_add_student_password_setup_pending",
+    MIGRATION,
+    "20261120120000_add_class_student_fee_free_card", // Free Cards (tests/fee-waiver/free-card-migration-guard.test.cjs)
+    "20261121120000_add_class_payment_access_control", // payment access control (tests/class-access/class-access-migration-guard.test.cjs)
+    "20261122120000_add_class_payment_source_and_reversal", // partial payments Stage 1 (tests/fee-waiver/partial-payment-migration-guard.test.cjs)
+  ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });

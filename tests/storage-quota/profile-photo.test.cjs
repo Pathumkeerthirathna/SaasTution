@@ -204,6 +204,8 @@ function client(tx) {
 const prisma = {
   ...client(null),
   async $transaction(fn) {
+    // Batch form ($transaction([...queries], options)): the queries in order.
+    if (Array.isArray(fn)) return Promise.all(fn);
     const tx = { held: [] };
     const snapshot = structuredClone({ profiles: db.profiles, reservations: db.reservations });
     const c = client(tx);

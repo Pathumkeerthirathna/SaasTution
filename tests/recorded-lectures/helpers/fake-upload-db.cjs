@@ -553,6 +553,11 @@ function createFakeUploadDb() {
 
   const root = client(null);
   root.$transaction = async (fn, options) => {
+    // Batch form ($transaction([...queries], options)): the queries in order.
+    if (Array.isArray(fn)) {
+      if (db.faults.down) throw new Error("fake: database unreachable");
+      return Promise.all(fn);
+    }
     if (typeof fn !== "function") throw new Error("fake: only interactive transactions are supported");
     const ctx = { id: ++txCounter, undo: [], locks: [] };
     db.transactions.push({ id: ctx.id, options, outcome: "open" });

@@ -24,6 +24,8 @@ type Fee = {
   year: number;
   month: number;
   finalAmount: number;
+  /** Still payable (partial payments: the rest of the fee). */
+  outstanding?: number;
   dueDate: string | null;
   state: FeeState;
 };
@@ -88,7 +90,7 @@ function FeeRow({ fee, overdue }: { fee: Fee; overdue: boolean }) {
             <span className={overdue ? "text-rose-600" : "text-slate-500"}>
               Due {fmtDate(fee.dueDate)}
             </span>
-            <span className="ml-1 text-slate-700">{rs(fee.finalAmount)}</span>
+            <span className="ml-1 text-slate-700">{rs(fee.outstanding ?? fee.finalAmount)}</span>
             <span
               className={`ml-1 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${badge.cls}`}
             >

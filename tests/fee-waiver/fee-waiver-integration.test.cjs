@@ -141,8 +141,11 @@ function fee(id, classStudentId, over = {}) {
   });
 }
 
+// A payment of the whole fee (partial payments, Stage 2A: "paid" means the
+// confirmed payments cover finalAmount; any confirmed payment still freezes).
 function pay(feeId, status = "CONFIRMED") {
-  return db.insert("ClassPayment", { classStudentFeeId: feeId, classId: C, studentId: "x", amount: 1, status, submittedAt: new Date(Date.UTC(2026, 11, 1)) });
+  const amount = db.row("ClassStudentFee", feeId)?.finalAmount ?? 1;
+  return db.insert("ClassPayment", { classStudentFeeId: feeId, classId: C, studentId: "x", amount, status, submittedAt: new Date(Date.UTC(2026, 11, 1)) });
 }
 
 const at = (t, wall) => t.mock.timers.enable({ apis: ["Date"], now: sl(wall) });

@@ -11,7 +11,8 @@ import {
 } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
-import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
+import { feePaymentState } from "@/lib/fee-payment-state";
+import { ensureCurrentMonthFeeForClassStudent, isLockContention } from "@/services/class-student-fee-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,13 +24,17 @@ function assertPathInBounds(resolvedPath: string, allowedRoot: string) {
   }
 }
 
-type FeeState = "UNPAID" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID";
+const FREE_CARD_SUBMIT_MESSAGE =
+  "Your teacher has given you a Free Card for this month, so there is nothing to pay.";
+
+type FeeState = "UNPAID" | "PARTIAL" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID" | "FREE_CARD";
 
 // GET /api/student/payments?classId=
 // Returns the logged-in student's monthly fees grouped as:
 //   toPay    — nothing submitted yet, or the teacher asked for clarification
 //   inReview — a slip is submitted and awaiting the teacher
-//   paid     — the teacher confirmed the payment
+//   paid     — the teacher confirmed the payment, or issued a Free Card
+//              (state FREE_CARD: settled, nothing to pay or upload)
 export async function GET(request: Request) {
   try {
     const session = await requireStudentSession();
@@ -77,6 +82,7 @@ export async function GET(request: Request) {
         lateJoinDeduct: true,
         waiverAmount: true,
         finalAmount: true,
+        freeCard: true,
         dueDate: true,
         classStudent: {
           select: {
@@ -91,6 +97,7 @@ export async function GET(request: Request) {
             id: true,
             amount: true,
             status: true,
+            reversal: { select: { amount: true } },
             note: true,
             teacherFeedback: true,
             slipFileName: true,
@@ -107,15 +114,21 @@ export async function GET(request: Request) {
       const cls = fee.classStudent.class;
       classesMap.set(cls.id, cls.name);
 
-      const confirmed = fee.payments.find((p) => p.status === "CONFIRMED") ?? null;
+      const confirmed = fee.payments.find((p) => p.status === "CONFIRMED" && !p.reversal) ?? null;
       const latest = fee.payments[0] ?? null;
       const active = confirmed ?? latest;
+      // The shared calculation (lib/fee-payment-state.ts): paid only when the
+      // whole fee is received; a partly paid fee stays to pay.
+      const position = feePaymentState(fee, fee.payments);
+      const awaiting = fee.payments.find((p) => p.status === "PENDING" || p.status === "NEEDS_CLARIFICATION") ?? null;
 
       let state: FeeState;
-      if (confirmed) state = "PAID";
-      else if (!latest) state = "UNPAID";
-      else if (latest.status === "NEEDS_CLARIFICATION") state = "ACTION_NEEDED";
-      else state = "IN_REVIEW";
+      if (position.state === "PAID") state = "PAID";
+      else if (position.state === "FREE_CARD") state = "FREE_CARD";
+      else if (awaiting?.status === "NEEDS_CLARIFICATION") state = "ACTION_NEEDED";
+      else if (awaiting) state = "IN_REVIEW";
+      else if (position.state === "PARTIAL") state = "PARTIAL";
+      else state = "UNPAID";
 
       return {
         feeId: fee.id,
@@ -130,6 +143,10 @@ export async function GET(request: Request) {
         lateJoinDeduct: fee.lateJoinDeduct,
         waiverAmount: fee.waiverAmount,
         finalAmount: fee.finalAmount,
+        freeCard: fee.freeCard,
+        /** Received so far (confirmed, not reversed) and still payable. */
+        paidAmount: position.confirmedTotal,
+        outstanding: position.outstanding,
         state,
         payment: active
           ? {
@@ -154,10 +171,12 @@ export async function GET(request: Request) {
     };
 
     const toPay = items
-      .filter((i) => i.state === "UNPAID" || i.state === "ACTION_NEEDED")
+      .filter((i) => i.state === "UNPAID" || i.state === "PARTIAL" || i.state === "ACTION_NEEDED")
       .sort(dueAsc);
     const inReview = items.filter((i) => i.state === "IN_REVIEW").sort(dueAsc);
-    const paid = items.filter((i) => i.state === "PAID").sort((a, b) => -dueAsc(a, b));
+    const paid = items
+      .filter((i) => i.state === "PAID" || i.state === "FREE_CARD")
+      .sort((a, b) => -dueAsc(a, b));
 
     const classes = Array.from(classesMap, ([id, name]) => ({ id, name })).sort((a, b) =>
       a.name.localeCompare(b.name)
@@ -193,10 +212,11 @@ export async function POST(request: Request) {
       select: {
         id: true,
         finalAmount: true,
+        freeCard: true,
         classStudent: { select: { classId: true } },
         payments: {
           orderBy: { submittedAt: "desc" },
-          select: { id: true, status: true, slipFileUrl: true },
+          select: { id: true, status: true, slipFileUrl: true, amount: true, reversal: { select: { amount: true } } },
         },
       },
     });
@@ -205,7 +225,13 @@ export async function POST(request: Request) {
       throw new AppError("Fee not found.", 404, "FEE_NOT_FOUND");
     }
 
-    if (fee.payments.some((p) => p.status === "CONFIRMED")) {
+    if (fee.freeCard) {
+      return apiError(FREE_CARD_SUBMIT_MESSAGE, 409, "FREE_CARD_ACTIVE");
+    }
+
+    // Partial payments: a slip is for what is still outstanding after the
+    // confirmed (not reversed) payments; a fully paid fee takes no slip.
+    if (feePaymentState(fee, fee.payments).outstanding <= 0) {
       return apiError("This payment is already confirmed.", 409, "ALREADY_CONFIRMED");
     }
 
@@ -243,38 +269,82 @@ export async function POST(request: Request) {
       slipSizeBytes: fileEntry.size,
     };
 
-    const existing = fee.payments.find((p) => p.status !== "CONFIRMED") ?? null;
-
-    const payment = existing
-      ? await prisma.classPayment.update({
-          where: { id: existing.id },
-          data: {
-            amount: fee.finalAmount,
-            note,
-            status: "PENDING",
-            teacherFeedback: null,
-            confirmedAt: null,
-            confirmedByTeacherId: null,
-            submittedAt: new Date(),
-            ...slip,
+    // The payment write holds the fee row (FOR UPDATE), the same lock a
+    // teacher's Free Card issue, a recorded payment and a slip confirmation
+    // take: the fee and its payments are re-read under it, so a card issued,
+    // a payment recorded or a slip confirmed meanwhile is seen here (the slip
+    // is refused, or made for what is still outstanding), never missed.
+    let payment;
+    let replaced: { slipFileUrl: string | null } | null = null;
+    try {
+      payment = await prisma.$transaction(async (tx) => {
+        // The same 3-second wait the other payment operations allow.
+        await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '3000ms'");
+        await tx.$queryRaw`SELECT "id" FROM "ClassStudentFee" WHERE "id" = ${feeId} FOR UPDATE`;
+        const locked = await tx.classStudentFee.findUnique({
+          where: { id: feeId },
+          select: {
+            finalAmount: true,
+            freeCard: true,
+            payments: {
+              orderBy: { submittedAt: "desc" },
+              select: { id: true, status: true, slipFileUrl: true, amount: true, reversal: { select: { amount: true } } },
+            },
           },
-          select: { id: true, status: true, submittedAt: true },
-        })
-      : await prisma.classPayment.create({
-          data: {
-            classId,
-            studentId: session.studentId,
-            classStudentFeeId: feeId,
-            amount: fee.finalAmount,
-            note,
-            ...slip,
-          },
-          select: { id: true, status: true, submittedAt: true },
         });
+        if (!locked || locked.freeCard) {
+          throw new AppError(FREE_CARD_SUBMIT_MESSAGE, 409, "FREE_CARD_ACTIVE");
+        }
+        const outstanding = feePaymentState(locked, locked.payments).outstanding;
+        if (outstanding <= 0) {
+          throw new AppError("This payment is already confirmed.", 409, "ALREADY_CONFIRMED");
+        }
+        // The slip awaiting processing is reused (as before); never a confirmed payment.
+        const existing = locked.payments.find((p) => p.status !== "CONFIRMED") ?? null;
+        replaced = existing;
 
-    if (existing?.slipFileUrl && existing.slipFileUrl !== slip.slipFileUrl) {
+        return existing
+          ? tx.classPayment.update({
+              where: { id: existing.id },
+              data: {
+                amount: outstanding,
+                note,
+                status: "PENDING",
+                teacherFeedback: null,
+                confirmedAt: null,
+                confirmedByTeacherId: null,
+                submittedAt: new Date(),
+                ...slip,
+              },
+              select: { id: true, status: true, submittedAt: true },
+            })
+          : tx.classPayment.create({
+              data: {
+                classId,
+                studentId: session.studentId,
+                classStudentFeeId: feeId,
+                amount: outstanding,
+                note,
+                ...slip,
+              },
+              select: { id: true, status: true, submittedAt: true },
+            });
+      });
+    } catch (error) {
+      // Nothing was recorded: drop the slip file just written.
+      await unlink(path.join(uploadDir, storedName)).catch(() => undefined);
+      // The fee row was held by another payment operation (lock timeout,
+      // deadlock or transaction timeout): the transaction rolled back.
+      if (isLockContention(error)) {
+        throw new AppError("This fee is being changed by another request. Please try again.", 409, "PAYMENT_BUSY");
+      }
+      throw error;
+    }
+
+    const previous = replaced as { slipFileUrl: string | null } | null;
+    if (previous?.slipFileUrl && previous.slipFileUrl !== slip.slipFileUrl) {
       const root = path.join(process.cwd(), "storage");
-      const oldPath = path.join(root, existing.slipFileUrl);
+      const oldPath = path.join(root, previous.slipFileUrl);
       assertPathInBounds(oldPath, root);
       await unlink(oldPath).catch(() => undefined);
     }

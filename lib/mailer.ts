@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 
 import { AppError, getErrorMessage } from "@/lib/error-handler";
+import { assertSmtpHostAllowed, senderFetch, senderProviderAllowed } from "@/lib/email-test-guard";
 import { getPasswordResetEmail } from "@/emails/PasswordResetEmail";
 import { getPasswordChangedEmail, passwordChangedText, type PasswordChangedBy } from "@/emails/PasswordChangedEmail";
 import { getEmailVerificationCodeEmail } from "@/emails/EmailVerificationCodeEmail";
@@ -646,11 +647,15 @@ export class SenderApiError extends Error {
 
 type SenderConfig = { token: string; fromEmail: string; fromName: string };
 
-/** Sender.net is used only when SENDER_API_TOKEN is set; otherwise SMTP. */
+/**
+ * Sender.net is used only when SENDER_API_TOKEN is set; otherwise SMTP. In an
+ * automated test the token is ignored unless the test registered a fake
+ * (lib/email-test-guard.ts): a token reloaded from .env never selects it.
+ */
 function getSenderConfig(): SenderConfig | null {
   const token = process.env.SENDER_API_TOKEN?.trim();
 
-  if (!token) {
+  if (!token || !senderProviderAllowed()) {
     return null;
   }
 
@@ -687,9 +692,12 @@ async function sendViaSender(
   text: string
 ): Promise<{ emailId: string }> {
   let response: Response;
+  // The platform fetch normally; in an automated test only a registered fake
+  // (throws EMAIL_BLOCKED_IN_TEST before any request otherwise).
+  const doFetch = senderFetch();
 
   try {
-    response = await fetch(SENDER_API_URL, {
+    response = await doFetch(SENDER_API_URL, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -844,6 +852,10 @@ export async function sendEmail(
 
   const from =
     process.env.SMTP_FROM?.trim() || "no-reply@saastution.local";
+
+  // Automated tests may only reach a local / reserved test SMTP host; this
+  // throws before any connection is opened (no-op outside tests).
+  assertSmtpHostAllowed(process.env.SMTP_HOST?.trim());
 
   const transporter = createTransport();
   const maskedTo = maskEmailForLogging(to);

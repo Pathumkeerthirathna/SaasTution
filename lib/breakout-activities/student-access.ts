@@ -19,6 +19,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
+import { assertClassAccessForStudent } from "@/services/class-access-service";
 
 import { breakoutError } from "./errors";
 import { requireActiveSessionShared, type ActiveSessionLock } from "./locks";
@@ -48,6 +49,10 @@ export async function requireEnrolledStudentSessionAccess(db: Db, studentId: str
   const session = await db.classSession.findFirst({ where: { id, isActive: true }, select: { id: true, classId: true } });
   if (!session) throw notFound();
   if (!(await isEnrolled(db, studentId, session.classId))) throw notFound();
+  // Payment-due access control: no breakout activities while the class is
+  // restricted for this student (403 CLASS_ACCESS_RESTRICTED, after the
+  // enrolment check so nothing is revealed to anyone else).
+  await assertClassAccessForStudent(studentId, session.classId);
   return { sessionId: session.id, classId: session.classId };
 }
 

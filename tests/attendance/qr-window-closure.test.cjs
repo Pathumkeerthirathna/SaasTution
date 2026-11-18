@@ -416,6 +416,10 @@ test("migration: additive, exact, after the attendance migration; only approved 
     "20261118120000_add_student_password_setup_pending",
     // student email delivery outbox (additive; tests/students/email-delivery-migration-guard.test.cjs)
     "20261119120000_add_email_delivery_tracking",
+    // teacher-issued Free Cards (additive; tests/fee-waiver/free-card-migration-guard.test.cjs)
+    "20261120120000_add_class_student_fee_free_card",
+    "20261121120000_add_class_payment_access_control", // payment access control (tests/class-access/class-access-migration-guard.test.cjs)
+    "20261122120000_add_class_payment_source_and_reversal", // partial payments Stage 1 (tests/fee-waiver/partial-payment-migration-guard.test.cjs)
   ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");

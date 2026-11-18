@@ -59,14 +59,28 @@ interface ClassInfo {
   studentHistory: ClassHistoryRecord[];
 }
 
+/** A month settled by a teacher-issued Free Card (no payment record). */
+interface FreeCardFee {
+  id: string;
+  year: number;
+  month: number;
+}
+
 interface StudentClass {
   id: string;
   isActive: boolean;
   assignedAt: string;
   removedAt?: string | null;
   removeReason?: string | null;
+  /** This enrolment's Free Card fees (absent from older API responses). */
+  fees?: FreeCardFee[];
   class: ClassInfo;
 }
+
+/** One line of the Payment Records list: a payment, or a Free Card month. */
+type PaymentRecordLine =
+  | { kind: "payment"; key: string; fee?: { year: number; month: number } | null; payment: ClassPaymentRecord }
+  | { kind: "freeCard"; key: string; fee: { year: number; month: number } };
 
 interface GroupedClass {
   classId: string;
@@ -77,10 +91,16 @@ interface GroupedClass {
   removeReason: string | null;
   enrolmentCount: number;
   payments: ClassPaymentRecord[];
+  /** Months settled by a Free Card, newest first. */
+  freeCards: FreeCardFee[];
+  /** Payments and Free Card months together, newest month first. */
+  records: PaymentRecordLine[];
   history: ClassHistoryRecord[];
 }
 
-function groupByClass(rows: StudentClass[]): GroupedClass[] {
+const periodKey = (fee?: { year: number; month: number } | null) => (fee ? fee.year * 100 + fee.month : 0);
+
+export function groupByClass(rows: StudentClass[]): GroupedClass[] {
   const map = new Map<string, StudentClass[]>();
 
   for (const row of rows) {
@@ -112,6 +132,8 @@ function groupByClass(rows: StudentClass[]): GroupedClass[] {
     // every enrolment row for the same class — dedupe by id.
     const paymentMap = new Map<string, ClassPaymentRecord>();
     const historyMap = new Map<string, ClassHistoryRecord>();
+    // Free Card fees belong to one enrolment row each.
+    const freeCardMap = new Map<string, FreeCardFee>();
 
     for (const row of sorted) {
       for (const payment of row.class.payments) {
@@ -120,7 +142,12 @@ function groupByClass(rows: StudentClass[]): GroupedClass[] {
       for (const entry of row.class.studentHistory) {
         historyMap.set(entry.id, entry);
       }
+      for (const fee of row.fees ?? []) {
+        freeCardMap.set(fee.id, fee);
+      }
     }
+
+    const freeCards = [...freeCardMap.values()].sort((a, b) => periodKey(b) - periodKey(a));
 
     const payments = [...paymentMap.values()].sort((a, b) => {
       const ay = a.classStudentFee
@@ -146,6 +173,13 @@ function groupByClass(rows: StudentClass[]): GroupedClass[] {
       removeReason: isActive ? null : removedRow?.removeReason ?? null,
       enrolmentCount: sorted.length,
       payments,
+      freeCards,
+      records: [
+        ...payments.map(
+          (payment): PaymentRecordLine => ({ kind: "payment", key: payment.id, fee: payment.classStudentFee, payment })
+        ),
+        ...freeCards.map((fee): PaymentRecordLine => ({ kind: "freeCard", key: `free-card-${fee.id}`, fee })),
+      ].sort((a, b) => periodKey(b.fee) - periodKey(a.fee)),
       history,
     });
   }
@@ -361,6 +395,11 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                           / {group.payments.length} paid
                         </span>
                       </p>
+                      {group.freeCards.length > 0 ? (
+                        <p className="text-[10px] font-semibold text-violet-700">
+                          + {group.freeCards.length} free card{group.freeCards.length === 1 ? "" : "s"} (settled)
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -414,45 +453,51 @@ export function StudentClasses({ studentId, data }: StudentClassesProps) {
                     Payment Records
                   </span>
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                    {group.payments.length}
+                    {group.records.length}
                   </span>
                 </div>
 
-                {group.payments.length === 0 ? (
+                {group.records.length === 0 ? (
                   <p className="px-2.5 py-2 text-[11px] text-slate-400">
                     No payments recorded.
                   </p>
                 ) : (
                   <ul className="divide-y divide-slate-50">
-                    {group.payments.slice(0, 4).map((payment) => (
+                    {group.records.slice(0, 4).map((record) => (
                       <li
-                        key={payment.id}
+                        key={record.key}
                         className="flex items-center justify-between px-2.5 py-1.5"
                       >
                         <span className="text-[11px] font-medium text-slate-600">
-                          {paymentPeriodLabel(payment.classStudentFee)}
+                          {paymentPeriodLabel(record.fee)}
                         </span>
 
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
-                            isPaidStatus(payment.status)
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {payment.status.replace(
-                            "NEEDS_CLARIFICATION",
-                            "CLARIFICATION"
-                          )}
-                        </span>
+                        {record.kind === "freeCard" ? (
+                          <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-700">
+                            Free card · settled
+                          </span>
+                        ) : (
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                              isPaidStatus(record.payment.status)
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {record.payment.status.replace(
+                              "NEEDS_CLARIFICATION",
+                              "CLARIFICATION"
+                            )}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
                 )}
 
-                {group.payments.length > 4 && (
+                {group.records.length > 4 && (
                   <p className="border-t border-slate-50 px-2.5 py-1 text-[10px] text-slate-400">
-                    +{group.payments.length - 4} more
+                    +{group.records.length - 4} more
                   </p>
                 )}
               </div>

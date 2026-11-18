@@ -4,6 +4,7 @@ import { AppError, handleRouteError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 import { submitQuizSchema } from "@/lib/quiz-submission-validation";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,8 @@ export async function POST(
     if (!quizId?.trim()) {
       throw new AppError("Quiz id is required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(studentSession.studentId, { quizId });
 
     const body = (await request.json()) as {
       answers?: {

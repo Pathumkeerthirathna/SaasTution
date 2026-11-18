@@ -10,6 +10,8 @@ import {
 } from "@/lib/payment-validation";
 import { prisma } from "@/lib/prisma";
 import { nowInSriLanka } from "@/lib/time";
+import { feePaymentState, hasAwaitingSubmission, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
+import { studentsSettledByFreeCards } from "@/services/class-student-fee-service";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +74,7 @@ export async function GET(
         note: true,
         status: true,
         teacherFeedback: true,
+        reversal: { select: { amount: true } },
         submittedAt: true,
         confirmedAt: true,
         slipFileName: true,
@@ -135,19 +138,56 @@ export async function GET(
       },
     });
 
-    const paidStudentIds = new Set(payments.map((payment) => payment.student.id));
+    // Teacher-issued Free Cards, by fee row: every enrolment overlapping the
+    // month (not only the first per student) and those whose own fee row for
+    // this month has an active card. A student is settled only when all of
+    // their overlapping enrolments are covered.
+    const overlappingEnrolments = await prisma.classStudent.findMany({
+      where: {
+        classId,
+        assignedAt: { lte: periodEnd },
+        OR: [{ removedAt: null }, { removedAt: { gte: periodStart } }],
+      },
+      select: { id: true, studentId: true },
+    });
+    // Every overlapping enrolment's fee for the month, through the shared
+    // payment calculation (lib/fee-payment-state.ts). An enrolment is settled
+    // when nothing is outstanding (fully paid, a Free Card, or a fee of 0) or
+    // a slip awaits processing; a partly paid fee is not settled. A student is not
+    // a defaulter only when ALL of their overlapping enrolments are settled.
+    const monthFees = overlappingEnrolments.length
+      ? await prisma.classStudentFee.findMany({
+          where: {
+            year: monthYear,
+            month: monthIndex,
+            classStudentId: { in: overlappingEnrolments.map((entry) => entry.id) },
+          },
+          select: { classStudentId: true, finalAmount: true, freeCard: true, payments: { select: PAYMENT_STATE_SELECT } },
+        })
+      : [];
+    const settledEnrolmentIds = new Set(
+      monthFees
+        .filter((fee) => feePaymentState(fee, fee.payments).outstanding === 0 || hasAwaitingSubmission(fee.payments))
+        .map((fee) => fee.classStudentId)
+    );
+    const settledStudentIds = studentsSettledByFreeCards(overlappingEnrolments, settledEnrolmentIds);
+    const freeCardStudentIds = studentsSettledByFreeCards(
+      overlappingEnrolments,
+      new Set(monthFees.filter((fee) => fee.freeCard).map((fee) => fee.classStudentId))
+    );
+
     const defaulters = enrolledStudents
-      .filter((entry) => !paidStudentIds.has(entry.studentId))
+      .filter((entry) => !settledStudentIds.has(entry.studentId))
       .map((entry) => entry.student);
 
+    // Received money: confirmed and not reversed (a reversal keeps the payment).
+    const received = (payment: (typeof payments)[number]) => payment.status === "CONFIRMED" && !payment.reversal;
     const submittedCount = payments.length;
-    const confirmedCount = payments.filter((payment) => payment.status === "CONFIRMED").length;
+    const confirmedCount = payments.filter(received).length;
     const pendingCount = payments.filter((payment) => payment.status === "PENDING").length;
     const clarificationCount = payments.filter((payment) => payment.status === "NEEDS_CLARIFICATION").length;
     const submittedAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const confirmedAmount = payments
-      .filter((payment) => payment.status === "CONFIRMED")
-      .reduce((sum, payment) => sum + payment.amount, 0);
+    const confirmedAmount = payments.filter(received).reduce((sum, payment) => sum + payment.amount, 0);
     const expectedAmount = enrolledStudents.length * classItem.monthlyFee;
     const dueDate = getPaymentDueDate(month, classItem.paymentDueWeek as 1 | 2 | 3 | 4);
     const now = nowInSriLanka();
@@ -168,6 +208,8 @@ export async function GET(
         pendingCount,
         clarificationCount,
         defaulterCount: defaulters.length,
+        /** Enrolled students whose fee for the month is settled by Free Cards. */
+        freeCardCount: enrolledStudents.filter((entry) => freeCardStudentIds.has(entry.studentId)).length,
         expectedAmount,
         submittedAmount,
         confirmedAmount,

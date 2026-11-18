@@ -6,6 +6,7 @@ import { AppError, handleRouteError } from "@/lib/error-handler";
 import { assertPaperFile, resolveStoredFilePath, storePaperFile } from "@/lib/class-paper";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,8 @@ export async function POST(
 ) {
   try {
     const session = await requireStudentSession();
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(session.studentId, { paperId: params.paperId });
     const form = await request.formData();
     const fileEntry = form.get("file");
 

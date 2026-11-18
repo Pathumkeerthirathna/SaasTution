@@ -2,6 +2,7 @@ import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { openStoredFileForRead, storedFileAppError, storedFileResponse } from "@/lib/stored-files/stored-file";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ export async function GET(
     if (!assignmentId?.trim()) {
       throw new AppError("Assignment id is required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(studentSession.studentId, { assignmentId });
 
     const submission = await prisma.assignmentSubmission.findUnique({
       where: {

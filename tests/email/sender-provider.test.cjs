@@ -54,10 +54,11 @@ function jsonResponse(status, body, headers = {}) {
   });
 }
 
-globalThis.fetch = async (url, init) => {
+const fakeFetch = async (url, init) => {
   requests.push({ url, init, body: JSON.parse(init.body) });
   return respond(url, init);
 };
+globalThis.fetch = fakeFetch;
 
 // ---- Console capture (for log assertions) ----------------------------------
 
@@ -69,6 +70,9 @@ for (const level of ["log", "info", "error", "warn"]) {
 }
 
 const mailer = require(path.join(root, "lib", "mailer.ts"));
+// In an automated test Sender.net is selected only with a registered in-process
+// fake (lib/email-test-guard.ts); this file's fake plays the Sender.net API.
+require(path.join(root, "lib", "email-test-guard.ts")).useTestSenderFetch(fakeFetch);
 
 function useSender() {
   process.env.SENDER_API_TOKEN = TOKEN;

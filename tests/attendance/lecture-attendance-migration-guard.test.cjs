@@ -210,6 +210,12 @@ const PROFILE_IMAGE_MIGRATIONS = ["20261117120000_add_profile_image_reservation_
 const STUDENT_PASSWORD_SETUP_MIGRATION = "20261118120000_add_student_password_setup_pending";
 // Student email delivery outbox: one additive table (tests/students/email-delivery-migration-guard.test.cjs).
 const EMAIL_DELIVERY_MIGRATION = "20261119120000_add_email_delivery_tracking";
+// Teacher-issued Free Cards: three additive ClassStudentFee columns (tests/fee-waiver/free-card-migration-guard.test.cjs).
+const FREE_CARD_MIGRATION = "20261120120000_add_class_student_fee_free_card";
+// Payment-due access control: two additive Class columns (tests/class-access/class-access-migration-guard.test.cjs).
+const PAYMENT_ACCESS_MIGRATION = "20261121120000_add_class_payment_access_control";
+// Partial payments Stage 1: additive ClassPayment columns + ClassPaymentReversal (tests/fee-waiver/partial-payment-migration-guard.test.cjs).
+const PARTIAL_PAYMENT_MIGRATION = "20261122120000_add_class_payment_source_and_reversal";
 
 test("migration order: directly after the student confirmation history migration; only approved migrations follow", () => {
   const names = fs
@@ -220,7 +226,7 @@ test("migration order: directly after the student confirmation history migration
   const previous = names.indexOf("20261110130000_add_student_confirmation_history");
   assert.ok(previous >= 0);
   assert.equal(names[previous + 1], MIGRATION);
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS, STUDENT_PASSWORD_SETUP_MIGRATION, EMAIL_DELIVERY_MIGRATION]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION) + 1), [QR_CLOSURE_MIGRATION, STUDENT_SESSION_VERSION_MIGRATION, RECORDED_LECTURES_MIGRATION, UNIFIED_STORAGE_MIGRATION, STORAGE_ACCOUNTING_MIGRATION, ...PROFILE_IMAGE_MIGRATIONS, STUDENT_PASSWORD_SETUP_MIGRATION, EMAIL_DELIVERY_MIGRATION, FREE_CARD_MIGRATION, PAYMENT_ACCESS_MIGRATION, PARTIAL_PAYMENT_MIGRATION]);
 });
 
 // ---- Prisma-generated part -----------------------------------------------------------

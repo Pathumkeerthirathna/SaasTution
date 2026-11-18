@@ -13,12 +13,14 @@ import {
   AlertTriangle,
   X,
   ExternalLink,
+  Gift,
 } from "lucide-react";
 
 import { focusElementId, useFocusHighlight } from "@/components/student-portal/use-focus-highlight";
 import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 
-type PaymentState = "UNPAID" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID";
+/** FREE_CARD: the teacher issued a Free Card; settled, nothing to pay. */
+type PaymentState = "UNPAID" | "PARTIAL" | "ACTION_NEEDED" | "IN_REVIEW" | "PAID" | "FREE_CARD";
 
 type PaymentInfo = {
   id: string;
@@ -45,6 +47,9 @@ type FeeItem = {
   lateJoinDeduct: number;
   waiverAmount: number;
   finalAmount: number;
+  /** Received so far and still payable (partial payments). */
+  paidAmount?: number;
+  outstanding?: number;
   state: PaymentState;
   payment: PaymentInfo | null;
 };
@@ -212,7 +217,7 @@ export function StudentPaymentsClient() {
       {
         key: "paid",
         title: "Paid",
-        hint: "Confirmed by your teacher",
+        hint: "Confirmed by your teacher, or covered by a Free Card",
         items: data?.paid ?? [],
         icon: <CheckCircle2 size={13} />,
         tone: "text-emerald-700",
@@ -444,6 +449,16 @@ function StateBadge({ state }: { state: PaymentState }) {
       cls: "bg-emerald-100 text-emerald-700",
       icon: <CheckCircle2 size={10} />,
     },
+    FREE_CARD: {
+      label: "Free card",
+      cls: "bg-violet-100 text-violet-700",
+      icon: <Gift size={10} />,
+    },
+    PARTIAL: {
+      label: "Partly paid",
+      cls: "bg-amber-100 text-amber-700",
+      icon: <CalendarClock size={10} />,
+    },
   };
   const s = map[state];
   return (
@@ -469,8 +484,11 @@ function AdjustRow({ label, value, negative }: { label: string; value: number; n
   );
 }
 
-function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) {
-  const paid = fee.state === "PAID";
+export function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) {
+  const freeCard = fee.state === "FREE_CARD";
+  const partial = fee.state === "PARTIAL";
+  // Settled: nothing to submit (a confirmed payment, or a Free Card).
+  const paid = fee.state === "PAID" || freeCard;
   const p = fee.payment;
 
   return (
@@ -479,7 +497,9 @@ function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) 
       className={`scroll-mt-24 rounded-lg border bg-white p-3 transition-shadow ${
         fee.state === "ACTION_NEEDED"
           ? "border-rose-200"
-          : paid
+          : freeCard
+            ? "border-violet-200"
+            : paid
             ? "border-emerald-200"
             : "border-slate-200"
       }`}
@@ -511,17 +531,39 @@ function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) 
             <span className="text-slate-500">Base amount</span>
             <span className="text-slate-700">{rs(fee.amount)}</span>
           </div>
-          <AdjustRow label="Discount" value={fee.discount} negative />
-          <AdjustRow label="Late-join deduction" value={fee.lateJoinDeduct} negative />
-          <AdjustRow label="Waiver" value={fee.waiverAmount} negative />
+          {freeCard ? (
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-violet-700">Free Card (100% waiver)</span>
+              <span className="text-violet-700">− {rs(fee.amount)}</span>
+            </div>
+          ) : (
+            <>
+              <AdjustRow label="Discount" value={fee.discount} negative />
+              <AdjustRow label="Late-join deduction" value={fee.lateJoinDeduct} negative />
+              <AdjustRow label="Waiver" value={fee.waiverAmount} negative />
+            </>
+          )}
           <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-1 text-xs font-bold text-slate-900">
             <span>Final amount</span>
             <span className="text-emerald-700">{rs(fee.finalAmount)}</span>
           </div>
+          {partial ? (
+            <>
+              <AdjustRow label="Paid so far" value={fee.paidAmount ?? 0} />
+              <div className="flex items-center justify-between text-xs font-bold text-amber-800">
+                <span>Outstanding</span>
+                <span>{rs(fee.outstanding ?? 0)}</span>
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div className="rounded-md border border-slate-100 bg-slate-50/70 p-2 text-[11px]">
-          {p ? (
+          {freeCard && !p ? (
+            <p className="flex h-full items-center justify-center text-center text-violet-700">
+              Your teacher gave you a Free Card for this month. No payment slip is needed.
+            </p>
+          ) : p ? (
             <div className="space-y-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Submitted</span>
@@ -572,7 +614,11 @@ function PaymentCard({ fee, onSubmit }: { fee: FeeItem; onSubmit: () => void }) 
         </p>
       ) : null}
 
-      {!paid ? (
+      {partial ? (
+        <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+          Part of this fee has been received. Please pay the outstanding {rs(fee.outstanding ?? 0)} to your teacher.
+        </p>
+      ) : !paid ? (
         <div className="mt-2.5 flex justify-end">
           <button
             type="button"

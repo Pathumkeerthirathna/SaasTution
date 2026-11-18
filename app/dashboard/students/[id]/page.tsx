@@ -135,6 +135,11 @@ export interface PaymentFeeRow {
   finalAmount: number;
   dueDate: string | null;
   paid: boolean;
+  /** Settled by a teacher-issued Free Card (nothing to pay). */
+  freeCard?: boolean;
+  state?: string;
+  paidAmount?: number;
+  outstanding?: number;
   payment: {
     id: string;
     amount: number;

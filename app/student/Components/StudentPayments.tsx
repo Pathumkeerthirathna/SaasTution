@@ -204,7 +204,7 @@ export function StudentPayments({ studentId, data }: StudentPaymentsProps) {
 
                             <div className="flex shrink-0 items-center gap-2">
                               <span className="text-[12px] font-semibold text-slate-900">
-                                {money(fee.finalAmount)}
+                                {money(fee.paid ? fee.finalAmount : fee.outstanding ?? fee.finalAmount)}
                               </span>
                               <span
                                 className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
@@ -218,8 +218,12 @@ export function StudentPayments({ studentId, data }: StudentPaymentsProps) {
                                 ) : (
                                   <CircleDashed size={10} />
                                 )}
-                                {fee.paid
+                                {fee.freeCard && !fee.payment
+                                  ? "Free card"
+                                  : fee.paid
                                   ? "Paid"
+                                  : fee.state === "PARTIAL"
+                                  ? "Partial"
                                   : fee.payment
                                   ? fee.payment.status
                                   : "Unpaid"}

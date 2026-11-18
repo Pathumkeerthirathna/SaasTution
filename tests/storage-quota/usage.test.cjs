@@ -31,7 +31,7 @@ function fakeAt(filename, exports) {
 const fake = (relativePath, exports) => fakeAt(path.join(root, relativePath), exports);
 
 const NOW = new Date("2026-11-16T10:00:00.000Z");
-const db = { tables: {}, sql: [], transactions: [] };
+const db = { tables: {}, sql: [], transactions: [], transactionKinds: [] };
 const T1 = "11111111-1111-4111-8111-111111111111";
 const T2 = "22222222-2222-4222-8222-222222222222";
 const B = (n) => BigInt(n);
@@ -41,6 +41,7 @@ function resetDb() {
   db.tables = { lectures: [], assignments: [], notes: [], submissions: [], recordings: [], sessions: [], reservations: [], limits: [], subscriptions: [] };
   db.sql = [];
   db.transactions = [];
+  db.transactionKinds = [];
   db.recordedWhere = [];
 }
 resetDb();
@@ -115,6 +116,13 @@ fake("lib/prisma.ts", {
     ...client,
     async $transaction(fn, options) {
       db.transactions.push(options);
+      db.transactionKinds.push(Array.isArray(fn) ? "batch" : "interactive");
+      // Batch form ($transaction([...queries], options)): the queries in order.
+      if (Array.isArray(fn)) {
+        const results = [];
+        for (const query of fn) results.push(await query);
+        return results;
+      }
       return fn(client);
     },
   },

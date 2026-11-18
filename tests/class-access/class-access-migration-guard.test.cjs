@@ -1,0 +1,45 @@
+/*
+ * Static guard for the payment-due access control migration (no database).
+ *
+ *   npm run test:class-access
+ */
+
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
+
+const root = path.resolve(__dirname, "..", "..");
+const migrationsDir = path.join(root, "prisma", "migrations");
+const MIGRATION = "20261121120000_add_class_payment_access_control";
+
+const normalize = (sql) =>
+  sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").replace(/\s+/g, " ").trim();
+const sql = normalize(fs.readFileSync(path.join(migrationsDir, MIGRATION, "migration.sql"), "utf8"));
+const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
+
+test("placement: right after the Free Card one; only the approved partial payment migration follows; no committed migration changed (git)", () => {
+  const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261120120000_add_class_student_fee_free_card", MIGRATION, "20261122120000_add_class_payment_source_and_reversal"]);
+  const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
+  assert.equal(diff, "", "committed migrations are untouched");
+});
+
+test("exactly: lock timeout, the two columns with safe defaults (restriction OFF), the CHECK, reset", () => {
+  assert.deepEqual(statements, [
+    "SET lock_timeout = '5s'",
+    'ALTER TABLE "Class" ADD COLUMN "paymentGracePeriodDays" INTEGER NOT NULL DEFAULT 5, ADD COLUMN "restrictUnpaidStudentAccess" BOOLEAN NOT NULL DEFAULT false',
+    'ALTER TABLE "Class" ADD CONSTRAINT "Class_paymentGracePeriodDays_check" CHECK ("paymentGracePeriodDays" BETWEEN 0 AND 30)',
+    "RESET lock_timeout",
+  ]);
+  assert.doesNotMatch(sql, /\b(DROP|DELETE|UPDATE|INSERT|TRUNCATE|RENAME)\b|ALTER COLUMN|SET LOCAL/i);
+});
+
+test("schema.prisma declares both settings with the same defaults", () => {
+  const schema = fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
+  assert.match(schema, /restrictUnpaidStudentAccess\s+Boolean\s+@default\(false\)/);
+  assert.match(schema, /paymentGracePeriodDays\s+Int\s+@default\(5\)/);
+});

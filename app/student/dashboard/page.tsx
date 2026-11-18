@@ -16,6 +16,7 @@ import { Weekday } from "@prisma/client";
 
 import { requireStudentSession } from "@/lib/auth-session";
 import { getCurrentMonthKey } from "@/lib/payment-validation";
+import { feePaymentState, hasAwaitingSubmission, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
 import { prisma } from "@/lib/prisma";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
 import { verifySessionInviteToken } from "@/lib/session-invite";
@@ -66,7 +67,7 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
     pendingAssignments,
     recentMessages,
     paperSupportMessages,
-    paymentsThisMonth,
+    feesThisMonth,
     upcomingPaperItems,
   ] = await Promise.all([
 
@@ -142,18 +143,18 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
       },
     }),
 
-    prisma.classPayment.findMany({
+    // This month's fees of the active enrolments, with their payments (the
+    // "Unpaid" count below; lib/fee-payment-state.ts).
+    prisma.classStudentFee.findMany({
       where: {
-        studentId,
-        class: { status: 0 },
-        classStudentFee: { year: currentYearNum, month: currentMonthNum },
+        year: currentYearNum,
+        month: currentMonthNum,
+        classStudent: { studentId, isActive: true, class: { status: 0 } },
       },
       select: {
-        classId: true,
-        status: true,
-        amount: true,
-        submittedAt: true,
-        teacherFeedback: true,
+        finalAmount: true,
+        freeCard: true,
+        payments: { select: PAYMENT_STATE_SELECT },
       },
     }),
 
@@ -220,11 +221,14 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   const enrolledCount = enrolledClasses.length;
   const todayLabel = `${WEEKDAY_LABELS[now.getDay()]}, ${now.toLocaleDateString([], { month: "long", day: "numeric" })}`;
 
-  const confirmedCount = paymentsThisMonth.filter((p) => p.status === "CONFIRMED").length;
-  const pendingPayCount = paymentsThisMonth.filter(
-    (p) => p.status === "PENDING" || p.status === "NEEDS_CLARIFICATION"
+  // Not unpaid: nothing outstanding (fully paid, a Free Card, or a fee of 0)
+  // or a slip awaiting processing. A partly paid fee still counts as unpaid (the rest is
+  // outstanding); an enrolled class without a fee row yet counts as unpaid, as
+  // before.
+  const settledOrAwaitingCount = feesThisMonth.filter(
+    (fee) => feePaymentState(fee, fee.payments).outstanding === 0 || hasAwaitingSubmission(fee.payments)
   ).length;
-  const unpaidCount = enrolledCount - confirmedCount - pendingPayCount;
+  const unpaidCount = enrolledCount - settledOrAwaitingCount;
 
   const countdownItems = upcomingPaperItems
     .filter((item): item is typeof item & { paperStartAt: Date } => !!item.paperStartAt)

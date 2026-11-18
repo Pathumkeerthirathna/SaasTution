@@ -19,11 +19,14 @@ const MODELS = {
   classStudent: "ClassStudent",
   classStudentFee: "ClassStudentFee",
   classPayment: "ClassPayment",
+  paymentMessage: "PaymentMessage",
+  classPaymentReversal: "ClassPaymentReversal",
   lecture: "Lecture",
   classFeeWaiverRule: "ClassFeeWaiverRule",
   feeWaiverSettings: "FeeWaiverSettings",
   classFee: "ClassFee",
   studentConfirmationHistory: "StudentConfirmationHistory",
+  teacher: "Teacher",
 };
 
 const RELATIONS = {
@@ -43,12 +46,23 @@ const RELATIONS = {
     payments: ["ClassPayment", "classStudentFeeId", "many"],
     joinWaiverRule: ["ClassFeeWaiverRule", "joinWaiverRuleId"],
   },
-  ClassPayment: {},
+  ClassPayment: {
+    classStudentFee: ["ClassStudentFee", "classStudentFeeId"],
+    student: ["Student", "studentId"],
+    class: ["Class", "classId"],
+    recordedByTeacher: ["Teacher", "recordedByTeacherId"],
+    messages: ["PaymentMessage", "paymentId", "many"],
+    // One-to-one, the foreign key on the reversal row.
+    reversal: ["ClassPaymentReversal", "paymentId", "reverse-one"],
+  },
+  PaymentMessage: {},
+  ClassPaymentReversal: {},
   Lecture: { class: ["Class", "classId"] },
   ClassFeeWaiverRule: {},
   FeeWaiverSettings: {},
   ClassFee: {},
   StudentConfirmationHistory: {},
+  Teacher: {},
 };
 
 const FEE_DEFAULTS = {
@@ -66,6 +80,10 @@ const FEE_DEFAULTS = {
   joinWaiverEnrolledAt: null,
   joinWaiverBaseAmount: null,
   joinWaiverComputedAt: null,
+  // Free Card columns (migration 20261120120000): database defaults.
+  freeCard: false,
+  freeCardIssuedAt: null,
+  freeCardIssuedByTeacherId: null,
 };
 
 function createFakeDb() {
@@ -104,6 +122,7 @@ function createFakeDb() {
   function related(model, row, name) {
     const rel = RELATIONS[model][name];
     const [target, fk, many] = rel;
+    if (many === "reverse-one") return tables[target].find((r) => r[fk] === row.id) ?? null;
     if (many) return tables[target].filter((r) => r[fk] === row.id);
     return tables[target].find((r) => r.id === row[fk]) ?? null;
   }
@@ -117,7 +136,7 @@ function createFakeDb() {
       const rel = RELATIONS[model][key];
       if (rel) {
         const [target, , many] = rel;
-        if (many) {
+        if (many === "many") {
           const list = related(model, row, key);
           if (cond.some && !list.some((r) => matches(target, r, cond.some))) return false;
           if (cond.none && list.some((r) => matches(target, r, cond.none))) return false;
@@ -148,7 +167,7 @@ function createFakeDb() {
       if (rel) {
         const [target, , many] = rel;
         const sub = spec === true ? {} : spec;
-        if (many) {
+        if (many === "many") {
           let list = related(model, row, key).filter((r) => matches(target, r, sub.where));
           list = sortRows(list, sub.orderBy);
           if (sub.take) list = list.slice(0, sub.take);
@@ -193,6 +212,17 @@ function createFakeDb() {
         throw uniqueError("ClassStudentFee_classStudentId_year_month_key");
       }
     }
+    // Partial payments: a request key is used once; one reversal per payment.
+    if (model === "ClassPayment" && row.requestKey) {
+      if (tables.ClassPayment.some((r) => r.id !== selfId && r.requestKey === row.requestKey)) {
+        throw uniqueError("ClassPayment_requestKey_key");
+      }
+    }
+    if (model === "ClassPaymentReversal") {
+      if (tables.ClassPaymentReversal.some((r) => r.id !== selfId && r.paymentId === row.paymentId)) {
+        throw uniqueError("ClassPaymentReversal_paymentId_key");
+      }
+    }
     if (model === "ClassFeeWaiverRule" && row.status === 0) {
       if (tables.ClassFeeWaiverRule.some((r) => r.id !== selfId && r.status === 0 && r.classId === row.classId && r.sequence === row.sequence)) {
         throw uniqueError("ClassFeeWaiverRule_active_sequence_key");
@@ -204,6 +234,7 @@ function createFakeDb() {
     const base = { id: nextId(model), createdAt: new Date(Date.UTC(2026, 0, 1)), updatedAt: nextTick() };
     if (model === "ClassStudentFee") return { ...base, ...FEE_DEFAULTS, ...data, updatedAt: nextTick() };
     if (model === "ClassFeeWaiverRule") return { ...base, status: 0, ...data };
+    if (model === "ClassPayment") return { ...base, status: "PENDING", source: "STUDENT_SLIP", paymentMethod: null, receivedAt: null, recordedByTeacherId: null, requestKey: null, submittedAt: new Date(), ...data }; // schema defaults
     return { ...base, ...data };
   }
 
@@ -230,6 +261,16 @@ function createFakeDb() {
         fail(model, "findMany");
         let rows = table().filter((r) => matches(model, r, args.where));
         rows = sortRows(rows, args.orderBy);
+        if (args.distinct) {
+          // Prisma's distinct: the first row (in order) per combination.
+          const seen = new Set();
+          rows = rows.filter((r) => {
+            const key = JSON.stringify([].concat(args.distinct).map((field) => r[field]));
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        }
         if (args.take) rows = rows.slice(0, args.take);
         return rows.map((r) => project(model, r, args));
       },

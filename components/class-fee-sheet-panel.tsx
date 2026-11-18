@@ -16,6 +16,7 @@ import {
   CircleDollarSign,
   Clock3,
   FileText,
+  Gift,
   Loader2,
   RefreshCw,
   Users,
@@ -37,6 +38,19 @@ import {
   formatStoredSriLankaDate,
   formatStoredSriLankaDateTime,
 } from "@/lib/time";
+import { feePaymentState } from "@/lib/fee-payment-state";
+import {
+  canReversePayment,
+  FeePaymentPosition,
+  RecordAttemptStore,
+  RecordedPaymentDetails,
+  RecordPaymentButton,
+  RecordPaymentDialog,
+  recordPaymentBlock,
+  ReversalDetails,
+  ReversePaymentDialog,
+  type HistoryPayment,
+} from "@/components/fee-payment-actions";
 
 type ClassOption = {
   id: string;
@@ -65,6 +79,14 @@ type FeePaymentDetail = {
   hasSlip: boolean;
   submittedAt: string;
   confirmedAt: string | null;
+  source?: "STUDENT_SLIP" | "TEACHER_RECORDED";
+  /** Reversed: kept in the history, no longer counted as received. */
+  reversed?: boolean;
+  /** Teacher-recorded payments (Stage 2C display; null for student slips). */
+  paymentMethod?: HistoryPayment["paymentMethod"];
+  receivedAt?: string | null;
+  recordedByName?: string | null;
+  reversal?: HistoryPayment["reversal"];
 };
 
 type FeeRow = {
@@ -85,8 +107,13 @@ type FeeRow = {
   dueDate: string | null;
   createdAt: string | null;
   hasPaid: boolean;
-  paymentStatus: "PAID" | "PENDING" | "UNPAID";
+  paymentStatus: "PAID" | "PARTIAL" | "PENDING" | "UNPAID" | "FREE_CARD";
+  /** Received / outstanding amounts (lib/fee-payment-state.ts). */
+  paymentSummary?: { confirmedTotal: number; outstanding: number; overpaidAmount: number };
   payments: FeePaymentDetail[];
+  /** Teacher-issued Free Card: finalAmount is 0, adjustments kept underneath. */
+  freeCard: boolean;
+  freeCardIssuedAt: string | null;
 };
 
 type WaiverRuleType = "PERCENTAGE" | "FIXED_AMOUNT";
@@ -170,6 +197,577 @@ function rupees(value: number) {
   return `Rs. ${value.toLocaleString()}`;
 }
 
+// ---- Financial summary (Expected / Due / Received / Confirmed) ----------------
+
+export type FeeSheetSummary = {
+  /** Sum of every row's finalAmount (fee after discount, late-join deduction and waiver). */
+  expected: number;
+  /** After the due date only: finalAmount of rows with no payment submission at all. */
+  due: number;
+  /** One submission per row: its CONFIRMED payment, else its latest submission. */
+  received: number;
+  /** One CONFIRMED payment per row, at the amount actually confirmed. */
+  confirmed: number;
+};
+
+export const EMPTY_FEE_SUMMARY: FeeSheetSummary = {
+  expected: 0,
+  due: 0,
+  received: 0,
+  confirmed: 0,
+};
+
+type SummaryPayment = { amount: number; status: FeePaymentDetail["status"]; reversed?: boolean };
+type SummaryRow = { finalAmount: number; freeCard?: boolean; payments?: readonly SummaryPayment[] | null };
+
+function money(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * The four amounts of one class's fee sheet, from the rows the fee sheet API
+ * already returns, through the shared calculation (lib/fee-payment-state.ts):
+ *  - Expected: the fees (finalAmount);
+ *  - Confirmed: confirmed, not reversed payments (every one: partial
+ *    payments add up);
+ *  - Received: Confirmed plus the latest submission awaiting processing, at
+ *    most up to what is still outstanding (a stray slip on a paid fee is not
+ *    counted twice);
+ *  - Due (after the due date): the outstanding amount of fees with no
+ *    submission awaiting processing (a submitted slip is never Due).
+ * Payments arrive newest first.
+ */
+export function summarizeFeeRows(
+  rows: readonly SummaryRow[] | null | undefined,
+  isPastDue: boolean
+): FeeSheetSummary {
+  const summary = { ...EMPTY_FEE_SUMMARY };
+
+  for (const row of rows ?? []) {
+    const finalAmount = money(row.finalAmount);
+    const payments = row.payments ?? [];
+    const state = feePaymentState(
+      { finalAmount, freeCard: Boolean(row.freeCard) },
+      payments.map((p) => ({ amount: p.amount, status: p.status, reversal: p.reversed ? { amount: p.amount } : null }))
+    );
+    const awaiting = payments.find((p) => p.status === "PENDING" || p.status === "NEEDS_CLARIFICATION");
+
+    summary.expected += finalAmount;
+    summary.confirmed += state.confirmedTotal;
+    summary.received += state.confirmedTotal + (awaiting ? Math.min(money(awaiting.amount), state.outstanding) : 0);
+    if (isPastDue && !awaiting) summary.due += state.outstanding;
+  }
+
+  return summary;
+}
+
+/** Totals across classes (the All classes header); one summary per class. */
+export function addFeeSummaries(summaries: readonly (FeeSheetSummary | undefined)[]): FeeSheetSummary {
+  return summaries.reduce<FeeSheetSummary>(
+    (total, item) =>
+      item
+        ? {
+            expected: total.expected + money(item.expected),
+            due: total.due + money(item.due),
+            received: total.received + money(item.received),
+            confirmed: total.confirmed + money(item.confirmed),
+          }
+        : total,
+    { ...EMPTY_FEE_SUMMARY }
+  );
+}
+
+/**
+ * Sheet requests are numbered in the order they start (`++counter.current`);
+ * a response may be applied only while it is still the newest request.
+ */
+export function isLatestSheetRequestId(counter: { current: number }, requestId: number) {
+  return requestId === counter.current;
+}
+
+// ---- Free Cards (teacher-issued 100% waivers) ----------------------------------
+
+export type FreeCardAction = "issue" | "revoke";
+
+export type FreeCardOutcome = {
+  action: FreeCardAction;
+  processed: { feeId: string; studentName: string }[];
+  skipped: { feeId: string; studentName: string | null; reason: string; message: string }[];
+};
+
+type SelectableRow = {
+  feeId: string | null;
+  paymentStatus: FeeRow["paymentStatus"];
+  freeCard?: boolean;
+};
+
+/**
+ * Rows a Free Card can be issued to or revoked from: every fee row without a
+ * confirmed payment (a confirmed payment is never touched). Rows with a slip
+ * awaiting confirmation stay selectable; the server skips them with a reason.
+ */
+export function selectableFeeIds(rows: readonly SelectableRow[] | null | undefined): string[] {
+  return (rows ?? [])
+    .filter((row) => row.feeId && row.paymentStatus !== "PAID" && row.paymentStatus !== "PARTIAL")
+    .map((row) => row.feeId as string);
+}
+
+/** The selection limited to rows still selectable in the current sheet. */
+export function effectiveSelection(
+  selected: ReadonlySet<string>,
+  rows: readonly SelectableRow[] | null | undefined
+): string[] {
+  return selectableFeeIds(rows).filter((id) => selected.has(id));
+}
+
+export function toggleSelection(selected: ReadonlySet<string>, feeId: string): Set<string> {
+  const next = new Set(selected);
+  if (next.has(feeId)) next.delete(feeId);
+  else next.add(feeId);
+  return next;
+}
+
+/** Select-all: every selectable row, or none when they are all selected. */
+export function toggleAllSelection(
+  selected: ReadonlySet<string>,
+  rows: readonly SelectableRow[] | null | undefined
+): Set<string> {
+  const ids = selectableFeeIds(rows);
+  const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
+  return allSelected ? new Set() : new Set(ids);
+}
+
+export function freeCardConfirmText(action: FreeCardAction, count: number, periodLabel: string) {
+  const students = `${count} selected student${count === 1 ? "" : "s"}`;
+  return action === "issue"
+    ? `Issue a Free Card to ${students} for ${periodLabel}? Their fee for this month becomes Rs. 0. Students with a payment slip are skipped.`
+    : `Revoke the Free Card of ${students} for ${periodLabel}? Their fee is recalculated and becomes payable again.`;
+}
+
+export function freeCardOutcomeText(outcome: FreeCardOutcome) {
+  const verb = outcome.action === "issue" ? "issued" : "revoked";
+  const done = outcome.processed.length;
+  const skipped = outcome.skipped.length;
+  return `${done} Free Card${done === 1 ? "" : "s"} ${verb}${skipped > 0 ? ` · ${skipped} skipped` : ""}.`;
+}
+
+/** Part of the fee received; the rest is still outstanding. */
+export function PartialBadge({ outstanding }: { outstanding: number | null }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+      <Clock3 size={10} />
+      Partial{outstanding !== null ? ` · ${rupees(outstanding)} due` : ""}
+    </span>
+  );
+}
+
+export function FreeCardBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+      <Gift size={10} />
+      Free card
+    </span>
+  );
+}
+
+export function FreeCardToolbar({
+  selectedCount,
+  selectableCount,
+  canIssue,
+  canRevoke,
+  busy,
+  onToggleAll,
+  onIssue,
+  onRevoke,
+}: {
+  selectedCount: number;
+  selectableCount: number;
+  canIssue: boolean;
+  canRevoke: boolean;
+  busy: boolean;
+  onToggleAll: () => void;
+  onIssue: () => void;
+  onRevoke: () => void;
+}) {
+  const allSelected = selectableCount > 0 && selectedCount === selectableCount;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={onToggleAll}
+          disabled={selectableCount === 0 || busy}
+          aria-label="Select all eligible students"
+          className="h-4 w-4 rounded border-slate-300 accent-violet-600"
+        />
+        {selectedCount > 0
+          ? `${selectedCount} of ${selectableCount} selected`
+          : "Select students for Free Cards"}
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onIssue}
+          disabled={!canIssue || busy}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Gift size={13} />}
+          Issue Free Card
+        </button>
+        <button
+          type="button"
+          onClick={onRevoke}
+          disabled={!canRevoke || busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RotateCcw size={13} />
+          Revoke Free Card
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Payment Due Access Control (per class) -------------------------------------
+
+export type PaymentAccessSettings = { restrictUnpaidStudentAccess: boolean; paymentGracePeriodDays: number };
+
+export const MIN_GRACE_DAYS = 0;
+export const MAX_GRACE_DAYS = 30;
+
+/**
+ * Shown before the restriction is switched on: every unpaid fee whose due
+ * date plus grace has passed counts, including months from before the
+ * setting existed, so some students may lose access at once.
+ */
+export function enableRestrictionWarning(graceDays: number) {
+  return (
+    "Turn on payment-based access restriction for this class?\n\n" +
+    `Students with ANY unpaid fee of this class whose due date plus ${graceDays} grace day${graceDays === 1 ? "" : "s"} has passed ` +
+    "will lose access to its lectures, notes, recordings, quizzes, papers and the live classroom immediately. " +
+    "This includes earlier months that are still unpaid.\n\n" +
+    "Students who submitted a payment slip, have a Free Card or owe nothing are not affected. Payments stay available, " +
+    "and access returns as soon as a slip is submitted or the fee is settled."
+  );
+}
+
+/** Whether saving these settings switches the restriction on (needs the warning). */
+export function isEnablingRestriction(saved: PaymentAccessSettings | null, enabled: boolean) {
+  return enabled && saved !== null && !saved.restrictUnpaidStudentAccess;
+}
+
+/** A whole number of days in range, else null (the form shows an error). */
+export function parseGraceDays(value: string): number | null {
+  if (!/^\d+$/.test(value.trim())) return null;
+  const days = Number(value.trim());
+  return days >= MIN_GRACE_DAYS && days <= MAX_GRACE_DAYS ? days : null;
+}
+
+export function PaymentAccessForm({
+  saved,
+  enabled,
+  graceDays,
+  saving,
+  error,
+  onEnabledChange,
+  onGraceDaysChange,
+  onSave,
+}: {
+  saved: PaymentAccessSettings | null;
+  enabled: boolean;
+  graceDays: string;
+  saving: boolean;
+  error: string | null;
+  onEnabledChange: (value: boolean) => void;
+  onGraceDaysChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  const days = parseGraceDays(graceDays);
+  const dirty =
+    saved !== null &&
+    (saved.restrictUnpaidStudentAccess !== enabled || (days !== null && days !== saved.paymentGracePeriodDays));
+
+  return (
+    <section
+      aria-labelledby="payment-access-title"
+      className="rounded-lg border border-[#dce7f1] bg-[#eef3f8]/60 p-3"
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <h3 id="payment-access-title" className="text-xs font-semibold uppercase tracking-wide text-[#264867]">
+            Payment Due Access Control
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {saved === null
+              ? "Loading saved settings..."
+              : saved.restrictUnpaidStudentAccess
+                ? `On: students with an unpaid fee lose access to this class's lectures, notes, recordings and classroom ${saved.paymentGracePeriodDays} day${saved.paymentGracePeriodDays === 1 ? "" : "s"} after the due date. Payments stay open.`
+                : "Off: unpaid fees never restrict access to this class."}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={enabled}
+              disabled={saved === null || saving}
+              onChange={(event) => onEnabledChange(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 accent-[#32598A]"
+            />
+            Restrict unpaid students
+          </label>
+          <label className="text-xs font-medium text-slate-700">
+            <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Grace period (days)
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={MIN_GRACE_DAYS}
+              max={MAX_GRACE_DAYS}
+              step={1}
+              value={graceDays}
+              disabled={saved === null || saving}
+              onChange={(event) => onGraceDaysChange(event.target.value)}
+              aria-invalid={days === null}
+              className="h-8 w-20 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-[#32598A]"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!dirty || days === null || saving}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#32598A] px-3 text-xs font-semibold text-white transition hover:bg-[#264867] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+            Save
+          </button>
+        </div>
+      </div>
+      {days === null ? (
+        <p className="mt-2 text-xs text-rose-600">
+          Enter a whole number of days from {MIN_GRACE_DAYS} to {MAX_GRACE_DAYS}.
+        </p>
+      ) : null}
+      {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+    </section>
+  );
+}
+
+function PaymentAccessControl({ classId }: { classId: string }) {
+  const [saved, setSaved] = useState<PaymentAccessSettings | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [graceDays, setGraceDays] = useState("5");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = (settings: PaymentAccessSettings) => {
+    setSaved(settings);
+    setEnabled(settings.restrictUnpaidStudentAccess);
+    setGraceDays(String(settings.paymentGracePeriodDays));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`/api/classes/${classId}/payment-access`, { cache: "no-store" });
+        const payload = (await response.json()) as { success: boolean; data?: PaymentAccessSettings };
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(readApiError(payload, "Failed to load payment access settings."));
+        }
+        if (!cancelled) apply(payload.data);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load payment access settings.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classId]);
+
+  async function save() {
+    const days = parseGraceDays(graceDays);
+    if (days === null || saving) return;
+    if (isEnablingRestriction(saved, enabled) && !window.confirm(enableRestrictionWarning(days))) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/classes/${classId}/payment-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restrictUnpaidStudentAccess: enabled, paymentGracePeriodDays: days }),
+      });
+      const payload = (await response.json()) as { success: boolean; data?: PaymentAccessSettings };
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(readApiError(payload, "Failed to save payment access settings."));
+      }
+      apply(payload.data);
+      toast.success("Payment access settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save payment access settings.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <PaymentAccessForm
+      saved={saved}
+      enabled={enabled}
+      graceDays={graceDays}
+      saving={saving}
+      error={error}
+      onEnabledChange={setEnabled}
+      onGraceDaysChange={setGraceDays}
+      onSave={() => void save()}
+    />
+  );
+}
+
+export function FreeCardResultPanel({
+  outcome,
+  onDismiss,
+}: {
+  outcome: FreeCardOutcome;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-violet-100 bg-white px-3 py-2 text-xs text-slate-700"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-semibold text-slate-900">{freeCardOutcomeText(outcome)}</p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {outcome.skipped.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {outcome.skipped.map((item) => (
+            <li key={item.feeId} className="break-words">
+              <span className="font-medium text-slate-800">{item.studentName ?? "Unknown fee"}</span>
+              <span className="text-slate-500"> — {item.message}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** The rows of a sheet only while it belongs to the selection (else none). */
+function currentSheetRows<R>(
+  sheet: { class: { id: string }; year: number; month: number; rows: R[] } | null | undefined,
+  selection: { classId: string; year: number; month: number }
+): R[] {
+  return sheet && sheetMatchesSelection(sheet, selection) ? sheet.rows : [];
+}
+
+/** Whether a loaded sheet belongs to the class, year and month now selected. */
+export function sheetMatchesSelection(
+  sheet: { class: { id: string }; year: number; month: number } | null | undefined,
+  selection: { classId: string; year: number; month: number }
+) {
+  return Boolean(
+    sheet &&
+      sheet.class.id === selection.classId &&
+      sheet.year === selection.year &&
+      sheet.month === selection.month
+  );
+}
+
+const SUMMARY_TILES: {
+  key: keyof FeeSheetSummary;
+  label: string;
+  tone: string;
+  value: string;
+}[] = [
+  {
+    key: "expected",
+    label: "Expected total",
+    tone: "border-slate-200 bg-slate-50",
+    value: "text-slate-900",
+  },
+  {
+    key: "due",
+    label: "Due amount",
+    tone: "border-rose-100 bg-rose-50/70",
+    value: "text-rose-700",
+  },
+  {
+    key: "received",
+    label: "Received amount",
+    tone: "border-amber-100 bg-amber-50/70",
+    value: "text-amber-800",
+  },
+  {
+    key: "confirmed",
+    label: "Confirmed amount",
+    tone: "border-emerald-100 bg-emerald-50/70",
+    value: "text-emerald-700",
+  },
+];
+
+/**
+ * The four amounts side by side. `isPastDue` (a single class) explains a zero
+ * Due before the due date; it is omitted for the All classes totals.
+ */
+export function FeeSummaryAmounts({
+  summary,
+  isPastDue,
+  compact = false,
+}: {
+  summary: FeeSheetSummary;
+  isPastDue?: boolean;
+  compact?: boolean;
+}) {
+  const awaiting = Math.max(0, summary.received - summary.confirmed);
+
+  const hint: Record<keyof FeeSheetSummary, string> = {
+    expected: "After discounts and waivers",
+    due:
+      isPastDue === false
+        ? "Not yet past the due date"
+        : "Past due, no slip submitted",
+    received:
+      awaiting > 0 ? `${rupees(awaiting)} awaiting confirmation` : "Slips submitted",
+    confirmed: "Confirmed by you",
+  };
+
+  return (
+    <dl
+      className={`grid grid-cols-2 gap-2 ${compact ? "sm:grid-cols-4" : "lg:grid-cols-4"}`}
+    >
+      {SUMMARY_TILES.map((tile) => (
+        <div
+          key={tile.key}
+          className={`min-w-0 rounded-lg border ${tile.tone} ${compact ? "px-3 py-2" : "p-2.5"}`}
+        >
+          <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {tile.label}
+          </dt>
+          <dd className={`break-words font-bold ${tile.value} ${compact ? "text-base" : "text-sm"}`}>
+            {rupees(summary[tile.key])}
+          </dd>
+          {!compact ? (
+            <dd className="text-[10px] leading-4 text-slate-500">{hint[tile.key]}</dd>
+          ) : null}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ClassFeeSheetPanel() {
   const now = useMemo(() => new Date(), []);
 
@@ -183,19 +781,27 @@ export function ClassFeeSheetPanel() {
   const [isWaiverRulesOpen, setIsWaiverRulesOpen] = useState(false);
   const selectedClass = classes.find((c) => c.id === classId) ?? null;
 
-  // Each mounted ClassFeeSheetDetail reports its own expected total here, so
-  // the header can show a combined sum across every class currently shown.
-  const [expectedTotals, setExpectedTotals] = useState<Record<string, number>>({});
-  const handleExpectedTotalChange = useCallback((id: string, expected: number) => {
-    setExpectedTotals((prev) =>
-      prev[id] === expected ? prev : { ...prev, [id]: expected }
-    );
+  // Each mounted ClassFeeSheetDetail reports its own financial summary here
+  // (keyed by class, so each class counts once), so the header can show
+  // combined totals across every class currently shown.
+  const [classSummaries, setClassSummaries] = useState<Record<string, FeeSheetSummary>>({});
+  const handleSummaryChange = useCallback((id: string, summary: FeeSheetSummary) => {
+    setClassSummaries((prev) => {
+      const current = prev[id];
+      if (
+        current &&
+        current.expected === summary.expected &&
+        current.due === summary.due &&
+        current.received === summary.received &&
+        current.confirmed === summary.confirmed
+      ) {
+        return prev;
+      }
+      return { ...prev, [id]: summary };
+    });
   }, []);
   const relevantClassIds = classId ? [classId] : classes.map((c) => c.id);
-  const combinedExpectedTotal = relevantClassIds.reduce(
-    (sum, id) => sum + (expectedTotals[id] ?? 0),
-    0
-  );
+  const combinedSummary = addFeeSummaries(relevantClassIds.map((id) => classSummaries[id]));
 
   // The month grid has a fixed 4×3 layout; the class and year lists scroll
   // within that same height.
@@ -278,16 +884,28 @@ export function ClassFeeSheetPanel() {
               Waiver Rules
             </button>
 
-            <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] px-3 py-2 text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
-                {classId ? "Expected total" : "Expected total · all classes"}
-              </p>
-              <p className="text-lg font-bold text-[#1a3049]">
-                {rupees(combinedExpectedTotal)}
-              </p>
-            </div>
+            {classId ? (
+              <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8] px-3 py-2 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
+                  Expected total
+                </p>
+                <p className="text-lg font-bold text-[#1a3049]">
+                  {rupees(combinedSummary.expected)}
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
+
+        {/* All classes: the four amounts summed over every class shown. */}
+        {!classId ? (
+          <div className="rounded-lg border border-[#dce7f1] bg-[#eef3f8]/60 p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#264867]">
+              Totals · all classes · {MONTHS[month - 1]} {year}
+            </p>
+            <FeeSummaryAmounts summary={combinedSummary} compact />
+          </div>
+        ) : null}
 
         {/* Selectors — three matching tile pickers */}
         <div className="grid gap-3 lg:grid-cols-3">
@@ -416,12 +1034,14 @@ export function ClassFeeSheetPanel() {
           </p>
         ) : null}
 
+        {classId ? <PaymentAccessControl key={classId} classId={classId} /> : null}
+
         {classId ? (
           <ClassFeeSheetDetail
             classId={classId}
             year={year}
             month={month}
-            onExpectedTotalChange={handleExpectedTotalChange}
+            onSummaryChange={handleSummaryChange}
           />
         ) : null}
       </article>
@@ -460,7 +1080,7 @@ export function ClassFeeSheetPanel() {
                   classId={item.id}
                   year={year}
                   month={month}
-                  onExpectedTotalChange={handleExpectedTotalChange}
+                  onSummaryChange={handleSummaryChange}
                 />
               </article>
             ))
@@ -483,14 +1103,14 @@ type ClassFeeSheetDetailProps = {
   classId: string;
   year: number;
   month: number;
-  onExpectedTotalChange?: (classId: string, expected: number) => void;
+  onSummaryChange?: (classId: string, summary: FeeSheetSummary) => void;
 };
 
 function ClassFeeSheetDetail({
   classId,
   year,
   month,
-  onExpectedTotalChange,
+  onSummaryChange,
 }: ClassFeeSheetDetailProps) {
   const now = useMemo(() => new Date(), []);
 
@@ -504,6 +1124,27 @@ function ClassFeeSheetDetail({
   // Late-join deduction explanation (and its explicit reset to automatic).
   const [explainFeeId, setExplainFeeId] = useState<string | null>(null);
   const [isResettingLateJoin, setIsResettingLateJoin] = useState(false);
+  // Free Cards: the selected fee rows, the running request and its outcome.
+  const [selectedFeeIds, setSelectedFeeIds] = useState<Set<string>>(() => new Set());
+  const [isApplyingFreeCards, setIsApplyingFreeCards] = useState(false);
+  const [freeCardOutcome, setFreeCardOutcome] = useState<FreeCardOutcome | null>(null);
+  // Partial payments: the fee being recorded, the payment being reversed, and
+  // each fee's open recording operation (its request key survives a retry,
+  // also after the dialog is closed and reopened).
+  const [recordFeeId, setRecordFeeId] = useState<string | null>(null);
+  const [reversePayment, setReversePayment] = useState<FeePaymentDetail | null>(null);
+  const recordAttempts = useRef(new RecordAttemptStore()).current;
+
+  useEffect(() => {
+    setRecordFeeId(null);
+    setReversePayment(null);
+  }, [classId, year, month]);
+
+  // A new class / year / month starts with nothing selected.
+  useEffect(() => {
+    setSelectedFeeIds(new Set());
+    setFreeCardOutcome(null);
+  }, [classId, year, month]);
 
   const nowYear = now.getFullYear();
   const nowMonth = now.getMonth() + 1;
@@ -511,9 +1152,18 @@ function ClassFeeSheetDetail({
     year > nowYear || (year === nowYear && month > nowMonth);
   const willProcess = !isFutureSelection;
 
+  // Every request that replaces the whole sheet takes a sequence number; only
+  // the newest one may write its result, so a slower response for an earlier
+  // class/year/month can never overwrite a newer selection.
+  const sheetRequestRef = useRef(0);
+  // Loads only: the newest load alone ends the loading state.
+  const loadRequestRef = useRef(0);
+
   const loadSheet = useCallback(async () => {
     if (!classId) return;
 
+    const requestId = ++sheetRequestRef.current;
+    const loadId = ++loadRequestRef.current;
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -536,14 +1186,15 @@ function ClassFeeSheetDetail({
         throw new Error(readApiError(payload, "Failed to load fee sheet."));
       }
 
-      setSheet(payload.data);
+      if (isLatestSheetRequestId(sheetRequestRef, requestId)) setSheet(payload.data);
     } catch (error) {
+      if (!isLatestSheetRequestId(sheetRequestRef, requestId)) return;
       setSheet(null);
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to load fee sheet."
       );
     } finally {
-      setIsLoading(false);
+      if (isLatestSheetRequestId(loadRequestRef, loadId)) setIsLoading(false);
     }
   }, [classId, year, month]);
 
@@ -585,6 +1236,7 @@ function ClassFeeSheetDetail({
   ) {
     setSavingFeeId(row.feeId ?? "all");
     setErrorMessage(null);
+    const requestId = ++sheetRequestRef.current;
 
     try {
       const response = await fetch("/api/payments/fees", {
@@ -608,7 +1260,7 @@ function ClassFeeSheetDetail({
         throw new Error(readApiError(payload, "Failed to update amount."));
       }
 
-      setSheet(payload.data);
+      if (isLatestSheetRequestId(sheetRequestRef, requestId)) setSheet(payload.data);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to update amount."
@@ -623,6 +1275,7 @@ function ClassFeeSheetDetail({
 
     setIsReprocessing(true);
     setErrorMessage(null);
+    const requestId = ++sheetRequestRef.current;
 
     try {
       const response = await fetch("/api/payments/fees", {
@@ -639,7 +1292,7 @@ function ClassFeeSheetDetail({
         throw new Error(readApiError(payload, "Failed to reprocess fees."));
       }
 
-      setSheet(payload.data);
+      if (isLatestSheetRequestId(sheetRequestRef, requestId)) setSheet(payload.data);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to reprocess fees."
@@ -744,74 +1397,120 @@ function ClassFeeSheetDetail({
     }
   }
 
+  const selectedIds = effectiveSelection(selectedFeeIds, currentSheetRows(sheet, { classId, year, month }));
+  const selectedRows = (sheet?.rows ?? []).filter((row) => row.feeId && selectedIds.includes(row.feeId));
+  const selectableCount = selectableFeeIds(currentSheetRows(sheet, { classId, year, month })).length;
+
+  async function applyFreeCards(action: FreeCardAction) {
+    if (selectedIds.length === 0 || isApplyingFreeCards) return;
+    if (!window.confirm(freeCardConfirmText(action, selectedIds.length, `${MONTHS[month - 1]} ${year}`))) {
+      return;
+    }
+
+    setIsApplyingFreeCards(true);
+    setErrorMessage(null);
+    const requestId = ++sheetRequestRef.current;
+
+    try {
+      const response = await fetch("/api/payments/fees/free-cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ classId, year, month, feeIds: selectedIds, action }),
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: FreeCardOutcome & { sheet: FeeSheet };
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(readApiError(payload, "Failed to update Free Cards."));
+      }
+
+      const { sheet: nextSheet, ...outcome } = payload.data;
+      if (isLatestSheetRequestId(sheetRequestRef, requestId)) setSheet(nextSheet);
+      setFreeCardOutcome(outcome);
+      setSelectedFeeIds(new Set());
+      toast.success(freeCardOutcomeText(outcome));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to update Free Cards.");
+      // Show the current state (nothing or part of it may have changed).
+      void loadSheet();
+    } finally {
+      setIsApplyingFreeCards(false);
+    }
+  }
+
   const explainRow = explainFeeId
     ? sheet?.rows.find((r) => r.feeId === explainFeeId) ?? null
     : null;
 
-  const totals = useMemo(() => {
-    const rows = sheet?.rows ?? [];
-    return {
-      students: rows.length,
-      expected: rows.reduce((sum, row) => sum + row.finalAmount, 0),
-      paid: rows.filter((row) => row.paymentStatus === "PAID").length,
-    };
-  }, [sheet]);
+  // The summary only ever describes the selected class, year and month: a
+  // sheet still on screen from an earlier selection is not summarised.
+  const currentSheet = sheetMatchesSelection(sheet, { classId, year, month }) ? sheet : null;
 
+  const recordRow = useMemo(() => {
+    const row = currentSheet?.rows.find((r) => r.feeId !== null && r.feeId === recordFeeId);
+    return row ? { ...row, feeId: row.feeId as string } : null;
+  }, [currentSheet, recordFeeId]);
+
+  const summary = useMemo(
+    () => summarizeFeeRows(currentSheet?.rows, currentSheet?.isPastDue === true),
+    [currentSheet]
+  );
+
+  // Report to the All classes totals once this selection has settled (zero
+  // amounts when it failed to load), never while a new selection loads.
   useEffect(() => {
-    onExpectedTotalChange?.(classId, totals.expected);
-  }, [classId, totals.expected, onExpectedTotalChange]);
+    if (isLoading) return;
+    onSummaryChange?.(classId, summary);
+  }, [classId, summary, isLoading, onSummaryChange]);
 
   return (
     <div className="space-y-4">
         {/* Status strip */}
-        {sheet ? (
-          <div className="grid gap-2 sm:grid-cols-4">
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Current class fee
-              </p>
-              <p className="text-sm font-bold text-slate-900">
-                {rupees(sheet.currentFee)}
-              </p>
-              {sheet.periodFee !== sheet.currentFee ? (
-                <p className="text-[10px] text-slate-400">
-                  Applied this month: {rupees(sheet.periodFee)}
+        {currentSheet ? (
+          <div className="space-y-2">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Current class fee
                 </p>
-              ) : null}
-            </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Due date (week {sheet.class.paymentDueWeek})
-              </p>
-              <p className="text-sm font-bold text-slate-900">
-                {formatStoredSriLankaDate(sheet.dueDate)}
-                {sheet.isPastDue ? (
-                  <span className="ml-1 rounded bg-rose-100 px-1 py-0.5 text-[10px] font-semibold text-rose-600">
-                    Past due
-                  </span>
-                ) : sheet.isDueSoon ? (
-                  <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-600">
-                    Due soon
-                  </span>
+                <p className="text-sm font-bold text-slate-900">
+                  {rupees(currentSheet.currentFee)}
+                </p>
+                {currentSheet.periodFee !== currentSheet.currentFee ? (
+                  <p className="text-[10px] text-slate-400">
+                    Applied this month: {rupees(currentSheet.periodFee)}
+                  </p>
                 ) : null}
-              </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Due date (week {currentSheet.class.paymentDueWeek})
+                </p>
+                <p className="text-sm font-bold text-slate-900">
+                  {formatStoredSriLankaDate(currentSheet.dueDate)}
+                  {currentSheet.isPastDue ? (
+                    <span className="ml-1 rounded bg-rose-100 px-1 py-0.5 text-[10px] font-semibold text-rose-600">
+                      Past due
+                    </span>
+                  ) : currentSheet.isDueSoon ? (
+                    <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-600">
+                      Due soon
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Students
+                </p>
+                <p className="text-sm font-bold text-slate-900">
+                  {currentSheet.rows.length}
+                </p>
+              </div>
             </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Students
-              </p>
-              <p className="text-sm font-bold text-slate-900">
-                {totals.students}
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Expected total
-              </p>
-              <p className="text-sm font-bold text-slate-900">
-                {rupees(totals.expected)}
-              </p>
-            </div>
+            <FeeSummaryAmounts summary={summary} isPastDue={currentSheet.isPastDue} />
           </div>
         ) : null}
 
@@ -856,6 +1555,23 @@ function ClassFeeSheetDetail({
             </div>
           ) : null}
 
+          {!sheet.isFuturePeriod && sheet.rows.length > 0 ? (
+            <FreeCardToolbar
+              selectedCount={selectedIds.length}
+              selectableCount={selectableCount}
+              canIssue={selectedRows.some((row) => !row.freeCard)}
+              canRevoke={selectedRows.some((row) => row.freeCard)}
+              busy={isApplyingFreeCards}
+              onToggleAll={() => setSelectedFeeIds((current) => toggleAllSelection(current, sheet.rows))}
+              onIssue={() => void applyFreeCards("issue")}
+              onRevoke={() => void applyFreeCards("revoke")}
+            />
+          ) : null}
+
+          {freeCardOutcome ? (
+            <FreeCardResultPanel outcome={freeCardOutcome} onDismiss={() => setFreeCardOutcome(null)} />
+          ) : null}
+
           {sheet.rows.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center">
               <Users size={22} className="mx-auto text-slate-300" />
@@ -881,11 +1597,16 @@ function ClassFeeSheetDetail({
               */}
               <div className="space-y-3 xl:hidden">
                 {sheet.rows.map((row) => {
-                  const paidLocked = row.paymentStatus === "PAID";
+                  // Any received payment freezes the row (partial payments too).
+                  const paidLocked = row.paymentStatus === "PAID" || row.paymentStatus === "PARTIAL";
+                  // An active Free Card also locks the adjustments (kept
+                  // unchanged underneath until the card is revoked).
                   const locked =
                     !row.feeId ||
                     savingFeeId === row.feeId ||
-                    paidLocked;
+                    paidLocked ||
+                    row.freeCard;
+                  const selectable = Boolean(row.feeId) && !paidLocked;
                   const rowKey = row.feeId ?? row.classStudentId;
                   const isExpanded = expandedRowKey === rowKey;
                   const stop = (event: React.MouseEvent) =>
@@ -898,6 +1619,21 @@ function ClassFeeSheetDetail({
                         isExpanded ? "bg-slate-50" : "bg-white"
                       }`}
                     >
+                      <div className="flex items-start">
+                      {!sheet.isFuturePeriod ? (
+                        <label className="flex shrink-0 items-center py-3 pl-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row.feeId) && selectedIds.includes(row.feeId!)}
+                            disabled={!selectable || isApplyingFreeCards}
+                            onChange={() =>
+                              row.feeId && setSelectedFeeIds((current) => toggleSelection(current, row.feeId!))
+                            }
+                            aria-label={`Select ${row.studentName}`}
+                            className="h-4 w-4 rounded border-slate-300 accent-violet-600"
+                          />
+                        </label>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() =>
@@ -905,7 +1641,7 @@ function ClassFeeSheetDetail({
                             current === rowKey ? null : rowKey
                           )
                         }
-                        className="flex w-full items-start justify-between gap-2 p-3 text-left"
+                        className="flex min-w-0 flex-1 items-start justify-between gap-2 p-3 text-left"
                       >
                         <div className="flex min-w-0 items-start gap-1.5">
                           {isExpanded ? (
@@ -926,7 +1662,11 @@ function ClassFeeSheetDetail({
                         </div>
 
                         <div className="shrink-0">
-                          {row.paymentStatus === "PAID" ? (
+                          {row.paymentStatus === "FREE_CARD" ? (
+                            <FreeCardBadge />
+                          ) : row.paymentStatus === "PARTIAL" ? (
+                            <PartialBadge outstanding={row.paymentSummary?.outstanding ?? null} />
+                          ) : row.paymentStatus === "PAID" ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                               <BadgeCheck size={10} />
                               Paid
@@ -943,6 +1683,7 @@ function ClassFeeSheetDetail({
                           )}
                         </div>
                       </button>
+                      </div>
 
                       <div
                         className="grid grid-cols-2 gap-x-3 gap-y-2.5 border-t border-slate-100 px-3 py-3 text-xs"
@@ -982,6 +1723,7 @@ function ClassFeeSheetDetail({
                               currentFee={sheet.currentFee}
                               studentCount={sheet.rows.length}
                               paid={paidLocked}
+                              freeCard={row.freeCard}
                               busy={
                                 savingFeeId === row.feeId || savingFeeId === "all"
                               }
@@ -1062,11 +1804,13 @@ function ClassFeeSheetDetail({
 
                       {isExpanded ? (
                         <div className="border-t border-slate-100 bg-slate-50/70 p-3" onClick={stop}>
-                          <PaymentAccordion
-                            payments={row.payments}
-                            finalAmount={row.finalAmount}
+                          <FeePaymentSection
+                            row={row}
                             classId={sheet.class.id}
+                            isFuturePeriod={sheet.isFuturePeriod}
                             onChanged={loadSheet}
+                            onRecord={() => setRecordFeeId(row.feeId)}
+                            onReverse={setReversePayment}
                           />
                         </div>
                       ) : null}
@@ -1079,6 +1823,11 @@ function ClassFeeSheetDetail({
               <table className="w-full min-w-[860px] text-left text-xs">
                 <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                   <tr>
+                    {!sheet.isFuturePeriod ? (
+                      <th className="w-8 py-2 pl-3 font-semibold">
+                        <span className="sr-only">Select</span>
+                      </th>
+                    ) : null}
                     <th className="px-3 py-2 font-semibold">Student</th>
                     <th className="px-3 py-2 font-semibold">Assigned</th>
                     <th className="px-3 py-2 font-semibold">Amount</th>
@@ -1092,12 +1841,16 @@ function ClassFeeSheetDetail({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {sheet.rows.map((row) => {
-                    // A confirmed payment freezes the whole row.
-                    const paidLocked = row.paymentStatus === "PAID";
+                    // A confirmed payment freezes the whole row; an active
+                    // Free Card locks the adjustments (kept underneath).
+                    // Any received payment freezes the row (partial payments too).
+                    const paidLocked = row.paymentStatus === "PAID" || row.paymentStatus === "PARTIAL";
                     const locked =
                       !row.feeId ||
                       savingFeeId === row.feeId ||
-                      paidLocked;
+                      paidLocked ||
+                      row.freeCard;
+                    const selectable = Boolean(row.feeId) && !paidLocked;
                     const rowKey = row.feeId ?? row.classStudentId;
                     const isExpanded = expandedRowKey === rowKey;
                     const stop = (event: React.MouseEvent) =>
@@ -1115,6 +1868,20 @@ function ClassFeeSheetDetail({
                           isExpanded ? "bg-slate-50" : ""
                         }`}
                       >
+                        {!sheet.isFuturePeriod ? (
+                          <td className="py-2 pl-3" onClick={stop}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(row.feeId) && selectedIds.includes(row.feeId!)}
+                              disabled={!selectable || isApplyingFreeCards}
+                              onChange={() =>
+                                row.feeId && setSelectedFeeIds((current) => toggleSelection(current, row.feeId!))
+                              }
+                              aria-label={`Select ${row.studentName}`}
+                              className="h-4 w-4 rounded border-slate-300 accent-violet-600"
+                            />
+                          </td>
+                        ) : null}
                         <td className="px-3 py-2">
                           <div className="flex items-start gap-1.5">
                             {isExpanded ? (
@@ -1160,6 +1927,7 @@ function ClassFeeSheetDetail({
                             currentFee={sheet.currentFee}
                             studentCount={sheet.rows.length}
                             paid={paidLocked}
+                            freeCard={row.freeCard}
                             busy={
                               savingFeeId === row.feeId || savingFeeId === "all"
                             }
@@ -1208,7 +1976,11 @@ function ClassFeeSheetDetail({
                           {formatStoredSriLankaDate(row.dueDate)}
                         </td>
                         <td className="px-3 py-2">
-                          {row.paymentStatus === "PAID" ? (
+                          {row.paymentStatus === "FREE_CARD" ? (
+                            <FreeCardBadge />
+                          ) : row.paymentStatus === "PARTIAL" ? (
+                            <PartialBadge outstanding={row.paymentSummary?.outstanding ?? null} />
+                          ) : row.paymentStatus === "PAID" ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                               <BadgeCheck size={10} />
                               Paid
@@ -1228,12 +2000,14 @@ function ClassFeeSheetDetail({
 
                       {isExpanded ? (
                         <tr className="bg-slate-50/70">
-                          <td colSpan={9} className="px-3 pb-3 pt-1">
-                            <PaymentAccordion
-                              payments={row.payments}
-                              finalAmount={row.finalAmount}
+                          <td colSpan={sheet.isFuturePeriod ? 9 : 10} className="px-3 pb-3 pt-1">
+                            <FeePaymentSection
+                              row={row}
                               classId={sheet.class.id}
+                              isFuturePeriod={sheet.isFuturePeriod}
                               onChanged={loadSheet}
+                              onRecord={() => setRecordFeeId(row.feeId)}
+                              onReverse={setReversePayment}
                             />
                           </td>
                         </tr>
@@ -1248,6 +2022,37 @@ function ClassFeeSheetDetail({
           )}
           </>
         ) : null}
+
+      {recordRow && sheet ? (
+        <RecordPaymentDialog
+          key={recordRow.feeId}
+          classId={sheet.class.id}
+          row={recordRow}
+          attempts={recordAttempts}
+          onRecorded={async ({ replayed }) => {
+            setRecordFeeId(null);
+            toast.success(replayed ? "This payment was already recorded." : "Payment recorded.");
+            await loadSheet();
+          }}
+          onRefresh={loadSheet}
+          onClose={() => setRecordFeeId(null)}
+        />
+      ) : null}
+
+      {reversePayment && sheet ? (
+        <ReversePaymentDialog
+          key={reversePayment.id}
+          classId={sheet.class.id}
+          payment={reversePayment}
+          onReversed={async () => {
+            setReversePayment(null);
+            toast.success("Payment reversed. The amount is outstanding again.");
+            await loadSheet();
+          }}
+          onRefresh={loadSheet}
+          onClose={() => setReversePayment(null)}
+        />
+      ) : null}
 
       {explainRow && sheet ? (
         <LateJoinExplanation
@@ -1268,6 +2073,7 @@ function AmountCell({
   currentFee,
   studentCount,
   paid,
+  freeCard,
   busy,
   onApply,
 }: {
@@ -1276,6 +2082,8 @@ function AmountCell({
   currentFee: number;
   studentCount: number;
   paid?: boolean;
+  /** Active Free Card: this student's amount is not edited (revoke first). */
+  freeCard?: boolean;
   busy?: boolean;
   onApply: (amount: number, applyToAll: boolean) => void;
 }) {
@@ -1353,6 +2161,10 @@ function AmountCell({
         {paid ? (
           <span className="text-[10px] leading-tight text-slate-400">
             Locked — student has paid
+          </span>
+        ) : freeCard ? (
+          <span className="text-[10px] leading-tight text-violet-600">
+            Free Card — Rs. 0 payable
           </span>
         ) : differs ? (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1449,16 +2261,52 @@ function AmountCell({
   );
 }
 
+/**
+ * The expanded row: the fee's payment position (the server's figures), the
+ * Record payment action and the full payment history.
+ */
+function FeePaymentSection({
+  row,
+  classId,
+  isFuturePeriod,
+  onChanged,
+  onRecord,
+  onReverse,
+}: {
+  row: FeeRow;
+  classId: string;
+  isFuturePeriod: boolean;
+  onChanged: () => void | Promise<void>;
+  onRecord: () => void;
+  onReverse: (payment: FeePaymentDetail) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {row.feeId ? <FeePaymentPosition state={row.paymentStatus} summary={row.paymentSummary} /> : null}
+      <RecordPaymentButton block={recordPaymentBlock(row, isFuturePeriod)} onClick={onRecord} />
+      <PaymentAccordion
+        payments={row.payments}
+        finalAmount={row.finalAmount}
+        classId={classId}
+        onChanged={onChanged}
+        onReverse={onReverse}
+      />
+    </div>
+  );
+}
+
 function PaymentAccordion({
   payments,
   finalAmount,
   classId,
   onChanged,
+  onReverse,
 }: {
   payments: FeePaymentDetail[];
   finalAmount: number;
   classId: string;
   onChanged: () => void | Promise<void>;
+  onReverse: (payment: FeePaymentDetail) => void;
 }) {
   if (payments.length === 0) {
     return (
@@ -1479,34 +2327,42 @@ function PaymentAccordion({
           payment={payment}
           classId={classId}
           onChanged={onChanged}
+          onReverse={() => onReverse(payment)}
         />
       ))}
     </div>
   );
 }
 
-function PaymentReviewCard({
+export function PaymentReviewCard({
   payment,
   classId,
   onChanged,
+  onReverse,
 }: {
   payment: FeePaymentDetail;
   classId: string;
   onChanged: () => void | Promise<void>;
+  onReverse?: () => void;
 }) {
   const [busy, setBusy] = useState<null | "CONFIRMED" | "NEEDS_CLARIFICATION">(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
 
-  const tone =
-    payment.status === "CONFIRMED"
+  const recorded = payment.source === "TEACHER_RECORDED";
+  const reversed = Boolean(payment.reversed || payment.reversal);
+
+  const tone = reversed
+    ? "border-slate-300 bg-slate-100"
+    : payment.status === "CONFIRMED"
       ? "border-emerald-200 bg-emerald-50"
       : payment.status === "NEEDS_CLARIFICATION"
       ? "border-rose-200 bg-rose-50"
       : "border-amber-200 bg-amber-50";
 
-  const label =
-    payment.status === "CONFIRMED"
+  const label = reversed
+    ? "Reversed"
+    : payment.status === "CONFIRMED"
       ? "Confirmed"
       : payment.status === "NEEDS_CLARIFICATION"
       ? "Needs clarification"
@@ -1539,20 +2395,31 @@ function PaymentReviewCard({
     }
   }
 
-  const canAct = payment.status !== "CONFIRMED";
+  // The slip review applies to student slips only; a recorded payment is
+  // corrected by a reversal.
+  const canAct = payment.status !== "CONFIRMED" && !recorded;
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 text-xs ${tone}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-bold text-slate-900">{rupees(payment.amount)}</span>
-        <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-          {label}
+        <span className={`font-bold ${reversed ? "text-slate-500 line-through" : "text-slate-900"}`}>
+          {rupees(payment.amount)}
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+            {recorded ? "Recorded by teacher" : "Student slip"}
+          </span>
+          <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+            {label}
+          </span>
         </span>
       </div>
 
+      {recorded ? <RecordedPaymentDetails payment={payment} /> : null}
+
       <div className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
         <p className="text-slate-600">
-          Submitted: {formatStoredSriLankaDateTime(payment.submittedAt)}
+          {recorded ? "Recorded" : "Submitted"}: {formatStoredSriLankaDateTime(payment.submittedAt)}
         </p>
         {payment.confirmedAt ? (
           <p className="text-slate-600">
@@ -1563,7 +2430,7 @@ function PaymentReviewCard({
 
       {payment.note ? (
         <p className="mt-1.5 text-slate-700">
-          <span className="font-semibold">Student note:</span> {payment.note}
+          <span className="font-semibold">{recorded ? "Note:" : "Student note:"}</span> {payment.note}
         </p>
       ) : null}
       {payment.teacherFeedback ? (
@@ -1572,8 +2439,10 @@ function PaymentReviewCard({
         </p>
       ) : null}
 
+      {payment.reversal ? <ReversalDetails reversal={payment.reversal} /> : null}
+
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {payment.hasSlip ? (
+        {recorded ? null : payment.hasSlip ? (
           <a
             href={`/api/payments/${payment.id}/slip`}
             target="_blank"
@@ -1608,6 +2477,17 @@ function PaymentReviewCard({
               Request clarification
             </button>
           </>
+        ) : null}
+
+        {onReverse && canReversePayment(payment) ? (
+          <button
+            type="button"
+            onClick={onReverse}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+          >
+            <RotateCcw size={11} />
+            Reverse payment
+          </button>
         ) : null}
       </div>
 
@@ -1740,7 +2620,7 @@ function LateJoinExplanation({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const paid = row.paymentStatus === "PAID";
+  const paid = row.paymentStatus === "PAID" || row.paymentStatus === "PARTIAL";
   const waiver = row.joinWaiver;
 
   // Portalled to <body>: inside the sheet's space-y containers the overlay
@@ -1788,6 +2668,10 @@ function LateJoinExplanation({
             </p>
             {paid ? (
               <p className="text-xs text-slate-500">This invoice is paid, so it can no longer change.</p>
+            ) : row.freeCard ? (
+              <p className="text-xs text-slate-500">
+                This student has a Free Card for this month. Revoke it before resetting the deduction.
+              </p>
             ) : !joinWaiversActive ? (
               <p className="text-xs text-slate-500">
                 Automatic joining waivers do not apply to this month, so it cannot be reset.

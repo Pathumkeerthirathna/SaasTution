@@ -21,6 +21,8 @@
 
 "use strict";
 
+require("../helpers/no-class-access-restrictions.cjs"); // this suite does not model class fees (tests/class-access covers access control)
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");

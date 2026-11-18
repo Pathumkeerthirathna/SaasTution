@@ -147,6 +147,8 @@ function client(ctx) {
 const prisma = {
   ...client(null),
   async $transaction(fn) {
+    // Batch form ($transaction([...queries], options)): the queries in order.
+    if (Array.isArray(fn)) return Promise.all(fn);
     const ctx = { undo: [] };
     try {
       return await fn(client(ctx));

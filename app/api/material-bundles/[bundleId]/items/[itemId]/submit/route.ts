@@ -5,6 +5,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,8 @@ export async function POST(
     if (!bundleId?.trim() || !itemId?.trim()) {
       throw new AppError("Bundle id and item id are required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(session.studentId, { bundleId });
 
     const item = await prisma.materialBundleItem.findFirst({
       where: {

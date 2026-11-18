@@ -19,6 +19,8 @@
 
 "use strict";
 
+require("../helpers/no-class-access-restrictions.cjs"); // this suite does not model class fees (tests/class-access covers access control)
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -246,6 +248,8 @@ function makeClient(ctx) {
 const prisma = {
   ...makeClient({ inTx: false }),
   async $transaction(fn) {
+    // Batch form ($transaction([...queries], options)): the queries in order.
+    if (Array.isArray(fn)) return Promise.all(fn);
     const ctx = { inTx: true, held: [], undo: [] };
     try {
       return await fn(makeClient(ctx));

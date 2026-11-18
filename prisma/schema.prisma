@@ -39,6 +39,8 @@ model Teacher {
   students               Student[]
   studentEmailDeliveries EmailDelivery[]
   confirmedClassPayments ClassPayment[]        @relation("ClassPaymentConfirmedBy")
+  recordedClassPayments  ClassPayment[]        @relation("ClassPaymentRecordedBy")
+  issuedFreeCards        ClassStudentFee[]     @relation("ClassStudentFeeFreeCardIssuedBy")
   paperSupportMessages   PaperSupportMessage[]
   paymentMessages        PaymentMessage[]
   paperConfig            TeacherPaperConfig?
@@ -908,6 +910,13 @@ model Class {
   /// register. 0–240 (CHECK Class_attendanceGraceMinutes_check, hand-written
   /// in migration 20261110140000_add_lecture_attendance).
   attendanceGraceMinutes Int                 @default(10)
+  /// Payment-due LMS access control (services/class-access-service.ts): when
+  /// true, a student with an unpaid fee of this class whose due date plus
+  /// paymentGracePeriodDays has passed cannot open the class's learning
+  /// content. Default false: no change for existing classes. 0–30 days (CHECK
+  /// Class_paymentGracePeriodDays_check, migration 20261121120000).
+  restrictUnpaidStudentAccess Boolean      @default(false)
+  paymentGracePeriodDays      Int          @default(5)
   teacher              Teacher               @relation(fields: [teacherId], references: [id])
   payments             ClassPayment[]
   feeHistory           ClassFee[]
@@ -1376,8 +1385,22 @@ model ClassStudentFee {
   /// Real UTC instant of the calculation.
   joinWaiverComputedAt     DateTime?
 
+  /// Teacher-issued Free Card: a 100% waiver of this one fee (student, class,
+  /// month). While set, finalAmount is 0; discount, lateJoinDeduct,
+  /// waiverAmount and the automatic waiver columns are kept untouched
+  /// underneath, so revoking restores the current calculation. Never issued
+  /// or revoked while the fee has a CONFIRMED payment. CHECK
+  /// ClassStudentFee_freeCard_finalAmount_check (hand-written in migration
+  /// 20261120120000_add_class_student_fee_free_card) keeps finalAmount 0.
+  freeCard                  Boolean   @default(false)
+  /// Real UTC instant the Free Card was issued (null when no card).
+  freeCardIssuedAt          DateTime?
+  freeCardIssuedByTeacherId String?
+  freeCardIssuedByTeacher   Teacher?  @relation("ClassStudentFeeFreeCardIssuedBy", fields: [freeCardIssuedByTeacherId], references: [id], onDelete: SetNull)
+
   @@unique([classStudentId, year, month])
   @@index([classStudentId, year, month])
+  @@index([freeCardIssuedByTeacherId])
 }
 
 enum FeeWaiverType {
@@ -2167,10 +2190,64 @@ model ClassPayment {
 
   messages PaymentMessage[]
 
+  /// Partial payments (Stage 1, migration 20261122120000): where the payment
+  /// came from. Existing rows and student uploads: STUDENT_SLIP. A
+  /// TEACHER_RECORDED payment (cash / bank transfer received by the teacher)
+  /// is CONFIRMED when recorded and carries paymentMethod, receivedAt and
+  /// recordedByTeacherId (hand-written CHECKs keep these consistent).
+  source              ClassPaymentSource  @default(STUDENT_SLIP)
+  paymentMethod       ClassPaymentMethod?
+  /// When the teacher received the money (real UTC instant).
+  receivedAt          DateTime?
+  /// The teacher who recorded it (never changed afterwards; audit).
+  recordedByTeacherId String?
+  recordedByTeacher   Teacher?            @relation("ClassPaymentRecordedBy", fields: [recordedByTeacherId], references: [id], onDelete: SetNull)
+  /// Idempotency key of the recording request: a repeated request finds the
+  /// existing payment instead of creating a second one.
+  requestKey          String?             @unique
+  /// Set when the payment was reversed. The payment itself is never changed
+  /// or deleted; a reversed payment no longer counts as received.
+  reversal            ClassPaymentReversal?
+
   @@index([studentId])
   @@index([classId, status])
   @@index([classStudentFeeId])
   @@index([confirmedByTeacherId])
+  @@index([recordedByTeacherId])
+}
+
+enum ClassPaymentSource {
+  STUDENT_SLIP
+  TEACHER_RECORDED
+}
+
+enum ClassPaymentMethod {
+  CASH
+  BANK_TRANSFER
+  OTHER
+}
+
+enum ClassPaymentActorRole {
+  TEACHER
+  ADMIN
+}
+
+/// Append-only audit record of a reversed payment (partial payments, Stage 1).
+/// One per payment, always the full payment amount (CHECKs in migration
+/// 20261122120000). The original ClassPayment row is kept unchanged; the
+/// shared fee calculation simply stops counting it as received. Actor ids are
+/// stored as text without a foreign key (like JibriShutdownOverride), so the
+/// record survives the actor's account.
+model ClassPaymentReversal {
+  id             String                @id @default(uuid())
+  paymentId      String                @unique
+  amount         Int
+  reason         String
+  reversedByRole ClassPaymentActorRole
+  reversedById   String
+  /// Real UTC instant of the reversal.
+  createdAt      DateTime              @default(now())
+  payment        ClassPayment          @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
 
 model PaymentMessage {

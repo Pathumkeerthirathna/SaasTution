@@ -71,9 +71,21 @@ export function activeSubscriptionWhere(teacherId: string, now: Date) {
   return { teacherId, status: "ACTIVE" as const, OR: [{ endDate: null }, { endDate: { gt: now } }] };
 }
 
+type NoteAndSubmissionBytesRow = { notesBytes: bigint; submissionsBytes: bigint };
+
 /** Notes and submission bytes, summed in SQL as BIGINT (a Prisma _sum over an Int column could overflow). */
 export async function readNoteAndSubmissionBytes(db: Pick<UsageDb, "$queryRaw">, teacherId: string): Promise<{ notes: bigint; submissions: bigint }> {
-  const rows = await db.$queryRaw<Array<{ notesBytes: bigint; submissionsBytes: bigint }>>`
+  return noteAndSubmissionBytesOf(await noteAndSubmissionBytesQuery(db, teacherId));
+}
+
+function noteAndSubmissionBytesOf(rows: NoteAndSubmissionBytesRow[]): { notes: bigint; submissions: bigint } {
+  const row = rows[0];
+  return { notes: BigInt(row?.notesBytes ?? 0), submissions: BigInt(row?.submissionsBytes ?? 0) };
+}
+
+/** The raw query itself (lazy, not yet sent), so it can also join a batch transaction. */
+function noteAndSubmissionBytesQuery(db: Pick<UsageDb, "$queryRaw">, teacherId: string) {
+  return db.$queryRaw<NoteAndSubmissionBytesRow[]>`
     SELECT
       (SELECT COALESCE(SUM(n."sizeBytes"), 0)::bigint
          FROM "Note" n
@@ -88,46 +100,60 @@ export async function readNoteAndSubmissionBytes(db: Pick<UsageDb, "$queryRaw">,
          JOIN "Class" c ON c."id" = l."classId"
         WHERE c."teacherId" = ${teacherId}
           AND s."storageKey" IS NOT NULL) AS "submissionsBytes"`;
-  const row = rows[0];
-  return { notes: BigInt(row?.notesBytes ?? 0), submissions: BigInt(row?.submissionsBytes ?? 0) };
 }
 
-async function computeUsage(db: UsageDb, teacherId: string, now: Date): Promise<TeacherStorageUsage> {
+/**
+ * The seven reads of a usage calculation, built but NOT yet sent (Prisma
+ * queries are lazy), in their required order: 1. reservations first (see the
+ * module comment), 2. committed storage, 3. the effective limit. None depends
+ * on another's result, so they can run one by one in a caller's transaction
+ * or together as one batch transaction.
+ */
+export function usageQueries(db: UsageDb, teacherId: string, now: Date) {
+  return [
+    // 1. Reservations.
+    db.recordingUploadSession.findMany({
+      where: { teacherId, state: { in: [...ACTIVE_SESSION_STATES] } },
+      select: { state: true, expectedBytes: true, receivedBytes: true, leaseBytes: true, leaseExpiresAt: true, expiresAt: true },
+    }),
+    db.storageReservation.groupBy({
+      by: ["category"],
+      where: { teacherId, expiresAt: { gt: now } },
+      _sum: { bytes: true },
+    }),
+    // 2. Committed storage.
+    db.recordedLecture.aggregate({
+      where: { teacherId, state: "READY", storedFileName: { not: null }, purgedAt: null },
+      _sum: { sizeBytes: true },
+    }),
+    noteAndSubmissionBytesQuery(db, teacherId),
+    db.teacherProfile.findUnique({
+      where: { teacherId },
+      select: { profileImageStorageKey: true, profileImageSizeBytes: true },
+    }),
+    // 3. The effective limit (override, else the ACTIVE subscription plan's storageGB, else unlimited).
+    db.teacherStorageLimit.findUnique({ where: { teacherId }, select: { limitBytes: true } }),
+    db.teacherSubscription.findFirst({
+      where: activeSubscriptionWhere(teacherId, now),
+      orderBy: { updatedAt: "desc" },
+      select: { plan: { select: { storageGB: true } } },
+    }),
+  ] as const;
+}
+
+type UsageQueries = ReturnType<typeof usageQueries>;
+type AwaitedTuple<T extends readonly unknown[]> = { -readonly [K in keyof T]: Awaited<T[K]> };
+type UsageResults = AwaitedTuple<UsageQueries>;
+
+/** The usage from the seven results, in usageQueries order (unchanged calculations). */
+function usageFromResults(teacherId: string, now: Date, results: UsageResults): TeacherStorageUsage {
+  const [sessions, reservationGroups, recordings, noteAndSubmissionRows, profile, override, subscription] = results;
   const nowMs = now.getTime();
 
-  // 1. Reservations first (see the module comment).
-  const sessions = await db.recordingUploadSession.findMany({
-    where: { teacherId, state: { in: [...ACTIVE_SESSION_STATES] } },
-    select: { state: true, expectedBytes: true, receivedBytes: true, leaseBytes: true, leaseExpiresAt: true, expiresAt: true },
-  });
   const recordingReserved = sessions.reduce((total, session) => total + recordingSessionReservedBytes(session, nowMs), BigInt(0));
-
-  const reservationGroups = await db.storageReservation.groupBy({
-    by: ["category"],
-    where: { teacherId, expiresAt: { gt: now } },
-    _sum: { bytes: true },
-  });
   const reservedOf = (category: "NOTE" | "SUBMISSION" | "PROFILE_IMAGE") => reservationGroups.find((g) => g.category === category)?._sum.bytes ?? BigInt(0);
-
-  // 2. Committed storage.
-  const recordings = await db.recordedLecture.aggregate({
-    where: { teacherId, state: "READY", storedFileName: { not: null }, purgedAt: null },
-    _sum: { sizeBytes: true },
-  });
-  const { notes, submissions } = await readNoteAndSubmissionBytes(db, teacherId);
-  const profile = await db.teacherProfile.findUnique({
-    where: { teacherId },
-    select: { profileImageStorageKey: true, profileImageSizeBytes: true },
-  });
+  const { notes, submissions } = noteAndSubmissionBytesOf(noteAndSubmissionRows);
   const profileImages = profile?.profileImageStorageKey ? BigInt(profile.profileImageSizeBytes ?? 0) : BigInt(0);
-
-  // 3. The effective limit (override, else the ACTIVE subscription plan's storageGB, else unlimited).
-  const override = await db.teacherStorageLimit.findUnique({ where: { teacherId }, select: { limitBytes: true } });
-  const subscription = await db.teacherSubscription.findFirst({
-    where: activeSubscriptionWhere(teacherId, now),
-    orderBy: { updatedAt: "desc" },
-    select: { plan: { select: { storageGB: true } } },
-  });
 
   return summarizeTeacherStorageUsage({
     teacherId,
@@ -146,19 +172,30 @@ async function computeUsage(db: UsageDb, teacherId: string, now: Date): Promise<
   });
 }
 
+/** Inside the caller's transaction: the reads one by one, in order (no nested transaction). */
+async function computeUsageIn(db: UsageDb, teacherId: string, now: Date): Promise<TeacherStorageUsage> {
+  const [q1, q2, q3, q4, q5, q6, q7] = usageQueries(db, teacherId, now);
+  const results: UsageResults = [await q1, await q2, await q3, await q4, await q5, await q6, await q7];
+  return usageFromResults(teacherId, now, results);
+}
+
 /**
  * The teacher's storage usage and effective limit. Pass `db` (a transaction
  * client) to read inside the caller's transaction - e.g. under
- * lockTeacherStorageQuota in Stage 3.2; otherwise a read-only REPEATABLE READ
- * transaction is used. `now` defaults to database time.
+ * lockTeacherStorageQuota in Stage 3.2; otherwise the reads run as ONE batch
+ * transaction at REPEATABLE READ (one snapshot). A batch transaction is not an
+ * interactive one, so the interactive transaction timeout (5 s by default;
+ * exceeded with seven sequential round trips to a remote database, P2028)
+ * does not apply. `now` defaults to database time.
  */
 export async function getTeacherStorageUsage(
   teacherId: string,
   options: { db?: UsageDb; now?: Date } = {}
 ): Promise<TeacherStorageUsage> {
   const now = options.now ?? (await serverNow());
-  if (options.db) return computeUsage(options.db, teacherId, now);
-  return prisma.$transaction((tx) => computeUsage(tx, teacherId, now), {
+  if (options.db) return computeUsageIn(options.db, teacherId, now);
+  const results = await prisma.$transaction([...usageQueries(prisma, teacherId, now)], {
     isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
   });
+  return usageFromResults(teacherId, now, results as UsageResults);
 }

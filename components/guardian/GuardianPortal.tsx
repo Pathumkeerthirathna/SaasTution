@@ -450,6 +450,11 @@ type PaymentFee = {
   finalAmount: number;
   dueDate: string | null;
   paid: boolean;
+  /** Settled by a teacher-issued Free Card (nothing to pay). */
+  freeCard?: boolean;
+  /** PAID / PARTIAL / ... and what is still payable (partial payments). */
+  state?: string;
+  outstanding?: number;
   dueStatus: "OVERDUE" | "DUE_SOON" | "UPCOMING" | null;
 };
 
@@ -581,9 +586,13 @@ function PaymentGroup({
                   <span className="rounded-full bg-amber-100 px-2 py-px text-[10px] font-semibold text-amber-700">
                     Due soon
                   </span>
+                ) : fee.freeCard ? (
+                  <span className="rounded-full bg-violet-100 px-2 py-px text-[10px] font-bold uppercase tracking-wide text-violet-700">
+                    Free card
+                  </span>
                 ) : null}
                 <span className="text-[12.5px] font-semibold text-slate-900">
-                  Rs. {fee.finalAmount.toLocaleString()}
+                  Rs. {(fee.paid ? fee.finalAmount : fee.outstanding ?? fee.finalAmount).toLocaleString()}
                 </span>
               </div>
             </li>

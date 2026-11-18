@@ -3,6 +3,7 @@ import { AppError, handleRouteError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { prisma } from "@/lib/prisma";
 import { openStoredFileForRead, storedFileAppError, storedFileResponse } from "@/lib/stored-files/stored-file";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export async function GET(
     if (!lectureId?.trim() || !noteId?.trim()) {
       throw new AppError("Required ids are missing.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(session.studentId, { lectureId });
 
     const note = await prisma.note.findFirst({
       where: {

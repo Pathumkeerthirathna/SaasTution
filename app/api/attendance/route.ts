@@ -4,6 +4,7 @@ import { attendanceCreateSchema, attendanceListQuerySchema } from "@/lib/attenda
 import { handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { emitSessionAttendanceEvent } from "@/lib/session-events";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 import { listAttendanceByClassForTeacher, markAttendanceOnJoin } from "@/services/session-service";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
     }
 
     const student = await requireStudentSession();
+    // Payment-due access control (services/class-access-service.ts): a
+    // restricted student cannot record a classroom visit, as for /join.
+    await assertContentAccessForStudent(student.studentId, { sessionId: parsed.data.sessionId });
 
     // The student is the logged-in one; a studentId in the body is never used.
     const result = await markAttendanceOnJoin({

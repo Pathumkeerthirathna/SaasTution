@@ -123,6 +123,9 @@ test("existing features untouched: YouTube, Jitsi, lecture scheduling, Notes / A
     // route and the maintenance scheduler's wiring.
     "app/api/lectures/[id]/notes/[noteId]/route.ts",
     "instrumentation.ts",
+    // Payment-due access control (one access check; tests/class-access): a
+    // restricted student cannot record a classroom visit.
+    "app/api/attendance/route.ts",
   ].map((file) => `:(exclude,literal)${file}`);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...paths, ...stage2], { cwd: root, encoding: "utf8" });
   assert.equal(diff.trim(), "", diff);

@@ -13,6 +13,7 @@ import {
   releaseTeacherStorageReservation,
   reserveTeacherStorage,
 } from "@/services/storage-reservation-service";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,8 @@ export async function GET(
     if (!assignmentId?.trim()) {
       throw new AppError("Assignment id is required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(studentSession.studentId, { assignmentId });
 
     // Verify the assignment exists and belongs to one of the student's enrolled classes.
     const assignment = await prisma.assignment.findFirst({
@@ -125,6 +128,8 @@ export async function POST(
     if (!assignmentId?.trim()) {
       throw new AppError("Assignment id is required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(studentSession.studentId, { assignmentId });
 
     const formData = await request.formData();
     const notes = String(formData.get("notes") ?? "").trim();

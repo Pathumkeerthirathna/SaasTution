@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 
 import { RecordingPlayer } from "@/components/student-portal/recorded-lectures/recording-player";
 import { requireStudentSession } from "@/lib/auth-session";
+import { AppError } from "@/lib/error-handler";
+import { assertContentAccessForStudent, CLASS_ACCESS_RESTRICTED } from "@/services/class-access-service";
 import { loadLecturePlayer } from "@/services/recorded-lecture-student-pages";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,20 @@ type PageProps = {
 
 export default async function StudentRecordedLecturePlayerPage({ params, searchParams }: PageProps) {
   const session = await requireStudentSession();
+  // Payment-due access control: the stream itself is refused (403) as well;
+  // here the student gets the explanation instead of a player that cannot play.
+  try {
+    await assertContentAccessForStudent(session.studentId, { lectureId: params.lectureId });
+  } catch (error) {
+    if (error instanceof AppError && error.code === CLASS_ACCESS_RESTRICTED) {
+      return (
+        <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+          {error.message}
+        </p>
+      );
+    }
+    throw error;
+  }
   const page = await loadLecturePlayer(session.studentId, params.lectureId);
   if (!page.ok) {
     if (page.reason === "UNAVAILABLE") {

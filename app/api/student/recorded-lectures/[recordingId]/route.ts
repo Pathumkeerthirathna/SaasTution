@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { getStudentRecordedLecture } from "@/services/recorded-lecture-student-service";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, context: { params: { recordingId: string } }) {
   try {
     const session = await requireStudentSession();
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(session.studentId, { recordingId: context.params.recordingId });
     const recordedLecture = await getStudentRecordedLecture({
       studentId: session.studentId,
       recordingId: context.params.recordingId,

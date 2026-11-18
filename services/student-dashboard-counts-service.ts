@@ -1,3 +1,4 @@
+import { feePaymentState, PAYMENT_STATE_SELECT, type FeePaymentRecord } from "@/lib/fee-payment-state";
 import { prisma } from "@/lib/prisma";
 import { sriLankaCalendarParts, sriLankaDigitsToInstant } from "@/lib/time";
 
@@ -97,17 +98,23 @@ export async function getStudentDashboardCounts(
 
   const now = new Date();
   const dueSoonEnd = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  // Fees the student still owes (no CONFIRMED payment), regardless of range.
-  const unpaidFeeWhere = {
+  // Fees the student still owes, regardless of range: an outstanding amount
+  // by the shared calculation (lib/fee-payment-state.ts; a partly paid fee
+  // still owes the rest, a Free Card or fully paid fee nothing). Counted in
+  // code because a sum of payments cannot be filtered in the query.
+  const owedFeeWhere = {
     status: 0,
+    freeCard: false,
     classStudent: { studentId, class: { status: 0 } },
-    payments: { none: { status: "CONFIRMED" as const } },
   };
+  const countOwed = (rows: Array<{ finalAmount: number; freeCard: boolean; payments: FeePaymentRecord[] }>) =>
+    rows.filter((fee) => feePaymentState(fee, fee.payments).outstanding > 0).length;
+  const owedFeeSelect = { finalAmount: true, freeCard: true, payments: { select: PAYMENT_STATE_SELECT } } as const;
 
   const [
     classes,
-    paymentsDue,
-    paymentsDueSoon,
+    paymentsDueRows,
+    paymentsDueSoonRows,
     lecturesTotal,
     lecturesNotAttended,
     papersTotal,
@@ -121,11 +128,13 @@ export async function getStudentDashboardCounts(
   ] = await Promise.all([
     prisma.classStudent.count({ where: { studentId, isActive: true, class: { status: 0 } } }),
 
-    prisma.classStudentFee.count({
-      where: { ...unpaidFeeWhere, dueDate: { lte: now } },
+    prisma.classStudentFee.findMany({
+      where: { ...owedFeeWhere, dueDate: { lte: now } },
+      select: owedFeeSelect,
     }),
-    prisma.classStudentFee.count({
-      where: { ...unpaidFeeWhere, dueDate: { gt: now, lte: dueSoonEnd } },
+    prisma.classStudentFee.findMany({
+      where: { ...owedFeeWhere, dueDate: { gt: now, lte: dueSoonEnd } },
+      select: owedFeeSelect,
     }),
 
     prisma.lecture.count({ where: lectureWhere }),
@@ -153,7 +162,7 @@ export async function getStudentDashboardCounts(
   return {
     range,
     classes,
-    payments: { due: paymentsDue, dueSoon: paymentsDueSoon },
+    payments: { due: countOwed(paymentsDueRows), dueSoon: countOwed(paymentsDueSoonRows) },
     lectures: { notAttended: lecturesNotAttended, total: lecturesTotal },
     papers: { pending: papersPending, total: papersTotal },
     assignments: { due: assignmentsDue, total: assignmentsTotal },

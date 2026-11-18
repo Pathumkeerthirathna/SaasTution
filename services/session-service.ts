@@ -24,6 +24,7 @@ import {
   summarizeGroupActivitiesForSessionEnd,
   type GroupSessionEndDecision,
 } from "@/services/breakout-group-session-end";
+import { assertClassAccessForStudent, assertContentAccessForStudent } from "@/services/class-access-service";
 
 type NotifyChannels = {
   email: boolean;
@@ -781,6 +782,10 @@ export async function getSessionJoinInfo(sessionId: string, studentS: StudentSes
     requireApproved: true,
   });
 
+  // Payment-due access control: no classroom (Jitsi room / token) while this
+  // class is restricted for the student (services/class-access-service.ts).
+  await assertClassAccessForStudent(student.id, session.classId);
+
   const jitsiToken =
   shouldUseJitsiJwtAuth(session.jitsiDomain)
     ? await generateJitsiToken({
@@ -985,6 +990,10 @@ export async function getSessionJoinInfoForTeacher(sessionId: string, teacherId?
 }
 
 export async function markStudentJoinedSession(sessionId: string, student: StudentSession) {
+  // Payment-due access control: a restricted student cannot join the class
+  // (one query when nothing is restricted; the session's class is looked up
+  // only for a student with a restriction).
+  await assertContentAccessForStudent(student.studentId, { sessionId });
   // Same visit rules as the attendance endpoint (one place decides them).
   return markAttendanceOnJoin({ sessionId, student });
 }

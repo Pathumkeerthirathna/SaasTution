@@ -33,11 +33,23 @@ export async function POST(
       },
       select: {
         id: true,
+        source: true,
       },
     });
 
     if (!payment) {
       throw new AppError("Payment not found.", 404, "PAYMENT_NOT_FOUND");
+    }
+
+    // Partial payments: the slip clarification workflow never changes a
+    // payment the teacher recorded (cash / bank transfer); only its own
+    // reversal process does.
+    if (payment.source === "TEACHER_RECORDED") {
+      throw new AppError(
+        "This payment was recorded by the teacher, so the payment slip conversation does not apply to it.",
+        409,
+        "PAYMENT_NOT_A_SLIP"
+      );
     }
 
     const formData = await request.formData();

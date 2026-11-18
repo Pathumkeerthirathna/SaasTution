@@ -1,5 +1,6 @@
 import { Weekday } from "@prisma/client";
 
+import { feePaymentState, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
 import { prisma } from "@/lib/prisma";
 import { nextSriLankaWeeklyOccurrence, sriLankaDateKey } from "@/lib/time";
 
@@ -162,15 +163,18 @@ export async function getStudentUpcomingCountdowns(studentId: string): Promise<S
     prisma.classStudentFee.findMany({
       where: {
         status: 0,
+        // A teacher-issued Free Card settles the fee: no countdown.
+        freeCard: false,
         dueDate: { gt: now, lte: windowEnd },
         classStudent: { studentId, class: { status: 0 } },
-        payments: { none: { status: "CONFIRMED" } },
       },
       select: {
         id: true,
         dueDate: true,
         finalAmount: true,
+        freeCard: true,
         classStudent: { select: { classId: true, class: { select: { name: true } } } },
+        payments: { select: PAYMENT_STATE_SELECT },
       },
     }),
   ]);
@@ -262,12 +266,16 @@ export async function getStudentUpcomingCountdowns(studentId: string): Promise<S
 
   for (const f of fees) {
     if (!f.dueDate) continue;
+    // Only what is still outstanding (lib/fee-payment-state.ts): a fully paid
+    // fee has no countdown; a partly paid one counts down for the rest.
+    const { outstanding } = feePaymentState(f, f.payments);
+    if (outstanding <= 0) continue;
     items.push({
       id: `payment-${f.id}`,
       kind: "PAYMENT",
       message: "Payment due in",
       title: `${f.classStudent.class.name} fee`,
-      subtitle: `Rs ${f.finalAmount.toLocaleString()}`,
+      subtitle: `Rs ${outstanding.toLocaleString()}`,
       startsAt: f.dueDate.toISOString(),
       href: `/student/payments?classId=${f.classStudent.classId}`,
     });

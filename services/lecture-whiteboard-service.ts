@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
 import { sanitizeWhiteboardScene } from "@/lib/whiteboard-data";
+import { assertClassAccessForStudent } from "@/services/class-access-service";
 import type { WhiteboardDetail, WhiteboardListItem, WhiteboardScene } from "@/types/whiteboard";
 
 const listSelect = {
@@ -224,10 +225,13 @@ export async function assertStudentCanWatchWhiteboard(studentId: string, session
       lectureId: { not: null },
       class: { students: { some: { studentId, isActive: true } } },
     },
-    select: { id: true },
+    select: { id: true, classId: true },
   });
 
   if (!session) {
     throw new AppError("Active lecture session not found.", 404, "SESSION_NOT_FOUND");
   }
+
+  // Payment-due access control (services/class-access-service.ts).
+  await assertClassAccessForStudent(studentId, session.classId);
 }

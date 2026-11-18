@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { getWhiteboardForStudent } from "@/services/lecture-whiteboard-service";
+import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,8 @@ export async function GET(
     if (!lectureId?.trim() || !whiteboardId?.trim()) {
       throw new AppError("Lecture id and whiteboard id are required.", 400, "VALIDATION_ERROR");
     }
+    // Payment-due access control (services/class-access-service.ts).
+    await assertContentAccessForStudent(session.studentId, { lectureId });
 
     const whiteboard = await getWhiteboardForStudent(session.studentId, lectureId, whiteboardId);
     return apiSuccess({ whiteboard });

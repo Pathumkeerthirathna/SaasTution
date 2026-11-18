@@ -96,7 +96,7 @@ const client = {
     },
   },
 };
-fake("lib/prisma.ts", { prisma: { ...client, $transaction: async (fn) => fn(client) } });
+fake("lib/prisma.ts", { prisma: { ...client, $transaction: async (fn) => (Array.isArray(fn) ? Promise.all(fn) : fn(client)) } });
 fake("lib/server-clock.ts", { serverNow: async () => new Date(NOW), serverNowSync: () => new Date(NOW) });
 fake("lib/error-logging/server-logger.ts", { logErrorEntry: () => null });
 

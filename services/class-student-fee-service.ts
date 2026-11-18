@@ -10,6 +10,7 @@ import {
 } from "@/lib/fee-waiver";
 import { getPaymentDueStatus } from "@/lib/payment-validation";
 import { emitStudentDataChange } from "@/lib/session-events";
+import { feePaymentState, hasAwaitingSubmission, PAYMENT_STATE_SELECT, type FeePaymentState } from "@/lib/fee-payment-state";
 import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import {
   type ClassMonthWaiverContext,
@@ -42,6 +43,25 @@ export type FeePaymentDetail = {
   hasSlip: boolean;
   submittedAt: string;
   confirmedAt: string | null;
+  /** STUDENT_SLIP (uploaded by the student) or TEACHER_RECORDED. */
+  source: "STUDENT_SLIP" | "TEACHER_RECORDED";
+  /** A reversed payment stays in the history but no longer counts as received. */
+  reversed: boolean;
+  /** TEACHER_RECORDED only (null for student slips). */
+  paymentMethod: "CASH" | "BANK_TRANSFER" | "OTHER" | null;
+  /** When the teacher received the money (real UTC instant); TEACHER_RECORDED only. */
+  receivedAt: string | null;
+  /** Name of the teacher who recorded it (null when unknown or a slip). */
+  recordedByName: string | null;
+  /** The audit record of the reversal, when reversed. */
+  reversal: {
+    amount: number;
+    reason: string;
+    reversedByRole: "TEACHER" | "ADMIN";
+    /** The teacher's name; null for an administrator or an unknown account. */
+    reversedByName: string | null;
+    createdAt: string;
+  } | null;
 };
 
 /** Snapshot of the automatic joining waiver applied to a fee row. */
@@ -81,8 +101,19 @@ export type MonthlyFeeRow = {
   dueDate: string | null;
   createdAt: string | null;
   hasPaid: boolean;
-  paymentStatus: "PAID" | "PENDING" | "UNPAID";
+  /**
+   * From feePaymentState: PAID (received >= finalAmount), PARTIAL (received
+   * but an amount is still outstanding), FREE_CARD (an active Free Card and
+   * nothing received), PENDING (a slip awaits processing), UNPAID.
+   */
+  paymentStatus: "PAID" | "PARTIAL" | "PENDING" | "UNPAID" | "FREE_CARD";
+  /** Received / awaiting / outstanding amounts (feePaymentState). */
+  paymentSummary: Omit<FeePaymentState, "state">;
   payments: FeePaymentDetail[];
+  /** Teacher-issued Free Card: finalAmount is 0, the components are kept. */
+  freeCard: boolean;
+  /** Real UTC instant the Free Card was issued. */
+  freeCardIssuedAt: string | null;
 };
 
 export type MonthlyFeeSheet = {
@@ -109,14 +140,24 @@ export type MonthlyFeeSheet = {
   rows: MonthlyFeeRow[];
 };
 
-function computeFinalAmount(
+/**
+ * The amount a student pays. An active Free Card makes it 0 without touching
+ * the components underneath (they keep being maintained, so revoking the card
+ * restores the current calculation). Without a card: unchanged formula.
+ */
+export function computeFinalAmount(
   amount: number,
   discount: number,
   lateJoinDeduct: number,
-  waiverAmount: number
+  waiverAmount: number,
+  freeCard = false
 ) {
+  if (freeCard) return 0;
   return Math.max(0, amount - discount - lateJoinDeduct - waiverAmount);
 }
+
+const FREE_CARD_ACTIVE_MESSAGE =
+  "This student has a Free Card for this month. Revoke the Free Card before changing this fee.";
 
 // ---- Automatic joining waiver helpers (see lib/fee-waiver.ts) -------------------
 
@@ -210,13 +251,16 @@ function newRowWaiverColumns(
  */
 async function writeAutomaticWaiver(
   db: Db,
-  row: { id: string; updatedAt?: Date },
+  row: { id: string; updatedAt?: Date; freeCard: boolean },
   data: Prisma.ClassStudentFeeUpdateManyMutationInput
 ) {
   const { count } = await db.classStudentFee.updateMany({
     where: {
       id: row.id,
       ...(row.updatedAt ? { updatedAt: row.updatedAt } : {}),
+      // finalAmount was computed for this Free Card state: a card issued or
+      // revoked meanwhile wins (nothing written).
+      freeCard: row.freeCard,
       lateJoinDeductManual: false,
       payments: { none: { status: "CONFIRMED" } },
     },
@@ -500,7 +544,13 @@ async function processCurrentMonthFees(params: {
         joinWaiverFor(waiverContext, studentIdByEnrolment.get(row.classStudentId)!, row.classStudentId, currentFee),
         new Date()
       );
-      const nextFinalWithWaiver = computeFinalAmount(currentFee, row.discount, next.lateJoinDeduct, row.waiverAmount);
+      const nextFinalWithWaiver = computeFinalAmount(
+        currentFee,
+        row.discount,
+        next.lateJoinDeduct,
+        row.waiverAmount,
+        row.freeCard
+      );
 
       if (row.amount === currentFee && row.finalAmount === nextFinalWithWaiver && sameWaiver(row, next)) {
         continue;
@@ -518,15 +568,18 @@ async function processCurrentMonthFees(params: {
       currentFee,
       row.discount,
       row.lateJoinDeduct,
-      row.waiverAmount
+      row.waiverAmount,
+      row.freeCard
     );
 
     if (row.amount === currentFee && row.finalAmount === nextFinal) {
       continue;
     }
 
-    await prisma.classStudentFee.update({
-      where: { id: row.id },
+    // Conditional on the Free Card state read above: a card issued or revoked
+    // meanwhile wins (nothing written; the next pass uses the new state).
+    await prisma.classStudentFee.updateMany({
+      where: { id: row.id, freeCard: row.freeCard },
       data: { amount: currentFee, finalAmount: nextFinal },
     });
   }
@@ -684,8 +737,10 @@ export async function reprocessMonthlyFees(params: {
         discount: true,
         lateJoinDeduct: true,
         waiverAmount: true,
+        finalAmount: true,
+        freeCard: true,
         ...WAIVER_STATE_SELECT,
-        payments: { select: { status: true } },
+        payments: { select: PAYMENT_STATE_SELECT },
       },
     });
 
@@ -731,9 +786,9 @@ export async function reprocessMonthlyFees(params: {
 
         // Same write as below plus the waiver; skipped (not overwritten) if the
         // row became manual or paid in the meantime.
-        const written = await writeAutomaticWaiver(prisma, { id: row.id }, {
+        const written = await writeAutomaticWaiver(prisma, { id: row.id, freeCard: row.freeCard }, {
           amount: periodFee,
-          finalAmount: computeFinalAmount(periodFee, row.discount, next.lateJoinDeduct, row.waiverAmount),
+          finalAmount: computeFinalAmount(periodFee, row.discount, next.lateJoinDeduct, row.waiverAmount, row.freeCard),
           dueDate,
           status: 0,
           ...next,
@@ -743,15 +798,18 @@ export async function reprocessMonthlyFees(params: {
           continue;
         }
 
-        // Changed meanwhile (now manual or paid): fall through to the existing
-        // write below with fresh values, so a concurrent edit is not undone.
+        // Changed meanwhile (now manual, paid, or a Free Card issued /
+        // revoked): fall through to the existing write below with fresh
+        // values, so a concurrent edit is not undone.
         const fresh = await prisma.classStudentFee.findUnique({
           where: { id: row.id },
           select: {
             discount: true,
             lateJoinDeduct: true,
             waiverAmount: true,
-            payments: { select: { status: true } },
+            finalAmount: true,
+            freeCard: true,
+            payments: { select: PAYMENT_STATE_SELECT },
           },
         });
 
@@ -764,23 +822,34 @@ export async function reprocessMonthlyFees(params: {
 
       const paidNow = row.payments.some((p) => p.status === "CONFIRMED");
 
-      // A paid row is frozen: only its status is refreshed, the money is left
-      // exactly as the student paid against it.
-      await prisma.classStudentFee.update({
-        where: { id: row.id },
-        data: paidNow
-          ? { status: 1 }
-          : {
-              amount: periodFee,
-              finalAmount: computeFinalAmount(
-                periodFee,
-                row.discount,
-                row.lateJoinDeduct,
-                row.waiverAmount
-              ),
-              dueDate,
-              status: 0,
-            },
+      // A row with any confirmed payment is frozen (also after a reversal):
+      // the money is left exactly as it was paid against. Only the paid flag
+      // is refreshed: 1 when fully paid (feePaymentState), else 0, so a
+      // partly paid fee stays visible and payable.
+      if (paidNow) {
+        await prisma.classStudentFee.update({
+          where: { id: row.id },
+          data: { status: feePaymentState(row, row.payments).state === "PAID" ? 1 : 0 },
+        });
+        continue;
+      }
+
+      // Conditional on the Free Card state read above: a card issued or
+      // revoked meanwhile wins (nothing written).
+      await prisma.classStudentFee.updateMany({
+        where: { id: row.id, freeCard: row.freeCard },
+        data: {
+          amount: periodFee,
+          finalAmount: computeFinalAmount(
+            periodFee,
+            row.discount,
+            row.lateJoinDeduct,
+            row.waiverAmount,
+            row.freeCard
+          ),
+          dueDate,
+          status: 0,
+        },
       });
     }
   }
@@ -882,6 +951,8 @@ async function buildMonthlyFeeSheet(params: {
       joinWaiverComputedAt: true,
       waiverAmount: true,
       finalAmount: true,
+      freeCard: true,
+      freeCardIssuedAt: true,
       dueDate: true,
       createdAt: true,
       classStudent: {
@@ -900,15 +971,45 @@ async function buildMonthlyFeeSheet(params: {
           id: true,
           amount: true,
           status: true,
+          source: true,
+          reversal: {
+            select: { amount: true, reason: true, reversedByRole: true, reversedById: true, createdAt: true },
+          },
           note: true,
           teacherFeedback: true,
           slipFileName: true,
           submittedAt: true,
           confirmedAt: true,
+          paymentMethod: true,
+          receivedAt: true,
+          recordedByTeacher: { select: { name: true } },
         },
       },
     },
   });
+
+  // Names of the teachers who reversed payments (the reversal stores an id
+  // without a relation, so the audit survives the account): one query, only
+  // when a teacher reversal is on the sheet.
+  const reversingTeacherIds = Array.from(
+    new Set(
+      fees.flatMap((fee) =>
+        fee.payments.flatMap((payment) =>
+          payment.reversal?.reversedByRole === "TEACHER" ? [payment.reversal.reversedById] : []
+        )
+      )
+    )
+  );
+  const reversingTeacherNames = new Map(
+    reversingTeacherIds.length
+      ? (
+          await prisma.teacher.findMany({
+            where: { id: { in: reversingTeacherIds } },
+            select: { id: true, name: true },
+          })
+        ).map((teacher) => [teacher.id, teacher.name] as const)
+      : []
+  );
 
   // All assign/remove periods per student for this class, so the sheet can show
   // repeated enrolments within a month.
@@ -936,10 +1037,7 @@ async function buildMonthlyFeeSheet(params: {
 
   const rows: MonthlyFeeRow[] = fees
     .map((fee) => {
-      const confirmed = fee.payments.some((p) => p.status === "CONFIRMED");
-      const pending = fee.payments.some(
-        (p) => p.status === "PENDING" || p.status === "NEEDS_CLARIFICATION"
-      );
+      const { state, ...paymentSummary } = feePaymentState(fee, fee.payments);
 
       const studentId = fee.classStudent.student.id;
 
@@ -965,8 +1063,9 @@ async function buildMonthlyFeeSheet(params: {
         finalAmount: fee.finalAmount,
         dueDate: fee.dueDate ? fee.dueDate.toISOString() : null,
         createdAt: fee.createdAt ? fee.createdAt.toISOString() : null,
-        hasPaid: confirmed,
-        paymentStatus: confirmed ? "PAID" : pending ? "PENDING" : "UNPAID",
+        hasPaid: state === "PAID",
+        paymentStatus: state,
+        paymentSummary,
         payments: fee.payments.map((payment) => ({
           id: payment.id,
           amount: payment.amount,
@@ -978,7 +1077,26 @@ async function buildMonthlyFeeSheet(params: {
           confirmedAt: payment.confirmedAt
             ? payment.confirmedAt.toISOString()
             : null,
+          source: payment.source,
+          reversed: Boolean(payment.reversal),
+          paymentMethod: payment.paymentMethod,
+          receivedAt: payment.receivedAt ? payment.receivedAt.toISOString() : null,
+          recordedByName: payment.recordedByTeacher?.name ?? null,
+          reversal: payment.reversal
+            ? {
+                amount: payment.reversal.amount,
+                reason: payment.reversal.reason,
+                reversedByRole: payment.reversal.reversedByRole,
+                reversedByName:
+                  payment.reversal.reversedByRole === "TEACHER"
+                    ? reversingTeacherNames.get(payment.reversal.reversedById) ?? null
+                    : null,
+                createdAt: payment.reversal.createdAt.toISOString(),
+              }
+            : null,
         })),
+        freeCard: fee.freeCard,
+        freeCardIssuedAt: fee.freeCardIssuedAt ? fee.freeCardIssuedAt.toISOString() : null,
       } satisfies MonthlyFeeRow;
     })
     .sort((a, b) => a.studentName.localeCompare(b.studentName));
@@ -1094,6 +1212,7 @@ export async function setMonthlyFeeAmount(params: {
       discount: true,
       lateJoinDeduct: true,
       waiverAmount: true,
+      freeCard: true,
       ...WAIVER_STATE_SELECT,
       payments: { select: { status: true } },
     },
@@ -1101,6 +1220,13 @@ export async function setMonthlyFeeAmount(params: {
 
   if (allTargets.length === 0) {
     throw new AppError("No fee rows to update.", 404, "NOT_FOUND");
+  }
+
+  // One student's amount is not edited under an active Free Card (revoke it
+  // first). Apply-to-all keeps updating the amount underneath the card, which
+  // stays active (finalAmount remains 0).
+  if (!applyToAll && allTargets.some((row) => row.freeCard)) {
+    throw new AppError(FREE_CARD_ACTIVE_MESSAGE, 409, "FREE_CARD_ACTIVE");
   }
 
   // A paid fee row is frozen. For a single student that is an error; for an
@@ -1142,30 +1268,35 @@ export async function setMonthlyFeeAmount(params: {
         const next = nextWaivers.get(row.id);
 
         if (next) {
-          // Written only while still automatic and unpaid.
+          // Written only while still automatic and unpaid (and with the Free
+          // Card state the amount was computed for).
           return prisma.classStudentFee.updateMany({
             where: {
               id: row.id,
               lateJoinDeductManual: false,
+              freeCard: row.freeCard,
               payments: { none: { status: "CONFIRMED" } },
             },
             data: {
               amount,
-              finalAmount: computeFinalAmount(amount, row.discount, next.lateJoinDeduct, row.waiverAmount),
+              finalAmount: computeFinalAmount(amount, row.discount, next.lateJoinDeduct, row.waiverAmount, row.freeCard),
               ...next,
             },
           });
         }
 
-        return prisma.classStudentFee.update({
-          where: { id: row.id },
+        // Conditional on the Free Card state read above: a card issued or
+        // revoked meanwhile wins (nothing written).
+        return prisma.classStudentFee.updateMany({
+          where: { id: row.id, freeCard: row.freeCard },
           data: {
             amount,
             finalAmount: computeFinalAmount(
               amount,
               row.discount,
               row.lateJoinDeduct,
-              row.waiverAmount
+              row.waiverAmount,
+              row.freeCard
             ),
           },
         });
@@ -1236,6 +1367,7 @@ export async function updateStudentFeeAdjustment(params: {
       discount: true,
       lateJoinDeduct: true,
       waiverAmount: true,
+      freeCard: true,
       payments: { select: { status: true } },
       classStudent: { select: { classId: true } },
     },
@@ -1251,6 +1383,12 @@ export async function updateStudentFeeAdjustment(params: {
       409,
       "FEE_LOCKED"
     );
+  }
+
+  // Adjustments are not edited under an active Free Card: the values stay as
+  // they were, ready for when the card is revoked.
+  if (fee.freeCard) {
+    throw new AppError(FREE_CARD_ACTIVE_MESSAGE, 409, "FREE_CARD_ACTIVE");
   }
 
   const clamp = (value: number | undefined, current: number) => {
@@ -1281,8 +1419,10 @@ export async function updateStudentFeeAdjustment(params: {
   const lateJoinEnteredByTeacher =
     params.lateJoinDeduct !== undefined && lateJoinDeduct !== fee.lateJoinDeduct;
 
-  const updated = await prisma.classStudentFee.update({
-    where: { id: fee.id },
+  // Conditional: a Free Card issued since the read above wins (its
+  // finalAmount must stay 0), and nothing is written.
+  const { count } = await prisma.classStudentFee.updateMany({
+    where: { id: fee.id, freeCard: false },
     data: {
       discount,
       lateJoinDeduct,
@@ -1290,6 +1430,14 @@ export async function updateStudentFeeAdjustment(params: {
       finalAmount,
       ...(lateJoinEnteredByTeacher ? { lateJoinDeductManual: true, ...CLEARED_WAIVER_SNAPSHOT } : {}),
     },
+  });
+
+  if (count === 0) {
+    throw new AppError(FREE_CARD_ACTIVE_MESSAGE, 409, "FREE_CARD_ACTIVE");
+  }
+
+  const updated = await prisma.classStudentFee.findUniqueOrThrow({
+    where: { id: fee.id },
     select: {
       id: true,
       amount: true,
@@ -1348,6 +1496,7 @@ export async function recalculateJoinWaiversForClassMonth(params: {
       lateJoinDeduct: true,
       waiverAmount: true,
       finalAmount: true,
+      freeCard: true,
       ...WAIVER_STATE_SELECT,
     },
   });
@@ -1359,7 +1508,7 @@ export async function recalculateJoinWaiversForClassMonth(params: {
       joinWaiverFor(context, row.classStudent.studentId, row.classStudentId, row.amount),
       new Date()
     );
-    const finalAmount = computeFinalAmount(row.amount, row.discount, next.lateJoinDeduct, row.waiverAmount);
+    const finalAmount = computeFinalAmount(row.amount, row.discount, next.lateJoinDeduct, row.waiverAmount, row.freeCard);
 
     if (sameWaiver(row, next) && row.finalAmount === finalAmount) {
       continue;
@@ -1420,6 +1569,7 @@ export async function resetLateJoinDeductToAutomatic(params: { teacherId: string
       discount: true,
       waiverAmount: true,
       lateJoinDeductManual: true,
+      freeCard: true,
       classStudentId: true,
       classStudent: { select: { classId: true, studentId: true } },
       payments: { select: { status: true } },
@@ -1432,6 +1582,10 @@ export async function resetLateJoinDeductToAutomatic(params: { teacherId: string
 
   if (fee.payments.some((p) => p.status === "CONFIRMED")) {
     throw new AppError("This fee is locked because the student has already paid.", 409, "FEE_LOCKED");
+  }
+
+  if (fee.freeCard) {
+    throw new AppError(FREE_CARD_ACTIVE_MESSAGE, 409, "FREE_CARD_ACTIVE");
   }
 
   if (!fee.lateJoinDeductManual) {
@@ -1463,12 +1617,13 @@ export async function resetLateJoinDeductToAutomatic(params: { teacherId: string
       id: fee.id,
       updatedAt: fee.updatedAt,
       lateJoinDeductManual: true,
+      freeCard: false,
       payments: { none: { status: "CONFIRMED" } },
     },
     data: {
       ...next,
       lateJoinDeductManual: false,
-      finalAmount: computeFinalAmount(fee.amount, fee.discount, next.lateJoinDeduct, fee.waiverAmount),
+      finalAmount: computeFinalAmount(fee.amount, fee.discount, next.lateJoinDeduct, fee.waiverAmount, fee.freeCard),
     },
   });
 
@@ -1505,3 +1660,327 @@ export async function resetLateJoinDeductToAutomatic(params: { teacherId: string
     },
   });
 }
+
+// ---- Teacher-issued Free Cards ------------------------------------------------------
+
+export const FREE_CARD_MAX_FEES = 500;
+const FREE_CARD_LOCK_TIMEOUT_MS = 3_000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type FreeCardAction = "issue" | "revoke";
+
+export type FreeCardSkipReason =
+  | "NOT_IN_SHEET"
+  | "CONFIRMED_PAYMENT"
+  | "PENDING_PAYMENT"
+  | "CLARIFICATION_PAYMENT"
+  | "ALREADY_FREE_CARD"
+  | "NO_FREE_CARD";
+
+const FREE_CARD_SKIP_MESSAGES: Record<FreeCardSkipReason, string> = {
+  NOT_IN_SHEET: "Not a fee of this class and month.",
+  CONFIRMED_PAYMENT: "A payment is already confirmed for this fee.",
+  PENDING_PAYMENT: "A payment slip is waiting for your confirmation.",
+  CLARIFICATION_PAYMENT: "A payment slip is waiting for the student's clarification.",
+  ALREADY_FREE_CARD: "Already has a Free Card for this month.",
+  NO_FREE_CARD: "Has no Free Card for this month.",
+};
+
+export type FreeCardResult = {
+  action: FreeCardAction;
+  /** Fees whose Free Card was issued / revoked by this request. */
+  processed: { feeId: string; studentName: string }[];
+  skipped: { feeId: string; studentName: string | null; reason: FreeCardSkipReason; message: string }[];
+  sheet: MonthlyFeeSheet;
+};
+
+/** Validates the bulk request body (classId, year, month, feeIds, action). */
+export function parseFreeCardRequest(body: unknown): {
+  classId: string;
+  year: number;
+  month: number;
+  feeIds: string[];
+  action: FreeCardAction;
+} {
+  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const classId = typeof input.classId === "string" ? input.classId.trim() : "";
+  const year = Number(input.year);
+  const month = Number(input.month);
+  const action = input.action;
+
+  if (!classId) {
+    throw new AppError("Class id is required.", 400, "VALIDATION_ERROR");
+  }
+  if (!Number.isInteger(year) || year < 1900 || year > 3000) {
+    throw new AppError("A valid year is required.", 400, "VALIDATION_ERROR");
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new AppError("Month must be between 1 and 12.", 400, "VALIDATION_ERROR");
+  }
+  if (action !== "issue" && action !== "revoke") {
+    throw new AppError('Action must be "issue" or "revoke".', 400, "VALIDATION_ERROR");
+  }
+  if (!Array.isArray(input.feeIds) || input.feeIds.length === 0) {
+    throw new AppError("Select at least one student.", 400, "VALIDATION_ERROR");
+  }
+  if (input.feeIds.length > FREE_CARD_MAX_FEES) {
+    throw new AppError(`Select at most ${FREE_CARD_MAX_FEES} students at a time.`, 400, "VALIDATION_ERROR");
+  }
+  if (!input.feeIds.every((id) => typeof id === "string" && UUID_PATTERN.test(id))) {
+    throw new AppError("Invalid fee id.", 400, "VALIDATION_ERROR");
+  }
+
+  return {
+    classId,
+    year,
+    month,
+    feeIds: Array.from(new Set(input.feeIds as string[])),
+    action,
+  };
+}
+
+export function isLockContention(error: unknown) {
+  const code = (error as { code?: unknown } | null)?.code;
+  // P2010: raw query failed (lock_timeout 55P03, deadlock 40P01);
+  // P2028: transaction API error (timed out); P2034: write conflict.
+  return code === "P2010" || code === "P2028" || code === "P2034";
+}
+
+/**
+ * Issues or revokes Free Cards on fees of one class and month, all in one
+ * transaction. Each fee row is locked (FOR UPDATE, in id order) and re-read
+ * under the lock, so a payment submitted concurrently (which locks the same
+ * row, see app/api/student/payments/route.ts) is either seen here, and the
+ * fee is skipped, or sees the card and is refused. Writes are conditional as
+ * well, and only ever touch freeCard, its issue details and finalAmount:
+ * discount, lateJoinDeduct, waiverAmount, the automatic waiver columns and
+ * every payment stay exactly as they are. Repeating a request changes
+ * nothing (already issued / not issued fees are reported as skipped).
+ */
+export async function setFreeCards(params: {
+  teacherId: string;
+  classId: string;
+  year: number;
+  month: number;
+  feeIds: string[];
+  action: FreeCardAction;
+}): Promise<FreeCardResult> {
+  const { teacherId, classId, year, month, feeIds, action } = params;
+  const classInfo = await assertTeacherOwnsClass(teacherId, classId);
+  const issue = action === "issue";
+
+  type Outcome = { processed: FreeCardResult["processed"]; skipped: FreeCardResult["skipped"] };
+
+  let outcome: Outcome;
+  try {
+    outcome = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${FREE_CARD_LOCK_TIMEOUT_MS}ms'`);
+
+        // Lock in a fixed order so two overlapping bulk requests never deadlock.
+        for (const feeId of [...feeIds].sort()) {
+          await tx.$queryRaw`SELECT "id" FROM "ClassStudentFee" WHERE "id" = ${feeId} FOR UPDATE`;
+        }
+
+        const fees = await tx.classStudentFee.findMany({
+          where: {
+            id: { in: feeIds },
+            year,
+            month,
+            classStudent: { classId, class: { teacherId }, student: { status: 0 } },
+          },
+          select: {
+            id: true,
+            amount: true,
+            discount: true,
+            lateJoinDeduct: true,
+            waiverAmount: true,
+            freeCard: true,
+            classStudent: { select: { student: { select: { name: true } } } },
+            payments: { select: { status: true } },
+          },
+        });
+        const byId = new Map(fees.map((fee) => [fee.id, fee]));
+
+        const result: Outcome = { processed: [], skipped: [] };
+        const skip = (feeId: string, studentName: string | null, reason: FreeCardSkipReason) =>
+          result.skipped.push({ feeId, studentName, reason, message: FREE_CARD_SKIP_MESSAGES[reason] });
+
+        for (const feeId of feeIds) {
+          const fee = byId.get(feeId);
+          if (!fee) {
+            skip(feeId, null, "NOT_IN_SHEET");
+            continue;
+          }
+
+          const studentName = fee.classStudent.student.name;
+          const statuses = new Set(fee.payments.map((p) => p.status));
+
+          if (statuses.has("CONFIRMED")) {
+            skip(feeId, studentName, "CONFIRMED_PAYMENT");
+            continue;
+          }
+
+          if (issue) {
+            if (fee.freeCard) {
+              skip(feeId, studentName, "ALREADY_FREE_CARD");
+              continue;
+            }
+            if (statuses.has("PENDING")) {
+              skip(feeId, studentName, "PENDING_PAYMENT");
+              continue;
+            }
+            if (statuses.has("NEEDS_CLARIFICATION")) {
+              skip(feeId, studentName, "CLARIFICATION_PAYMENT");
+              continue;
+            }
+
+            // Only while still without a card and without any payment record.
+            const { count } = await tx.classStudentFee.updateMany({
+              where: { id: fee.id, freeCard: false, payments: { none: {} } },
+              data: {
+                freeCard: true,
+                freeCardIssuedAt: new Date(),
+                freeCardIssuedByTeacherId: teacherId,
+                finalAmount: 0,
+              },
+            });
+            if (count === 0) {
+              skip(feeId, studentName, "PENDING_PAYMENT");
+              continue;
+            }
+          } else {
+            if (!fee.freeCard) {
+              skip(feeId, studentName, "NO_FREE_CARD");
+              continue;
+            }
+
+            // The fee as currently calculated from the components maintained
+            // underneath the card (amount, automatic waiver, adjustments).
+            const { count } = await tx.classStudentFee.updateMany({
+              where: { id: fee.id, freeCard: true, payments: { none: { status: "CONFIRMED" } } },
+              data: {
+                freeCard: false,
+                freeCardIssuedAt: null,
+                freeCardIssuedByTeacherId: null,
+                finalAmount: computeFinalAmount(fee.amount, fee.discount, fee.lateJoinDeduct, fee.waiverAmount),
+              },
+            });
+            if (count === 0) {
+              skip(feeId, studentName, "CONFIRMED_PAYMENT");
+              continue;
+            }
+          }
+
+          result.processed.push({ feeId, studentName });
+        }
+
+        return result;
+      },
+      { maxWait: 5_000, timeout: 15_000 }
+    );
+  } catch (error) {
+    if (isLockContention(error)) {
+      throw new AppError(
+        "These fees are being changed by another request. Please try again.",
+        409,
+        "FREE_CARD_BUSY"
+      );
+    }
+    throw error;
+  }
+
+  if (outcome.processed.length > 0) {
+    // Realtime: the students' payment pages should show (or drop) the card.
+    emitStudentDataChange({ classId });
+  }
+
+  return {
+    action,
+    processed: outcome.processed,
+    skipped: outcome.skipped,
+    sheet: await buildReadOnlySheet(classInfo, year, month),
+  };
+}
+
+/**
+ * The teacher's ACTIVE enrolments (ClassStudent ids) whose own fee for the
+ * month carries a Free Card (read-only; the teacher dashboard's "Payments
+ * Due"). Keyed by enrolment, not by class + student: a card on an earlier,
+ * removed enrolment never covers the fee of a re-enrolment in the same month.
+ */
+export async function getFreeCardEnrolmentIds(params: {
+  teacherId: string;
+  year: number;
+  month: number;
+}): Promise<Set<string>> {
+  const fees = await prisma.classStudentFee.findMany({
+    where: {
+      year: params.year,
+      month: params.month,
+      freeCard: true,
+      classStudent: { isActive: true, class: { teacherId: params.teacherId, status: 0 } },
+    },
+    select: { classStudentId: true },
+  });
+  return new Set(fees.map((fee) => fee.classStudentId));
+}
+
+/**
+ * Students settled by Free Cards for one class and month (pure; the legacy
+ * GET /api/classes/[id]/payments summary). A student counts only when EVERY
+ * enrolment of theirs overlapping the month has a fee row for that month with
+ * an active card: a card on an earlier, removed enrolment never covers the
+ * payable fee row of a re-enrolment, and an enrolment without a fee row is
+ * not covered either.
+ */
+export function studentsSettledByFreeCards(
+  enrolments: readonly { id: string; studentId: string }[],
+  freeCardEnrolmentIds: ReadonlySet<string>
+): Set<string> {
+  const byStudent = new Map<string, string[]>();
+  for (const enrolment of enrolments) {
+    const list = byStudent.get(enrolment.studentId) ?? [];
+    list.push(enrolment.id);
+    byStudent.set(enrolment.studentId, list);
+  }
+
+  const settled = new Set<string>();
+  for (const [studentId, ids] of byStudent) {
+    if (ids.length > 0 && ids.every((id) => freeCardEnrolmentIds.has(id))) {
+      settled.add(studentId);
+    }
+  }
+  return settled;
+}
+
+/**
+ * Payment position of each ACTIVE enrolment's fee for one month (teacher
+ * dashboard "Payments Due"), keyed by enrolment (ClassStudent id), from the
+ * shared calculation. `awaiting`: a slip awaits processing.
+ */
+export async function getEnrolmentPaymentStates(params: {
+  teacherId: string;
+  year: number;
+  month: number;
+}): Promise<Map<string, FeePaymentState & { awaiting: boolean }>> {
+  const fees = await prisma.classStudentFee.findMany({
+    where: {
+      year: params.year,
+      month: params.month,
+      classStudent: { isActive: true, class: { teacherId: params.teacherId, status: 0 } },
+    },
+    select: { classStudentId: true, finalAmount: true, freeCard: true, payments: { select: PAYMENT_STATE_SELECT } },
+  });
+  return new Map(
+    fees.map((fee) => [
+      fee.classStudentId,
+      { ...feePaymentState(fee, fee.payments), awaiting: hasAwaitingSubmission(fee.payments) },
+    ])
+  );
+}
+
+// ---- Partial payments: the shared payment calculation ------------------------------
+// Defined in lib/fee-payment-state.ts (pure; also used by client components).
+export { feePaymentState, hasAwaitingSubmission, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
+export type { FeePaymentRecord, FeePaymentState, FeePaymentStateName } from "@/lib/fee-payment-state";

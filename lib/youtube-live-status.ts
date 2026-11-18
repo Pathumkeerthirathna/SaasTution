@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { type YouTubeLiveBroadcast } from "@/lib/youtube-live";
+import { getClassAccessRestrictions } from "@/services/class-access-service";
 import { clearCompleteRequested, findDepartureSendState, youTubeEndedCloseData } from "@/lib/youtube-feature-state";
 import { getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
 import { YouTubeBroadcastStatus } from "@prisma/client";
@@ -53,6 +54,13 @@ export async function getActiveYouTubeLives(
     try {
         const cutoff = new Date(Date.now() - CANDIDATE_WINDOW_MS);
 
+        // Payment-due access control: a class restricted for this student
+        // never hands out its live watch link (services/class-access-service.ts).
+        const restrictedClassIds =
+            options.studentId !== undefined
+                ? [...new Set((await getClassAccessRestrictions(options.studentId)).map((r) => r.classId))]
+                : [];
+
         const candidates = await prisma.youTubeLiveBroadcast.findMany({
             where: {
                 endedAt: null,
@@ -63,6 +71,7 @@ export async function getActiveYouTubeLives(
                         ? { class: { teacherId: options.teacherId } }
                         : {
                               class: {
+                                  ...(restrictedClassIds.length > 0 ? { id: { notIn: restrictedClassIds } } : {}),
                                   students: {
                                       some: {
                                           studentId: options.studentId,

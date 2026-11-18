@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
+import { feePaymentState, type FeePaymentStateName } from "@/lib/fee-payment-state";
 import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import { recalculateAfterStudentDecision } from "@/services/fee-waiver-events";
@@ -1180,6 +1181,14 @@ export async function getStudentClassesForTeacher(
       removedAt: true,
       removeReason: true,
 
+      // This enrolment's fees settled by a teacher-issued Free Card (they
+      // have no payment record, so the payment list alone would miss them).
+      fees: {
+        where: { freeCard: true },
+        orderBy: [{ year: "desc" }, { month: "desc" }],
+        select: { id: true, year: true, month: true },
+      },
+
       class: {
         select: {
           id: true,
@@ -1567,8 +1576,9 @@ const MONTH_LABELS = [
  * Builds the student's payment position from the ClassStudentFee ledger.
  *
  * Every ClassStudentFee row is a charge the student owes for one class in one
- * month. A row counts as "done" when it carries a CONFIRMED ClassPayment;
- * everything else is "not done". Amounts are the row's finalAmount.
+ * month. A row counts as "done" when it carries a CONFIRMED ClassPayment or a
+ * teacher-issued Free Card (settled, finalAmount 0); everything else is "not
+ * done". Amounts are the row's finalAmount.
  */
 export async function getStudentPaymentSummary(studentId: string) {
   const feeRows = await prisma.classStudentFee.findMany({
@@ -1583,6 +1593,7 @@ export async function getStudentPaymentSummary(studentId: string) {
       finalAmount: true,
       dueDate: true,
       status: true,
+      freeCard: true,
       classStudent: {
         select: {
           class: {
@@ -1596,6 +1607,7 @@ export async function getStudentPaymentSummary(studentId: string) {
           id: true,
           amount: true,
           status: true,
+          reversal: { select: { amount: true } },
           submittedAt: true,
           confirmedAt: true,
         },
@@ -1620,6 +1632,11 @@ export async function getStudentPaymentSummary(studentId: string) {
       finalAmount: number;
       dueDate: string | null;
       paid: boolean;
+      /** Settled by a teacher-issued Free Card (finalAmount 0). */
+      freeCard: boolean;
+      state: FeePaymentStateName;
+      paidAmount: number;
+      outstanding: number;
       payment: {
         id: string;
         amount: number;
@@ -1640,19 +1657,23 @@ export async function getStudentPaymentSummary(studentId: string) {
   for (const row of feeRows) {
     const cls = row.classStudent.class;
 
-    const confirmed = row.payments.find((p) => p.status === "CONFIRMED");
+    // The shared calculation (lib/fee-payment-state.ts): settled when fully
+    // paid or covered by a Free Card; received money is what was confirmed
+    // (and not reversed); the rest of the fee is still unpaid.
+    const position = feePaymentState(row, row.payments);
+    const confirmed = row.payments.find((p) => p.status === "CONFIRMED" && !p.reversal);
     const latest = row.payments[0] ?? null;
-    const paid = Boolean(confirmed) || row.status === 1;
+    const paid = position.state === "PAID" || position.state === "FREE_CARD";
 
     const chosen = confirmed ?? latest;
 
     if (paid) {
       paidCount += 1;
-      paidAmount += row.finalAmount;
     } else {
       unpaidCount += 1;
-      unpaidAmount += row.finalAmount;
     }
+    paidAmount += position.confirmedTotal;
+    unpaidAmount += position.outstanding;
 
     let bucket = buckets.get(cls.id);
     if (!bucket) {
@@ -1673,11 +1694,11 @@ export async function getStudentPaymentSummary(studentId: string) {
     bucket.totalAmount += row.finalAmount;
     if (paid) {
       bucket.paidCount += 1;
-      bucket.paidAmount += row.finalAmount;
     } else {
       bucket.unpaidCount += 1;
-      bucket.unpaidAmount += row.finalAmount;
     }
+    bucket.paidAmount += position.confirmedTotal;
+    bucket.unpaidAmount += position.outstanding;
 
     bucket.fees.push({
       id: row.id,
@@ -1687,6 +1708,11 @@ export async function getStudentPaymentSummary(studentId: string) {
       finalAmount: row.finalAmount,
       dueDate: row.dueDate ? row.dueDate.toISOString() : null,
       paid,
+      freeCard: row.freeCard,
+      /** PAID / PARTIAL / PENDING / UNPAID / FREE_CARD (lib/fee-payment-state.ts). */
+      state: position.state,
+      paidAmount: position.confirmedTotal,
+      outstanding: position.outstanding,
       payment: chosen
         ? {
             id: chosen.id,
