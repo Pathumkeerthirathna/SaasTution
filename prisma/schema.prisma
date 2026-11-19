@@ -2719,6 +2719,16 @@ model RecordedLecture {
   /// UPPER_SNAKE code; set exactly when FAILED (CHECK).
   failureCode String?              @db.VarChar(64)
 
+  /// Public class pages only (migration 20261124120000_add_recorded_lecture_publication):
+  /// PUBLIC lists the recording on its class's public page while the
+  /// teacher's public profile is enabled; access FREE ("Unlocked") also lets
+  /// anyone play it there, LOCKED shows it behind a lock. Every new and every
+  /// existing recording is PRIVATE + LOCKED (database defaults; the upload
+  /// never sets them). Enrolled students are NOT limited by these: the
+  /// student access filter does not read them.
+  visibility RecordingVisibility @default(PRIVATE)
+  access     RecordingAccess     @default(LOCKED)
+
   status             Int       @default(0)
   /// When deletion was requested; set exactly when status <> 0 (CHECK).
   deletedAt          DateTime?

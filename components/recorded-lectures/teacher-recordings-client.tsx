@@ -68,6 +68,17 @@ const STATE_TONE: Record<TeacherRecordingDto["state"], string> = {
   FAILED: "bg-rose-50 text-rose-800 border-rose-200",
 };
 
+// Public class page settings (saved through PUT /api/recorded-lectures/[id]/publication).
+const PRIVACY_OPTIONS: { value: TeacherRecordingDto["visibility"]; label: string }[] = [
+  { value: "PRIVATE", label: "Private" },
+  { value: "PUBLIC", label: "Public" },
+];
+
+const VIEWING_ACCESS_OPTIONS: { value: TeacherRecordingDto["access"]; label: string }[] = [
+  { value: "LOCKED", label: "Locked" },
+  { value: "FREE", label: "Unlocked" },
+];
+
 const PHASE_LABEL: Record<UploadSnapshot["phase"], string> = {
   idle: "Waiting",
   starting: "Starting…",
@@ -118,6 +129,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
   const [preview, setPreview] = useState<TeacherRecordingDto | null>(null);
   const [resumeFor, setResumeFor] = useState<TeacherRecordingDto | null>(null);
   const resumeInput = useRef<HTMLInputElement | null>(null);
+  const [publishing, setPublishing] = useState<ReadonlySet<string>>(new Set());
 
   const storeRef = useRef<RecordingStore | null>(null);
   useEffect(() => {
@@ -339,6 +351,42 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
       await refresh();
     } catch {
       setEditing((prev) => (prev ? { ...prev, saving: false, error: "The connection failed. Please try again." } : prev));
+    }
+  }
+
+  // ---- Public class page settings (privacy / viewing access) ----
+
+  async function savePublication(target: TeacherRecordingDto, update: { visibility?: TeacherRecordingDto["visibility"]; access?: TeacherRecordingDto["access"] }) {
+    if (publishing.has(target.id)) return;
+    setPublishing((prev) => new Set(prev).add(target.id));
+    try {
+      const response = await fetch(`/api/recorded-lectures/${encodeURIComponent(target.id)}/publication`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+      const json = await readJson(response);
+      if (!response.ok) {
+        setNotice(
+          response.status === 401
+            ? { tone: "error", text: "Your session has ended. Please sign in again.", signIn: true }
+            : { tone: "error", text: response.status === 404 ? "This recording is no longer available." : json.error?.message ?? "The setting could not be saved." }
+        );
+        return;
+      }
+      const saved = (json.data as { recording?: { id: string; visibility: TeacherRecordingDto["visibility"]; access: TeacherRecordingDto["access"] } } | undefined)?.recording;
+      if (saved) {
+        setRecordings((prev) => prev.map((r) => (r.id === saved.id ? { ...r, visibility: saved.visibility, access: saved.access } : r)));
+      }
+      setNotice({ tone: "success", text: `Part ${target.partNumber} settings saved.` });
+    } catch {
+      setNotice({ tone: "error", text: "The connection failed. Please try again." });
+    } finally {
+      setPublishing((prev) => {
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
     }
   }
 
@@ -581,6 +629,49 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
                     <p className="text-xs text-amber-800">
                       This upload is not finished. To continue it, choose the same file again (on this or another computer), or delete this part.
                     </p>
+                  ) : null}
+
+                  {r.state !== "FAILED" ? (
+                    <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Privacy
+                        <select
+                          value={r.visibility}
+                          disabled={publishing.has(r.id)}
+                          onChange={(event) => void savePublication(r, { visibility: event.target.value as TeacherRecordingDto["visibility"] })}
+                          className="mt-1 block min-h-[40px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm disabled:opacity-60"
+                        >
+                          {PRIVACY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Viewing access
+                        <select
+                          value={r.access}
+                          disabled={publishing.has(r.id)}
+                          onChange={(event) => void savePublication(r, { access: event.target.value as TeacherRecordingDto["access"] })}
+                          className="mt-1 block min-h-[40px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm disabled:opacity-60"
+                        >
+                          {VIEWING_ACCESS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <p className="break-words text-[11px] text-slate-500 sm:col-span-2">
+                        {r.visibility === "PRIVATE"
+                          ? "Not shown on your public class page."
+                          : r.access === "FREE"
+                            ? "Shown on your public class page; anyone can watch it there."
+                            : "Shown on your public class page with a lock; visitors are asked to log in or register."}{" "}
+                        Public parts appear only once ready and while your public profile is enabled. Enrolled students can always watch every ready part.
+                      </p>
+                    </div>
                   ) : null}
 
                   {isEditing && editing ? (

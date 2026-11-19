@@ -150,6 +150,10 @@ const prisma = {
             return lectureView(select);
         }
     },
+    // Uploaded recorded lectures (getPublicClassSessionsWithUploads): none in this suite,
+    // so the public pages' sessions are exactly getPublicClassSessions' (covered by
+    // tests/recorded-lectures/public-recordings.test.cjs).
+    recordedLecture: { findMany: async () => [] },
     youTubeRecording: {
         // The teacher's recording list.
         findMany: async ({ where, select }) =>

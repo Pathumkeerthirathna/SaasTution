@@ -34,15 +34,16 @@ const statements = sql
   .map((s) => s.trim())
   .filter(Boolean);
 
-test("placement: the latest migration, after the Free Card, payment access and partial payment migrations", () => {
+test("placement: after the Free Card, payment access and partial payment migrations; only approved migrations follow", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
   assert.deepEqual(all.slice(all.indexOf(FREE_CARD_MIGRATION)), [
     FREE_CARD_MIGRATION,
     PAYMENT_ACCESS_MIGRATION,
     PARTIAL_PAYMENT_MIGRATION,
     MIGRATION,
+    // Approved later migrations (each with its own guard test).
+    "20261124120000_add_recorded_lecture_publication", // Recorded lecture public profile (tests/recorded-lectures/publication-migration-guard.test.cjs)
   ]);
-  assert.equal(all[all.length - 1], MIGRATION);
 });
 
 test("exactly one column: BOOLEAN NOT NULL DEFAULT false on ClassStudent", () => {

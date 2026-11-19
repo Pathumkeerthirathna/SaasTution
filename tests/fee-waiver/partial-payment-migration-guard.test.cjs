@@ -26,6 +26,7 @@ test("placement: right after the payment access one; only the approved Free Card
     "20261121120000_add_class_payment_access_control",
     MIGRATION,
     "20261123120000_add_class_student_free_card_eligible",
+    "20261124120000_add_recorded_lecture_publication", // Recorded lecture public profile (tests/recorded-lectures/publication-migration-guard.test.cjs)
   ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");

@@ -1,5 +1,6 @@
 import ClassLandingPage from "@/components/teacherProfile/classLanding/ClassLandingPage";
-import { getPublicClass, getPublicClassNotes, getPublicClassSessions } from "@/services/class-service";
+import { getPublicClass, getPublicClassNotes } from "@/services/class-service";
+import { getPublicClassSessionsWithUploads } from "@/services/recorded-lecture-public-service";
 import { notFound } from "next/navigation";
 
 interface Props {
@@ -16,7 +17,7 @@ export default async function Page({ params }: Props) {
   }
 
   const [sessions, notes] = await Promise.all([
-    getPublicClassSessions(params.classId),
+    getPublicClassSessionsWithUploads(params.classId),
     getPublicClassNotes(params.classId),
   ]);
 

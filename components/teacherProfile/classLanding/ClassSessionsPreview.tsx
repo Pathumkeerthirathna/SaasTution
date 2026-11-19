@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   CheckCircle2,
@@ -11,7 +11,20 @@ import {
   X,
 } from "lucide-react";
 
-import { ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
+import { ClassLectureSession, ClassLectureUploadedRecording } from "@/types/teacherProfileTypes/ClassLectureSession";
+
+import {
+  FreeUploadedRecording,
+  LockedRecordingPrompt,
+  UploadedRecordingPlayer,
+  UploadedRecordingRow,
+} from "./UploadedRecordings";
+
+/** Scrolls to the class's Register card (the visible one: mobile or desktop layout). */
+function scrollToRegisterCard() {
+  const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-class-register]"));
+  cards.find((card) => card.getClientRects().length > 0)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 interface Props {
   lectures: ClassLectureSession[];
@@ -38,11 +51,17 @@ function formatDuration(startedAt: string | null, endedAt: string | null) {
 
 export default function ClassSessionsPreview({ lectures }: Props) {
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  // Uploaded recordings: the Unlocked one playing, or the Locked one whose prompt is open.
+  const [playingUpload, setPlayingUpload] = useState<FreeUploadedRecording | null>(null);
+  const [lockedUpload, setLockedUpload] = useState<{ lectureId: string; recording: ClassLectureUploadedRecording } | null>(null);
+  const closeUploadPlayer = useCallback(() => setPlayingUpload(null), []);
+  const closeLockedPrompt = useCallback(() => setLockedUpload(null), []);
 
   const freeCount = lectures.reduce(
     (total, lecture) =>
       total +
-      lecture.recordings.filter((r) => r.access === "FREE").length,
+      lecture.recordings.filter((r) => r.access === "FREE").length +
+      (lecture.uploads ?? []).filter((r) => r.access === "FREE").length,
     0
   );
 
@@ -107,8 +126,8 @@ export default function ClassSessionsPreview({ lectures }: Props) {
                 </div>
 
                 <span className="shrink-0 text-[12px] font-medium text-slate-400">
-                  {lecture.recordings.length}{" "}
-                  {lecture.recordings.length === 1 ? "recording" : "recordings"}
+                  {lecture.recordings.length + (lecture.uploads?.length ?? 0)}{" "}
+                  {lecture.recordings.length + (lecture.uploads?.length ?? 0) === 1 ? "recording" : "recordings"}
                 </span>
               </div>
 
@@ -186,6 +205,16 @@ export default function ClassSessionsPreview({ lectures }: Props) {
                     </div>
                   );
                 })}
+
+                {/* Uploaded recordings of this lecture (after its YouTube recordings) */}
+                {(lecture.uploads ?? []).map((upload) => (
+                  <UploadedRecordingRow
+                    key={upload.id}
+                    recording={upload}
+                    onWatch={setPlayingUpload}
+                    onLocked={(recording) => setLockedUpload({ lectureId: lecture.id, recording })}
+                  />
+                ))}
               </div>
             </div>
           ))
@@ -250,6 +279,22 @@ export default function ClassSessionsPreview({ lectures }: Props) {
             </div>
           </div>
         </>
+      )}
+
+      {/* Uploaded recording player (public stream, Unlocked only) */}
+      {playingUpload && <UploadedRecordingPlayer recording={playingUpload} onClose={closeUploadPlayer} />}
+
+      {/* Locked uploaded recording: Log in / Register (no video request) */}
+      {lockedUpload && (
+        <LockedRecordingPrompt
+          recording={lockedUpload.recording}
+          lectureId={lockedUpload.lectureId}
+          onClose={closeLockedPrompt}
+          onRegister={() => {
+            setLockedUpload(null);
+            scrollToRegisterCard();
+          }}
+        />
       )}
 
     </div>

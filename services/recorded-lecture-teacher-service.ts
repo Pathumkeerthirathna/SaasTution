@@ -48,6 +48,8 @@ const recordingSelect = {
   createdAt: true,
   readyAt: true,
   failedAt: true,
+  visibility: true,
+  access: true,
 } as const;
 
 const sessionSelect = { id: true, recordedLectureId: true, state: true, receivedBytes: true, expectedBytes: true, expiresAt: true, lastActivityAt: true } as const;

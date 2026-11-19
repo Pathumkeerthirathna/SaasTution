@@ -154,6 +154,11 @@ const APPROVED_IMPORTERS = [
   "components/recorded-lectures/teacher-recordings-client.tsx",
   "components/recorded-lectures/studio-controller.ts",
   "components/recorded-lectures/upload-engine.ts",
+  // Public teacher profile integration: the public listing / playback service (its route imports only
+  // the service) and the teacher's publication settings service and route.
+  "services/recorded-lecture-public-service.ts",
+  "services/recorded-lecture-publication-service.ts",
+  "app/api/recorded-lectures/[recordingId]/publication/route.ts",
   // Unified storage Stage 2 (Notes and assignment submissions on the shared storage foundation):
   // the resource key modules and the one shared read / write module. They use lib/file-storage only
   // (never lib/recorded-lectures); routes import them, not lib/file-storage. See tests/storage-migration.
@@ -197,6 +202,8 @@ const RL3_MODULES = {
   "lib/recorded-lectures/student-dto.ts": [],
   // RL-4.3 (pure): the playback stream slots.
   "lib/recorded-lectures/stream-slots.ts": [],
+  // Public teacher profile integration (pure): the public playback stream slots.
+  "lib/recorded-lectures/public-stream-slots.ts": [],
   // Teacher side (pure): the teacher DTO (Prisma types only).
   "lib/recorded-lectures/teacher-dto.ts": ["@prisma/client"],
 };

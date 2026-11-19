@@ -30,7 +30,7 @@ test("placement: after every earlier migration; only the approved payment access
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort();
-  assert.deepEqual(names.slice(names.indexOf(MIGRATION)), [MIGRATION, "20261121120000_add_class_payment_access_control", "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible"]);
+  assert.deepEqual(names.slice(names.indexOf(MIGRATION)), [MIGRATION, "20261121120000_add_class_payment_access_control", "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible", "20261124120000_add_recorded_lecture_publication"]);
 });
 
 test("the three columns, with a false default for existing rows", () => {

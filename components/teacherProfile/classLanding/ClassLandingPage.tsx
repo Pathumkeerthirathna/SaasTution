@@ -65,7 +65,7 @@ export default function ClassLandingPage({
             <ClassHero classInfo={classInfo} />
 
             {/* Mobile only */}
-            <div className="lg:hidden">
+            <div className="lg:hidden" data-class-register>
               <ClassRegisterCard
                 classId={classInfo.id}
                 teacherId={classInfo.teacherId}
@@ -85,7 +85,7 @@ export default function ClassLandingPage({
           {/* RIGHT */}
           <div className="hidden lg:block">
 
-            <div className="sticky top-4 space-y-5">
+            <div className="sticky top-4 space-y-5" data-class-register>
 
               <ClassRegisterCard
                 classId={classInfo.id}

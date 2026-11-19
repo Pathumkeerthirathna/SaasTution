@@ -29,6 +29,8 @@ export type TeacherRecordingRow = Pick<
   | "createdAt"
   | "readyAt"
   | "failedAt"
+  | "visibility"
+  | "access"
 > & {
   uploadSession: Pick<RecordingUploadSession, "id" | "state" | "receivedBytes" | "expectedBytes" | "expiresAt" | "lastActivityAt"> | null;
 };
@@ -63,6 +65,9 @@ export type TeacherRecordingDto = {
   upload: TeacherRecordingUploadDto | null;
   /** Owner-only preview path (READY only); authorised again on every request. */
   previewUrl: string | null;
+  /** Public class page settings ("Privacy" / "Viewing access": FREE = Unlocked). Never limit enrolled students. */
+  visibility: "PUBLIC" | "PRIVATE";
+  access: "FREE" | "LOCKED";
 };
 
 const FAILURE_MESSAGES: Record<string, string> = {
@@ -122,6 +127,9 @@ export function buildTeacherRecordingDto(row: TeacherRecordingRow): TeacherRecor
         }
       : null,
     previewUrl: row.state === "READY" ? teacherPreviewPath(row.id) : null,
+    // Anything unexpected is shown as the safe default (the database default too).
+    visibility: row.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE",
+    access: row.access === "FREE" ? "FREE" : "LOCKED",
   };
   assertClientSafe(dto);
   return dto;

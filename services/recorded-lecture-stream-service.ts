@@ -81,13 +81,46 @@ export async function streamStudentRecordedLecture(input: { studentId: string; r
 export type StreamTarget = { id: string; teacherId: string; lectureId: string; storedFileName: string; sizeBytes: bigint };
 
 /**
+ * The shared slot under `slotKey`, plus (only when given) one more slot the
+ * caller takes first (public playback: lib/recorded-lectures/public-stream-slots.ts).
+ * Without `acquireExtraSlot` this is exactly acquireStreamSlot(slotKey).
+ * The combined release frees both, once.
+ */
+function acquireSlots(slotKey: string, acquireExtraSlot: (() => () => void) | undefined): () => void {
+  if (!acquireExtraSlot) return acquireStreamSlot(slotKey);
+  const releaseExtra = acquireExtraSlot();
+  let releaseShared: () => void;
+  try {
+    releaseShared = acquireStreamSlot(slotKey);
+  } catch (error) {
+    releaseExtra();
+    throw error;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseShared();
+    releaseExtra();
+  };
+}
+
+/**
  * The playback response for a recording the caller has ALREADY authorised
  * (student: the RL-4.2 filter above; teacher preview: ownership, in
- * recorded-lecture-teacher-service.ts). Builds the key server-side, checks
- * the size, takes a stream slot under `slotKey` only when a body is streamed.
+ * recorded-lecture-teacher-service.ts; public: recorded-lecture-public-service.ts).
+ * Builds the key server-side, checks the size, takes a stream slot under
+ * `slotKey` only when a body is streamed. `acquireExtraSlot` (optional,
+ * additive) takes one more slot first and must throw an AppError when it
+ * refuses; existing callers do not pass it.
  */
-export async function streamStoredRecording(input: { target: StreamTarget; slotKey: string; request: Request }): Promise<Response> {
-  const { target, slotKey, request } = input;
+export async function streamStoredRecording(input: {
+  target: StreamTarget;
+  slotKey: string;
+  request: Request;
+  acquireExtraSlot?: () => () => void;
+}): Promise<Response> {
+  const { target, slotKey, request, acquireExtraSlot } = input;
   let key: string;
   let expectedSize: number;
   try {
@@ -106,7 +139,7 @@ export async function streamStoredRecording(input: { target: StreamTarget; slotK
       key,
       request,
       expectedSize,
-      acquireSlot: () => acquireStreamSlot(slotKey),
+      acquireSlot: () => acquireSlots(slotKey, acquireExtraSlot),
     });
   } catch (error) {
     if (error instanceof AppError) throw error; // the slot refusals
