@@ -652,8 +652,23 @@ export type PublicTeacherShareData = {
   profileImageUrl: string | null;
   /** Set for a unified-storage photo (lets the image generator read it without a URL). */
   profileImageStorageKey: string | null;
+  /** SHA-256 of a unified-storage photo (null for legacy / none): part of the preview image version. */
+  profileImageSha256: string | null;
+  /**
+   * Qualification titles for the preview, best first (lowest displayOrder),
+   * exactly as public as on the profile page: the header always shows the
+   * best one; the others only while the Qualifications section is visible.
+   */
+  qualifications: string[];
+  yearsOfExperience: number | null;
+  isVerified: boolean;
   updatedAt: Date;
 };
+
+/** At most this many qualification titles are put in the preview. */
+export const SHARE_QUALIFICATIONS_MAX = 2;
+/** Rows read for the preview, so blank titles can be skipped (section visible). */
+export const SHARE_QUALIFICATIONS_SCAN = 5;
 
 /**
  * The share data of a PUBLIC profile; null for an unknown or private one
@@ -676,11 +691,27 @@ export const getPublicTeacherShareData = cache(async function getPublicTeacherSh
       seoDescription: true,
       profileImageUrl: true,
       profileImageStorageKey: true,
+      profileImageSha256: true,
+      yearsOfExperience: true,
+      isVerified: true,
+      isDisplayQualification: true,
+      qualifications: {
+        select: { title: true, displayOrder: true },
+        orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
+        take: SHARE_QUALIFICATIONS_SCAN,
+      },
       updatedAt: true,
       teacher: { select: { name: true } },
     },
   });
   if (!profile || !profile.isPublic) return null;
+  // Section hidden: only the best row may ever be shown (the header shows it),
+  // never the next one in its place. Section visible: the first non-blank titles.
+  const rows = [...profile.qualifications].sort((a, b) => a.displayOrder - b.displayOrder);
+  const qualifications = (profile.isDisplayQualification ? rows : rows.slice(0, 1))
+    .map((q) => q.title)
+    .filter((title) => typeof title === "string" && title.trim() !== "")
+    .slice(0, SHARE_QUALIFICATIONS_MAX);
   return {
     slug: profile.slug,
     name: formatTeacherFullName({ name: profile.teacher.name, profile: { title: profile.title, displayName: profile.displayName } }),
@@ -691,6 +722,10 @@ export const getPublicTeacherShareData = cache(async function getPublicTeacherSh
     seoDescription: profile.seoDescription,
     profileImageUrl: profile.profileImageUrl,
     profileImageStorageKey: profile.profileImageStorageKey,
+    profileImageSha256: profile.profileImageSha256,
+    qualifications,
+    yearsOfExperience: profile.yearsOfExperience,
+    isVerified: profile.isVerified,
     updatedAt: profile.updatedAt,
   };
 });

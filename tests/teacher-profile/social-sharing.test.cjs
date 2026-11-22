@@ -55,6 +55,7 @@ function profileRow(over = {}) {
     displayName: "Pathum Kumara",
     profileImageUrl: null,
     profileImageStorageKey: null,
+    profileImageSha256: null,
     coverImageUrl: null,
     designation: "Mathematics Teacher",
     headline: "Helping students achieve A passes in Mathematics",
@@ -333,7 +334,7 @@ test("share data: formatted name (title + display name), only preview fields - n
   const data = await SERVICE.getPublicTeacherShareData("PATHUM-KUMARA");
   assert.equal(data.name, "Mr. Pathum Kumara");
   assert.equal(data.slug, "Pathum-Kumara", "the stored capitals, for the canonical URL");
-  assert.deepEqual(Object.keys(data).sort(), ["aboutMe", "designation", "headline", "name", "profileImageStorageKey", "profileImageUrl", "seoDescription", "seoTitle", "slug", "updatedAt"]);
+  assert.deepEqual(Object.keys(data).sort(), ["aboutMe", "designation", "headline", "isVerified", "name", "profileImageSha256", "profileImageStorageKey", "profileImageUrl", "qualifications", "seoDescription", "seoTitle", "slug", "updatedAt", "yearsOfExperience"]);
   assert.doesNotMatch(JSON.stringify(db.lastSelect), /email|phone|whatsapp|students/);
 });
 
@@ -374,7 +375,7 @@ test("preview images: unknown and private profiles get 404 - no image is generat
 
 // ==== 4. The preview image =============================================================================================
 
-test("photo loader: JPEG and PNG (unified and legacy) are embedded; WebP, missing, invalid, pending-removal and foreign URLs fall back (null)", async () => {
+test("photo loader: JPEG and PNG (unified and legacy) are embedded; undecodable WebP, missing, invalid, pending-removal and foreign URLs fall back (null)", async () => {
   await withStorage(async ({ app, files }) => {
     const j = storePhoto(files, "teacher-1", jpeg(), "image/jpeg");
     assert.match(await IMG.loadShareImagePhoto({ profileImageUrl: j.url, profileImageStorageKey: j.key }), /^data:image\/jpeg;base64,/);
@@ -384,7 +385,7 @@ test("photo loader: JPEG and PNG (unified and legacy) are embedded; WebP, missin
     assert.match(await IMG.loadShareImagePhoto({ profileImageUrl: "/uploads/teachers/teacher-1-1700000000000.png", profileImageStorageKey: null }), /^data:image\/png;base64,/);
 
     const w = storePhoto(files, "teacher-1", webp(), "image/webp");
-    assert.equal(await IMG.loadShareImagePhoto({ profileImageUrl: w.url, profileImageStorageKey: w.key }), null, "WebP: default avatar");
+    assert.equal(await IMG.loadShareImagePhoto({ profileImageUrl: w.url, profileImageStorageKey: w.key }), null, "a WebP that cannot be decoded: default avatar");
     const html = storePhoto(files, "teacher-1", Buffer.from("<html><script>x</script></html>".padEnd(80, " ")), "image/png");
     assert.equal(await IMG.loadShareImagePhoto({ profileImageUrl: html.url, profileImageStorageKey: html.key }), null, "not an image");
     const gone = KEYS.profilePhotoKey({ teacherId: "teacher-1", storedName: KEYS.generateProfilePhotoStoredName("image/png") });
@@ -401,7 +402,7 @@ test("composition: photo embedded when valid; otherwise the default teacher avat
   const data = { ...shareText(), profileImageUrl: "/api/teacher-photos/teacher-1/abc.png", profileImageStorageKey: "Teachers/teacher-1/Profile/Photo/x.png" };
   const withPhoto = renderToStaticMarkup(React.createElement(IMG.ShareImageMarkup, { data, photo: "data:image/png;base64,AAAA" }));
   assert.match(withPhoto, /<img[^>]+src="data:image\/png;base64,AAAA"/);
-  assert.doesNotMatch(withPhoto, /<svg/);
+  assert.doesNotMatch(withPhoto, /viewBox="0 0 240 240"/, "no default avatar next to a real photo");
   const fallback = renderToStaticMarkup(React.createElement(IMG.ShareImageMarkup, { data, photo: null }));
   assert.match(fallback, /<svg[^>]*viewBox="0 0 240 240"/);
   assert.doesNotMatch(fallback, /<img/);
@@ -433,6 +434,330 @@ test("rendering: a photo the renderer cannot decode falls back to the avatar (on
     () => IMG.renderTeacherShareImage({ ...shareText(), profileImageUrl: null, profileImageStorageKey: null }, { render: async () => { throw new Error("renderer down"); }, loadPhoto: async () => null }),
     /renderer down/
   );
+});
+
+// ==== 4b. Credentials on the preview, versioned image URLs ===========================================================
+
+const qual = (title, displayOrder, id = `q-${displayOrder}`) => ({ id, title, displayOrder });
+
+test("share data: qualifications best-first (lowest displayOrder); the hidden Qualifications section limits it to the one the header always shows", async () => {
+  db.profiles.push(profileRow({ qualifications: [qual("PGDE", 2), qual("BSc (Hons) Mathematics", 1), qual("  ", 0)], profileImageSha256: "a".repeat(64) }));
+  let data = await SERVICE.getPublicTeacherShareData("pathum-kumara");
+  assert.deepEqual(data.qualifications, ["BSc (Hons) Mathematics", "PGDE"]);
+  assert.equal(data.yearsOfExperience, 8);
+  assert.equal(data.isVerified, true);
+  assert.equal(data.profileImageSha256, "a".repeat(64));
+  const q = db.lastSelect.qualifications;
+  assert.deepEqual(q.orderBy, [{ displayOrder: "asc" }, { id: "asc" }]);
+  assert.equal(q.take, SERVICE.SHARE_QUALIFICATIONS_SCAN, "a few extra rows, so blank titles can be skipped");
+  assert.ok(SERVICE.SHARE_QUALIFICATIONS_SCAN > SERVICE.SHARE_QUALIFICATIONS_MAX);
+
+  db.profiles = [profileRow({ isDisplayQualification: false, qualifications: [qual("PGDE", 2), qual("BSc (Hons) Mathematics", 1)] })];
+  data = await SERVICE.getPublicTeacherShareData("pathum-kumara");
+  assert.deepEqual(data.qualifications, ["BSc (Hons) Mathematics"], "only the best one (public in the header) while the section is hidden");
+
+  db.profiles = [profileRow({ isDisplayQualification: false, qualifications: [qual("  ", 1), qual("Hidden MSc", 2)] })];
+  data = await SERVICE.getPublicTeacherShareData("pathum-kumara");
+  assert.deepEqual(data.qualifications, [], "section hidden + blank best title: the hidden second one never takes its place");
+
+  db.profiles = [profileRow({ yearsOfExperience: null, isVerified: false })];
+  data = await SERVICE.getPublicTeacherShareData("pathum-kumara");
+  assert.deepEqual(data.qualifications, []);
+  assert.equal(data.yearsOfExperience, null);
+  assert.equal(data.isVerified, false);
+});
+
+test("image content: experience label ('N+ Years'), cleaned / de-duplicated qualifications, description only when there are no credentials", () => {
+  assert.equal(META.shareExperienceLabel(8), "8+ Years Teaching Experience");
+  assert.equal(META.shareExperienceLabel(1), "1+ Year Teaching Experience");
+  for (const none of [0, -3, 2.5, 150, null, undefined, NaN]) assert.equal(META.shareExperienceLabel(none), "", String(none));
+  assert.deepEqual(META.shareQualificationLines(["<b>BSc</b> (Hons)", "bsc (hons)", "", null, "PGDE"]), ["BSc (Hons)", "PGDE"]);
+
+  const full = META.shareImageContent({ ...shareText(), qualifications: ["BSc"], yearsOfExperience: 5, isVerified: true });
+  assert.deepEqual(full, { name: "Mr. Pathum Kumara", designation: "Mathematics Teacher", qualifications: ["BSc"], experience: "5+ Years Teaching Experience", verified: true, description: "" });
+  const bare = META.shareImageContent({ ...shareText({ designation: null }), qualifications: [], yearsOfExperience: null });
+  assert.equal(bare.description, "Helping students achieve A passes", "an empty card gets the headline instead");
+  assert.equal(bare.designation, "");
+  assert.equal(META.shareImageContent({ ...shareText({ name: "  " }) }).name, "SL Classroom Teacher");
+});
+
+test("versioned image URLs: absolute on slclassroom.live; stable for the same content; change with photo, name, designation, qualifications, experience, badge", () => {
+  const base = { ...shareText(), qualifications: ["BSc"], yearsOfExperience: 5, isVerified: false, profileImageUrl: "/api/teacher-photos/teacher-1/a.png", profileImageStorageKey: "Teachers/teacher-1/Profile/Photo/a.png", profileImageSha256: "1".repeat(64) };
+  const v = META.shareImageVersion(base);
+  assert.match(v, /^[0-9a-f]{16}$/);
+  assert.equal(META.shareImageVersion({ ...base, headline: "changed", seoTitle: "x", aboutMe: "y" }), v, "text the image does not show does not change it");
+  const changes = {
+    "new photo file": { profileImageSha256: "2".repeat(64) },
+    "new photo URL": { profileImageUrl: "/api/teacher-photos/teacher-1/b.png" },
+    "photo removed": { profileImageUrl: null },
+    name: { name: "Ms. Nadeesha Perera" },
+    designation: { designation: "Physics Lecturer" },
+    qualifications: { qualifications: ["BSc", "MSc"] },
+    experience: { yearsOfExperience: 6 },
+    verified: { isVerified: true },
+    slug: { slug: "pathum" },
+  };
+  for (const [label, over] of Object.entries(changes)) assert.notEqual(META.shareImageVersion({ ...base, ...over }), v, label);
+
+  const urls = META.shareImageUrls(base, ORIGIN);
+  assert.equal(urls.openGraph, `${ORIGIN}/Pathum-Kumara/opengraph-image?v=${v}`);
+  assert.equal(urls.twitter, `${ORIGIN}/Pathum-Kumara/twitter-image?v=${v}`);
+  assert.equal(META.shareImageUrls({ ...base, slug: "a b" }, ORIGIN).openGraph.startsWith(`${ORIGIN}/a%20b/opengraph-image?v=`), true);
+});
+
+test("metadata: og:image / twitter:image are the versioned 1200 x 630 PNG with a per-teacher alt; production never emits localhost", () => {
+  const data = { ...shareText(), qualifications: ["BSc"], yearsOfExperience: 5, profileImageUrl: null, profileImageStorageKey: null };
+  const m = META.buildTeacherProfileMetadata(data, ORIGIN);
+  const v = META.shareImageVersion(data);
+  assert.deepEqual(m.openGraph.images, [
+    { url: `${ORIGIN}/Pathum-Kumara/opengraph-image?v=${v}`, secureUrl: `${ORIGIN}/Pathum-Kumara/opengraph-image?v=${v}`, type: "image/png", width: 1200, height: 630, alt: "Mr. Pathum Kumara – Mathematics Teacher | SL Classroom" },
+  ]);
+  assert.deepEqual(m.twitter.images, [{ url: `${ORIGIN}/Pathum-Kumara/twitter-image?v=${v}`, width: 1200, height: 630, alt: "Mr. Pathum Kumara – Mathematics Teacher | SL Classroom" }]);
+  const dev = META.buildTeacherProfileMetadata(data, "http://localhost:3000");
+  assert.equal("secureUrl" in dev.openGraph.images[0], false, "no og:image:secure_url for a plain-http URL");
+
+  const prodOrigin = SITE.resolveSiteOrigin({ NEXT_PUBLIC_APP_URL: "http://localhost:3000", NODE_ENV: "production" });
+  const prod = META.buildTeacherProfileMetadata(data, prodOrigin);
+  const json = JSON.stringify(prod);
+  assert.doesNotMatch(json, /localhost|127\.0\.0\.1|http:\/\//);
+  assert.match(prod.openGraph.images[0].url, /^https:\/\/slclassroom\.live\/Pathum-Kumara\/opengraph-image\?v=[0-9a-f]{16}$/);
+  assert.equal(prod.openGraph.url, "https://slclassroom.live/Pathum-Kumara");
+});
+
+test("page metadata: the share data's credentials and photo feed the versioned image URL (a new photo -> a new URL)", async () => {
+  db.profiles.push(profileRow({ qualifications: [qual("BSc", 1)], profileImageUrl: "/api/teacher-photos/teacher-1/a.png", profileImageStorageKey: "Teachers/teacher-1/Profile/Photo/a.png", profileImageSha256: "1".repeat(64) }));
+  const before = (await page.generateMetadata({ params: { slug: "pathum-kumara" } })).openGraph.images[0].url;
+  db.profiles[0].profileImageSha256 = "2".repeat(64);
+  db.profiles[0].profileImageStorageKey = "Teachers/teacher-1/Profile/Photo/b.png";
+  db.profiles[0].profileImageUrl = "/api/teacher-photos/teacher-1/b.png";
+  const after = (await page.generateMetadata({ params: { slug: "pathum-kumara" } })).openGraph.images[0].url;
+  assert.match(before, /^https:\/\/slclassroom\.live\/Pathum-Kumara\/opengraph-image\?v=[0-9a-f]{16}$/);
+  assert.notEqual(after, before);
+});
+
+test("composition: qualifications, experience, Verified badge and the SL Classroom mark; missing pieces simply left out", () => {
+  const data = { ...shareText(), qualifications: ["BSc (Hons) Mathematics", "PGDE"], yearsOfExperience: 8, isVerified: true, profileImageUrl: null, profileImageStorageKey: null };
+  const html = renderToStaticMarkup(React.createElement(IMG.ShareImageMarkup, { data, photo: "data:image/jpeg;base64,AAAA" }));
+  for (const text of ["Mr. Pathum Kumara", "Mathematics Teacher", "BSc (Hons) Mathematics", "PGDE", "8+ Years Teaching Experience", "Verified Teacher", "SL Classroom", "slclassroom.live/Pathum-Kumara"]) {
+    assert.ok(html.includes(text), text);
+  }
+  assert.doesNotMatch(html, /Helping students achieve/, "headline replaced by the credentials");
+  assert.match(html, /<img[^>]+width="360"/, "a large photo");
+
+  const minimal = renderToStaticMarkup(React.createElement(IMG.ShareImageMarkup, { data: { ...shareText({ designation: null, headline: null, aboutMe: null }), profileImageUrl: null, profileImageStorageKey: null }, photo: null }));
+  assert.match(minimal, /Mr\. Pathum Kumara/);
+  assert.match(minimal, /Teacher Profile/);
+  assert.doesNotMatch(minimal, /Verified|Years Teaching|undefined|null/);
+  assert.match(minimal, /<svg[^>]*viewBox="0 0 240 240"/, "default avatar");
+});
+
+// ==== 4c. Real photos (sharp), Sinhala / Tamil shaping (pango) =====================================================
+
+const sharpMod = require("sharp");
+const sharp = sharpMod.default ?? sharpMod;
+const FONTS = require(path.join(root, "lib", "teacher-profile", "share-fonts.ts"));
+const ZWJ = String.fromCharCode(0x200d);
+const ZWNJ = String.fromCharCode(0x200c);
+const SINHALA_NAME = "චමින්ද පෙරේරා";
+const SINHALA_DESIGNATION = `ශ්${ZWJ}රී ලංකා ගණිත ගුරුවරයා`;
+const TAMIL_NAME = "செல்வம் கோபால்";
+const TAMIL_QUALIFICATION = "கணித ஆசிரியர் – B.Sc. (கணிதம்)";
+
+/** A real two-colour image: left half red, right half blue. */
+function halves(width, height) {
+  const raw = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4;
+      const left = x < width / 2;
+      raw[o] = left ? 220 : 20;
+      raw[o + 1] = 20;
+      raw[o + 2] = left ? 20 : 220;
+      raw[o + 3] = 255;
+    }
+  }
+  return sharp(raw, { raw: { width, height, channels: 4 } });
+}
+const pixel = async (dataUrl, x, y) => {
+  const buf = Buffer.from(dataUrl.split(",")[1], "base64");
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  const o = (y * info.width + x) * info.channels;
+  return { r: data[o], g: data[o + 1], b: data[o + 2], width: info.width, height: info.height, format: (await sharp(buf).metadata()).format };
+};
+
+test("photo loader (real files): JPEG, PNG with transparency and WebP all become a 720 x 720 JPEG; EXIF orientation applied", async () => {
+  await withStorage(async ({ app, files }) => {
+    const jpg = storePhoto(files, "teacher-1", await halves(900, 600).jpeg().toBuffer(), "image/jpeg");
+    const pngAlpha = storePhoto(
+      files,
+      "teacher-1",
+      await sharp({ create: { width: 500, height: 500, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer(),
+      "image/png"
+    );
+    const webpReal = storePhoto(files, "teacher-1", await halves(640, 640).webp({ quality: 90 }).toBuffer(), "image/webp");
+    // Stored landscape (red left, blue right) + EXIF orientation 6 (display rotated 90 deg clockwise): red ends up on TOP.
+    const rotated = storePhoto(files, "teacher-1", await halves(800, 400).jpeg().withMetadata({ orientation: 6 }).toBuffer(), "image/jpeg");
+    fs.writeFileSync(path.join(app, "storage", "teachers", "teacher-1-1700000000001.webp"), await halves(300, 300).webp().toBuffer());
+
+    for (const [label, p] of [["jpeg", jpg], ["png", pngAlpha], ["webp", webpReal], ["rotated", rotated]]) {
+      const url = await IMG.loadShareImagePhoto({ profileImageUrl: p.url, profileImageStorageKey: p.key });
+      assert.match(url, /^data:image\/jpeg;base64,/, label);
+      const info = await pixel(url, 10, 10);
+      assert.equal(info.format, "jpeg", label);
+      assert.deepEqual([info.width, info.height], [IMG.SHARE_PHOTO_PIXELS, IMG.SHARE_PHOTO_PIXELS], label);
+    }
+    const webpLeft = await pixel(await IMG.loadShareImagePhoto({ profileImageUrl: webpReal.url, profileImageStorageKey: webpReal.key }), 100, 360);
+    assert.ok(webpLeft.r > 150 && webpLeft.b < 90, `WebP decoded with its colours: ${JSON.stringify(webpLeft)}`);
+    const transparent = await pixel(await IMG.loadShareImagePhoto({ profileImageUrl: pngAlpha.url, profileImageStorageKey: pngAlpha.key }), 360, 360);
+    assert.ok(transparent.r > 240 && transparent.g > 240 && transparent.b > 240, "transparency flattened onto white, not black");
+    const rotatedUrl = await IMG.loadShareImagePhoto({ profileImageUrl: rotated.url, profileImageStorageKey: rotated.key });
+    const top = await pixel(rotatedUrl, 360, 60);
+    const bottom = await pixel(rotatedUrl, 360, 660);
+    assert.ok(top.r > 150 && top.b < 90, `EXIF orientation: red on top ${JSON.stringify(top)}`);
+    assert.ok(bottom.b > 150 && bottom.r < 90, `EXIF orientation: blue at the bottom ${JSON.stringify(bottom)}`);
+    assert.match(await IMG.loadShareImagePhoto({ profileImageUrl: "/uploads/teachers/teacher-1-1700000000001.webp", profileImageStorageKey: null }), /^data:image\/jpeg;base64,/, "legacy WebP");
+  });
+});
+
+test("photo normalisation: an undecodable WebP -> default avatar; a JPEG / PNG sharp cannot decode is passed through for the renderer to try", async () => {
+  assert.equal(await IMG.normalizeSharePhoto(webp(), "image/webp"), null);
+  assert.match(await IMG.normalizeSharePhoto(png(), "image/png"), /^data:image\/png;base64,/);
+  assert.match(await IMG.normalizeSharePhoto(jpeg(), "image/jpeg"), /^data:image\/jpeg;base64,/);
+});
+
+test("share text keeps ZWJ / ZWNJ (Sinhala and Tamil spell with them); other invisible characters still removed", () => {
+  assert.equal(META.sanitizeShareText(SINHALA_DESIGNATION, 70), SINHALA_DESIGNATION);
+  assert.equal(META.sanitizeShareText(`a${ZWNJ}b${String.fromCharCode(0x200b)}c`, 70), `a${ZWNJ}b c`);
+  assert.equal(META.shareImageContent({ ...shareText({ name: SINHALA_NAME, designation: SINHALA_DESIGNATION }) }).designation, SINHALA_DESIGNATION);
+  const m = META.buildTeacherProfileMetadata({ ...shareText({ name: TAMIL_NAME, designation: "கணித ஆசிரியர்" }) }, ORIGIN);
+  assert.equal(m.openGraph.title, `${TAMIL_NAME} – கணித ஆசிரியர் | SL Classroom`);
+});
+
+test("complex-script detection: Sinhala and Tamil (also mixed with Latin) need shaping; Latin, digits and empty text do not", () => {
+  for (const t of [SINHALA_NAME, TAMIL_NAME, TAMIL_QUALIFICATION, `BSc (${SINHALA_NAME})`]) assert.equal(FONTS.needsComplexShaping(t), true, t);
+  for (const t of ["Mr. Pathum Kumara", "8+ Years Teaching Experience", "", null, undefined]) assert.equal(FONTS.needsComplexShaping(t), false, String(t));
+});
+
+test("fonts: the three Noto files ship with the code (OFL licences alongside) and load for the image renderer", async () => {
+  for (const f of ["NotoSans-Regular.ttf", "NotoSansSinhala-Regular.ttf", "NotoSansTamil-Regular.ttf", "OFL-NotoSans.txt", "OFL-NotoSansSinhala.txt", "OFL-NotoSansTamil.txt"]) {
+    assert.ok(fs.existsSync(path.join(root, "assets", "fonts", "noto", f)), f);
+  }
+  const fonts = await FONTS.loadShareSatoriFonts();
+  assert.deepEqual(fonts.map((f) => f.name), ["Noto Sans", "Noto Sans Sinhala", "Noto Sans Tamil"]);
+  for (const f of fonts) {
+    assert.ok(f.data.byteLength > 50_000, f.name);
+    assert.equal(Buffer.from(f.data).readUInt32BE(0), 0x00010000, `${f.name}: a TrueType font`);
+  }
+});
+
+test("shaped text (pango + HarfBuzz): Sinhala and Tamil become transparent PNGs of the text's size, wrapped at the column width", async () => {
+  for (const text of [SINHALA_NAME, SINHALA_DESIGNATION, TAMIL_NAME, TAMIL_QUALIFICATION]) {
+    const shaped = await FONTS.renderShapedText({ text, sizePx: 30, color: "#0F172A", maxWidth: 614 });
+    assert.ok(shaped, text);
+    assert.match(shaped.src, /^data:image\/png;base64,/);
+    assert.ok(shaped.width > 100 && shaped.width <= 614, `${text}: ${shaped.width}`);
+    // One line at 30 px: the line box comes from the script font's own ascent / descent (Tamil ~0.9 em, Sinhala ~1.25 em).
+    assert.ok(shaped.height >= 24 && shaped.height < 55, `${text}: one line, ${shaped.height}`);
+    const meta = await sharp(Buffer.from(shaped.src.split(",")[1], "base64")).metadata();
+    assert.equal(meta.hasAlpha, true);
+  }
+  const one = await FONTS.renderShapedText({ text: TAMIL_QUALIFICATION, sizePx: 25, color: "#0F172A", maxWidth: 554 });
+  const wrapped = await FONTS.renderShapedText({ text: `${TAMIL_QUALIFICATION} ${TAMIL_QUALIFICATION}`, sizePx: 25, color: "#0F172A", maxWidth: 554 });
+  assert.ok(wrapped.height > one.height * 1.6, "long text wraps onto a second line");
+  assert.ok(wrapped.width <= 554);
+  const markup = await FONTS.renderShapedText({ text: "A & B <b>x</b>", sizePx: 20, color: "#0F172A", maxWidth: 300 });
+  assert.ok(markup, "markup characters are escaped, not interpreted");
+  assert.equal(await FONTS.renderShapedText({ text: SINHALA_NAME, sizePx: 20, color: "red", maxWidth: 300 }), null, "only #rrggbb colours");
+});
+
+test("shapeShareTexts: only Sinhala / Tamil pieces are shaped (Latin stays plain text); the markup embeds them as pictures", async () => {
+  const data = {
+    ...shareText({ name: SINHALA_NAME, designation: "Mathematics Teacher", headline: null }),
+    qualifications: ["BSc (Hons) Mathematics", TAMIL_QUALIFICATION],
+    yearsOfExperience: 12,
+    profileImageUrl: null,
+    profileImageStorageKey: null,
+  };
+  const shaped = await IMG.shapeShareTexts(data);
+  assert.ok(shaped.name && shaped.name.width > 0);
+  assert.equal("designation" in shaped, false, "Latin designation: plain text");
+  assert.equal(shaped.qualifications[0], null);
+  assert.ok(shaped.qualifications[1] && shaped.qualifications[1].width <= 554);
+  assert.equal("url" in shaped, false);
+
+  const html = renderToStaticMarkup(React.createElement(IMG.ShareImageMarkup, { data, photo: null, shaped }));
+  assert.ok(html.includes(`src="${shaped.name.src}"`), "name embedded as its shaped picture");
+  assert.ok(html.includes(`src="${shaped.qualifications[1].src}"`));
+  assert.ok(!html.includes(SINHALA_NAME), "no unshaped Sinhala text left for the layout engine");
+  assert.ok(!html.includes("கணித ஆசிரியர்"), "no unshaped Tamil text");
+  for (const text of ["Mathematics Teacher", "BSc (Hons) Mathematics", "12+ Years Teaching Experience", "slclassroom.live/Pathum-Kumara"]) assert.ok(html.includes(text), text);
+  assert.deepEqual(await IMG.shapeShareTexts({ ...shareText(), qualifications: ["BSc"], profileImageUrl: null, profileImageStorageKey: null }), {}, "Latin-only profile: nothing shaped");
+});
+
+/** Every style object in a rendered element tree (function components expanded). */
+function collectStyles(element, out = []) {
+  if (Array.isArray(element)) {
+    for (const child of element) collectStyles(child, out);
+    return out;
+  }
+  if (!element || typeof element !== "object") return out;
+  if (typeof element.type === "function") return collectStyles(element.type(element.props), out);
+  if (element.props?.style) out.push({ type: element.type, style: element.props.style });
+  collectStyles(element.props?.children, out);
+  return out;
+}
+
+test("markup: no style property is ever undefined (the image renderer throws on one) - with and without shaped pictures", async () => {
+  const data = {
+    ...shareText({ slug: "sinhala-teacher", name: SINHALA_NAME, designation: SINHALA_DESIGNATION, headline: TAMIL_NAME }),
+    qualifications: [TAMIL_QUALIFICATION, "BSc"],
+    yearsOfExperience: 4,
+    isVerified: true,
+    profileImageUrl: null,
+    profileImageStorageKey: null,
+  };
+  const shaped = await IMG.shapeShareTexts(data);
+  assert.ok(shaped.name && shaped.designation && shaped.qualifications[0]);
+  const noCredentials = { ...data, qualifications: [], yearsOfExperience: null };
+  const cases = [
+    [data, shaped],
+    [data, {}],
+    [noCredentials, await IMG.shapeShareTexts(noCredentials)],
+    [{ ...shareText(), profileImageUrl: null, profileImageStorageKey: null }, {}],
+  ];
+  for (const [d, s] of cases) {
+    const styles = collectStyles(IMG.ShareImageMarkup({ data: d, photo: "data:image/jpeg;base64,AAAA", shaped: s }));
+    assert.ok(styles.length > 10);
+    for (const { type, style } of styles) {
+      for (const [key, value] of Object.entries(style)) assert.notEqual(value, undefined, `<${String(type)}> style.${key} is undefined`);
+    }
+  }
+  const urlShaped = { url: { src: "data:image/png;base64,URL", width: 200, height: 30 } };
+  const urlStyles = collectStyles(IMG.ShareImageMarkup({ data: { ...data, slug: "x" }, photo: null, shaped: urlShaped }));
+  assert.ok(urlStyles.some(({ style }) => style.marginLeft === 10 && style.display === "flex"), "a shaped URL keeps its left spacing");
+});
+
+test("rendering: a failure with shaped pictures embedded retries once as plain text with the avatar; PNG response", async () => {
+  const seen = [];
+  const render = async (element) => {
+    const html = renderToStaticMarkup(element);
+    seen.push(html.includes("data:image/png;base64,SHAPED") ? "shaped" : "plain");
+    if (seen.length === 1) throw new Error("renderer failed");
+    return new Uint8Array([1]).buffer;
+  };
+  const data = { ...shareText({ name: SINHALA_NAME }), profileImageUrl: null, profileImageStorageKey: null };
+  const res = await IMG.renderTeacherShareImage(data, {
+    render,
+    loadPhoto: async () => null,
+    shapeTexts: async () => ({ name: { src: "data:image/png;base64,SHAPED", width: 300, height: 60 } }),
+  });
+  assert.deepEqual(seen, ["shaped", "plain"]);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "image/png");
+});
+
+test("image version: design version 3 (fonts, shaped text, normalised photos) so earlier cached previews are replaced", () => {
+  assert.equal(META.SHARE_IMAGE_DESIGN_VERSION, "3");
 });
 
 // ==== 5. Sharing ===================================================================================================
