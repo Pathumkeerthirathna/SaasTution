@@ -24,9 +24,8 @@ export const SHARE_DESCRIPTION_MAX = 160;
 export const SHARE_TITLE_MAX = 70;
 export const SHARE_IMAGE_SIZE = { width: 1200, height: 630 } as const;
 /** Bump when the preview image's DESIGN changes, so every teacher's preview URL changes with it. */
-export const SHARE_IMAGE_DESIGN_VERSION = "3";
+export const SHARE_IMAGE_DESIGN_VERSION = "4";
 const QUALIFICATION_MAX = 70;
-const IMAGE_DESCRIPTION_MAX = 150;
 
 export type TeacherShareText = {
   slug: string;
@@ -102,10 +101,10 @@ export function teacherShareDescription(data: TeacherShareText): string {
 
 // ---- What the preview IMAGE shows (shared by the image and its version) ------------------------------------
 
-/** "8+ Years Teaching Experience" / "1+ Year Teaching Experience"; "" when not set, 0 or not a sensible whole number. */
+/** "8+ Years Experience" / "1+ Year Experience"; "" when not set, 0 or not a sensible whole number. */
 export function shareExperienceLabel(years: number | null | undefined): string {
   if (typeof years !== "number" || !Number.isInteger(years) || years < 1 || years > 99) return "";
-  return `${years}+ ${years === 1 ? "Year" : "Years"} Teaching Experience`;
+  return `${years}+ ${years === 1 ? "Year" : "Years"} Experience`;
 }
 
 /** Clean, non-empty, de-duplicated qualification lines (order kept). */
@@ -118,21 +117,17 @@ export function shareQualificationLines(list: readonly (string | null | undefine
   return out;
 }
 
-/** The image's text, after every fallback (exported for tests). */
+/**
+ * The image's text, after every fallback (exported for tests): name,
+ * designation, the HIGHEST qualification only (the first of the public list,
+ * which is best-first) and the experience label. A missing piece is "".
+ */
 export function shareImageContent(data: TeacherShareData) {
-  const qualifications = shareQualificationLines(data.qualifications);
-  const experience = shareExperienceLabel(data.yearsOfExperience);
   return {
     name: sanitizeShareText(data.name, 60) || `${SITE_NAME} Teacher`,
     designation: sanitizeShareText(data.designation, 60),
-    qualifications,
-    experience,
-    verified: data.isVerified === true,
-    // Only when there are no credentials to show, so the card never looks empty.
-    description:
-      qualifications.length === 0 && !experience
-        ? sanitizeShareText(data.seoDescription || data.headline || data.aboutMe, IMAGE_DESCRIPTION_MAX)
-        : "",
+    qualification: shareQualificationLines(data.qualifications)[0] ?? "",
+    experience: shareExperienceLabel(data.yearsOfExperience),
   };
 }
 

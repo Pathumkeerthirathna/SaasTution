@@ -32,10 +32,11 @@ import { SHARE_IMAGE_SIZE, shareImageContent, SITE_NAME, type TeacherShareData }
  * and embedded as a picture of the text; other text is plain image text in
  * Noto Sans (assets/fonts/noto).
  *
- * Shown: photo (large, left), name, designation, qualifications, teaching
- * experience, a Verified badge, the SL Classroom mark and the profile URL.
- * Each piece is optional (share-metadata.ts shareImageContent applies the
- * fallbacks). The page links to this image with a "?v=" content version
+ * Layout (split card): the photo fills the left 40% (480 x 630); the right
+ * 60% (720 px) shows the SL Classroom mark, the name, the designation, the
+ * highest qualification, the experience and the profile URL. Each piece is
+ * optional (share-metadata.ts shareImageContent applies the fallbacks); a
+ * missing one is simply left out. The page links to this image with a "?v=" content version
  * (share-metadata.ts shareImageVersion), so platform caches refresh when the
  * content changes.
  */
@@ -51,13 +52,10 @@ export const SHARE_IMAGE_ALT = "Teacher profile on SL Classroom";
 export const SHARE_IMAGE_CACHE_CONTROL = "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400";
 
 const NAVY = "#112D5C";
-const NAVY_LIGHT = "#1E4380";
 const STEEL = "#4D6C90";
 const AMBER = "#D97706";
 const INK = "#0F172A";
-const MUTED = "#475569";
 const TILE = "#EEF3F9";
-const GREEN = "#059669";
 
 export type ShareImageInput = TeacherShareData & {
   profileImageUrl: string | null;
@@ -89,17 +87,21 @@ async function readCapped(file: OpenedStoredFile, max: number): Promise<Uint8Arr
   return offset === out.length ? out : null;
 }
 
-/** Photo pixels embedded (2x the 360 px circle). */
-export const SHARE_PHOTO_PIXELS = 720;
+/** The photo panel on the image (the left 40%). */
+const PHOTO_PANEL = { width: 480, height: 630 } as const;
+/** Photo pixels embedded: the panel's shape at 1.5x. */
+export const SHARE_PHOTO_SIZE = { width: 720, height: 945 } as const;
 /** Decoder guard: a 2 MB file may still declare a huge canvas. */
 const PHOTO_MAX_INPUT_PIXELS = 40_000_000;
 
 /**
  * A verified photo's bytes as an embeddable data URL. With sharp: decoded
  * (JPEG / PNG / WebP; the first frame of an animation), EXIF-rotated,
- * centre-cropped to a 720 px square, transparency flattened onto white,
- * re-encoded as JPEG. Without sharp, or if sharp cannot decode it: JPEG / PNG
- * as they are, WebP -> null. Never throws.
+ * cropped to the panel's shape (720 x 945) around the most salient region
+ * (libvips "attention": skin tones and detail, so the face stays in frame),
+ * transparency flattened onto white, re-encoded as JPEG. Without sharp, or if
+ * sharp cannot decode it: JPEG / PNG as they are (the layout then covers the
+ * panel, biased towards the top), WebP -> null. Never throws.
  */
 export async function normalizeSharePhoto(bytes: Uint8Array, type: "image/jpeg" | "image/png" | "image/webp"): Promise<string | null> {
   const sharp = await loadSharp();
@@ -107,7 +109,7 @@ export async function normalizeSharePhoto(bytes: Uint8Array, type: "image/jpeg" 
     try {
       const out = await sharp(Buffer.from(bytes), { limitInputPixels: PHOTO_MAX_INPUT_PIXELS, failOn: "error" })
         .rotate()
-        .resize(SHARE_PHOTO_PIXELS, SHARE_PHOTO_PIXELS, { fit: "cover", position: "centre" })
+        .resize(SHARE_PHOTO_SIZE.width, SHARE_PHOTO_SIZE.height, { fit: "cover", position: "attention" })
         .flatten({ background: "#ffffff" })
         .jpeg({ quality: 86, mozjpeg: true })
         .toBuffer();
@@ -206,7 +208,6 @@ const ICON_PATHS = {
     "M12 2a6 6 0 1 0 0 12a6 6 0 1 0 0-12z",
   ],
   globe: ["M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"],
-  check: ["m9 12 2 2 4-4"],
 } as const;
 
 function Icon({ name, size, color, strokeWidth = 2 }: { name: keyof typeof ICON_PATHS; size: number; color: string; strokeWidth?: number }) {
@@ -247,24 +248,26 @@ function BrandMark() {
 export type ShapedShareTexts = {
   name?: ShapedText | null;
   designation?: ShapedText | null;
-  qualifications?: (ShapedText | null)[];
-  description?: ShapedText | null;
+  qualification?: ShapedText | null;
   url?: ShapedText | null;
 };
 
-// Column widths (px) the text may use: the right column is 1200 - 470 - 56 - 60 = 614 wide.
-const TEXT_WIDTH = 614;
-const INFO_TEXT_WIDTH = TEXT_WIDTH - 44 - 16;
+// The right 60% is 720 px wide; with 64 px padding on each side the text may use 592 px.
+const INFO_PANEL_WIDTH = 720;
+const INFO_PADDING_X = 64;
+const TEXT_WIDTH = INFO_PANEL_WIDTH - 2 * INFO_PADDING_X;
+const INFO_ICON = 48;
+const INFO_GAP = 18;
+const INFO_TEXT_WIDTH = TEXT_WIDTH - INFO_ICON - INFO_GAP;
 const URL_TEXT_WIDTH = TEXT_WIDTH - 22 - 10;
-const QUALIFICATION_SIZE = 25;
-const DESCRIPTION_SIZE = 25;
+const INFO_SIZE = 27;
 const URL_SIZE = 22;
 
 function nameFontSize(name: string): number {
-  return name.length > 40 ? 44 : name.length > 24 ? 50 : 58;
+  return name.length > 40 ? 40 : name.length > 24 ? 50 : 60;
 }
 function designationFontSize(designation: string): number {
-  return designation.length > 40 ? 26 : 30;
+  return designation.length > 40 ? 27 : 32;
 }
 
 /** A line of text: the shaped picture when there is one, else plain text in `style`. */
@@ -277,30 +280,36 @@ function TextBlock({ text, shaped, style }: { text: string; shaped?: ShapedText 
       if (style[key] !== undefined) spacing[key] = style[key] as never;
     }
     return (
-      <div style={{ display: "flex", ...spacing }}>
+      <div style={{ display: "flex", flexShrink: 0, ...spacing }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={shaped.src} width={shaped.width} height={shaped.height} alt="" style={{ width: shaped.width, height: shaped.height }} />
       </div>
     );
   }
-  return <div style={{ display: "flex", ...style }}>{text}</div>;
+  // flexShrink 0: lines never squeeze into (and overlap) each other when the column is full.
+  return <div style={{ display: "flex", flexShrink: 0, ...style }}>{text}</div>;
 }
 
-function InfoRow({ icon, lines, shaped }: { icon: keyof typeof ICON_PATHS; lines: string[]; shaped?: (ShapedText | null)[] }) {
+/** One fact with its icon (qualification, experience). */
+function InfoRow({ icon, text, shaped }: { icon: keyof typeof ICON_PATHS; text: string; shaped?: ShapedText | null }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", marginTop: 16 }}>
-      <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: TILE, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Icon name={icon} size={24} color={STEEL} />
+    <div style={{ display: "flex", alignItems: "center", marginTop: 18, flexShrink: 0 }}>
+      <div
+        style={{
+          width: INFO_ICON,
+          height: INFO_ICON,
+          borderRadius: 12,
+          backgroundColor: TILE,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Icon name={icon} size={26} color={STEEL} />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", marginLeft: 16, paddingTop: 6, flex: 1 }}>
-        {lines.map((line, i) => (
-          <TextBlock
-            key={i}
-            text={line}
-            shaped={shaped?.[i]}
-            style={{ fontSize: QUALIFICATION_SIZE, color: INK, lineHeight: 1.3, marginTop: i === 0 ? 0 : 4 }}
-          />
-        ))}
+      <div style={{ display: "flex", marginLeft: INFO_GAP, width: INFO_TEXT_WIDTH }}>
+        <TextBlock text={text} shaped={shaped} style={{ fontSize: INFO_SIZE, color: INK, lineHeight: 1.3 }} />
       </div>
     </div>
   );
@@ -316,133 +325,84 @@ export async function shapeShareTexts(data: ShareImageInput): Promise<ShapedShar
   const content = shareImageContent(data);
   const shape = (text: string, sizePx: number, color: string, maxWidth: number) =>
     needsComplexShaping(text) ? renderShapedText({ text, sizePx, color, maxWidth }) : Promise.resolve(undefined);
-  const url = displayHostAndPath(data.slug);
-  const [name, designation, description, urlText, ...qualifications] = await Promise.all([
+  const [name, designation, qualification, url] = await Promise.all([
     shape(content.name, nameFontSize(content.name), INK, TEXT_WIDTH),
     shape(content.designation, designationFontSize(content.designation), AMBER, TEXT_WIDTH),
-    shape(content.description, DESCRIPTION_SIZE, MUTED, TEXT_WIDTH),
-    shape(url, URL_SIZE, STEEL, URL_TEXT_WIDTH),
-    ...content.qualifications.map((q) => shape(q, QUALIFICATION_SIZE, INK, INFO_TEXT_WIDTH)),
+    shape(content.qualification, INFO_SIZE, INK, INFO_TEXT_WIDTH),
+    shape(displayHostAndPath(data.slug), URL_SIZE, STEEL, URL_TEXT_WIDTH),
   ]);
   const out: ShapedShareTexts = {};
   if (name !== undefined) out.name = name;
   if (designation !== undefined) out.designation = designation;
-  if (description !== undefined) out.description = description;
-  if (urlText !== undefined) out.url = urlText;
-  if (qualifications.some((q) => q !== undefined)) out.qualifications = qualifications.map((q) => q ?? null);
+  if (qualification !== undefined) out.qualification = qualification;
+  if (url !== undefined) out.url = url;
   return out;
 }
 
-const PHOTO = 360;
-const RING = 12;
-
-/** The preview's elements (exported for tests). */
+/** The preview's elements (exported for tests): a split card, photo left (40%), details right (60%). */
 export function ShareImageMarkup({ data, photo, shaped = {} }: { data: ShareImageInput; photo: string | null; shaped?: ShapedShareTexts }) {
   const content = shareImageContent(data);
-  const nameSize = nameFontSize(content.name);
-  const designationSize = designationFontSize(content.designation);
-  const hasDetails = content.qualifications.length > 0 || Boolean(content.experience) || Boolean(content.description);
+  const hasFacts = Boolean(content.qualification) || Boolean(content.experience);
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", backgroundColor: "#FFFFFF", fontFamily: SHARE_FONT_FAMILY }}>
-      {/* Left: the teacher's photo (or the default avatar), large, on the brand navy */}
+      {/* Left 40%: the teacher's photo, filling the panel (already cropped to its shape around the face), or the default avatar */}
       <div
         style={{
-          width: 470,
-          height: "100%",
+          width: PHOTO_PANEL.width,
+          height: PHOTO_PANEL.height,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          position: "relative",
           overflow: "hidden",
-          backgroundImage: `linear-gradient(160deg, ${NAVY} 0%, ${NAVY_LIGHT} 100%)`,
+          backgroundColor: NAVY,
         }}
       >
-        {/* soft decorative circles */}
-        <div style={{ position: "absolute", top: -120, left: -110, width: 340, height: 340, borderRadius: 9999, backgroundColor: "rgba(255,255,255,0.06)" }} />
-        <div style={{ position: "absolute", bottom: -140, right: -120, width: 380, height: 380, borderRadius: 9999, backgroundColor: "rgba(255,255,255,0.05)" }} />
-        <div style={{ position: "absolute", top: 0, right: 0, width: 8, height: "100%", backgroundColor: AMBER }} />
-
-        <div
-          style={{
-            width: PHOTO + RING * 2,
-            height: PHOTO + RING * 2,
-            borderRadius: 9999,
-            backgroundColor: "#FFFFFF",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            boxShadow: "0 22px 48px rgba(0,0,0,0.30)",
-          }}
-        >
-          {photo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={photo} width={PHOTO} height={PHOTO} alt="" style={{ width: PHOTO, height: PHOTO, borderRadius: 9999, objectFit: "cover" }} />
-          ) : (
-            <DefaultTeacherAvatar size={PHOTO} />
-          )}
-          {content.verified ? (
-            <div
-              style={{
-                position: "absolute",
-                right: 18,
-                bottom: 18,
-                width: 64,
-                height: 64,
-                borderRadius: 9999,
-                backgroundColor: GREEN,
-                border: "6px solid #FFFFFF",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon name="check" size={40} color="#FFFFFF" strokeWidth={3} />
-            </div>
-          ) : null}
-        </div>
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo}
+            width={PHOTO_PANEL.width}
+            height={PHOTO_PANEL.height}
+            alt=""
+            style={{ width: PHOTO_PANEL.width, height: PHOTO_PANEL.height, objectFit: "cover" }}
+          />
+        ) : (
+          <DefaultTeacherAvatar size={340} />
+        )}
       </div>
 
-      {/* Right: brand, name, designation, qualifications, experience, link */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "48px 60px 40px 56px" }}>
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <BrandMark />
-          <div
-            style={{
-              display: "flex",
-              marginLeft: "auto",
-              padding: "6px 16px",
-              borderRadius: 9999,
-              backgroundColor: content.verified ? "#ECFDF5" : TILE,
-              color: content.verified ? GREEN : STEEL,
-              fontSize: 19,
-            }}
-          >
-            {content.verified ? "Verified Teacher" : "Teacher Profile"}
-          </div>
-        </div>
+      {/* Right 60%: brand, name, designation, highest qualification, experience, link */}
+      <div
+        style={{
+          width: INFO_PANEL_WIDTH,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          padding: `52px ${INFO_PADDING_X}px 44px ${INFO_PADDING_X}px`,
+        }}
+      >
+        <BrandMark />
 
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center", overflow: "hidden", padding: "12px 0 16px 0" }}>
-          <TextBlock text={content.name} shaped={shaped.name} style={{ fontSize: nameSize, color: INK, lineHeight: 1.1, letterSpacing: -0.5 }} />
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center", overflow: "hidden", padding: "12px 0" }}>
+          <TextBlock
+            text={content.name}
+            shaped={shaped.name}
+            style={{ fontSize: nameFontSize(content.name), color: INK, lineHeight: 1.1, letterSpacing: -0.5 }}
+          />
           {content.designation ? (
-            <TextBlock text={content.designation} shaped={shaped.designation} style={{ marginTop: 10, fontSize: designationSize, color: AMBER, lineHeight: 1.2 }} />
+            <TextBlock
+              text={content.designation}
+              shaped={shaped.designation}
+              style={{ marginTop: 12, fontSize: designationFontSize(content.designation), color: AMBER, lineHeight: 1.2 }}
+            />
           ) : null}
-          {hasDetails ? <div style={{ display: "flex", width: 88, height: 5, borderRadius: 3, backgroundColor: NAVY, marginTop: 20, marginBottom: 4 }} /> : null}
-          {content.qualifications.length > 0 ? <InfoRow icon="graduationCap" lines={content.qualifications} shaped={shaped.qualifications} /> : null}
-          {content.experience ? <InfoRow icon="award" lines={[content.experience]} /> : null}
-          {content.description ? (
-            shaped.description ? (
-              <TextBlock text={content.description} shaped={shaped.description} style={{ marginTop: 18 }} />
-            ) : (
-              <div style={{ display: "flex", marginTop: 18, fontSize: DESCRIPTION_SIZE, color: MUTED, lineHeight: 1.4, maxHeight: 108, overflow: "hidden" }}>
-                {content.description}
-              </div>
-            )
-          ) : null}
+          {hasFacts ? <div style={{ display: "flex", width: 72, height: 4, borderRadius: 2, backgroundColor: NAVY, marginTop: 26, marginBottom: 8 }} /> : null}
+          {content.qualification ? <InfoRow icon="graduationCap" text={content.qualification} shaped={shaped.qualification} /> : null}
+          {content.experience ? <InfoRow icon="award" text={content.experience} /> : null}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", borderTop: "2px solid #E2E8F0", paddingTop: 16, fontSize: URL_SIZE, color: STEEL }}>
+        <div style={{ display: "flex", alignItems: "center", borderTop: "2px solid #E2E8F0", paddingTop: 18, fontSize: URL_SIZE, color: STEEL }}>
           <Icon name="globe" size={22} color={STEEL} />
           <TextBlock text={displayHostAndPath(data.slug)} shaped={shaped.url} style={{ marginLeft: 10 }} />
         </div>

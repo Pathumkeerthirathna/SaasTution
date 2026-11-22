@@ -655,9 +655,9 @@ export type PublicTeacherShareData = {
   /** SHA-256 of a unified-storage photo (null for legacy / none): part of the preview image version. */
   profileImageSha256: string | null;
   /**
-   * Qualification titles for the preview, best first (lowest displayOrder),
-   * exactly as public as on the profile page: the header always shows the
-   * best one; the others only while the Qualifications section is visible.
+   * The HIGHEST qualification for the preview (lowest displayOrder), as a
+   * list of at most one title, exactly as public as on the profile page (the
+   * header always shows it). Never any other qualification.
    */
   qualifications: string[];
   yearsOfExperience: number | null;
@@ -665,8 +665,8 @@ export type PublicTeacherShareData = {
   updatedAt: Date;
 };
 
-/** At most this many qualification titles are put in the preview. */
-export const SHARE_QUALIFICATIONS_MAX = 2;
+/** At most this many qualification titles are put in the preview (the highest only). */
+export const SHARE_QUALIFICATIONS_MAX = 1;
 /** Rows read for the preview, so blank titles can be skipped (section visible). */
 export const SHARE_QUALIFICATIONS_SCAN = 5;
 
