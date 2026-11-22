@@ -552,7 +552,17 @@ export default function TeacherProfileHeader({
   const profileUrl = teacherProfileUrl(teacherData?.slug);
   const siteHostLabel = new URL(siteOrigin()).host;
   const shareName = getDisplayName(teacherData);
-  const shareLinks = buildProfileShareLinks(profileUrl, shareName);
+  // Only what the profile header shows publicly: the highest qualification (as in the header's own line),
+  // and the phone / WhatsApp numbers it displays.
+  const shareDetails = {
+    name: shareName,
+    designation: teacherData?.designation,
+    qualification: highestQualification?.title ?? teacherData?.qualificationSummary,
+    yearsOfExperience: teacherData?.yearsOfExperience,
+    phone: teacherData?.phone,
+    whatsapp: teacherData?.whatsapp,
+  };
+  const shareLinks = buildProfileShareLinks(profileUrl, shareDetails);
 
   const openShareTarget = (href: string) => {
     if (!href) return;
@@ -577,7 +587,7 @@ export default function TeacherProfileHeader({
     }
 
     try {
-      await navigator.share(nativeSharePayload(profileUrl, shareName));
+      await navigator.share(nativeSharePayload(profileUrl, shareDetails));
     } catch (error) {
       // Dismissing the share sheet is not an error; anything else falls back to the dialog.
       if (!isShareCancelled(error)) setShowShareModal(true);

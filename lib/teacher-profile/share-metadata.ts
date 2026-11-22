@@ -3,29 +3,33 @@ import { createHash } from "node:crypto";
 import type { Metadata } from "next";
 
 import { teacherProfileUrl } from "@/lib/site-url";
+import { readableProfileLink, teacherShareDetailLines, teacherShareHeading, type TeacherShareDetails } from "@/lib/teacher-profile/share-text";
 
 /*
  * Teacher public profile: link-preview metadata (title, description,
  * canonical URL, Open Graph, Twitter / X). Pure: built from the PUBLIC share
  * data only (services/teacher-profile-service.ts getPublicTeacherShareData),
- * which never contains email, phone, ids or enrolment data.
+ * which never contains email, ids, enrolment data or hidden qualifications.
  *
- * The preview image is served by app/[slug]/opengraph-image.tsx and
- * twitter-image.tsx. Its og:image / twitter:image URLs are set HERE (they
- * override the file-convention URLs) with a "?v=" content version: a hash of
- * everything the image shows. WhatsApp, Facebook and Telegram cache previews
- * per image URL for days, so when a teacher changes their photo, name,
- * designation, qualifications or experience the URL changes and the next
- * share fetches the new image. The image route ignores the query.
+ * The link preview is the teacher's PHOTO (app/[slug]/opengraph-image.tsx,
+ * twitter-image.tsx: the photo only, no text) with the details as og:title /
+ * og:description: "Name | Designation | SL Classroom", then the highest
+ * qualification, experience, the public phone / WhatsApp numbers and the
+ * profile link. The og:image / twitter:image URLs are set HERE (they override
+ * the file-convention URLs) with a "?v=" version of the photo: platforms
+ * cache previews per image URL for days, so a new photo gets a new URL. The
+ * image route ignores the query.
  */
 
 export const SITE_NAME = "SL Classroom";
 export const SHARE_DESCRIPTION_MAX = 160;
 export const SHARE_TITLE_MAX = 70;
+/** The file-convention default size (app/[slug]/opengraph-image.tsx); the photo keeps its own proportions. */
 export const SHARE_IMAGE_SIZE = { width: 1200, height: 630 } as const;
 /** Bump when the preview image's DESIGN changes, so every teacher's preview URL changes with it. */
-export const SHARE_IMAGE_DESIGN_VERSION = "4";
+export const SHARE_IMAGE_DESIGN_VERSION = "5";
 const QUALIFICATION_MAX = 70;
+const CONTACT_MAX = 40;
 
 export type TeacherShareText = {
   slug: string;
@@ -37,10 +41,13 @@ export type TeacherShareText = {
   seoDescription: string | null;
 };
 
-/** The extra public fields the preview IMAGE shows (optional: missing = not shown). */
+/** The extra public fields the link preview shows (optional: missing = not shown). */
 export type TeacherShareImageFields = {
   qualifications?: string[] | null;
   yearsOfExperience?: number | null;
+  /** The phone / WhatsApp numbers the public profile shows. */
+  phone?: string | null;
+  whatsapp?: string | null;
   isVerified?: boolean | null;
   profileImageUrl?: string | null;
   profileImageStorageKey?: string | null;
@@ -99,13 +106,7 @@ export function teacherShareDescription(data: TeacherShareText): string {
     : `View this teacher's classes, qualifications and achievements on ${SITE_NAME}.`;
 }
 
-// ---- What the preview IMAGE shows (shared by the image and its version) ------------------------------------
-
-/** "8+ Years Experience" / "1+ Year Experience"; "" when not set, 0 or not a sensible whole number. */
-export function shareExperienceLabel(years: number | null | undefined): string {
-  if (typeof years !== "number" || !Number.isInteger(years) || years < 1 || years > 99) return "";
-  return `${years}+ ${years === 1 ? "Year" : "Years"} Experience`;
-}
+// ---- The link preview: the photo, with the teacher's details as its title and description ----------------
 
 /** Clean, non-empty, de-duplicated qualification lines (order kept). */
 export function shareQualificationLines(list: readonly (string | null | undefined)[] | null | undefined): string[] {
@@ -118,36 +119,56 @@ export function shareQualificationLines(list: readonly (string | null | undefine
 }
 
 /**
- * The image's text, after every fallback (exported for tests): name,
- * designation, the HIGHEST qualification only (the first of the public list,
- * which is best-first) and the experience label. A missing piece is "".
+ * The preview's details, cleaned: name, designation, the HIGHEST
+ * qualification only (the first of the public, best-first list), years of
+ * experience, and the phone / WhatsApp numbers the public profile shows.
  */
-export function shareImageContent(data: TeacherShareData) {
+export function sharePreviewDetails(data: TeacherShareData): TeacherShareDetails {
   return {
     name: sanitizeShareText(data.name, 60) || `${SITE_NAME} Teacher`,
     designation: sanitizeShareText(data.designation, 60),
     qualification: shareQualificationLines(data.qualifications)[0] ?? "",
-    experience: shareExperienceLabel(data.yearsOfExperience),
+    yearsOfExperience: data.yearsOfExperience ?? null,
+    phone: sanitizeShareText(data.phone, CONTACT_MAX),
+    whatsapp: sanitizeShareText(data.whatsapp, CONTACT_MAX),
   };
 }
 
+/** og:title / twitter:title, e.g. "Mr. Pathum Kumara | IT Teacher | SL Classroom". */
+export function sharePreviewTitle(data: TeacherShareData): string {
+  return teacherShareHeading(sharePreviewDetails(data), SITE_NAME);
+}
+
 /**
- * The preview image's content version: 16 hex characters of a SHA-256 over
- * everything the image shows (the text after fallbacks, the photo's identity:
- * display URL, storage key and stored SHA-256) and the design version. Same
- * content -> same URL (platform caches stay warm); any visible change -> a
- * new URL (platforms fetch the new image).
+ * og:description / twitter:description: one detail per line (platforms that
+ * do not keep line breaks show them as spaces), e.g.
+ *   Bachelor of Science in Information Technology
+ *   8 years of teaching experience
+ *   Contact: 0711455219
+ *   WhatsApp: 0778112543
+ *   View teacher profile: slclassroom.live/pathum
+ */
+export function sharePreviewDescription(data: TeacherShareData, origin: string): string {
+  return teacherShareDetailLines(sharePreviewDetails(data), readableProfileLink(teacherProfileUrl(data.slug, origin))).join("\n");
+}
+
+/**
+ * The preview image's version: 16 hex characters of a SHA-256 over what the
+ * image IS - the photo's identity (display URL, storage key, stored SHA-256;
+ * or "no photo" = the default avatar) - and the design version. A new or
+ * removed photo -> a new URL (platforms fetch the new image); text changes do
+ * not touch the image (the details are in the title / description, which
+ * platforms re-read with the page).
  */
 export function shareImageVersion(data: TeacherShareData): string {
   const photo = data.profileImageUrl ? [data.profileImageUrl, data.profileImageStorageKey ?? "", data.profileImageSha256 ?? ""] : [];
-  const payload = JSON.stringify([SHARE_IMAGE_DESIGN_VERSION, data.slug, shareImageContent(data), photo]);
+  const payload = JSON.stringify([SHARE_IMAGE_DESIGN_VERSION, data.slug, photo]);
   return createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 
-/** e.g. "Mr. Pathum Kumara – Mathematics Teacher | SL Classroom" (the image's alt text). */
+/** e.g. "Photo of Mr. Pathum Kumara" (the image's alt text). */
 export function shareImageAlt(data: TeacherShareData): string {
-  const { name, designation } = shareImageContent(data);
-  return `${designation ? `${name} – ${designation}` : name} | ${SITE_NAME}`;
+  return `Photo of ${sharePreviewDetails(data).name}`;
 }
 
 /** Absolute, versioned preview image URLs, e.g. https://slclassroom.live/Pathum-Kumara/opengraph-image?v=1a2b... */
@@ -157,11 +178,19 @@ export function shareImageUrls(data: TeacherShareData, origin: string): { openGr
   return { openGraph: `${profile}/opengraph-image?v=${v}`, twitter: `${profile}/twitter-image?v=${v}` };
 }
 
-/** Metadata of a PUBLIC profile. `origin` is the site origin (lib/site-url.ts). */
+/**
+ * Metadata of a PUBLIC profile. `origin` is the site origin (lib/site-url.ts).
+ * The page <title> and search description are unchanged; the link preview
+ * (Open Graph / Twitter) carries the teacher's details. The image's size and
+ * type are not declared: it is the photo in its own proportions (JPEG), or the
+ * default avatar (PNG).
+ */
 export function buildTeacherProfileMetadata(data: TeacherShareData, origin: string): Metadata {
   const title = teacherShareTitle(data);
   const description = teacherShareDescription(data);
   const url = teacherProfileUrl(data.slug, origin);
+  const previewTitle = sharePreviewTitle(data);
+  const previewDescription = sharePreviewDescription(data, origin);
   const images = shareImageUrls(data, origin);
   const alt = shareImageAlt(data);
   return {
@@ -174,24 +203,16 @@ export function buildTeacherProfileMetadata(data: TeacherShareData, origin: stri
       type: "profile",
       siteName: SITE_NAME,
       url,
-      title: `${title} | ${SITE_NAME}`,
-      description,
+      title: previewTitle,
+      description: previewDescription,
       locale: "en_LK",
-      images: [
-        {
-          url: images.openGraph,
-          ...(images.openGraph.startsWith("https://") ? { secureUrl: images.openGraph } : {}),
-          type: "image/png",
-          ...SHARE_IMAGE_SIZE,
-          alt,
-        },
-      ],
+      images: [{ url: images.openGraph, ...(images.openGraph.startsWith("https://") ? { secureUrl: images.openGraph } : {}), alt }],
     },
     twitter: {
       card: "summary_large_image",
-      title: `${title} | ${SITE_NAME}`,
-      description,
-      images: [{ url: images.twitter, ...SHARE_IMAGE_SIZE, alt }],
+      title: previewTitle,
+      description: previewDescription,
+      images: [{ url: images.twitter, alt }],
     },
   };
 }

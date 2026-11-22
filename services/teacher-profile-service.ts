@@ -637,7 +637,11 @@ export async function GetTeacherPublicProfileBySlug(slug: string): Promise<Teach
 
 // ---- Social sharing (metadata and the Open Graph image) ------------------------------------------------------
 
-/** Only what a link preview may show. Nothing private: no email, phone, ids or enrolment data. */
+/**
+ * Only what a link preview may show. Nothing private: no email, ids,
+ * enrolment data or hidden qualifications. The phone / WhatsApp numbers are
+ * the ones the public profile page itself shows.
+ */
 export type PublicTeacherShareData = {
   /** The slug as stored (its capitals), for the canonical URL. */
   slug: string;
@@ -661,6 +665,9 @@ export type PublicTeacherShareData = {
    */
   qualifications: string[];
   yearsOfExperience: number | null;
+  /** Shown publicly on the profile page whenever set. */
+  phone: string | null;
+  whatsapp: string | null;
   isVerified: boolean;
   updatedAt: Date;
 };
@@ -693,6 +700,8 @@ export const getPublicTeacherShareData = cache(async function getPublicTeacherSh
       profileImageStorageKey: true,
       profileImageSha256: true,
       yearsOfExperience: true,
+      phone: true,
+      whatsapp: true,
       isVerified: true,
       isDisplayQualification: true,
       qualifications: {
@@ -725,6 +734,8 @@ export const getPublicTeacherShareData = cache(async function getPublicTeacherSh
     profileImageSha256: profile.profileImageSha256,
     qualifications,
     yearsOfExperience: profile.yearsOfExperience,
+    phone: profile.phone,
+    whatsapp: profile.whatsapp,
     isVerified: profile.isVerified,
     updatedAt: profile.updatedAt,
   };
