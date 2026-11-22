@@ -1,4 +1,5 @@
 import { AppError } from "@/lib/error-handler";
+import { displayGradeForStudent } from "@/lib/grade";
 import { prisma } from "@/lib/prisma";
 import { sriLankaDigitsToInstant } from "@/lib/time";
 import {
@@ -43,7 +44,7 @@ export async function getGuardianStudents(guardianId: string) {
           id: true,
           name: true,
           registrationNumber: true,
-          grade: { select: { GradeDesc: true } },
+          grade: { select: { id: true, GradeDesc: true } },
           _count: {
             select: { classes: { where: { isActive: true } } },
           },
@@ -56,7 +57,8 @@ export async function getGuardianStudents(guardianId: string) {
     id: link.student.id,
     name: link.student.name,
     registrationNumber: link.student.registrationNumber,
-    grade: link.student.grade?.GradeDesc ?? null,
+    // Family-facing: Grade 0 ("no school grade") is never shown.
+    grade: displayGradeForStudent(link.student.grade),
     relation: link.relation,
     classCount: link.student._count.classes,
   }));

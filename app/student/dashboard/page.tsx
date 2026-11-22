@@ -31,6 +31,10 @@ import { DashboardRecordedLectures } from "@/components/student-portal/recorded-
 import { DashboardPerformance } from "@/components/student-portal/dashboard-performance";
 import { getStudentDashboardCounts } from "@/services/student-dashboard-counts-service";
 import { RealtimeRefresh } from "@/components/student-portal/realtime-refresh";
+import ClassSessionsPreview from "@/components/teacherProfile/classLanding/ClassSessionsPreview";
+import { logError } from "@/lib/error-logging/server-logger";
+import { getClassAccessRestrictions } from "@/services/class-access-service";
+import { getPublicSessionsForRestrictedClasses, type RestrictedClassPublicSessions } from "@/services/recorded-lecture-public-service";
 
 // helpers
 
@@ -216,6 +220,17 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
   const upcomingCountdowns = await getStudentUpcomingCountdowns(studentId);
   const dashboardCounts = await getStudentDashboardCounts(studentId, "month");
 
+  // Payment-restricted classes: the recordings the teacher published for
+  // everyone (public class page data and playback) stay watchable here. Only
+  // shown while a class is restricted; informational, so a failure is logged
+  // and never blocks the dashboard (like the restriction notice).
+  let restrictedPublicSessions: RestrictedClassPublicSessions[] = [];
+  try {
+    restrictedPublicSessions = await getPublicSessionsForRestrictedClasses(studentId, getClassAccessRestrictions);
+  } catch (error) {
+    logError(error, { source: "server", kind: "restricted-public-sessions", route: "/student/dashboard", method: "GET" });
+  }
+
   // derived values
 
   const enrolledCount = enrolledClasses.length;
@@ -351,6 +366,18 @@ export default async function StudentDashboardPage({ searchParams }: { searchPar
             </div>
           </section>
         )}
+
+        {/* Course Sessions of payment-restricted classes: free public recordings only */}
+        {restrictedPublicSessions.map((entry) => (
+          <section key={entry.classId} data-restricted-public-sessions={entry.classId} className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{entry.className}</p>
+            <ClassSessionsPreview
+              lectures={entry.sessions}
+              description="Free recordings your teacher published for everyone. You can watch them while class access is paused."
+              showRegisterFooter={false}
+            />
+          </section>
+        ))}
 
         {/* 2. Live now — Jitsi sessions + YouTube broadcasts, pushed over SSE */}
         <LiveDashboardSection

@@ -23,7 +23,7 @@ const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
 
 test("placement: right after the Free Card one; only the approved partial payment and Free Card eligibility migrations follow; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261120120000_add_class_student_fee_free_card", MIGRATION, "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible", "20261124120000_add_recorded_lecture_publication"]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261120120000_add_class_student_fee_free_card", MIGRATION, "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible", "20261124120000_add_recorded_lecture_publication", "20261125120000_add_teacher_payment_accounts", "20261126120000_add_teacher_title_eng", "20261127120000_add_grade_zero"]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });

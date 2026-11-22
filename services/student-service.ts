@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { INVALID_GRADE_MESSAGE } from "@/lib/grade";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { attendedMs, sortVisitsChronologically } from "@/lib/attendance-duration";
@@ -11,6 +12,7 @@ import { feePaymentState, type FeePaymentStateName } from "@/lib/fee-payment-sta
 import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 import { ensureCurrentMonthFeeForClassStudent } from "@/services/class-student-fee-service";
 import { recalculateAfterStudentDecision } from "@/services/fee-waiver-events";
+import { publicRegistrationEnrolmentId } from "@/lib/fee-waiver";
 import type { CreateStudentInput, UpdateStudentInput } from "@/lib/student-validation";
 import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
 import { RegisterStudentRequest } from "@/types/teacherProfileTypes/RegisterStudentRequest";
@@ -111,6 +113,18 @@ function registrationNumberTakenError() {
 }
 
 /**
+ * A grade id that is not a Grade row (Grade 0 included when it exists) is a
+ * 400, never a foreign-key 500. Any grade the teacher dropdown lists
+ * (/api/Grade lists every grade) is accepted.
+ */
+async function assertGradeExists(gradeId: number) {
+  const grade = await prisma.grade.findUnique({ where: { id: gradeId }, select: { id: true } });
+  if (!grade) {
+    throw new AppError(INVALID_GRADE_MESSAGE, 400, "VALIDATION_ERROR", { field: "gradeId" });
+  }
+}
+
+/**
  * Whether a non-deleted student of ANY teacher already holds this number
  * (compared case-insensitively). `excludeStudentId` skips the student being
  * edited, so keeping one's own number is not a clash.
@@ -201,6 +215,9 @@ export async function createStudent(teacherId: string, input: CreateStudentInput
   if (!teacher) {
     throw new AppError("Teacher not found.", 404, "TEACHER_NOT_FOUND");
   }
+
+  // input.gradeId is always set: createStudentSchema assigns Grade 0 when no grade is given.
+  await assertGradeExists(input.gradeId);
 
   // Unique across every teacher's non-deleted students; a deleted student's
   // number may be reused.
@@ -471,7 +488,8 @@ export async function listStudentsByTeacher(params: {
       }
     : {}),
 
-    ...(params.gradeId
+    // Grade 0 is a real grade: only an absent filter means "every grade".
+    ...(params.gradeId !== undefined
       ? {
           gradeId: params.gradeId,
         }
@@ -631,7 +649,8 @@ export async function listAllStudentsByTeacher(params: {
         }
       : {}),
 
-    ...(params.gradeId
+    // Grade 0 is a real grade: only an absent filter means "every grade".
+    ...(params.gradeId !== undefined
       ? {
           gradeId: params.gradeId,
         }
@@ -957,6 +976,8 @@ export async function updateStudentForTeacher(teacherId: string, studentId: stri
       "DUPLICATE_REGISTRATION_NUMBER"
     );
   }
+
+  await assertGradeExists(input.gradeId);
 
   const duplicateStudentName =
     await prisma.student.findFirst({
@@ -2226,7 +2247,8 @@ export async function checkIfNameExists(
         mode: "insensitive",
       },
       // A name is only a clash within the same grade.
-      ...(gradeId ? { gradeId } : {}),
+      // Grade 0 is a real grade (a clash within Grade 0 counts too).
+      ...(gradeId !== undefined && gradeId !== null ? { gradeId } : {}),
       // Active and inactive students hold their name; deleted ones do not.
       status: { not: 2 },
       ...(studentId && {
@@ -2279,6 +2301,45 @@ export function nextDecisionInstant(now: Date, previous: Date | null): Date {
   }
 
   return now;
+}
+
+/**
+ * After an approval has COMMITTED: makes sure the current month's fee row of
+ * the student's original public-registration enrolment exists, so the
+ * initial-payment access rule (services/class-access-service.ts) has the fee
+ * to check from the approval on. Only for students registered through a
+ * public class page, and only when that enrolment is still active; nothing
+ * for teacher-created / imported students or other enrolments.
+ *
+ * Reuses ensureCurrentMonthFeeForClassStudent unchanged (the registration and
+ * Payments-page path): it creates nothing when the row exists (and the
+ * (classStudentId, year, month) unique key forbids a duplicate), so a repeated
+ * approval, a re-approval or a concurrent Payments-page visit never creates a
+ * second row or touches an existing one or its payments.
+ *
+ * Never throws: a failure is logged and never undoes or fails the approval;
+ * the Payments page still creates a missing row (its existing fallback).
+ */
+async function ensureInitialFeeAfterApproval(studentId: string): Promise<void> {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { registrationSource: true, publicClassId: true },
+    });
+    if (!student || student.registrationSource !== "PUBLIC_CLASS" || !student.publicClassId) return;
+
+    const enrolments = await prisma.classStudent.findMany({
+      where: { studentId, classId: student.publicClassId },
+      select: { id: true, classId: true, assignedAt: true, isActive: true },
+    });
+    const enrolmentId = publicRegistrationEnrolmentId(student, enrolments);
+    const enrolment = enrolments.find((entry) => entry.id === enrolmentId);
+    if (!enrolment || !enrolment.isActive) return;
+
+    await ensureCurrentMonthFeeForClassStudent(prisma, enrolment.id);
+  } catch (error) {
+    console.error(`[CLASS_ACCESS] initial fee row after approval failed (student ${studentId}):`, error);
+  }
 }
 
 function studentDecisionBusyError() {
@@ -2384,6 +2445,12 @@ export async function decideStudentConfirmation(
     await recalculateAfterStudentDecision(studentId);
   }
 
+  // Initial payment (public registrations only): the fee to pay exists from
+  // the approval on. After the commit; never fails the decision.
+  if (toStatus === StudentConfirmationStatus.APPROVED) {
+    await ensureInitialFeeAfterApproval(studentId);
+  }
+
   return { fromStatus, toStatus };
 }
 
@@ -2471,6 +2538,8 @@ export async function confirmAllPendingStudents(teacherId: string) {
 
   for (const studentId of approvedIds) {
     await recalculateAfterStudentDecision(studentId);
+    // Initial payment (public registrations only); never fails the approval.
+    await ensureInitialFeeAfterApproval(studentId);
   }
 
   return approvedIds.length;

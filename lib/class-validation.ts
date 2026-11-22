@@ -1,6 +1,18 @@
 import { z } from "zod";
 
 import { MAX_ATTENDANCE_GRACE_MINUTES, MIN_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
+import { isCalendarDateString } from "@/lib/class-start-date";
+
+/**
+ * Batch Start Date: a calendar date "YYYY-MM-DD" (lib/class-start-date.ts).
+ * 1900-01-01 is the accepted "not given" sentinel and is kept as it is.
+ * Optional on create (the route then stores the sentinel) and on update
+ * (omitted = unchanged).
+ */
+const classStartDate = z
+  .string({ error: "Batch start date must be a date (YYYY-MM-DD)." })
+  .trim()
+  .refine(isCalendarDateString, "Batch start date must be a valid date (YYYY-MM-DD).");
 
 const className = z
   .string()
@@ -82,6 +94,7 @@ export const createClassSchema = z.object({
   attendanceGraceMinutes: classAttendanceGraceMinutes.optional(),
   schedule: classSchedule.optional(),
   schedules: classSchedulesSchema,
+  startDate: classStartDate.optional(),
 });
 
 export const updateClassSchema = z
@@ -93,8 +106,9 @@ export const updateClassSchema = z
     attendanceGraceMinutes: classAttendanceGraceMinutes.optional(),
     schedule: classSchedule.optional(),
     schedules: classSchedulesSchema.optional(),
+    startDate: classStartDate.optional(),
   })
-  .refine((value) => value.name || value.description !== undefined || value.monthlyFee !== undefined || value.paymentDueWeek !== undefined || value.attendanceGraceMinutes !== undefined || value.schedule || value.schedules, {
+  .refine((value) => value.name || value.description !== undefined || value.monthlyFee !== undefined || value.paymentDueWeek !== undefined || value.attendanceGraceMinutes !== undefined || value.schedule || value.schedules || value.startDate !== undefined, {
     message: "At least one field is required to update the class.",
   });
 

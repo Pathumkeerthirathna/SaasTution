@@ -1,6 +1,7 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
+import { parseGradeFilter } from "@/lib/grade";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createStudentSchema } from "@/lib/student-validation";
 import { createStudent, listStudentsByTeacher } from "@/services/student-service";
@@ -15,7 +16,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const pagination = parsePaginationParams(searchParams);
     const name = searchParams.get("name")?.trim() ?? "";
-    const gradeId = Number(searchParams.get("grade") ?? 0);
+    // Grade 0 is a real grade: only an absent / blank filter means every grade.
+    const gradeId = parseGradeFilter(searchParams.get("grade"));
     const registrationNumber =
     searchParams.get("registrationNumber") ?? undefined;
 
@@ -36,7 +38,7 @@ export async function GET(request: Request) {
       take: pagination.take,
       name,
       email,
-      gradeId: gradeId || undefined,
+      gradeId,
       sortBy,
       sortOrder,
       registrationNumber,

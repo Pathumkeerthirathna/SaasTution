@@ -10,7 +10,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SECTIONS: ProfileSection[] = ["qualification", "achievements", "subjects"];
+const SECTIONS: ProfileSection[] = ["qualification", "achievements", "subjects", "paymentDetails"];
 
 export async function GET(request: Request) {
   try {

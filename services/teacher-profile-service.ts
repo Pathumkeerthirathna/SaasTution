@@ -1828,18 +1828,21 @@ export async function updateAboutMe(
   });
 }
 
-export type ProfileSection = "qualification" | "achievements" | "subjects";
+export type ProfileSection = "qualification" | "achievements" | "subjects" | "paymentDetails";
 
 export type SectionVisibility = {
   isDisplayQualification: boolean;
   isDisplayAchievements: boolean;
   isDisplaySubjects: boolean;
+  /** Payment Details master switch (TeacherPaymentAccount). */
+  isDisplayPaymentDetails: boolean;
 };
 
 const SECTION_COLUMN: Record<ProfileSection, keyof SectionVisibility> = {
   qualification: "isDisplayQualification",
   achievements: "isDisplayAchievements",
   subjects: "isDisplaySubjects",
+  paymentDetails: "isDisplayPaymentDetails",
 };
 
 export async function getSectionVisibility(
@@ -1851,6 +1854,7 @@ export async function getSectionVisibility(
       isDisplayQualification: true,
       isDisplayAchievements: true,
       isDisplaySubjects: true,
+      isDisplayPaymentDetails: true,
     },
   });
 
@@ -1859,6 +1863,7 @@ export async function getSectionVisibility(
     isDisplayQualification: profile?.isDisplayQualification ?? true,
     isDisplayAchievements: profile?.isDisplayAchievements ?? true,
     isDisplaySubjects: profile?.isDisplaySubjects ?? true,
+    isDisplayPaymentDetails: profile?.isDisplayPaymentDetails ?? true,
   };
 }
 
@@ -1894,6 +1899,7 @@ export async function updateSectionVisibility(
       isDisplayQualification: true,
       isDisplayAchievements: true,
       isDisplaySubjects: true,
+      isDisplayPaymentDetails: true,
     },
   });
 

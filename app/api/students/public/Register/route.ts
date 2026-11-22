@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { handleRouteError } from "@/lib/error-handler";
 import { clientKey } from "@/lib/error-logging/request-trust";
+import { INVALID_GRADE_MESSAGE, optionalGradeIdSchema } from "@/lib/grade";
 import { prisma } from "@/lib/prisma";
 import { publicRegistrationRateLimiter } from "@/lib/public-registration-rate-limit";
 import { checkSameOriginRequest } from "@/lib/same-origin";
@@ -14,7 +15,8 @@ import { RegisterStudentViaPublicClasses } from "@/services/student-service";
  *
  *  1. Same-origin (403 CROSS_ORIGIN_REQUEST_REJECTED).
  *  2. Body validation (400 VALIDATION_ERROR), same limits as adding a student
- *     (lib/student-validation.ts), and the grade must exist. Invalid requests
+ *     (lib/student-validation.ts); no grade is Grade 0, any given grade must
+ *     exist (lib/grade.ts). Invalid requests
  *     use no rate-limit budget.
  *  3. Rate limits (lib/public-registration-rate-limit.ts): per email, per
  *     trusted client address, global. Refused: 429 REGISTRATION_RATE_LIMITED
@@ -45,7 +47,9 @@ const publicRegistrationSchema = z.object({
     .min(1, "Mobile number is required.")
     .max(60, "Mobile number must be at most 60 characters long."),
   parentMobileNumber: optionalContact,
-  gradeId: z.number({ error: "Grade is required." }).int("Grade is required.").positive("Grade is required."),
+  // Optional: "No specific grade" (omitted / null) is Grade 0; an explicit
+  // grade, Grade 0 included, is kept. Must still exist (checked below).
+  gradeId: optionalGradeIdSchema,
   email: z
     .string({ error: "Email address is required." })
     .trim()
@@ -79,11 +83,12 @@ export async function POST(request: Request) {
     const data = parsed.data;
     const email = data.email.toLowerCase();
 
-    // Any grade the form lists (/api/Grade lists every grade). Checked before
-    // the limiter, so a nonexistent grade uses no budget.
+    // Any existing grade (the form lists every grade except Grade 0, which
+    // "No specific grade" stands for). Checked before the limiter, so a
+    // nonexistent grade uses no budget.
     const grade = await prisma.grade.findUnique({ where: { id: data.gradeId }, select: { id: true } });
     if (!grade) {
-      return apiError("Please select a valid grade.", 400, "VALIDATION_ERROR", { field: "gradeId" });
+      return apiError(INVALID_GRADE_MESSAGE, 400, "VALIDATION_ERROR", { field: "gradeId" });
     }
 
     const decision = publicRegistrationRateLimiter().attempt(email, clientKey(request));

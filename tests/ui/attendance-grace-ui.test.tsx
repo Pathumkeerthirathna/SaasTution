@@ -111,7 +111,8 @@ test("class panel wiring: both forms have the labelled field, default 10, the sa
   assert.match(panel, /attendanceGraceMinutes: classGraceInput\(item\.attendanceGraceMinutes\),/);
   assert.match(panel, /const createPayload = buildClassFormPayload\(createForm\);\s*if \(!createPayload\.ok\) \{\s*setErrorMessage\(createPayload\.message\);\s*return;\s*\}/);
   assert.match(panel, /body: JSON\.stringify\(createPayload\.body\),/);
-  assert.match(panel, /const updatePayload = buildClassFormPayload\(editForm\);\s*if \(!updatePayload\.ok\) \{\s*setErrorMessage\(updatePayload\.message\);\s*return;\s*\}/);
+  // The edit form names its mode (Batch Start Date: an empty input leaves the saved date unchanged).
+  assert.match(panel, /const updatePayload = buildClassFormPayload\(editForm, "update"\);\s*if \(!updatePayload\.ok\) \{\s*setErrorMessage\(updatePayload\.message\);\s*return;\s*\}/);
   assert.match(panel, /body: JSON\.stringify\(updatePayload\.body\),/);
   // The other fields and endpoints are as before.
   assert.match(panel, /fetch\("\/api\/classes", \{\s*method: "POST"/);

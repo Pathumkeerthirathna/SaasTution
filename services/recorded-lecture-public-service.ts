@@ -148,6 +148,50 @@ export async function getPublicClassSessionsWithUploads(classId: string): Promis
   return mergePublicUploadedRecordings(sessions, rows);
 }
 
+// ---- Payment-restricted students (student dashboard) ----------------------------------------------
+
+/**
+ * Only what ANYONE can already play on the public class page: FREE
+ * ("Unlocked") YouTube recordings and uploads. LOCKED ones are dropped (they
+ * belong to the class's paid content), and so is a lecture left with nothing.
+ */
+export function playablePublicSessions(sessions: ClassLectureSession[]): ClassLectureSession[] {
+  const playable: ClassLectureSession[] = [];
+  for (const session of sessions) {
+    const recordings = session.recordings.filter((recording) => recording.access === "FREE");
+    const uploads = (session.uploads ?? []).filter((upload) => upload.access === "FREE");
+    if (recordings.length === 0 && uploads.length === 0) continue;
+    playable.push({ ...session, recordings, ...(uploads.length > 0 ? { uploads } : {}) });
+  }
+  return playable;
+}
+
+export type RestrictedClassPublicSessions = { classId: string; className: string; sessions: ClassLectureSession[] };
+
+/**
+ * For the student dashboard: the publicly playable course sessions of each
+ * class the student is currently payment-restricted in (either reason), so
+ * they can keep watching what the teacher published for everyone. Exactly
+ * the public class page's data (getPublicClassSessionsWithUploads, then
+ * playablePublicSessions) and its public playback (YouTube embed / the public
+ * stream route, authorised again on every request): no student content route,
+ * no class-access exception, no private recording. Classes without such
+ * sessions, and unrestricted students, get nothing (the dashboard is unchanged).
+ */
+export async function getPublicSessionsForRestrictedClasses(
+  studentId: string,
+  getRestrictions: (studentId: string) => Promise<readonly { classId: string; className: string }[]>
+): Promise<RestrictedClassPublicSessions[]> {
+  const classes = new Map<string, string>();
+  for (const restriction of await getRestrictions(studentId)) classes.set(restriction.classId, restriction.className);
+  const result: RestrictedClassPublicSessions[] = [];
+  for (const [classId, className] of classes) {
+    const sessions = playablePublicSessions(await getPublicClassSessionsWithUploads(classId));
+    if (sessions.length > 0) result.push({ classId, className, sessions });
+  }
+  return result;
+}
+
 // ---- Playback -----------------------------------------------------------------------------------
 
 function publicStreamRefused(reason: "STUDENT" | "GLOBAL"): AppError {

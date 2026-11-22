@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
-type ProfileSection = "qualification" | "achievements" | "subjects";
+type ProfileSection = "qualification" | "achievements" | "subjects" | "paymentDetails";
 
 interface Props {
   section: ProfileSection;

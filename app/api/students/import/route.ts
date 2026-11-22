@@ -6,6 +6,7 @@ import { wakeEmailDeliveryWorker } from "@/services/email-delivery-worker";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { resolveOptionalGradeId } from "@/lib/grade";
 import { REGISTRATION_NUMBER_TOO_LONG_MESSAGE, isRegistrationNumberTooLong } from "@/lib/student-validation";
 import { Prisma, StudentConfirmationStatus, StudentRegistrationSource } from "@prisma/client";
 import {
@@ -17,7 +18,8 @@ import {
 type ImportStudentRow = {
     registrationNumber?: string;
     studentName: string;
-    gradeId: number | null;
+    // As sent: blank (null / missing / "") is Grade 0 (lib/grade.ts).
+    gradeId?: number | string | null;
     primaryContact?: string;
     secondaryContact?: string;
     email?: string;
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
     
     const body = (await request.json()) as ImportStudentRequest;
 
-    const { students } = body;
+    const { students: uploadedStudents } = body;
 
     // Only teacher-originated sources: an import can never claim to be a
     // public registration (PUBLIC_CLASS) or an admin creation. Missing keeps
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
     const registrationSource = (rawRegistrationSource ?? undefined) as StudentRegistrationSource | undefined;
 
 
-    if (!Array.isArray(students)) {
+    if (!Array.isArray(uploadedStudents)) {
         return NextResponse.json(
             {
             success: false,
@@ -81,6 +83,15 @@ export async function POST(request: Request) {
             }
         );
     }
+
+    // A blank grade is Grade 0 and an explicit grade (Grade 0 included) is
+    // kept; anything else that is not a whole number >= 0 is null here and
+    // reported as "Invalid grade." below. 0 is a real grade id: never test it
+    // for truthiness.
+    const students = uploadedStudents.map((student) => {
+        const grade = resolveOptionalGradeId(student?.gradeId);
+        return { ...student, gradeId: grade.ok ? grade.gradeId : null };
+    });
 
     const errors: {
         row: number;
@@ -204,11 +215,11 @@ export async function POST(request: Request) {
             });
         }
 
-        if (!student.gradeId) {
+        if (student.gradeId === null) {
             errors.push({
             row: rowNumber,
             field: "gradeId",
-            message: "Grade is required.",
+            message: "Invalid grade.",
             });
         }
 
@@ -242,9 +253,9 @@ export async function POST(request: Request) {
         ...new Set(
             students
             .map((s) => s.gradeId)
-            .filter(Boolean)
+            .filter((gradeId): gradeId is number => gradeId !== null)
         ),
-    ] as number[];
+    ];
 
     const grades = await prisma.grade.findMany({
         where: {
@@ -265,7 +276,7 @@ export async function POST(request: Request) {
         const rowNumber = index + 2;
 
         if (
-            student.gradeId &&
+            student.gradeId !== null &&
             !validGradeIds.has(student.gradeId)
         ) {
             errors.push({

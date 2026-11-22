@@ -11,6 +11,7 @@
  */
 
 import { GRACE_MINUTES_DEFAULT, graceInputProblemMessage, parseGraceMinutesInput } from "@/components/attendance/attendance-ui";
+import { classStartDateForCreate } from "@/lib/class-start-date";
 
 /** The fields every class form has (the panel's FormState). */
 export type ClassFormFields = {
@@ -32,25 +33,36 @@ export function classGraceInput(saved: number | null | undefined): string {
   return typeof saved === "number" && Number.isInteger(saved) ? String(saved) : DEFAULT_CLASS_GRACE_INPUT;
 }
 
-export type ClassFormBody = Omit<ClassFormFields, "monthlyFee" | "paymentDueWeek" | "attendanceGraceMinutes"> & {
+export type ClassFormBody = Omit<ClassFormFields, "monthlyFee" | "paymentDueWeek" | "attendanceGraceMinutes" | "startDate"> & {
   monthlyFee: number;
   paymentDueWeek: number;
   attendanceGraceMinutes: number;
+  /** Batch Start Date "YYYY-MM-DD"; omitted on an update whose date input is empty (= unchanged). */
+  startDate?: string;
 };
 
 export type ClassFormPayload = { ok: true; body: ClassFormBody } | { ok: false; message: string };
 
-/** The create / update body (the two forms send the same shape), or the grace input's problem. */
-export function buildClassFormPayload(form: ClassFormFields): ClassFormPayload {
+/**
+ * The create / update body (the two forms send the same shape), or the grace
+ * input's problem. Batch Start Date (lib/class-start-date.ts):
+ *   create - the chosen date unchanged, or 1900-01-01 ("not given") when empty;
+ *   update - the date in the input (the saved one, 1900-01-01 included, or the
+ *            teacher's replacement); an empty input sends nothing (unchanged).
+ */
+export function buildClassFormPayload(form: ClassFormFields, mode: "create" | "update" = "create"): ClassFormPayload {
   const grace = parseGraceMinutesInput(form.attendanceGraceMinutes);
   if (!grace.ok) return { ok: false, message: graceInputProblemMessage(grace.problem) };
+  const { startDate, ...fields } = form;
+  const date = (startDate ?? "").trim();
   return {
     ok: true,
     body: {
-      ...form,
+      ...fields,
       monthlyFee: Number(form.monthlyFee || 0),
       paymentDueWeek: Number(form.paymentDueWeek || 1),
       attendanceGraceMinutes: grace.value,
+      ...(mode === "create" ? { startDate: classStartDateForCreate(date) } : date ? { startDate: date } : {}),
     },
   };
 }

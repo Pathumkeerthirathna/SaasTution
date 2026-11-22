@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { optionalGradeIdSchema } from "@/lib/grade";
+
 /**
  * Longest registration number (Student Profile SP-6G): the single source of
  * truth for creating, editing and importing students and for the student
@@ -28,13 +30,12 @@ const studentName = z
   .min(2, "Student name must be at least 2 characters long.")
   .max(120, "Student name must be at most 120 characters long.");
 
-  const gradeId = z
-  .number()
-  .int()
-  .positive()
-  .refine((value) => value > 0, {
-    message: "Grade is required.",
-  });
+// Grade 0 (lib/grade.ts) is a real grade: an id of 0 is valid, never "empty".
+// Adding a student: no grade -> Grade 0. Editing: the grade is always sent.
+const gradeId = z
+  .number({ error: "Grade is required." })
+  .int("Grade is required.")
+  .min(0, "Grade is required.");
 
 const studentContact = z.preprocess(
   (value) =>
@@ -62,7 +63,7 @@ const entityId = z.string().trim().uuid("Invalid id format.");
 export const createStudentSchema = z.object({
   registrationNumber:registrationNumber,
   name: studentName,
-  gradeId: gradeId,
+  gradeId: optionalGradeIdSchema,
   contact01: studentContact,
   contact02: studentContact,
   email: requiredStudentEmail,

@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import TeacherProfilePage from "@/components/teacherProfile/TeacherProfilePage";
 import { siteOrigin } from "@/lib/site-url";
 import { buildTeacherProfileMetadata, buildUnavailableProfileMetadata } from "@/lib/teacher-profile/share-metadata";
+import { getPublishedPaymentAccounts } from "@/services/teacher-payment-account-service";
 import { getTeacherProfileSections } from "@/services/teacher-profile-section-service";
 import { findPublicTeacherProfileBySlug, getPublicTeacherShareData } from "@/services/teacher-profile-service";
+import { resolveTeacherProfileViewer, splitClassesForStudent } from "@/services/teacher-profile-viewer-service";
 
 interface Props {
   params: {
@@ -38,13 +40,25 @@ export default async function PublicTeacherPage({
     notFound();
   }
 
-  const sections = await getTeacherProfileSections(teacher.teacherId);
+  // Role from the server-side session only (never from the URL or the client): the owner gets the
+  // Payment Details management card, a related student gets their enrolled / available classes;
+  // everyone else gets the public profile. The rest of the page is the public profile for all.
+  const [sections, viewer, paymentAccounts] = await Promise.all([
+    getTeacherProfileSections(teacher.teacherId),
+    resolveTeacherProfileViewer(teacher.teacherId),
+    getPublishedPaymentAccounts(teacher.teacherId),
+  ]);
+  const studentClasses =
+    viewer.role === "STUDENT" ? await splitClassesForStudent(viewer.studentId, teacher.teacherId, teacher.classes) : undefined;
 
   return (
     <TeacherProfilePage
       teacher={teacher}
       isPublic={true}
       sectionOrder={sections.map((section) => section.sectionType)}
+      viewerRole={viewer.role}
+      paymentAccounts={paymentAccounts}
+      studentClasses={studentClasses}
     />
   );
 }

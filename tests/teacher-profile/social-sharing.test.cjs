@@ -136,9 +136,18 @@ const prisma = {
       const row = db.profiles.find((p) => p.slug.toLowerCase() === wanted);
       return row ? applySelect(row, select) : null;
     },
+    // The page reads the Payment Details switch (services/teacher-payment-account-service.ts).
+    async findUnique({ where, select }) {
+      const row = db.profiles.find((p) => p.teacherId === where.teacherId);
+      return row ? applySelect({ isDisplayPaymentDetails: true, ...row }, select) : null;
+    },
   },
+  // No payment accounts in these tests (covered by tests/teacher-profile/role-aware-profile.test.cjs).
+  teacherPaymentAccount: { async findMany() { return []; } },
 };
 fake("lib/prisma.ts", { prisma });
+// A visitor without a session (the role-aware views are covered by role-aware-profile.test.cjs).
+fake("lib/auth-session.ts", { getOptionalSession: async () => null });
 fake("services/teacher-profile-section-service.ts", { getTeacherProfileSections: async () => [{ sectionType: "ABOUT_ME" }] });
 // The real client component would be serialised into the page for the browser: this stand-in writes the
 // same props into the HTML, so the test sees exactly what the browser would receive.

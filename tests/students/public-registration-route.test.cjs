@@ -244,11 +244,10 @@ test("invalid bodies are 400 VALIDATION_ERROR, create nothing and use no budget"
     ["mobileNumber", { mobileNumber: undefined }],
     ["mobileNumber", { mobileNumber: "1".repeat(61) }],
     ["parentMobileNumber", { parentMobileNumber: "1".repeat(61) }],
-    ["gradeId", { gradeId: 0 }],
+    // No grade / Grade 0 are valid (Grade 0, tests/students/grade-zero.test.cjs).
     ["gradeId", { gradeId: -3 }],
     ["gradeId", { gradeId: 1.5 }],
     ["gradeId", { gradeId: "6" }],
-    ["gradeId", { gradeId: undefined }],
     ["email", { email: "" }],
     ["email", { email: "not-an-email" }],
     ["email", { email: `${"a".repeat(115)}@x.com` }],

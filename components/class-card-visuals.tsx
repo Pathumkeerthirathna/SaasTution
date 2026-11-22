@@ -2,12 +2,49 @@ import {
   Atom,
   BookOpen,
   Calculator,
+  CalendarDays,
   Compass,
   FlaskConical,
   Microscope,
   Pencil,
   Sigma,
 } from "lucide-react";
+
+import { hasClassStartDate } from "@/lib/class-start-date";
+
+/**
+ * True when the class has a real Batch Start Date (never the 1900-01-01
+ * "not given" sentinel, never a missing or unreadable one) that is still in
+ * the future: only then is the class shown as upcoming.
+ */
+export function isUpcomingClassStart(startDate: string | Date | null | undefined, now: number = Date.now()): boolean {
+  if (!hasClassStartDate(startDate)) return false;
+  return new Date(startDate as string | Date).getTime() > now;
+}
+
+/** e.g. "25 Jun 2027". Batch dates are stored as UTC midnight, so the UTC day is the date itself (no time-zone shift). */
+export function formatClassStartDate(startDate: string | Date): string {
+  return new Date(startDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * The prominent amber "Upcoming Class · 25 Jun 2027" badge of a class card
+ * header (teacher dashboard and public teacher profile alike). Renders
+ * nothing unless the class has a real future Batch Start Date.
+ */
+export function UpcomingClassBadge({ startDate }: { startDate: string | Date | null | undefined }) {
+  if (!isUpcomingClassStart(startDate)) return null;
+  return (
+    <div
+      data-upcoming-class-badge=""
+      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-400 px-3.5 py-2 text-sm font-bold text-slate-900 shadow-md shadow-black/20"
+    >
+      <CalendarDays size={17} strokeWidth={2.5} />
+      <span>Upcoming Class</span>
+      <span className="border-l border-amber-700/30 pl-2">{formatClassStartDate(startDate as string | Date)}</span>
+    </div>
+  );
+}
 
 export function hashString(value: string) {
   let hash = 0;

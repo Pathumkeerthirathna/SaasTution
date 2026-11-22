@@ -124,6 +124,26 @@ function byInstantThenId(a: { at: Date; id: string }, b: { at: Date; id: string 
 }
 
 /**
+ * The student's original public-registration enrolment: their EARLIEST
+ * enrolment (by assignedAt, then id) in their publicClassId, or null when the
+ * student did not register through a public class page. `enrolments` must be
+ * ALL the student's enrolments in that class (removed ones included). Also
+ * used by the initial-payment access rule (services/class-access-service.ts).
+ */
+export function publicRegistrationEnrolmentId(
+  student: Pick<WaiverStudent, "registrationSource" | "publicClassId">,
+  enrolments: readonly Pick<WaiverEnrolment, "id" | "classId" | "assignedAt">[]
+): string | null {
+  if (student.registrationSource !== "PUBLIC_CLASS" || !student.publicClassId) return null;
+  return (
+    enrolments
+      .filter((e) => e.classId === student.publicClassId)
+      .map((e) => ({ at: e.assignedAt, id: e.id }))
+      .sort(byInstantThenId)[0]?.id ?? null
+  );
+}
+
+/**
  * Real-instant times of each enrolment of ONE class. Only the original
  * public-registration enrolment (the student's earliest enrolment in its
  * publicClassId) counts from the later of its assignment and the student's
@@ -136,13 +156,7 @@ export function enrolmentTimes(
 ): Map<string, EnrolmentTimes> {
   const times = new Map<string, EnrolmentTimes>();
 
-  const publicRowId =
-    student.registrationSource === "PUBLIC_CLASS" && student.publicClassId
-      ? enrolments
-          .filter((e) => e.classId === student.publicClassId)
-          .map((e) => ({ at: e.assignedAt, id: e.id }))
-          .sort(byInstantThenId)[0]?.id ?? null
-      : null;
+  const publicRowId = publicRegistrationEnrolmentId(student, enrolments);
 
   for (const enrolment of enrolments) {
     const assigned = sriLankaDigitsToInstant(enrolment.assignedAt);

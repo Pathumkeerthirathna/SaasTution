@@ -6,6 +6,7 @@ export const TEACHER_TITLE_LABELS: Record<TeacherTitle, string> = {
   MS: "Ms.",
   DR: "Dr.",
   PROF: "Prof.",
+  ENG: "Eng.",
 };
 
 export const TEACHER_TITLE_OPTIONS: TeacherTitle[] = [
@@ -14,6 +15,7 @@ export const TEACHER_TITLE_OPTIONS: TeacherTitle[] = [
   "MS",
   "DR",
   "PROF",
+  "ENG",
 ];
 
 export function formatTeacherTitle(title: TeacherTitle): string {

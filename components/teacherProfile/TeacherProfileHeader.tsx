@@ -54,6 +54,8 @@ interface Props {
   teacher?: TeacherProfile;
   isPublic?: boolean;
   onEdit?: () => void;
+  /** Extra buttons for the header's action row (bottom-right), e.g. Payment Details. */
+  extraActions?: React.ReactNode;
 }
 
 function getDisplayName(teacher?: TeacherProfile) {
@@ -68,6 +70,7 @@ export default function TeacherProfileHeader({
   teacher,
   isPublic = false,
   onEdit,
+  extraActions,
 }: Props) {
 
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
@@ -1167,6 +1170,8 @@ export default function TeacherProfileHeader({
   {/* Action Buttons */}
 
   <div className="flex flex-wrap items-center justify-end gap-2">
+
+        {extraActions}
 
         <button
           type="button"

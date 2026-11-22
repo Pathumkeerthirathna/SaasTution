@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
-import { IdCard, Lock, LogIn, ShieldCheck } from "lucide-react";
+import { Hourglass, IdCard, Lock, LogIn, ShieldCheck } from "lucide-react";
 
 import { AuthShell } from "@/components/auth-shell";
 import { AuthIllustration } from "@/components/auth-illustration";
@@ -30,6 +30,9 @@ export function LoginForm() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // A registered student whose teacher has not approved the account yet (the server refused the
+  // login with STUDENT_PENDING_APPROVAL after checking the password): a dedicated notice, not an error.
+  const [pendingApproval, setPendingApproval] = useState<{ teacherName: string | null; contacts: string } | null>(null);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState("");
   // First student login: the optional "Secure Your Account" step (the server offered it).
@@ -71,6 +74,7 @@ export function LoginForm() {
   async function performLogin(passwordSetup?: PasswordSetupChoice) {
     setIsSubmitting(true);
     setErrorMessage(null);
+    setPendingApproval(null);
     setPasswordSetupError(null);
     setNeedsEmailConfirmation(false);
 
@@ -131,8 +135,18 @@ export function LoginForm() {
           message = "Too many login attempts. Please wait before trying again.";
         }
 
+        // Awaiting the teacher's approval (STUDENT_PENDING_APPROVAL from the login service;
+        // ACCOUNT_NOT_CONFIRMED is the route's own safeguard): the pending-approval notice.
+        if (err.code === "STUDENT_PENDING_APPROVAL" || err.code === "ACCOUNT_NOT_CONFIRMED") {
+          const d = err.details ?? {};
+          setPendingApproval({
+            teacherName: d.teacherName ?? null,
+            contacts: [d.phone, d.whatsapp].filter(Boolean).join(" / "),
+          });
+          return;
+        }
+
         if (
-          err.code === "STUDENT_PENDING_APPROVAL" ||
           err.code === "STUDENT_DEACTIVATED" ||
           err.code === "STUDENT_EMAIL_MISSING"
         ) {
@@ -490,6 +504,30 @@ export function LoginForm() {
             />
           </div>
         </div>
+
+        {/* Awaiting teacher approval */}
+        {pendingApproval && (
+          <div
+            role="status"
+            data-login-notice="pending-approval"
+            className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-amber-900"
+          >
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Hourglass className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 text-[12.5px] leading-5">
+              <p className="font-semibold text-amber-900">Awaiting teacher approval</p>
+              <p className="mt-0.5">
+                Your registration was successful, but your teacher has not approved your account yet. You can log in once your teacher confirms your registration.
+              </p>
+              {pendingApproval.contacts ? (
+                <p className="mt-1.5 break-words text-amber-800">
+                  Contact your teacher: {pendingApproval.teacherName ?? "your teacher"} — {pendingApproval.contacts}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         {/* Error */}
         {errorMessage && !deviceApproval && (

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { DEFAULT_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
+import { classStartDateToDate } from "@/lib/class-start-date";
 import { nowInSriLanka } from "@/lib/time";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import { ClassLectureRecording, ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
@@ -459,7 +460,8 @@ export async function createClassForTeacher(teacherId: string, input: ClassWrite
       schedules: {
         create: input.schedules,
       },
-      startDate: new Date(input.startDate),
+      // "YYYY-MM-DD" -> UTC midnight of that day (as before); 1900-01-01 = "not given", stored as is.
+      startDate: classStartDateToDate(input.startDate),
       // Open the first fee period from now; it stays open (effectiveTo = null)
       // until the fee is changed.
       feeHistory: {
@@ -530,6 +532,8 @@ export async function updateClassForTeacher(
       startTime: string;
       endTime: string;
     }[];
+    /** Batch Start Date "YYYY-MM-DD" (1900-01-01 = not given); omitted = unchanged. */
+    startDate?: string;
   }
 ) {
   const existingClass = await prisma.class.findFirst({
@@ -595,6 +599,7 @@ export async function updateClassForTeacher(
         ...(input.paymentDueWeek !== undefined ? { paymentDueWeek: input.paymentDueWeek } : {}),
         ...(input.attendanceGraceMinutes !== undefined ? { attendanceGraceMinutes: input.attendanceGraceMinutes } : {}),
         ...(scheduleSummary !== undefined ? { schedule: scheduleSummary } : {}),
+        ...(input.startDate !== undefined ? { startDate: classStartDateToDate(input.startDate) } : {}),
         ...(input.schedules
           ? {
               schedules: {

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { GRACE_MINUTES_MAX, GRACE_MINUTES_MIN } from "@/components/attendance/attendance-ui";
 import { buildClassFormPayload, classGraceInput, DEFAULT_CLASS_GRACE_INPUT } from "@/components/class-form-payload";
+import { CLASS_START_DATE_NOT_SET, classStartDateInputValue } from "@/lib/class-start-date";
 
 import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ExternalLink, Eye } from "lucide-react";
@@ -55,6 +56,7 @@ import {
   getClassCardIcon,
   getClassCardTheme,
   getClassNumber,
+  UpcomingClassBadge,
 } from "./class-card-visuals";
 
 // Re-exported for callers that historically imported these from this module.
@@ -555,7 +557,8 @@ const hasStudentFilter = Boolean(
       monthlyFee: String(item.monthlyFee),
       paymentDueWeek: String(item.paymentDueWeek),
       attendanceGraceMinutes: classGraceInput(item.attendanceGraceMinutes),
-      startDate: item.startDate,
+      // The saved date as the date input's "YYYY-MM-DD" (1900-01-01 included); "" only when none is saved.
+      startDate: classStartDateInputValue(item.startDate),
       schedules:
         item.schedules.length > 0
           ? item.schedules.map((schedule) => ({
@@ -602,7 +605,7 @@ const hasStudentFilter = Boolean(
 
     try {
       // The grace period is checked before anything is sent (whole minutes 0–240).
-      const updatePayload = buildClassFormPayload(editForm);
+      const updatePayload = buildClassFormPayload(editForm, "update");
       if (!updatePayload.ok) {
         setErrorMessage(updatePayload.message);
         return;
@@ -996,7 +999,7 @@ const hasStudentFilter = Boolean(
                 </div>
 
                 {/* Fee */}
-                <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                {/* <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
                   <div className="flex items-center gap-1 text-amber-600">
                     <Wallet size={11} />
                     <span className="text-[10px] font-semibold uppercase tracking-wide">
@@ -1007,7 +1010,7 @@ const hasStudentFilter = Boolean(
                   <div className="text-sm font-bold text-slate-900">
                     Rs. {overview.averageFee.toLocaleString()}
                   </div>
-                </div>
+                </div> */}
 
               </div>
 
@@ -1158,21 +1161,12 @@ const hasStudentFilter = Boolean(
                     </div>
                   </div>
 
-                  <div className="relative mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/10 pt-2">
+                 <div className="relative mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
                     <span className={`text-[10px] ${theme.metaText}`}>
                       Created {new Date(item.createdAt).toLocaleDateString()}
                     </span>
 
-                    {item.startDate && new Date(item.startDate).getTime() > Date.now() && (
-                      <div className={`inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold ${theme.badgeText} backdrop-blur`}>
-                        <CalendarDays size={11} />
-                        Upcoming: {new Date(item.startDate).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </div>
-                    )}
+                    <UpcomingClassBadge startDate={item.startDate} />
                   </div>
                 </div>
 
@@ -1957,6 +1951,29 @@ const hasStudentFilter = Boolean(
                 {GRACE_MINUTES_MIN}–{GRACE_MINUTES_MAX} minutes. Changing it applies to new lectures only; existing attendance registers keep their own value.
               </p>
             </div>
+          </div>
+
+          {/* Batch Start Date: always the saved value (1900-01-01 = not given); the teacher can replace it. */}
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <label htmlFor="editBatchStartDate" className="form-label mb-1 block">
+              Batch Start Date
+            </label>
+            <div className="relative">
+              <CalendarDays size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="editBatchStartDate"
+                type="date"
+                value={editForm.startDate}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                aria-describedby="editBatchStartDateHelp"
+                className="control-input pl-8 text-sm"
+              />
+            </div>
+            <p id="editBatchStartDateHelp" className="mt-1 text-[11px] text-muted">
+              {editForm.startDate === CLASS_START_DATE_NOT_SET
+                ? "No batch start date was given (1900-01-01). It is not shown to students. Choose a date to set one."
+                : "Date when this batch begins."}
+            </p>
           </div>
 
           <div className="space-y-2 rounded-xl border border-border bg-card p-3 shadow-sm">

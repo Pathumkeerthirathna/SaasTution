@@ -28,6 +28,13 @@ function scrollToRegisterCard() {
 
 interface Props {
   lectures: ClassLectureSession[];
+  /*
+   * Optional (the payment-restricted student's dashboard). Without them the
+   * card is exactly the public class page's one.
+   */
+  description?: string;
+  /** false hides the "Unlock Full Course / Register" footer (not for enrolled students). */
+  showRegisterFooter?: boolean;
 }
 
 function formatDuration(startedAt: string | null, endedAt: string | null) {
@@ -49,7 +56,11 @@ function formatDuration(startedAt: string | null, endedAt: string | null) {
   return `${minutes}m`;
 }
 
-export default function ClassSessionsPreview({ lectures }: Props) {
+export default function ClassSessionsPreview({
+  lectures,
+  description = "Recorded lectures published for this class.",
+  showRegisterFooter = true,
+}: Props) {
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   // Uploaded recordings: the Unlocked one playing, or the Locked one whose prompt is open.
   const [playingUpload, setPlayingUpload] = useState<FreeUploadedRecording | null>(null);
@@ -81,7 +92,7 @@ export default function ClassSessionsPreview({ lectures }: Props) {
               Course Sessions
             </h2>
             <p className="mt-0.5 text-[14px] text-slate-500">
-              Recorded lectures published for this class.
+              {description}
             </p>
           </div>
         </div>
@@ -222,6 +233,7 @@ export default function ClassSessionsPreview({ lectures }: Props) {
         )}
 
         {/* Footer */}
+        {showRegisterFooter && (
         <div className="rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-3">
           <div className="flex items-start gap-2.5">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -235,6 +247,7 @@ export default function ClassSessionsPreview({ lectures }: Props) {
             </div>
           </div>
         </div>
+        )}
 
       </div>
 

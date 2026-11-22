@@ -627,3 +627,84 @@ test("teacher DTO: carries the settings; a row without them (older data, fakes) 
   assert.equal(missing.visibility, "PRIVATE");
   assert.equal(missing.access, "LOCKED");
 });
+
+// ---- Payment-restricted students: public recordings on the dashboard ----------------------------------------
+
+// The restriction list as getClassAccessRestrictions returns it (only classId / className are read).
+const restrictedIn = (...entries) => async (studentId) => {
+  assert.equal(studentId, STUDENT);
+  return entries.map(([classId, reason]) => ({ classId, className: `Class ${classId.slice(-3)}`, reason, feeId: "f", year: 2026, month: 11 }));
+};
+
+test("restricted dashboard: playablePublicSessions keeps only FREE YouTube recordings and uploads; drops emptied lectures", () => {
+  const sessions = [
+    { id: "l1", title: "L1", date: "d", createdAt: "c", recordings: [{ id: "y1", access: "FREE", videoId: "v", youtubeUrl: "u", startedAt: null, endedAt: null }, { id: "y2", access: "LOCKED", videoId: null, youtubeUrl: null, startedAt: null, endedAt: null }] },
+    { id: "l2", title: "L2", date: "d", createdAt: "c", recordings: [], uploads: [{ source: "UPLOAD", id: "u1", title: "t", partNumber: 1, durationSeconds: 1, access: "LOCKED", streamUrl: null }] },
+    { id: "l3", title: "L3", date: "d", createdAt: "c", recordings: [], uploads: [{ source: "UPLOAD", id: "u2", title: "t", partNumber: 1, durationSeconds: 1, access: "FREE", streamUrl: "/api/public/recorded-lectures/u2/stream" }] },
+  ];
+  const playable = publicService.playablePublicSessions(sessions);
+  assert.deepEqual(playable.map((s) => s.id), ["l1", "l3"]);
+  assert.deepEqual(playable[0].recordings.map((r) => r.id), ["y1"]);
+  assert.equal("uploads" in playable[0], false);
+  assert.deepEqual(playable[1].uploads.map((u) => u.id), ["u2"]);
+});
+
+test("restricted dashboard: both restriction reasons get the class's FREE public recordings (YouTube + uploads), nothing else", async () => {
+  for (const reason of ["INITIAL_PAYMENT", "OVERDUE"]) {
+    const result = await publicService.getPublicSessionsForRestrictedClasses(STUDENT, restrictedIn([CLASS_A, reason], [CLASS_A, reason]));
+    assert.equal(result.length, 1, `${reason}: one entry per class`);
+    assert.equal(result[0].classId, CLASS_A);
+    const sessions = result[0].sessions;
+    const youtubeIds = sessions.flatMap((s) => s.recordings.map((r) => r.id));
+    const uploadIds = sessions.flatMap((s) => (s.uploads ?? []).map((u) => u.id)).sort();
+    assert.deepEqual(youtubeIds, [id(601)], `${reason}: only the Public + Free YouTube recording`);
+    assert.deepEqual(uploadIds, [R.pubFree, R.onYoutubeLecture].sort(), `${reason}: only the Public + Unlocked uploads`);
+    for (const upload of sessions.flatMap((s) => s.uploads ?? [])) {
+      assert.equal(upload.streamUrl, `/api/public/recorded-lectures/${upload.id}/stream`, "the public stream route only");
+    }
+    const text = JSON.stringify(result);
+    for (const hidden of ["ytLockedPublic2", "ytPrivate000003", ...PRIVATE_OR_HIDDEN, R.pubLocked, "/api/student/"]) {
+      assert.ok(!text.includes(hidden), `${reason}: ${hidden} is not exposed`);
+    }
+    assertNoLeak(text, reason);
+  }
+});
+
+test("restricted dashboard: every listed upload plays through the public route; private / locked ones stay 404 there", async () => {
+  const [entry] = await publicService.getPublicSessionsForRestrictedClasses(STUDENT, restrictedIn([CLASS_A, "INITIAL_PAYMENT"]));
+  for (const upload of entry.sessions.flatMap((s) => s.uploads ?? [])) {
+    const res = await pub("GET", upload.id, { range: "bytes=0-99" });
+    assert.equal(res.status, 206, upload.id);
+    await bytes(res);
+  }
+  for (const recId of [R.pubLocked, R.privLocked, R.privFree]) {
+    const res = await pub("GET", recId);
+    assert.equal(res.status, 404, `${recId}: the public route never serves it`);
+    await bytes(res);
+  }
+});
+
+test("restricted dashboard: unrestricted students get nothing; classes without free public recordings are left out", async () => {
+  assert.deepEqual(await publicService.getPublicSessionsForRestrictedClasses(STUDENT, restrictedIn()), [], "not restricted: dashboard unchanged");
+  // CLASS_B: the teacher's public profile is off (uploads hidden), no YouTube; CLASS_C: no profile.
+  const result = await publicService.getPublicSessionsForRestrictedClasses(STUDENT, restrictedIn([CLASS_B, "OVERDUE"], [CLASS_C, "OVERDUE"], [CLASS_A, "OVERDUE"]));
+  assert.deepEqual(result.map((r) => r.classId), [CLASS_A]);
+  // Nothing free and public left in CLASS_A: the class is left out too.
+  for (const row of state.fake.db.recordings) row.access = "LOCKED";
+  for (const row of state.fake.db.youtubeRecordings) row.access = "LOCKED";
+  assert.deepEqual(await publicService.getPublicSessionsForRestrictedClasses(STUDENT, restrictedIn([CLASS_A, "OVERDUE"])), []);
+});
+
+test("restricted dashboard wiring: the dashboard uses the real restriction list and the public card; no student content route is involved", () => {
+  const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n");
+  const page = read("app/student/dashboard/page.tsx");
+  assert.match(page, /getPublicSessionsForRestrictedClasses\(studentId, getClassAccessRestrictions\)/);
+  assert.match(page, /<ClassSessionsPreview\s+lectures=\{entry\.sessions\}[\s\S]{0,200}showRegisterFooter=\{false\}/);
+  assert.match(page, /catch \(error\) \{\s*logError\(error, \{ source: "server", kind: "restricted-public-sessions"/, "fails soft");
+  const service = read("services/recorded-lecture-public-service.ts");
+  assert.doesNotMatch(service, /class-access-service|assert(Content|Class)AccessForStudent|recorded-lecture-student-service"[^\n]*stream/, "no access-control exception in the public module");
+  // The public card keeps its public-page defaults.
+  const card = read("components/teacherProfile/classLanding/ClassSessionsPreview.tsx");
+  assert.match(card, /description = "Recorded lectures published for this class\."/);
+  assert.match(card, /showRegisterFooter = true/);
+});

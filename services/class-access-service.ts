@@ -1,7 +1,8 @@
 import { AppError } from "@/lib/error-handler";
 import { feePaymentState, PAYMENT_STATE_SELECT, type FeePaymentState } from "@/lib/fee-payment-state";
+import { publicRegistrationEnrolmentId } from "@/lib/fee-waiver";
 import { prisma } from "@/lib/prisma";
-import { nowInSriLanka } from "@/lib/time";
+import { nowInSriLanka, sriLankaCalendarParts } from "@/lib/time";
 
 /*
  * Payment-due LMS access control (per class, teacher-controlled; the settings
@@ -25,6 +26,19 @@ import { nowInSriLanka } from "@/lib/time";
  * of the due day, see computeDueDate in class-student-fee-service.ts) and is
  * compared with nowInSriLanka(), the existing fee due-date convention. Due
  * 10 Nov + 5 days: open through 15 Nov 23:59:59, restricted from 16 Nov.
+ *
+ * Initial payment (an addition for students registered through a public
+ * class page; reason INITIAL_PAYMENT). For the fees of the student's original
+ * public-registration enrolment (publicRegistrationEnrolmentId in
+ * lib/fee-waiver.ts) whose month is on or before the month of the student's
+ * FIRST approval (Student.approvedAt, Sri Lankan month), the class is
+ * restricted, when the class has the restriction enabled, as long as any
+ * amount is still outstanding by the same shared calculation: from the
+ * approval on, without waiting for the due date or grace period, and a slip
+ * awaiting processing does NOT lift it (only CONFIRMED, not reversed money,
+ * a Free Card or an amount reduced to 0 does). Every other fee (later months,
+ * other enrolments and classes, teacher-created / imported students) follows
+ * the overdue rule above exactly as before (reason OVERDUE).
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,7 +47,11 @@ export const MIN_PAYMENT_GRACE_DAYS = 0;
 export const MAX_PAYMENT_GRACE_DAYS = 30;
 export const DEFAULT_PAYMENT_GRACE_DAYS = 5;
 
+/** OVERDUE: the existing due date + grace rule. INITIAL_PAYMENT: the first payment of a public registration. */
+export type ClassAccessRestrictionReason = "OVERDUE" | "INITIAL_PAYMENT";
+
 export type ClassAccessRestriction = {
+  reason: ClassAccessRestrictionReason;
   classId: string;
   className: string;
   feeId: string;
@@ -68,8 +86,58 @@ export function feeRestrictsAccess(fee: FeeForAccess, gracePeriodDays: number, n
 }
 
 /**
- * The student's current restrictions (one per overdue fee), optionally for
- * the given classes only. Empty when nothing is restricted.
+ * Pure rule for an INITIAL-payment fee (restriction enabled): restricted while
+ * anything is still outstanding (`finalAmount`: the outstanding balance by
+ * the shared calculation, confirmed and not reversed payments only), whatever
+ * the due date and grace period; awaiting slips do not count. A Free Card or
+ * an amount reduced to 0 never restricts.
+ */
+export function initialFeeRestrictsAccess(fee: Pick<FeeForAccess, "finalAmount" | "freeCard">): boolean {
+  return !fee.freeCard && fee.finalAmount > 0;
+}
+
+type StudentForInitialPayment = {
+  registrationSource: string;
+  publicClassId: string | null;
+  confirmationStatus: string;
+  approvedAt: Date | null;
+};
+
+/**
+ * The student's original public-registration enrolment and the Sri Lankan
+ * month of their first approval, or null when the initial-payment rule cannot
+ * apply (not a public registration, not approved, no approval time, or no
+ * fee of that class among `classIdsWithFees`). Queries only in that case.
+ */
+async function initialPaymentEnrolment(
+  studentId: string,
+  student: StudentForInitialPayment | null | undefined,
+  classIdsWithFees: ReadonlySet<string>
+): Promise<{ enrolmentId: string; year: number; month: number } | null> {
+  if (
+    !student ||
+    student.registrationSource !== "PUBLIC_CLASS" ||
+    !student.publicClassId ||
+    student.confirmationStatus !== "APPROVED" ||
+    !student.approvedAt ||
+    !classIdsWithFees.has(student.publicClassId)
+  ) {
+    return null;
+  }
+  const enrolments = await prisma.classStudent.findMany({
+    where: { studentId, classId: student.publicClassId },
+    select: { id: true, classId: true, assignedAt: true },
+  });
+  const enrolmentId = publicRegistrationEnrolmentId(student, enrolments);
+  if (!enrolmentId) return null;
+  const { year, month } = sriLankaCalendarParts(student.approvedAt);
+  return { enrolmentId, year, month };
+}
+
+/**
+ * The student's current restrictions (one per overdue fee, or per unpaid
+ * initial-payment fee), optionally for the given classes only. Empty when
+ * nothing is restricted.
  */
 export async function getClassAccessRestrictions(
   studentId: string,
@@ -102,31 +170,52 @@ export async function getClassAccessRestrictions(
       freeCard: true,
       dueDate: true,
       classStudent: {
-        select: { class: { select: { id: true, name: true, paymentGracePeriodDays: true } } },
+        select: {
+          id: true,
+          class: { select: { id: true, name: true, paymentGracePeriodDays: true } },
+          student: { select: { registrationSource: true, publicClassId: true, confirmationStatus: true, approvedAt: true } },
+        },
       },
       payments: { select: PAYMENT_STATE_SELECT },
     },
   });
+
+  // Initial payment: the public-registration enrolment's fees up to the
+  // approval month (null for everyone else: only the overdue rule applies).
+  const initial = await initialPaymentEnrolment(
+    studentId,
+    fees[0]?.classStudent.student,
+    new Set(fees.map((fee) => fee.classStudent.class.id))
+  );
+  const isInitialFee = (fee: (typeof fees)[number]) =>
+    initial !== null &&
+    fee.classStudent.id === initial.enrolmentId &&
+    (fee.year < initial.year || (fee.year === initial.year && fee.month <= initial.month));
 
   const now = nowInSriLanka();
   return fees
     .map((fee) => ({
       fee,
       // The shared payment calculation: what is still payable after confirmed
-      // (not reversed) payments; a slip awaiting processing protects access.
+      // (not reversed) payments; a slip awaiting processing protects access
+      // (overdue rule only).
       outstanding: feePaymentState(fee, fee.payments).outstanding,
       awaiting: fee.payments.filter((p) => p.status === "PENDING" || p.status === "NEEDS_CLARIFICATION").length,
+      reason: (isInitialFee(fee) ? "INITIAL_PAYMENT" : "OVERDUE") as ClassAccessRestrictionReason,
     }))
-    .filter(({ fee, outstanding, awaiting }) =>
-      feeRestrictsAccess(
-        { finalAmount: outstanding, freeCard: fee.freeCard, dueDate: fee.dueDate, paymentCount: awaiting },
-        fee.classStudent.class.paymentGracePeriodDays,
-        now
-      )
+    .filter(({ fee, outstanding, awaiting, reason }) =>
+      reason === "INITIAL_PAYMENT"
+        ? initialFeeRestrictsAccess({ finalAmount: outstanding, freeCard: fee.freeCard })
+        : feeRestrictsAccess(
+            { finalAmount: outstanding, freeCard: fee.freeCard, dueDate: fee.dueDate, paymentCount: awaiting },
+            fee.classStudent.class.paymentGracePeriodDays,
+            now
+          )
     )
-    .map(({ fee, outstanding }) => {
+    .map(({ fee, outstanding, reason }) => {
       const cls = fee.classStudent.class;
       return {
+        reason,
         classId: cls.id,
         className: cls.name,
         feeId: fee.id,
@@ -142,6 +231,15 @@ export async function getClassAccessRestrictions(
 
 export const CLASS_ACCESS_RESTRICTED = "CLASS_ACCESS_RESTRICTED";
 
+/** The 403 message: the existing overdue text, unless the class waits only for its initial payment. */
+function restrictedMessage(restrictions: readonly ClassAccessRestriction[]): string {
+  const className = restrictions[0].className;
+  if (restrictions.every((r) => r.reason === "INITIAL_PAYMENT")) {
+    return `Access to ${className} opens once your first class fee payment is confirmed by your teacher. Please pay and submit your payment slip from the Payments page.`;
+  }
+  return `Access to ${className} is paused because a class fee is overdue. Please pay and submit your payment slip from the Payments page.`;
+}
+
 /**
  * Throws 403 CLASS_ACCESS_RESTRICTED (with the restrictions as details) when
  * the student may not open this class's learning content. A no-op otherwise.
@@ -149,12 +247,7 @@ export const CLASS_ACCESS_RESTRICTED = "CLASS_ACCESS_RESTRICTED";
 export async function assertClassAccessForStudent(studentId: string, classId: string): Promise<void> {
   const restrictions = await getClassAccessRestrictions(studentId, [classId]);
   if (restrictions.length === 0) return;
-  throw new AppError(
-    `Access to ${restrictions[0].className} is paused because a class fee is overdue. Please pay and submit your payment slip from the Payments page.`,
-    403,
-    CLASS_ACCESS_RESTRICTED,
-    { restrictions }
-  );
+  throw new AppError(restrictedMessage(restrictions), 403, CLASS_ACCESS_RESTRICTED, { restrictions });
 }
 
 /** The given classes minus those currently restricted for the student. */
@@ -315,10 +408,5 @@ export async function assertContentAccessForStudent(studentId: string, ref: Clas
   const classId = await classIdOf(ref);
   const forClass = classId ? restrictions.filter((r) => r.classId === classId) : [];
   if (forClass.length === 0) return;
-  throw new AppError(
-    `Access to ${forClass[0].className} is paused because a class fee is overdue. Please pay and submit your payment slip from the Payments page.`,
-    403,
-    CLASS_ACCESS_RESTRICTED,
-    { restrictions: forClass }
-  );
+  throw new AppError(restrictedMessage(forClass), 403, CLASS_ACCESS_RESTRICTED, { restrictions: forClass });
 }

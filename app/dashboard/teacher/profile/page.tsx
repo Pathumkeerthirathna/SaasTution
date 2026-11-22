@@ -41,6 +41,7 @@ export default async function Page() {
       teacher={teacher}
       isPublic={false}
       sectionOrder={sections.map((section) => section.sectionType)}
+      viewerRole="OWNER"
     />
   );
 }

@@ -20,20 +20,45 @@ import ProfileSectionsColumn, {
 } from "./ProfileSectionsColumn";
 
 import TeacherProfileDrawer from "./TeacherProfileDrawer";
-import { TeacherProfile } from "@/types/teacherProfileTypes/ClassTeacher";
+import TeacherPaymentDetailsButton from "./TeacherPaymentDetailsCard";
+import { TeacherClass, TeacherProfile } from "@/types/teacherProfileTypes/ClassTeacher";
+import type { PublishedPaymentAccount } from "@/services/teacher-payment-account-service";
+import type { TeacherProfileViewerRole } from "@/services/teacher-profile-viewer-service";
 
 interface Props {
   teacher?: TeacherProfile;
   isPublic?: boolean;
   /** Section display order resolved on the server. */
   sectionOrder?: ProfileSectionType[];
+  /**
+   * Who is viewing, resolved on the SERVER from the session (never from the
+   * client): OWNER gets the Payment Details management card; STUDENT gets the
+   * enrolled / available class sections; PUBLIC (the default) the public
+   * profile. It only selects what is rendered - every change is authorized by
+   * the server again.
+   */
+  viewerRole?: TeacherProfileViewerRole;
+  /** The teacher's PUBLISHED payment accounts (display fields only), for visitors and students. */
+  paymentAccounts?: PublishedPaymentAccount[];
+  /** A signed-in student's split of the public class list. */
+  studentClasses?: { enrolled: TeacherClass[]; available: TeacherClass[] };
 }
 
 export default function TeacherProfilePage({
   teacher,
   isPublic = false,
   sectionOrder,
+  viewerRole = "PUBLIC",
+  paymentAccounts = [],
+  studentClasses,
 }: Props) {
+  // isPublic={false} is only ever the signed-in teacher's OWN profile page
+  // (/dashboard/teacher/profile, /teacher/profile: teacher session + that
+  // teacher's own profile), so it is always the owner view - a page that
+  // forgets viewerRole cannot hide Payment Details management. Rendering only:
+  // every management call is authorized again by the server.
+  const role: NonNullable<Props["viewerRole"]> = isPublic ? viewerRole : "OWNER";
+  const isOwner = role === "OWNER";
 
   const [isDrawerOpen, setIsDrawerOpen] =
     useState(false);
@@ -89,6 +114,15 @@ export default function TeacherProfilePage({
             }
             teacher={teacher}
             isPublic={isPublic}
+            extraActions={
+              // A compact Payment Details button in the header's action row: the owner manages
+              // (dialog); visitors / students view the published accounts (no button when none).
+              isOwner ? (
+                <TeacherPaymentDetailsButton mode="manage" />
+              ) : (
+                <TeacherPaymentDetailsButton mode="view" accounts={paymentAccounts} />
+              )
+            }
           />
 
           {/* Main Content */}
@@ -108,10 +142,35 @@ export default function TeacherProfilePage({
 
               {/* Classes + qualifications + achievements */}
               <div className="space-y-6 lg:col-span-2">
-                <TeacherClassesCard
-                  classes={teacher?.classes ?? []}
-                  isPublic={isPublic}
-                />
+                {role === "STUDENT" && studentClasses ? (
+                  <>
+                    <TeacherClassesCard
+                      classes={studentClasses.enrolled}
+                      isPublic={isPublic}
+                      accent="enrolled"
+                      heading="Your Enrolled Classes"
+                      description="Classes you are currently enrolled in with this teacher."
+                      countLabel="Enrolled"
+                      emptyText="You are not enrolled in any of this teacher's classes yet."
+                      classHref={() => "/student/classes"}
+                      hideSummary
+                    />
+                    <TeacherClassesCard
+                      classes={studentClasses.available}
+                      isPublic={isPublic}
+                      heading="Available Classes"
+                      description="Other classes this teacher offers that you are not enrolled in."
+                      countLabel="Available"
+                      emptyText="No other classes are available right now."
+                      hideSummary
+                    />
+                  </>
+                ) : (
+                  <TeacherClassesCard
+                    classes={teacher?.classes ?? []}
+                    isPublic={isPublic}
+                  />
+                )}
 
                 <TeacherQualificationCard
                   teacherId={teacherId}

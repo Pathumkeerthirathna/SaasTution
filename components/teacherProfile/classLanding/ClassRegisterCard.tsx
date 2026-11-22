@@ -10,8 +10,13 @@ import {
 } from "lucide-react";
 
 import { Grade } from "@/types/grade";
+import { isGradeZero } from "@/lib/grade";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+
+// "No specific grade": sent as no grade, so the server assigns Grade 0. Grade 0
+// itself is never listed on this public form (lib/grade.ts).
+const NO_SPECIFIC_GRADE = "none";
 
 interface Props {
   classId: string;
@@ -206,7 +211,7 @@ export default function ClassRegisterCard({
           studentName,
           mobileNumber,
           parentMobileNumber,
-          gradeId: parseInt(selectedGrade, 10),
+          gradeId: selectedGrade === NO_SPECIFIC_GRADE ? null : parseInt(selectedGrade, 10),
           email,
         }),
       });
@@ -499,8 +504,12 @@ export default function ClassRegisterCard({
               {loadingGrades ? "Loading grades..." : "Select Grade"}
             </option>
 
+            {!loadingGrades && (
+              <option value={NO_SPECIFIC_GRADE}>No specific grade</option>
+            )}
+
             {!loadingGrades &&
-              grades.map((grade) => (
+              grades.filter((grade) => !isGradeZero(Number(grade.id))).map((grade) => (
                 <option key={grade.id} value={grade.id}>
                   {grade.GradeDesc}
                 </option>

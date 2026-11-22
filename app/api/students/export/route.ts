@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
+import { parseGradeFilter } from "@/lib/grade";
 import { listAllStudentsByTeacher } from "@/services/student-service";
 
 export async function GET(request: Request) {
@@ -13,8 +14,9 @@ export async function GET(request: Request) {
     const name =
       searchParams.get("name")?.trim() ?? "";
 
+    // Grade 0 is a real grade: only an absent / blank filter means every grade.
     const gradeId =
-      Number(searchParams.get("grade") ?? 0);
+      parseGradeFilter(searchParams.get("grade"));
 
     const sortBy =
       searchParams.get("sortBy") ??
@@ -28,7 +30,7 @@ export async function GET(request: Request) {
       await listAllStudentsByTeacher({
         teacherId: session.teacherId,
         name,
-        gradeId: gradeId || undefined,
+        gradeId,
         sortBy,
         sortOrder,
       });

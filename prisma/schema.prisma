@@ -83,6 +83,10 @@ model Teacher {
   storageLimitChanges TeacherStorageLimitChange[]
   storageReservations StorageReservation[]
 
+  /// Bank accounts the teacher publishes for fee payments (Payment Details on
+  /// the teacher profile). Not related to ClassPayment / receipts / gateways.
+  paymentAccounts TeacherPaymentAccount[]
+
   @@index([createdAt])
 }
 
@@ -308,12 +312,61 @@ model City {
   @@unique([districtId, name])
 }
 
+enum TeacherPaymentAccountType {
+  SAVINGS
+  CURRENT
+  OTHER
+}
+
+/// A bank account a teacher publishes on their profile so students and
+/// parents know where to pay fees ("Payment Details"). Display information
+/// only: it is NOT ClassPayment, a receipt, a payment confirmation or a
+/// gateway setting, and nothing in the payment workflows reads it.
+///
+/// Rules (services/teacher-payment-account-service.ts):
+///   - many accounts per teacher; exactly one primary while any exist (a
+///     partial unique index allows at most one primary among non-deleted
+///     rows; the service keeps at least one, inside a transaction);
+///   - removed = status 1 (soft delete, the project convention), never shown
+///     or edited again;
+///   - shown to visitors and students only when status 0, isActive, isPublic
+///     and the profile's isDisplayPaymentDetails switch is on.
+/// Migration 20261125120000_add_teacher_payment_accounts (partial index and
+/// CHECKs hand-written).
+model TeacherPaymentAccount {
+  id String @id @default(uuid())
+
+  teacherId String
+  teacher   Teacher @relation(fields: [teacherId], references: [id])
+
+  /// Optional display name, e.g. "Fees account".
+  label             String?                    @db.VarChar(60)
+  accountHolderName String                     @db.VarChar(120)
+  bankName          String                     @db.VarChar(120)
+  branchName        String?                    @db.VarChar(120)
+  accountNumber     String                     @db.VarChar(34)
+  accountType       TeacherPaymentAccountType  @default(SAVINGS)
+
+  isPrimary Boolean @default(false)
+  isPublic  Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  /// 0 = active, 1 = removed (soft delete).
+  status Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId, status])
+}
+
 enum TeacherTitle {
   MR
   MRS
   MS
   DR
   PROF
+  ENG
 }
 
 model TeacherProfile {
@@ -440,6 +493,10 @@ model TeacherProfile {
   isDisplayQualification Boolean @default(true)
   isDisplayAchievements  Boolean @default(true)
   isDisplaySubjects      Boolean @default(true)
+  // Master switch for Payment Details (TeacherPaymentAccount): false hides
+  // every account from public visitors and students, whatever each account's
+  // own isPublic flag says.
+  isDisplayPaymentDetails Boolean @default(true)
 
   // Number of visits to public profile page
   profileViewCount Int @default(0)

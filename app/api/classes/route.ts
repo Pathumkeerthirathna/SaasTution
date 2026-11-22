@@ -1,5 +1,6 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
+import { CLASS_START_DATE_NOT_SET } from "@/lib/class-start-date";
 import { createClassSchema } from "@/lib/class-validation";
 import { handleRouteError } from "@/lib/error-handler";
 import { checkSameOriginRequest } from "@/lib/same-origin";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name?: string;
       description?: string;
-      startDate: string;
+      startDate?: string;
       monthlyFee?: number;
       paymentDueWeek?: number;
       attendanceGraceMinutes?: number;
@@ -64,9 +65,11 @@ export async function POST(request: Request) {
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
+    // Batch Start Date: the validated "YYYY-MM-DD" as sent (1900-01-01 = not given, kept as is);
+    // nothing sent = the "not given" sentinel. Never replaced with today or any other date.
     const createdClass = await createClassForTeacher(session.teacherId, {
       ...parsed.data,
-      startDate: body.startDate,
+      startDate: parsed.data.startDate ?? CLASS_START_DATE_NOT_SET,
     });
 
     return apiSuccess(

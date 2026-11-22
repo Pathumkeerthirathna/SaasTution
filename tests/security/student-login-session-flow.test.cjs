@@ -360,6 +360,49 @@ test("existing login validation is unchanged: wrong password, email, approval, d
   assert.deepEqual([device.status, device.body.error.code, device.token], [403, "DEVICE_PENDING", null]);
 });
 
+test("pending approval: only after the CORRECT password, no token, and the details are the teacher's public contact only; a confirmed student signs in", async () => {
+  reset();
+  student("pending", { confirmationStatus: "PENDING", contact01: "0700000001" });
+  student("approved");
+  const original = prisma.teacherProfile.findUnique;
+  prisma.teacherProfile.findUnique = async () => ({ phone: "0711455219", whatsapp: "0778112543", teacher: { name: "Mr. Teacher" } });
+  try {
+    const wrong = await login({ loginId: "REG-PENDING", password: "wrong-password" });
+    assert.deepEqual([wrong.status, wrong.body.error.code, wrong.token], [401, "INVALID_CREDENTIALS", null], "a wrong password never reveals the approval state");
+
+    const pending = await login({ loginId: "REG-PENDING", password: PASSWORD });
+    assert.deepEqual([pending.status, pending.body.error.code, pending.token], [403, "STUDENT_PENDING_APPROVAL", null]);
+    assert.deepEqual(pending.body.error.details, { teacherName: "Mr. Teacher", phone: "0711455219", whatsapp: "0778112543" });
+    const json = JSON.stringify(pending.body);
+    for (const secret of ["pending@example.test", "0700000001", "REG-PENDING", "Name pending", HASH]) assert.ok(!json.includes(secret), `no student data in the response (${secret})`);
+
+    const approved = await login({ loginId: "REG-APPROVED", password: PASSWORD });
+    assert.equal(approved.status, 200);
+    assert.ok(approved.token, "a confirmed student signs in normally");
+  } finally {
+    prisma.teacherProfile.findUnique = original;
+  }
+});
+
+test("login form: STUDENT_PENDING_APPROVAL / ACCOUNT_NOT_CONFIRMED show the pending-approval notice (not the red error); other errors unchanged", () => {
+  const form = fs.readFileSync(path.join(root, "components", "login-form.tsx"), "utf8").replace(/\r\n/g, "\n");
+  const branch = form.slice(form.indexOf('if (err.code === "STUDENT_PENDING_APPROVAL" || err.code === "ACCOUNT_NOT_CONFIRMED")'));
+  assert.ok(branch.length > 0, "a dedicated branch for both pending codes");
+  assert.match(branch, /^if \(err\.code === "STUDENT_PENDING_APPROVAL" \|\| err\.code === "ACCOUNT_NOT_CONFIRMED"\) \{\s*const d = err\.details \?\? \{\};\s*setPendingApproval\(\{[\s\S]*?\}\);\s*return;\s*\}/, "sets the notice and returns (no red error)");
+  assert.ok(form.indexOf('err.code === "LOGIN_RATE_LIMITED"') < form.indexOf('err.code === "STUDENT_PENDING_APPROVAL"'), "the rate-limit message keeps priority");
+  assert.ok(
+    form.includes(
+      "Your registration was successful, but your teacher has not approved your account yet. You can log in once your teacher confirms your registration."
+    ),
+    "the requested message"
+  );
+  assert.match(form, /data-login-notice="pending-approval"[\s\S]*?<Hourglass /, "pending-approval icon");
+  assert.match(form, /role="status"/);
+  assert.match(form, /setPendingApproval\(null\);/, "cleared on every new attempt");
+  assert.match(form, /err\.code === "STUDENT_DEACTIVATED" \|\|\s*err\.code === "STUDENT_EMAIL_MISSING"/, "deactivated / missing-email messages unchanged");
+  assert.match(form, /\{errorMessage && !deviceApproval && \(/, "the generic error box is unchanged");
+});
+
 test("a database error during login or validation never authenticates", async () => {
   reset();
   student("s1");

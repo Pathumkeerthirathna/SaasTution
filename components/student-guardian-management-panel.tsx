@@ -60,6 +60,7 @@ import {
   type PendingStudentAction,
 } from "@/components/student-confirmation-actions";
 import { email } from "zod";
+import { GRADE_ZERO_ID } from "@/lib/grade";
 
 export type StudentListItem = {
   id: string;
@@ -113,10 +114,31 @@ export type PaginatedStudentsResponse = {
   };
 };
 
+/**
+ * The grade id of an imported row: the template's GradeId formula result (a
+ * whole number >= 0; Grade 0 is id 0, never "empty"), else the grade whose
+ * name matches the Grade cell, else null (no grade, or an unmatched name).
+ */
+function importedGradeId(formulaResult: unknown, gradeName: string, grades: Grade[]): number | null {
+  if (typeof formulaResult === "number" && Number.isInteger(formulaResult) && formulaResult >= 0) {
+    return formulaResult;
+  }
+  const name = gradeName.trim().toLowerCase();
+  if (!name) return null;
+  return grades.find((grade) => grade.GradeDesc.trim().toLowerCase() === name)?.id ?? null;
+}
+
+/** A Grade cell whose text matches no grade (not the same as a blank one, which is Grade 0). */
+function isUnmatchedImportGrade(student: ImportStudentRow): boolean {
+  return student.gradeId === null && student.grade.trim() !== "";
+}
+
 type ImportStudentRow = {
   registrationNumber: string;
   studentName: string;
   grade: string;
+  // null: no grade (imported as Grade 0) — or, when `grade` holds text, a
+  // grade name that matches no grade (the import is refused until fixed).
   gradeId: number | null;
   primaryContact: string;
   secondaryContact: string;
@@ -1066,8 +1088,11 @@ const pendingCount = pendingStudents.length;
         grade:
           row.getCell(3).value?.toString() ?? "",
 
-        gradeId:
-          Number(row.getCell(4).result) || null,
+        gradeId: importedGradeId(
+          row.getCell(4).result,
+          row.getCell(3).value?.toString() ?? "",
+          grades
+        ),
 
         primaryContact:
           row.getCell(5).value?.toString() ?? "",
@@ -1099,6 +1124,18 @@ const pendingCount = pendingStudents.length;
   }
 
   async function handleConfirmImport() {
+    // A grade name that matches no grade would otherwise be sent as "no
+    // grade" (Grade 0): refused here instead, like any invalid grade.
+    const invalidGradeRows = importStudents.flatMap((student, index) =>
+      isUnmatchedImportGrade(student)
+        ? [{ row: index + 2, field: "gradeId", message: `Invalid grade "${student.grade.trim()}".` }]
+        : []
+    );
+    if (invalidGradeRows.length > 0) {
+      setImportErrors(invalidGradeRows);
+      return;
+    }
+
     setIsImporting(true);
     
 
@@ -1245,7 +1282,8 @@ const pendingCount = pendingStudents.length;
       setStudentForm({
         registrationNumber:"",
         name: "",
-        gradeId: 0,
+        // No grade selected (Grade 0 is the real id 0, never "empty").
+        gradeId: null,
         contact01: "",
         contact02: "",
         email: "",
@@ -1341,8 +1379,9 @@ const pendingCount = pendingStudents.length;
   ) => {
     const value = name.trim();
 
-    // Only meaningful once a grade is chosen — a name clash is per grade.
-    if (!value || !gradeId) {
+    // A name clash is per grade; Grade 0 (id 0) is a real grade. The add form
+    // passes Grade 0 when no grade is selected (that is what it saves).
+    if (!value || gradeId === null || gradeId === undefined) {
       setNameError("");
       return;
     }
@@ -2742,7 +2781,7 @@ const handleConfirmAllStudents = async () => {
                       void checkName(
                         event.target.value,
                         "",
-                        studentForm.gradeId
+                        studentForm.gradeId ?? GRADE_ZERO_ID
                       );
                     }}
                     className={`h-9 w-full rounded-lg bg-white pl-9 pr-3 text-sm ${
@@ -2773,7 +2812,6 @@ const handleConfirmAllStudents = async () => {
                   />
 
                   <select
-                      required
                       value={studentForm.gradeId ?? ""}
                       onChange={(event) => {
                         const nextGradeId = event.target.value
@@ -2783,10 +2821,10 @@ const handleConfirmAllStudents = async () => {
                           ...prev,
                           gradeId: nextGradeId,
                         }));
-                        void checkName(studentForm.name, "", nextGradeId);
+                        void checkName(studentForm.name, "", nextGradeId ?? GRADE_ZERO_ID);
                       }}
                     >
-                      <option value="">Select Grade</option>
+                      <option value="">No grade selected (Grade 0)</option>
 
                       {grades.map((grade) => (
                         <option
@@ -3463,10 +3501,21 @@ const handleConfirmAllStudents = async () => {
                             });
                           }}
                           className={`${inputClass} min-w-[130px] ${
-                            student.gradeId ? "" : "text-slate-400"
+                            isUnmatchedImportGrade(student)
+                              ? "border-rose-400 text-rose-600"
+                              : student.gradeId !== null ? "" : "text-slate-400"
                           }`}
+                          title={
+                            isUnmatchedImportGrade(student)
+                              ? `"${student.grade.trim()}" is not a grade. Choose one (blank imports as Grade 0).`
+                              : undefined
+                          }
                         >
-                          <option value="">Select grade</option>
+                          <option value="">
+                            {isUnmatchedImportGrade(student)
+                              ? `Invalid: ${student.grade.trim()}`
+                              : "No grade (Grade 0)"}
+                          </option>
                           {grades.map((g) => (
                             <option key={g.id} value={g.id}>
                               {g.GradeDesc}

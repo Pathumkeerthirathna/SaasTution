@@ -6,14 +6,12 @@ const prisma = new PrismaClient();
 
 export async function GET(request: Request) {
   try {
+    // Every grade, Grade 0 (id 0, "no school grade") first. Teacher screens
+    // list them all; the public registration form leaves Grade 0 out and
+    // offers "No specific grade" instead (lib/grade.ts).
     const grades = await prisma.grade.findMany({
-      
+      orderBy: { id: "asc" },
     });
-
-    console.log("GRADE API - Total grades:", grades.length);
-    console.log("GRADE API - Grades:", grades);
-
-    return NextResponse.json(grades);
 
     return NextResponse.json(grades);
   } catch (error) {

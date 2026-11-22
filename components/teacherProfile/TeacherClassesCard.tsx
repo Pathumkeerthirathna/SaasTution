@@ -1,6 +1,7 @@
 "use client";
 
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
+import { UpcomingClassBadge } from "@/components/class-card-visuals";
 import {
   CalendarDays,
   Clock,
@@ -23,25 +24,51 @@ import {
 interface Props {
   isPublic?: boolean;
   classes: TeacherClass[];
+  /*
+   * Optional (the signed-in student's Enrolled / Available sections on the
+   * teacher profile). Without them the card is exactly the default one.
+   */
+  heading?: string;
+  description?: string;
+  countLabel?: string;
+  emptyText?: string;
+  /** Where a class card leads (default: the public class page, or the dashboard page for the owner). */
+  classHref?: (classId: string) => string;
+  /** "enrolled" marks the card as the student's own classes (green accent). */
+  accent?: "default" | "enrolled";
+  hideSummary?: boolean;
 }
 
 export default function TeacherClassesCard({
   classes,
   isPublic,
+  heading = "Active Classes",
+  description = "Classes currently conducted by the teacher.",
+  countLabel = "Active Classes",
+  emptyText = "No active classes available.",
+  classHref,
+  accent = "default",
+  hideSummary = false,
 }: Props) {
   const router = useRouter();
+  const hrefFor = (classId: string) =>
+    classHref ? classHref(classId) : isPublic ? `/publicClass/${classId}` : `/dashboard/publicclasses/${classId}`;
+  const enrolled = accent === "enrolled";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className={`overflow-hidden rounded-xl border bg-white shadow-sm ${enrolled ? "border-emerald-300 ring-1 ring-emerald-100" : "border-slate-200"}`}
+      data-classes-section={enrolled ? "enrolled" : "default"}
+    >
       {/* Header */}
-      <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className={`flex flex-col gap-2 border-b px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between ${enrolled ? "border-emerald-100 bg-emerald-50/60" : "border-slate-100"}`}>
         <div>
           <h3 className="text-[16px] font-bold text-slate-900">
-            Active Classes
+            {heading}
           </h3>
 
           <p className="mt-0.5 text-[14px] text-slate-500">
-            Classes currently conducted by the teacher.
+            {description}
           </p>
         </div>
 
@@ -55,7 +82,7 @@ export default function TeacherClassesCard({
         ) : (
           <div className="rounded-lg bg-emerald-50 px-3 py-1.5">
             <span className="text-[14px] font-semibold text-emerald-700">
-              {classes.length} Active Classes
+              {classes.length} {countLabel}
             </span>
           </div>
         )}
@@ -64,7 +91,7 @@ export default function TeacherClassesCard({
       {/* Body */}
       {classes.length === 0 ? (
         <div className="m-5 rounded-lg border border-dashed border-slate-300 py-10 text-center text-[16px] text-slate-500">
-          No active classes available.
+          {emptyText}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
@@ -77,13 +104,7 @@ export default function TeacherClassesCard({
             return (
               <div
                 key={item.id}
-                onClick={() =>
-                  router.push(
-                    isPublic
-                      ? `/publicClass/${item.id}`
-                      : `/dashboard/publicclasses/${item.id}`
-                  )
-                }
+                onClick={() => router.push(hrefFor(item.id))}
                 className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition-all duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:ring-teal-100"
               >
                 {/* Header */}
@@ -122,21 +143,13 @@ export default function TeacherClassesCard({
                     </div>
                   </div>
 
-                  <div className="relative mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/10 pt-2">
+                  <div className="relative mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
                     <span className={`break-words text-[12px] sm:truncate ${theme.metaText}`}>
                       {item.schedule || "Schedule not set"}
                     </span>
 
-                    {item.startDate && new Date(item.startDate).getTime() > Date.now() && (
-                      <div className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[12px] font-semibold ${theme.badgeText} backdrop-blur`}>
-                        <CalendarDays size={11} />
-                        Upcoming: {new Date(item.startDate).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </div>
-                    )}
+                    {/* The dashboard's amber badge; only a real future Batch Start Date (never 1900-01-01). */}
+                    <UpcomingClassBadge startDate={item.startDate} />
                   </div>
                 </div>
 
@@ -213,11 +226,7 @@ export default function TeacherClassesCard({
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
-                        router.push(
-                          isPublic
-                            ? `/publicClass/${item.id}`
-                            : `/dashboard/publicclasses/${item.id}`
-                        );
+                        router.push(hrefFor(item.id));
                       }}
                       className="flex w-full items-center justify-center gap-1 rounded-md bg-[#4D6C90] py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#3B5776] hover:shadow-md"
                     >
@@ -233,13 +242,13 @@ export default function TeacherClassesCard({
       )}
 
       {/* Summary */}
-      <div className="px-5 pb-5">
+      {hideSummary ? null : <div className="px-5 pb-5">
         <div className="rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50 to-emerald-50 p-4">
           <p className="text-[14px] leading-5 text-slate-700">
             These classes will be visible on the public teacher profile, allowing students and parents to discover and enroll in available programs.
           </p>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
