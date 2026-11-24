@@ -1,6 +1,7 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireTeacherSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
+import { checkSameOriginRequest } from "@/lib/same-origin";
 import { createLectureSchema, lectureListQuerySchema } from "@/lib/lecture-validation";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { createLectureForTeacher, listLecturesForTeacher } from "@/services/lecture-service";
@@ -54,6 +55,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Same-origin only (CSRF), before authentication and before the body is
+  // read, as the other teacher write routes (lib/same-origin.ts). The app's
+  // own pages call this with a same-origin fetch, which sends Origin.
+  const origin = checkSameOriginRequest(request);
+  if (!origin.allowed) {
+    return apiError("This request must come from the application itself.", 403, "CROSS_ORIGIN_REQUEST_REJECTED");
+  }
+
   try {
     const session = await requireTeacherSession();
     const body = (await request.json()) as {

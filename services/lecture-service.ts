@@ -29,8 +29,8 @@ import type {
   UpdateQuizInput,
 } from "@/lib/lecture-validation";
 
-async function assertTeacherOwnsClass(teacherId: string, classId: string) {
-  const classroom = await prisma.class.findFirst({
+async function assertTeacherOwnsClass(teacherId: string, classId: string, db: Prisma.TransactionClient = prisma) {
+  const classroom = await db.class.findFirst({
     where: {
       id: classId,
       teacherId,
@@ -227,7 +227,39 @@ async function assertTeacherOwnsNote(teacherId: string, lectureId: string, noteI
   return note;
 }
 
-export async function createLectureForTeacher(teacherId: string, input: CreateLectureInput) {
+/**
+ * Creates a lecture in one of the teacher's classes (404 CLASS_NOT_FOUND
+ * otherwise). Without `options.db`: exactly the behaviour as before.
+ *
+ * `options.db`: run inside the caller's transaction (the attendance page's
+ * duplicate-checked creation, services/attendance-lecture-create-service.ts).
+ * The ownership check runs on that transaction, and the caller emits the
+ * live-update event after its commit (nothing is announced for a lecture
+ * that was rolled back). The transaction is kept short: the lecture is
+ * inserted with its own columns only (one INSERT ... RETURNING) and `class`
+ * is the row the ownership check just read in the same transaction, instead
+ * of reading the lecture and its class again (two more round trips while
+ * the caller holds its lock). Same response shape either way.
+ */
+export async function createLectureForTeacher(
+  teacherId: string,
+  input: CreateLectureInput,
+  options: { db?: Prisma.TransactionClient } = {}
+) {
+  if (options.db) {
+    const classroom = await assertTeacherOwnsClass(teacherId, input.classId, options.db);
+    const created = await options.db.lecture.create({
+      data: {
+        classId: input.classId,
+        title: input.title,
+        date: input.date,
+        ...(input.endDate ? { endDate: input.endDate } : {}),
+      },
+      select: { id: true, title: true, date: true, endDate: true, classStatus: true, createdAt: true },
+    });
+    return { ...created, class: { id: classroom.id, name: classroom.name, schedule: classroom.schedule } };
+  }
+
   await assertTeacherOwnsClass(teacherId, input.classId);
 
   // The request schema already checked endDate against date (createLectureSchema).

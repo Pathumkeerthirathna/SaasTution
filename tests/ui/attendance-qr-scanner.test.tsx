@@ -244,7 +244,8 @@ test("register entry: 'Scan QR codes' only while scanning is available; the reas
     assert.ok(text(html).includes("QR attendance"));
   }
   const panel = source("components", "attendance", "lecture-attendance-register-panel.tsx");
-  assert.match(panel, /<QrScanEntry register=\{register\} onCloseQr=\{onCloseQrAttendance\} \/>/, "Stage 5.7b-3e adds the closure action");
+  // The Attendance page's embedded register may also pass onOpenScanner (tests/ui/attendance-workspace.test.tsx).
+  assert.match(panel, /<QrScanEntry register=\{register\} onCloseQr=\{onCloseQrAttendance\}(?: onOpenScanner=\{onOpenScanner\})? \/>/, "Stage 5.7b-3e adds the closure action");
 });
 
 test("scanner view: camera and manual input are disabled unless available; the unavailable reason is shown", () => {

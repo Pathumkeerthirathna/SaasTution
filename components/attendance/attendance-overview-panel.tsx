@@ -49,6 +49,8 @@ import {
 } from "@/components/attendance/attendance-ui";
 import { formatColomboDateTime } from "@/components/attendance/lecture-attendance-register-panel";
 import { createLatestRequestGate } from "@/components/attendance/reconciliation-controller";
+import { AttendanceTakeSection } from "@/components/attendance/attendance-take-section";
+import { AttendancePageHeading } from "@/components/attendance/attendance-page-heading";
 
 // =========================================================================================
 // Pure helpers (exported for tests)
@@ -311,6 +313,10 @@ export function OverviewView(props: {
   page: number;
   onPageChange: (page: number) => void;
   onRetry: () => void;
+  /** The "Take attendance" section (class / lecture selectors, QR scanner, class matrix), shown under the header. */
+  takeAttendance?: React.ReactNode;
+  /** Render the "Attendance registers" section (tabs, filters, lecture list, pagination). Default true; the page passes SHOW_ATTENDANCE_REGISTERS. */
+  showRegisters?: boolean;
 }) {
   const { tab, draft, load, refreshing } = props;
   const items = load.kind === "ready" ? load.items : [];
@@ -320,165 +326,173 @@ export function OverviewView(props: {
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <section className="rounded-2xl bg-[#112D5C] p-4 text-white shadow-sm sm:p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">Attendance</p>
-        <h1 className="mt-1 flex items-center gap-2 text-xl font-bold sm:text-2xl">
-          <ClipboardList size={22} aria-hidden />
-          Attendance registers
-        </h1>
-        <p className="mt-1 text-xs text-white/80">Your lectures and the state of each attendance register. Times are Sri Lankan time.</p>
-      </section>
-
-      {/* Tabs */}
-      <div role="tablist" aria-label="Lectures" className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
-        {TABS.map((t) => {
-          const selected = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`overview-tab-${t.id}`}
-              aria-selected={selected}
-              aria-controls="overview-tabpanel"
-              tabIndex={selected ? 0 : -1}
-              onClick={() => props.onTabChange(t.id)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight" || event.key === "ArrowLeft") props.onTabChange(t.id === "upcoming" ? "previous" : "upcoming");
-              }}
-              className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                selected ? "bg-[#112D5C] text-white" : "text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filters (applied explicitly) */}
-      <form
-        aria-label="Filters"
-        onSubmit={(event) => {
-          event.preventDefault();
-          props.onApply();
-        }}
-        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-end"
-      >
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-slate-600">
-          Lecture title
-          <span className="relative">
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
-            <input
-              type="search"
-              value={draft.title}
-              onChange={(event) => props.onDraftChange({ ...draft, title: event.target.value })}
-              placeholder="Search by title"
-              className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-2 text-sm font-normal text-slate-800 outline-none focus:border-[#112D5C]"
-            />
-          </span>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-          Class
-          <select
-            value={draft.classId}
-            onChange={(event) => props.onDraftChange({ ...draft, classId: event.target.value })}
-            disabled={props.classOptions === null}
-            className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800 disabled:opacity-60"
-          >
-            <option value="">All classes</option>
-            {(props.classOptions ?? []).map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-          From (date)
-          <input type="date" value={draft.fromDay} onChange={(event) => props.onDraftChange({ ...draft, fromDay: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800" />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-          To (date)
-          <input type="date" value={draft.toDay} onChange={(event) => props.onDraftChange({ ...draft, toDay: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800" />
-        </label>
-        <div className="flex gap-2">
-          <button type="submit" className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#112D5C] px-3 text-sm font-semibold text-white hover:opacity-90">
-            <Search size={14} aria-hidden />
-            Apply
-          </button>
-          {filtersActive(draft) || filtersActive(props.applied) ? (
-            <button type="button" onClick={props.onClear} className="h-9 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Clear filters
-            </button>
-          ) : null}
+      {/* The page heading is the first part of the workspace's single card; without the workspace, its own card. */}
+      {props.takeAttendance ?? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <AttendancePageHeading />
         </div>
-        {props.classOptions === null ? <p className="w-full text-[11px] text-slate-500">Class list unavailable; the class filter is disabled.</p> : null}
-      </form>
+      )}
 
-      <div id="overview-tabpanel" role="tabpanel" aria-labelledby={`overview-tab-${tab}`} aria-busy={load.kind === "loading" || refreshing} className="flex flex-col gap-3">
-        {refreshing ? (
-          <p role="status" className="flex items-center gap-1.5 text-xs text-slate-600">
-            <Loader2 size={13} className="animate-spin" aria-hidden />
-            Updating…
-          </p>
-        ) : null}
+      {/* The existing lecture list (Upcoming / Previous, filters, register links); hidden on the page while SHOW_ATTENDANCE_REGISTERS is false. */}
+      {props.showRegisters === false ? null : (
+        <>
+          <h2 className="mt-1 flex items-center gap-2 text-base font-semibold text-slate-900">
+            <CalendarClock size={16} className="text-[#32598A]" aria-hidden />
+            Attendance registers
+          </h2>
 
-        {unconfigured ? (
-          <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
-            Attendance settings are not configured on this server, so live / historical attendance cannot be determined.
-          </p>
-        ) : null}
-
-        {load.kind === "loading" ? (
-          <div role="status" className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            <Loader2 size={16} className="animate-spin text-[#112D5C]" aria-hidden />
-            Loading lectures…
+          {/* Tabs */}
+          <div role="tablist" aria-label="Lectures" className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
+            {TABS.map((t) => {
+              const selected = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  id={`overview-tab-${t.id}`}
+                  aria-selected={selected}
+                  aria-controls="overview-tabpanel"
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => props.onTabChange(t.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowRight" || event.key === "ArrowLeft") props.onTabChange(t.id === "upcoming" ? "previous" : "upcoming");
+                  }}
+                  className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    selected ? "bg-[#112D5C] text-white" : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
-        ) : null}
 
-        {load.kind === "error" ? <OverviewErrorView error={load.error} onRetry={props.onRetry} /> : null}
-
-        {load.kind === "ready" && items.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-            <ClipboardList size={20} className="text-slate-400" aria-hidden />
-            <p className="font-semibold text-slate-800">{empty.title}</p>
-            <p className="max-w-md text-sm text-slate-500">{empty.body}</p>
-          </div>
-        ) : null}
-
-        {load.kind === "ready" && items.length > 0 ? <OverviewList items={items} /> : null}
-
-        {pagination && pagination.totalItems > 0 ? (
-          <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-600">
-              Page {pagination.page} of {pagination.totalPages} · {pagination.totalItems} lecture(s)
-            </p>
+          {/* Filters (applied explicitly) */}
+          <form
+            aria-label="Filters"
+            onSubmit={(event) => {
+              event.preventDefault();
+              props.onApply();
+            }}
+            className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-end"
+          >
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-slate-600">
+              Lecture title
+              <span className="relative">
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
+                <input
+                  type="search"
+                  value={draft.title}
+                  onChange={(event) => props.onDraftChange({ ...draft, title: event.target.value })}
+                  placeholder="Search by title"
+                  className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-2 text-sm font-normal text-slate-800 outline-none focus:border-[#112D5C]"
+                />
+              </span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+              Class
+              <select
+                value={draft.classId}
+                onChange={(event) => props.onDraftChange({ ...draft, classId: event.target.value })}
+                disabled={props.classOptions === null}
+                className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800 disabled:opacity-60"
+              >
+                <option value="">All classes</option>
+                {(props.classOptions ?? []).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+              From (date)
+              <input type="date" value={draft.fromDay} onChange={(event) => props.onDraftChange({ ...draft, fromDay: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+              To (date)
+              <input type="date" value={draft.toDay} onChange={(event) => props.onDraftChange({ ...draft, toDay: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm font-normal text-slate-800" />
+            </label>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => props.onPageChange(props.page - 1)}
-                disabled={!pagination.hasPreviousPage || refreshing}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ChevronLeft size={13} aria-hidden />
-                Previous page
+              <button type="submit" className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#112D5C] px-3 text-sm font-semibold text-white hover:opacity-90">
+                <Search size={14} aria-hidden />
+                Apply
               </button>
-              <button
-                type="button"
-                onClick={() => props.onPageChange(props.page + 1)}
-                disabled={!pagination.hasNextPage || refreshing}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next page
-                <ChevronRight size={13} aria-hidden />
-              </button>
+              {filtersActive(draft) || filtersActive(props.applied) ? (
+                <button type="button" onClick={props.onClear} className="h-9 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  Clear filters
+                </button>
+              ) : null}
             </div>
-          </nav>
-        ) : null}
-      </div>
+            {props.classOptions === null ? <p className="w-full text-[11px] text-slate-500">Class list unavailable; the class filter is disabled.</p> : null}
+          </form>
+
+          <div id="overview-tabpanel" role="tabpanel" aria-labelledby={`overview-tab-${tab}`} aria-busy={load.kind === "loading" || refreshing} className="flex flex-col gap-3">
+            {refreshing ? (
+              <p role="status" className="flex items-center gap-1.5 text-xs text-slate-600">
+                <Loader2 size={13} className="animate-spin" aria-hidden />
+                Updating…
+              </p>
+            ) : null}
+
+            {unconfigured ? (
+              <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+                Attendance settings are not configured on this server, so live / historical attendance cannot be determined.
+              </p>
+            ) : null}
+
+            {load.kind === "loading" ? (
+              <div role="status" className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+                <Loader2 size={16} className="animate-spin text-[#112D5C]" aria-hidden />
+                Loading lectures…
+              </div>
+            ) : null}
+
+            {load.kind === "error" ? <OverviewErrorView error={load.error} onRetry={props.onRetry} /> : null}
+
+            {load.kind === "ready" && items.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                <ClipboardList size={20} className="text-slate-400" aria-hidden />
+                <p className="font-semibold text-slate-800">{empty.title}</p>
+                <p className="max-w-md text-sm text-slate-500">{empty.body}</p>
+              </div>
+            ) : null}
+
+            {load.kind === "ready" && items.length > 0 ? <OverviewList items={items} /> : null}
+
+            {pagination && pagination.totalItems > 0 ? (
+              <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-600">
+                  Page {pagination.page} of {pagination.totalPages} · {pagination.totalItems} lecture(s)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => props.onPageChange(props.page - 1)}
+                    disabled={!pagination.hasPreviousPage || refreshing}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft size={13} aria-hidden />
+                    Previous page
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.onPageChange(props.page + 1)}
+                    disabled={!pagination.hasNextPage || refreshing}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next page
+                    <ChevronRight size={13} aria-hidden />
+                  </button>
+                </div>
+              </nav>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -529,7 +543,17 @@ export function createOverviewLoader(deps: {
 // The panel
 // =========================================================================================
 
-export function AttendanceOverviewPanel() {
+/**
+ * Whether /dashboard/attendance shows the "Attendance registers" section
+ * (Upcoming / Previous tabs, filters, lecture list, pagination) under the
+ * workspace. Hidden for now; set to true to bring it back. While hidden, its
+ * lecture list is not requested. Its components, APIs and the standalone
+ * register page are unchanged.
+ */
+export const SHOW_ATTENDANCE_REGISTERS: boolean = false;
+
+/** `initialMonth`: the current Sri Lankan month "YYYY-MM", computed once by the server page (the workspace's first month). */
+export function AttendanceOverviewPanel({ initialMonth }: { initialMonth?: string } = {}) {
   const [tab, setTab] = useState<OverviewTab>("upcoming");
   const [draft, setDraft] = useState<OverviewFilters>(EMPTY_OVERVIEW_FILTERS);
   const [applied, setApplied] = useState<OverviewFilters>(EMPTY_OVERVIEW_FILTERS);
@@ -538,6 +562,8 @@ export function AttendanceOverviewPanel() {
   const [load, setLoad] = useState<OverviewLoad>({ kind: "loading" });
   const [refreshing, setRefreshing] = useState(false);
   const [classOptions, setClassOptions] = useState<ClassOption[] | null>([]);
+  /** The class list request has finished (the workspace then selects the first class, or shows that there are none). */
+  const [classesLoaded, setClassesLoaded] = useState(false);
 
   const hasData = useRef(false);
   const loaderRef = useRef<ReturnType<typeof createOverviewLoader> | null>(null);
@@ -558,6 +584,7 @@ export function AttendanceOverviewPanel() {
 
   // The lectures: the current list stays visible while a newer page loads.
   useEffect(() => {
+    if (!SHOW_ATTENDANCE_REGISTERS) return;
     if (hasData.current) setRefreshing(true);
     else setLoad({ kind: "loading" });
     void loaderRef.current?.load(tab, applied, page);
@@ -575,6 +602,7 @@ export function AttendanceOverviewPanel() {
     void attendanceRequest<{ id: string; name: string }[]>("/api/classes?page=1&pageSize=50", { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       setClassOptions(result.ok && Array.isArray(result.data) ? result.data.map((c) => ({ id: c.id, name: c.name })) : null);
+      setClassesLoaded(true);
     });
     return () => controller.abort();
   }, []);
@@ -609,6 +637,8 @@ export function AttendanceOverviewPanel() {
       page={page}
       onPageChange={setPage}
       onRetry={retry}
+      takeAttendance={<AttendanceTakeSection classOptions={classOptions} classesLoaded={classesLoaded} initialMonth={initialMonth} />}
+      showRegisters={SHOW_ATTENDANCE_REGISTERS}
     />
   );
 }

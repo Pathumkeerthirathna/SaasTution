@@ -21,6 +21,7 @@
 import type { AttendanceRegisterResponse } from "@/lib/attendance-register-response";
 import { DEFAULT_ATTENDANCE_GRACE_MINUTES, MAX_ATTENDANCE_GRACE_MINUTES, MIN_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
 import type { AttendanceOverviewItem } from "@/services/lecture-attendance-overview-service";
+import type { AttendanceMatrix } from "@/services/class-attendance-matrix-service";
 
 // =========================================================================================
 // 1. Typed fetch helper
@@ -331,6 +332,56 @@ export function buildAttendanceOverviewQuery(query: AttendanceOverviewQuery): st
 /** One page of the teacher's lectures with their register state (the result carries `pagination`). */
 export function fetchAttendanceOverview(query: AttendanceOverviewQuery, options: CallOptions = {}) {
   return attendanceRequest<AttendanceOverviewItem[]>(`/api/lectures/attendance-overview?${buildAttendanceOverviewQuery(query)}`, options);
+}
+
+// ---- Taking attendance from the Attendance page (class matrix, lecture selector, creation) ----
+
+/** GET /api/classes/[id]/attendance-matrix (services/class-attendance-matrix-service.ts). */
+export type { AttendanceMatrix };
+
+export const classAttendanceMatrixUrl = (classId: string, month: string | null) =>
+  `/api/classes/${encodeURIComponent(classId)}/attendance-matrix${month ? `?month=${encodeURIComponent(month)}` : ""}`;
+
+/** One Sri Lankan month of a class's attendance; `month` "YYYY-MM", null = the current month. */
+export function fetchClassAttendanceMatrix(classId: string, month: string | null, options: CallOptions = {}) {
+  return attendanceRequest<AttendanceMatrix>(classAttendanceMatrixUrl(classId, month), options);
+}
+
+/** One lecture of GET /api/lectures (the existing lecture list; only the fields the selector uses). */
+export type ClassLectureOption = { id: string; title: string; date: string; endDate: string | null; classStatus: string };
+
+export const CLASS_LECTURES_PAGE_SIZE = 100;
+
+/**
+ * The query string for one page of the class's lectures in a Sri Lankan
+ * month, oldest first: the existing lecture list (GET /api/lectures:
+ * ownership-checked, deleted lectures excluded, `from` ≤ date ≤ `to`
+ * inclusive, at most 100 per page).
+ */
+export function classMonthLecturesQuery(classId: string, month: { from: Date; to: Date }, page: number): string {
+  return new URLSearchParams({
+    classId,
+    page: String(page),
+    pageSize: String(CLASS_LECTURES_PAGE_SIZE),
+    sortOrder: "asc",
+    from: month.from.toISOString(),
+    to: month.to.toISOString(),
+  }).toString();
+}
+
+/** A page of the class's lectures in one Sri Lankan month (see classMonthLecturesQuery); the result carries `pagination`. */
+export function fetchClassLectures(classId: string, month: { from: Date; to: Date }, page: number, options: CallOptions = {}) {
+  return attendanceRequest<ClassLectureOption[]>(`/api/lectures?${classMonthLecturesQuery(classId, month, page)}`, options);
+}
+
+export type AttendanceLectureBody = { title: string; date: string; endDate: string | null; allowAdditionalSession: boolean };
+
+/** POST /api/classes/[id]/attendance-lectures: 201 { lecture }, 409 ATTENDANCE_LECTURE_EXISTS (details.lectures). */
+export function createAttendanceLecture(classId: string, body: AttendanceLectureBody, options: CallOptions = {}) {
+  return attendanceRequest<{ lecture: { id: string; title: string; date: string; endDate: string | null } }>(
+    `/api/classes/${encodeURIComponent(classId)}/attendance-lectures`,
+    { ...options, method: "POST", body }
+  );
 }
 
 // =========================================================================================

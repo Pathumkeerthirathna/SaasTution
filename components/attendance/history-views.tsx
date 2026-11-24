@@ -367,8 +367,34 @@ export function StudentHistoryDialog({ lectureId, target, onClose }: { lectureId
 }
 
 /** The row action (both layouts). */
-export function HistoryAction({ student, onOpen }: { student: RegisterStudent; onOpen: (student: RegisterStudent) => void }) {
+/** The compact action's accessible name and tooltip. */
+export const VIEW_HISTORY_LABEL = "View attendance history";
+
+export function HistoryAction({
+  student,
+  onOpen,
+  compact = false,
+}: {
+  student: RegisterStudent;
+  onOpen: (student: RegisterStudent) => void;
+  /** An icon button (the Attendance page's register): a tooltip and an accessible name instead of the text. */
+  compact?: boolean;
+}) {
   if (!historyAvailable(student)) return null;
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(student)}
+        data-history-action={student.studentId}
+        title={VIEW_HISTORY_LABEL}
+        aria-label={`${VIEW_HISTORY_LABEL}: ${student.name ?? "Unknown student"}`}
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border md:h-9 md:w-9 border-slate-300 text-slate-700 hover:bg-slate-100"
+      >
+        <History size={16} aria-hidden />
+      </button>
+    );
+  }
   return (
     <button
       type="button"

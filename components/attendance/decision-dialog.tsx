@@ -143,17 +143,37 @@ export function decisionNeedsReopen(action: RecordActionUiState): boolean {
 // The row action
 // =========================================================================================
 
+/** The compact action's accessible name and tooltip. */
+export const CHANGE_STATUS_LABEL = "Change attendance status";
+
 export function DecisionAction({
   student,
   register,
   onOpen,
+  compact = false,
 }: {
   student: RegisterStudent;
   register: AttendanceRegisterResponse;
   onOpen: (student: RegisterStudent) => void;
+  /** An icon button (the Attendance page's register): a tooltip and an accessible name instead of the text. */
+  compact?: boolean;
 }) {
   const availability = decisionAvailability(student, register);
   if (!availability.allowed) return <span className="text-[11px] text-slate-500">{availability.reason}</span>;
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(student)}
+        data-decision-action={student.studentId}
+        title={CHANGE_STATUS_LABEL}
+        aria-label={`${CHANGE_STATUS_LABEL}: ${student.name ?? "Unknown student"}`}
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border md:h-9 md:w-9 border-[#112D5C] text-[#112D5C] hover:bg-[#112D5C] hover:text-white"
+      >
+        <PencilLine size={16} aria-hidden />
+      </button>
+    );
+  }
   return (
     <button
       type="button"

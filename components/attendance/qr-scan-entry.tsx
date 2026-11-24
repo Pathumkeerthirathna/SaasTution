@@ -74,7 +74,12 @@ function StatusIcon({ state }: { state: QrStatusState }) {
   return <ShieldAlert {...props} />;
 }
 
-export function QrScanEntry({ register, onCloseQr }: { register: AttendanceRegisterResponse; onCloseQr?: () => void }) {
+/**
+ * `onOpenScanner` (the Attendance page): "Open QR scanner" opens the scanner
+ * modal on that page instead of linking to the scanner route. Shown under
+ * exactly the same condition (scanning available).
+ */
+export function QrScanEntry({ register, onCloseQr, onOpenScanner }: { register: AttendanceRegisterResponse; onCloseQr?: () => void; onOpenScanner?: () => void }) {
   const status = qrStatusSummary(register);
   const scanning = scannerAvailability(register);
   const closure = qrClosureAvailability(register);
@@ -105,7 +110,16 @@ export function QrScanEntry({ register, onCloseQr }: { register: AttendanceRegis
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {scanning.available ? (
+          {scanning.available && onOpenScanner ? (
+            <button
+              type="button"
+              onClick={onOpenScanner}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[#112D5C] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              <QrCode size={15} aria-hidden />
+              Open QR scanner
+            </button>
+          ) : scanning.available ? (
             <Link
               href={scannerPath(register.lecture.id)}
               className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[#112D5C] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"

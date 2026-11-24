@@ -472,7 +472,8 @@ test("controller: dispose aborts the request and ignores its answer (modal clean
 
 test("panel: the dialog opens from the QR section only when allowed and no other dialog is open; confirm goes through the controller", () => {
   const panel = source("components", "attendance", "lecture-attendance-register-panel.tsx");
-  assert.match(panel, /<QrScanEntry register=\{register\} onCloseQr=\{onCloseQrAttendance\} \/>/);
+  // The Attendance page's embedded register may also pass onOpenScanner (tests/ui/attendance-workspace.test.tsx).
+  assert.match(panel, /<QrScanEntry register=\{register\} onCloseQr=\{onCloseQrAttendance\}(?: onOpenScanner=\{onOpenScanner\})? \/>/);
   assert.match(panel, /onCloseQrAttendance=\{openQrClose\}/);
   const open = panel.slice(panel.indexOf("const openQrClose"), panel.indexOf("const closeQrClose"));
   assert.match(open, /controller\.isBusy\(\) \|\| decisionTarget \|\| reviewTarget \|\| historyTarget \|\| graceTarget\) return;/);

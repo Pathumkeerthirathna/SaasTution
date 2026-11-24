@@ -27,6 +27,16 @@
  *
  * This is the canonical attendance register (one record per student per
  * lecture), not the session join / leave log shown on the lecture list.
+ *
+ * Embedded use (the Attendance page, attendance-take-section.tsx): the same
+ * panel with variant="embedded" under the class matrix for the selected
+ * lecture: the class name in the header, no "Back to lectures" bar, compact
+ * icon actions (change status, history), "Open QR scanner" opening the
+ * page's scanner modal (onOpenScanner) instead of the scanner route,
+ * `refreshKey` to reload after the modal closes, and `onRefreshed` after
+ * every applied reload (the page then reloads its matrix). Every action,
+ * controller, dialog, API and server rule is the page's own; nothing is
+ * duplicated. The standalone route renders the default (page) variant.
  */
 
 import Link from "next/link";
@@ -240,14 +250,25 @@ function ReviewCell({ student }: { student: RegisterStudent }) {
   );
 }
 
-function SummaryCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
+type SummaryTone = "navy" | "positive" | "warning" | "danger" | "info";
+
+const SUMMARY_TONES: Record<SummaryTone, string> = {
+  navy: "bg-[#eef3f8] text-[#32598A]",
+  positive: "bg-emerald-50 text-emerald-700",
+  warning: "bg-amber-50 text-amber-700",
+  danger: "bg-rose-50 text-rose-700",
+  info: "bg-sky-50 text-sky-700",
+};
+
+/** One of the six summary counts (the server's value): an icon box, a small label, a clearly readable number. */
+function SummaryCard({ label, value, icon, tone = "navy" }: { label: string; value: number; icon: React.ReactNode; tone?: SummaryTone }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {icon}
-        {label}
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" data-summary-card>
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${SUMMARY_TONES[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="break-words text-[12px] font-medium leading-tight text-slate-500">{label}</p>
+        <p className="mt-0.5 text-2xl font-semibold leading-none tabular-nums text-slate-900">{value}</p>
       </div>
-      <p className="mt-1 text-2xl font-bold text-[#112D5C]">{value}</p>
     </div>
   );
 }
@@ -281,6 +302,8 @@ const REVIEW_FILTER_OPTIONS: { value: RegisterReviewFilter; label: string }[] = 
  * and the students (a table on wide screens, cards with the same fields on
  * narrow ones; nothing is left out on either).
  */
+export type RegisterVariant = "page" | "embedded";
+
 export function RegisterView({
   register,
   filters,
@@ -291,6 +314,10 @@ export function RegisterView({
   onViewHistory,
   onChangeGrace,
   onCloseQrAttendance,
+  variant = "page",
+  className = null,
+  onOpenScanner,
+  compactActions = false,
 }: {
   register: AttendanceRegisterResponse;
   filters: RegisterFilters;
@@ -307,51 +334,111 @@ export function RegisterView({
   onChangeGrace?: () => void;
   /** Stage 5.7b-3e: opens the "Close QR attendance" confirmation (offered only while the closure is allowed). */
   onCloseQrAttendance?: () => void;
+  /** "embedded": on the Attendance page (an h3 title, the class name). Default: the register page. */
+  variant?: RegisterVariant;
+  /** The class name shown in the embedded header (the register names only the class id). */
+  className?: string | null;
+  /** The Attendance page: "Open QR scanner" opens its scanner modal (no navigation). */
+  onOpenScanner?: () => void;
+  /** Icon buttons for Change status / View history (tooltips and accessible names). */
+  compactActions?: boolean;
 }) {
   const hasActions = Boolean(onChangeStatus || onReview || onViewHistory);
+  const embedded = variant === "embedded";
   const visible = filterRegisterStudents(register.students, filters);
   const { lecture, summary } = register;
   const finalized = register.register.finalized;
   const unconfigured = register.configuration.approval !== "OK" || register.configuration.evidence !== "OK";
   const filtered = filters.search.trim() !== "" || filters.status !== "ALL" || filters.review !== "ALL";
 
+  /** The six server counts; on the Attendance page they come right after the lecture header (seen first). */
+  const summaryCards = (
+    <section aria-label="Summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <SummaryCard label="Students" value={summary.students} icon={<Users size={16} aria-hidden />} />
+      <SummaryCard label="Present" value={summary.recordStatus.PRESENT} tone="positive" icon={<CheckCircle2 size={16} aria-hidden />} />
+      <SummaryCard label="Late" value={summary.recordStatus.LATE} tone="warning" icon={<Clock size={16} aria-hidden />} />
+      <SummaryCard label="Absent" value={summary.recordStatus.ABSENT} tone="danger" icon={<FileX size={16} aria-hidden />} />
+      <SummaryCard label="Excused" value={summary.recordStatus.EXCUSED} tone="info" icon={<CircleHelp size={16} aria-hidden />} />
+      <SummaryCard label="Pending reviews" value={summary.pendingReviews} tone="warning" icon={<AlertTriangle size={16} aria-hidden />} />
+    </section>
+  );
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <section className="rounded-2xl bg-[#112D5C] p-4 text-white shadow-sm sm:p-5" aria-label="Lecture">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">Attendance register</p>
-            <h1 className="mt-1 break-words text-xl font-bold sm:text-2xl">{lecture.title}</h1>
-            <p className="mt-1 text-xs text-white/80">
-              Lecture status: {LECTURE_STATUS_LABELS[lecture.classStatus] ?? lecture.classStatus}
-              {register.classification ? ` · ${register.classification === "LIVE" ? "Automatic attendance" : "Before automatic attendance (historical)"}` : ""}
-            </p>
+    <div className={`flex flex-col ${embedded ? "gap-3" : "gap-4"}`}>
+      {/* Header (embedded on the Attendance page: a light card; the register page keeps its navy header) */}
+      {embedded ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Lecture" data-register-header="embedded">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              {className ? <p className="break-words text-[12px] font-medium text-slate-500 sm:text-[13px]">{className}</p> : null}
+              <h3 className="mt-0.5 break-words text-lg font-semibold text-slate-900">{lecture.title}</h3>
+              <p className="mt-0.5 text-[12px] text-slate-600 sm:text-[13px]">
+                Lecture status: {LECTURE_STATUS_LABELS[lecture.classStatus] ?? lecture.classStatus}
+                {register.classification ? ` · ${register.classification === "LIVE" ? "Automatic attendance" : "Before automatic attendance (historical)"}` : ""}
+              </p>
+            </div>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold ${
+                finalized ? "border-slate-300 bg-slate-100 text-slate-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              }`}
+            >
+              {finalized ? <Lock size={13} aria-hidden /> : <LockOpen size={13} aria-hidden />}
+              {finalized ? "Finalized" : "Open"}
+            </span>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              finalized ? "bg-white text-[#112D5C]" : "bg-white/15 text-white ring-1 ring-white/40"
-            }`}
-          >
-            {finalized ? <Lock size={13} aria-hidden /> : <LockOpen size={13} aria-hidden />}
-            {finalized ? "Finalized" : "Open"}
-          </span>
-        </div>
-        <dl id={REGISTER_SCHEDULE_ID} tabIndex={-1} className="mt-4 grid grid-cols-1 gap-3 rounded-xl bg-white p-3 outline-none sm:grid-cols-2 lg:grid-cols-4">
-          <Detail label="Scheduled start" value={formatColomboDateTime(register.register.scheduledStartAt)} />
-          <Detail label="Scheduled end" value={register.register.scheduledEndAt ? formatColomboDateTime(register.register.scheduledEndAt) : "No end time"} />
-          <Detail
-            label="Grace period"
-            value={
-              <>
-                {`${register.register.graceMinutes} minutes`}
-                {onChangeGrace ? <GraceAction register={register} onOpen={onChangeGrace} /> : null}
-              </>
-            }
-          />
-          <Detail label="Finalized" value={finalized ? formatColomboDateTime(register.register.finalizedAt) : "Not finalized"} />
-        </dl>
-      </section>
+          <dl id={REGISTER_SCHEDULE_ID} tabIndex={-1} className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3 outline-none sm:grid-cols-2 lg:grid-cols-4">
+            <Detail label="Scheduled start" value={formatColomboDateTime(register.register.scheduledStartAt)} />
+            <Detail label="Scheduled end" value={register.register.scheduledEndAt ? formatColomboDateTime(register.register.scheduledEndAt) : "No end time"} />
+            <Detail
+              label="Grace period"
+              value={
+                <>
+                  {`${register.register.graceMinutes} minutes`}
+                  {onChangeGrace ? <GraceAction register={register} onOpen={onChangeGrace} /> : null}
+                </>
+              }
+            />
+            <Detail label="Finalized" value={finalized ? formatColomboDateTime(register.register.finalizedAt) : "Not finalized"} />
+          </dl>
+        </section>
+      ) : (
+        <section className="rounded-2xl bg-[#112D5C] p-4 text-white shadow-sm sm:p-5" aria-label="Lecture">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">Attendance register</p>
+              <h1 className="mt-1 break-words text-xl font-bold sm:text-2xl">{lecture.title}</h1>
+              <p className="mt-1 text-xs text-white/80">
+                Lecture status: {LECTURE_STATUS_LABELS[lecture.classStatus] ?? lecture.classStatus}
+                {register.classification ? ` · ${register.classification === "LIVE" ? "Automatic attendance" : "Before automatic attendance (historical)"}` : ""}
+              </p>
+            </div>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                finalized ? "bg-white text-[#112D5C]" : "bg-white/15 text-white ring-1 ring-white/40"
+              }`}
+            >
+              {finalized ? <Lock size={13} aria-hidden /> : <LockOpen size={13} aria-hidden />}
+              {finalized ? "Finalized" : "Open"}
+            </span>
+          </div>
+          <dl id={REGISTER_SCHEDULE_ID} tabIndex={-1} className="mt-4 grid grid-cols-1 gap-3 rounded-xl bg-white p-3 outline-none sm:grid-cols-2 lg:grid-cols-4">
+            <Detail label="Scheduled start" value={formatColomboDateTime(register.register.scheduledStartAt)} />
+            <Detail label="Scheduled end" value={register.register.scheduledEndAt ? formatColomboDateTime(register.register.scheduledEndAt) : "No end time"} />
+            <Detail
+              label="Grace period"
+              value={
+                <>
+                  {`${register.register.graceMinutes} minutes`}
+                  {onChangeGrace ? <GraceAction register={register} onOpen={onChangeGrace} /> : null}
+                </>
+              }
+            />
+            <Detail label="Finalized" value={finalized ? formatColomboDateTime(register.register.finalizedAt) : "Not finalized"} />
+          </dl>
+        </section>
+      )}
+
+      {embedded ? summaryCards : null}
 
       {/* Notices (read-only information) */}
       <div className="flex flex-col gap-2">
@@ -383,19 +470,11 @@ export function RegisterView({
       </div>
 
       {/* QR attendance (Stage 5.7b-3d): the state and, when open, the link to the scanner page. */}
-      <QrScanEntry register={register} onCloseQr={onCloseQrAttendance} />
+      <QrScanEntry register={register} onCloseQr={onCloseQrAttendance} onOpenScanner={onOpenScanner} />
 
       {actions}
 
-      {/* Summary (the backend's counts) */}
-      <section aria-label="Summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <SummaryCard label="Students" value={summary.students} icon={<Users size={12} aria-hidden />} />
-        <SummaryCard label="Present" value={summary.recordStatus.PRESENT} icon={<CheckCircle2 size={12} aria-hidden />} />
-        <SummaryCard label="Late" value={summary.recordStatus.LATE} icon={<Clock size={12} aria-hidden />} />
-        <SummaryCard label="Absent" value={summary.recordStatus.ABSENT} icon={<FileX size={12} aria-hidden />} />
-        <SummaryCard label="Excused" value={summary.recordStatus.EXCUSED} icon={<CircleHelp size={12} aria-hidden />} />
-        <SummaryCard label="Pending reviews" value={summary.pendingReviews} icon={<AlertTriangle size={12} aria-hidden />} />
-      </section>
+      {embedded ? null : summaryCards}
 
       {/* Filters (on the loaded data) */}
       <section aria-label="Filters" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -463,7 +542,7 @@ export function RegisterView({
         <>
           {/* Wide screens: a table (scrolls sideways when needed, every column kept). */}
           <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block" data-layout="table">
-            <table className={`w-full ${hasActions ? "min-w-[1340px]" : "min-w-[1100px]"} text-left text-sm`}>
+            <table className={`w-full ${hasActions ? (compactActions ? "min-w-[1220px]" : "min-w-[1340px]") : "min-w-[1100px]"} text-left text-sm`}>
               <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2">Student</th>
@@ -494,11 +573,21 @@ export function RegisterView({
                     <td className="px-3 py-2"><ReviewCell student={student} /></td>
                     {hasActions ? (
                       <td className="px-3 py-2">
-                        <div className="flex flex-col items-start gap-1.5">
-                          {onChangeStatus ? <DecisionAction student={student} register={register} onOpen={onChangeStatus} /> : null}
-                          {onReview ? <ReviewActions student={student} register={register} onOpen={onReview} /> : null}
-                          {onViewHistory ? <HistoryAction student={student} onOpen={onViewHistory} /> : null}
-                        </div>
+                        {compactActions ? (
+                          <div className="flex flex-col items-start gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              {onChangeStatus ? <DecisionAction student={student} register={register} onOpen={onChangeStatus} compact /> : null}
+                              {onViewHistory ? <HistoryAction student={student} onOpen={onViewHistory} compact /> : null}
+                            </div>
+                            {onReview ? <ReviewActions student={student} register={register} onOpen={onReview} /> : null}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-start gap-1.5">
+                            {onChangeStatus ? <DecisionAction student={student} register={register} onOpen={onChangeStatus} /> : null}
+                            {onReview ? <ReviewActions student={student} register={register} onOpen={onReview} /> : null}
+                            {onViewHistory ? <HistoryAction student={student} onOpen={onViewHistory} /> : null}
+                          </div>
+                        )}
                       </td>
                     ) : null}
                   </tr>
@@ -529,9 +618,10 @@ export function RegisterView({
                 </dl>
                 {hasActions ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    {onChangeStatus ? <DecisionAction student={student} register={register} onOpen={onChangeStatus} /> : null}
+                    {onChangeStatus ? <DecisionAction student={student} register={register} onOpen={onChangeStatus} compact={compactActions} /> : null}
+                    {onViewHistory && compactActions ? <HistoryAction student={student} onOpen={onViewHistory} compact /> : null}
                     {onReview ? <ReviewActions student={student} register={register} onOpen={onReview} /> : null}
-                    {onViewHistory ? <HistoryAction student={student} onOpen={onViewHistory} /> : null}
+                    {onViewHistory && !compactActions ? <HistoryAction student={student} onOpen={onViewHistory} /> : null}
                   </div>
                 ) : null}
               </li>
@@ -558,7 +648,7 @@ function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: strin
  * internals); what is offered follows the error code. Retrying is always
  * the teacher's choice (no automatic retries).
  */
-export function RegisterErrorView({ error, onRetry }: { error: AttendanceApiError; onRetry?: () => void }) {
+export function RegisterErrorView({ error, onRetry, backLink = true }: { error: AttendanceApiError; onRetry?: () => void; backLink?: boolean }) {
   const action = attendanceErrorAction(error.code);
   const notFound = error.code === "LECTURE_NOT_FOUND" || (error.status === 404 && error.code !== "UNAUTHORIZED");
   const configuration = error.code === "ATTENDANCE_APPROVAL_NOT_CONFIGURED" || error.code === "ATTENDANCE_EVIDENCE_NOT_CONFIGURED";
@@ -592,9 +682,11 @@ export function RegisterErrorView({ error, onRetry }: { error: AttendanceApiErro
             Try again
           </button>
         ) : null}
-        <Link href="/dashboard/lectures" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          Back to lectures
-        </Link>
+        {backLink ? (
+          <Link href="/dashboard/lectures" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Back to lectures
+          </Link>
+        ) : null}
       </div>
     </div>
   );
@@ -620,7 +712,29 @@ type LoadState =
   | { kind: "error"; error: AttendanceApiError }
   | { kind: "ready"; register: AttendanceRegisterResponse };
 
-export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: string }) {
+export type LectureAttendanceRegisterPanelProps = {
+  lectureId: string;
+  /** "embedded": on the Attendance page. Default: the standalone register page. */
+  variant?: RegisterVariant;
+  /** The class name for the embedded header. */
+  className?: string | null;
+  /** Opens the Attendance page's scanner modal for this lecture. */
+  onOpenScanner?: () => void;
+  /** Changing it reloads the register (e.g. after the scanner modal closed). */
+  refreshKey?: number;
+  /** After every reload that was not superseded: applied (true) or failed (false). */
+  onRefreshed?: (applied: boolean) => void;
+};
+
+export function LectureAttendanceRegisterPanel({
+  lectureId,
+  variant = "page",
+  className = null,
+  onOpenScanner,
+  refreshKey,
+  onRefreshed,
+}: LectureAttendanceRegisterPanelProps) {
+  const embedded = variant === "embedded";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filters, setFilters] = useState<RegisterFilters>(DEFAULT_REGISTER_FILTERS);
   const [reconcileState, setReconcileState] = useState<ReconcileUiState>({ phase: "idle" });
@@ -653,6 +767,9 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
   const qrCloseController = useRef<QrClosureController | null>(null);
   /** The register most recently applied by load() (the closure controller reads it after a refresh). */
   const latestRegister = useRef<AttendanceRegisterResponse | null>(null);
+  /** The latest onRefreshed (a ref, so load() and the controllers built on it keep their identity). */
+  const onRefreshedRef = useRef(onRefreshed);
+  onRefreshedRef.current = onRefreshed;
 
   // Only the newest load may update the page (initial load, retry, refresh after reconciliation).
   const gate = useRef(createLatestRequestGate());
@@ -674,9 +791,11 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
       if (result.ok) {
         latestRegister.current = result.data;
         setState({ kind: "ready", register: result.data });
+        if (mode === "refresh") onRefreshedRef.current?.(true);
         return true;
       }
       if (mode === "initial") setState({ kind: "error", error: result });
+      else onRefreshedRef.current?.(false);
       return false;
     },
     [lectureId]
@@ -984,6 +1103,14 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
   // A new lecture: no history dialog left open.
   useEffect(() => setHistoryTarget(null), [lectureId]);
 
+  // The embedding page asks for a reload (e.g. after QR scanning in its modal); not on mount.
+  const lastRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey === lastRefreshKey.current) return;
+    lastRefreshKey.current = refreshKey;
+    void load("refresh");
+  }, [refreshKey, load]);
+
   const retry = useCallback(() => void load("initial"), [load]);
   const startReconcile = useCallback(() => void reconciler.current?.start(), []);
   const cancelReconcile = useCallback(() => reconciler.current?.cancel(), []);
@@ -994,7 +1121,7 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
 
   const content = useMemo(() => {
     if (state.kind === "loading") return <RegisterLoadingView />;
-    if (state.kind === "error") return <RegisterErrorView error={state.error} onRetry={retry} />;
+    if (state.kind === "error") return <RegisterErrorView error={state.error} onRetry={retry} backLink={!embedded} />;
     return (
       <RegisterView
         register={state.register}
@@ -1005,6 +1132,10 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
         onViewHistory={openHistory}
         onChangeGrace={openGrace}
         onCloseQrAttendance={openQrClose}
+        variant={variant}
+        className={className}
+        onOpenScanner={onOpenScanner}
+        compactActions={embedded}
         actions={
           <>
             <ReconcileSection
@@ -1026,20 +1157,22 @@ export function LectureAttendanceRegisterPanel({ lectureId }: { lectureId: strin
         }
       />
     );
-  }, [state, filters, retry, reconcileState, startReconcile, cancelReconcile, finalizationState, openFinalization, openDecision, openReview, openHistory, openGrace, openQrClose]);
+  }, [state, filters, retry, reconcileState, startReconcile, cancelReconcile, finalizationState, openFinalization, openDecision, openReview, openHistory, openGrace, openQrClose, variant, className, onOpenScanner, embedded]);
 
   return (
-    <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href="/dashboard/lectures" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#112D5C] hover:underline">
-          <ArrowLeft size={15} aria-hidden />
-          Back to lectures
-        </Link>
-        <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-          <ClipboardList size={14} aria-hidden />
-          Attendance register
-        </span>
-      </div>
+    <div className="flex w-full min-w-0 flex-col gap-4" data-register-variant={variant}>
+      {embedded ? null : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link href="/dashboard/lectures" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#112D5C] hover:underline">
+            <ArrowLeft size={15} aria-hidden />
+            Back to lectures
+          </Link>
+          <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+            <ClipboardList size={14} aria-hidden />
+            Attendance register
+          </span>
+        </div>
+      )}
       {content}
       {state.kind === "ready" ? <RegisterHistorySection lectureId={lectureId} registerVersion={state.register.register.version} /> : null}
       <FinalizationDialog

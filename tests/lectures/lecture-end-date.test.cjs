@@ -167,8 +167,14 @@ function fake(relativePath, exports) {
 let currentTeacher = TEACHER;
 
 fake("lib/prisma.ts", { prisma: fakePrisma });
-fake("lib/session-events.ts", { emitStudentDataChange: () => {}, emitLiveChange: () => {} });
-fake("lib/auth-session.ts", { requireTeacherSession: async () => ({ teacherId: currentTeacher }) });
+let emitted = [];
+fake("lib/session-events.ts", { emitStudentDataChange: (event) => { emitted.push(event); }, emitLiveChange: () => {} });
+
+// POST /api/lectures is same-origin only (lib/same-origin.ts): the app's origin (test value).
+const APP_ORIGIN = "http://localhost";
+process.env.APP_URL = APP_ORIGIN;
+let sessionCalls = 0;
+fake("lib/auth-session.ts", { requireTeacherSession: async () => { sessionCalls += 1; return { teacherId: currentTeacher }; } });
 fake("services/fee-waiver-events.ts", {
     readLectureWaiverState: async (lectureId) => {
         const row = db.lectures[lectureId];
@@ -201,7 +207,10 @@ async function call(response) {
     return { status: res.status, body: await res.json() };
 }
 
-const post = (body) => call(lecturesRoute.POST(new Request("http://localhost/api/lectures", { method: "POST", body: JSON.stringify(body) })));
+// The app's own pages call POST with a same-origin fetch, which sends Origin (and Sec-Fetch-Site).
+const SAME_ORIGIN = { Origin: APP_ORIGIN, "Sec-Fetch-Site": "same-origin", "Content-Type": "application/json" };
+const post = (body, headers = SAME_ORIGIN) =>
+    call(lecturesRoute.POST(new Request("http://localhost/api/lectures", { method: "POST", headers, body: JSON.stringify(body) })));
 const put = (id, body) => call(lectureRoute.PUT(new Request(`http://localhost/api/lectures/${id}`, { method: "PUT", body: JSON.stringify(body) }), { params: { id } }));
 
 async function rejectsWith(promise, statusCode, code) {
@@ -550,4 +559,57 @@ test("PUT /api/lectures/[id]: start-only conflict is a 400 LECTURE_END_NOT_AFTER
     assert.equal(both.status, 200);
     assert.equal(both.body.data.lecture.date, "2026-11-10T08:30:00.000Z");
     assert.equal(both.body.data.lecture.endDate, "2026-11-10T10:30:00.000Z");
+});
+
+// ---- POST /api/lectures: same-origin (CSRF) ------------------------------------------------------------------
+
+test("POST /api/lectures: same-origin only (403 CROSS_ORIGIN_REQUEST_REJECTED before authentication); nothing created", async () => {
+    const body = { classId: CLASS, title: "Maths", date: "2026-11-10T09:00", endDate: "2026-11-10T10:30" };
+    const refused = [
+        {},
+        { Origin: "https://evil.example" },
+        { Origin: "null" },
+        { Origin: APP_ORIGIN, "Sec-Fetch-Site": "cross-site" },
+        { Origin: APP_ORIGIN, "Sec-Fetch-Site": "same-site" },
+        { "Sec-Fetch-Site": "same-origin" },
+    ];
+    for (const headers of refused) {
+        reset();
+        emitted = [];
+        sessionCalls = 0;
+        const before = Object.keys(db.lectures).length;
+        const res = await post(body, headers);
+        assert.equal(res.status, 403, JSON.stringify(headers));
+        assert.equal(res.body.error.code, "CROSS_ORIGIN_REQUEST_REJECTED");
+        assert.equal(Object.keys(db.lectures).length, before, "nothing created");
+        assert.equal(creates.length, 0);
+        assert.deepEqual(emitted, []);
+        assert.equal(sessionCalls, 0, "authentication is never reached");
+    }
+});
+
+test("POST /api/lectures: the app's own same-origin request still works (with or without Sec-Fetch-Site); GET is unchanged", async () => {
+    reset();
+    emitted = [];
+    const withFetchSite = await post({ classId: CLASS, title: "Maths", date: "2026-11-10T09:00" });
+    assert.equal(withFetchSite.status, 201);
+    const originOnly = await post({ classId: CLASS, title: "Maths", date: "2026-11-11T09:00" }, { Origin: APP_ORIGIN, "Content-Type": "application/json" });
+    assert.equal(originOnly.status, 201, "older browsers without Sec-Fetch-Site");
+    assert.equal(creates.length, 2);
+    assert.deepEqual(emitted, [{ classId: CLASS }, { classId: CLASS }], "the live update is still emitted after a normal create");
+
+    // GET needs no Origin (a read).
+    const list = await call(lecturesRoute.GET(new Request(`http://localhost/api/lectures?classId=${CLASS}`)));
+    assert.equal(list.status, 200);
+});
+
+test("POST /api/lectures: same-origin is checked before the session (a cross-site request never reaches authentication)", async () => {
+    reset();
+    sessionCalls = 0;
+    const crossSite = await post({ classId: CLASS, title: "Maths", date: "2026-11-10T09:00" }, { Origin: "https://evil.example" });
+    assert.equal(crossSite.status, 403);
+    assert.equal(sessionCalls, 0);
+    const sameOrigin = await post({ classId: CLASS, title: "Maths", date: "2026-11-10T09:00" });
+    assert.equal(sameOrigin.status, 201);
+    assert.equal(sessionCalls, 1);
 });

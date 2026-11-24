@@ -16,11 +16,19 @@
  * changed, and on leaving (the register page loads it fresh). Leaving
  * stops the camera and drops every scan, payload and result from memory.
  * Nothing is stored in the browser and nothing is logged.
+ *
+ * Embedded use (the Attendance page's scanner modal,
+ * components/attendance/qr-scanner-modal.tsx): the same component with
+ * `variant="modal"`, `onExit` (leaving closes the modal instead of opening
+ * the register page) and `closeRequestRef` (the modal's close button and
+ * Escape go through the same pending-scan confirmation). One implementation:
+ * the same register load, queue, camera controller, decoder, payment cues
+ * and cleanup on unmount.
  */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type RefObject } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -43,6 +51,7 @@ import {
 import {
   attendanceErrorAction,
   fetchAttendanceRegister,
+  formatColomboDateTime,
   type AttendanceApiError,
   type AttendanceRegisterResponse,
   type BadgeTone,
@@ -90,8 +99,58 @@ function ToneIcon({ tone }: { tone: BadgeTone }) {
   return <CircleHelp {...props} />;
 }
 
-export function ScannerHeader({ register, onBack }: { register: AttendanceRegisterResponse; onBack?: () => void }) {
+export type ScannerVariant = "page" | "modal";
+
+/** "Present 9 · Late 3 · Pending reviews 1 · Students 30" (the server's summary). */
+export function scannerCountsText(summary: AttendanceRegisterResponse["summary"]): string {
+  return `Present ${summary.recordStatus.PRESENT} · Late ${summary.recordStatus.LATE} · Pending reviews ${summary.pendingReviews} · Students ${summary.students}`;
+}
+
+/** The lecture's start (and end) in Sri Lankan time. */
+export function scannerLectureTime(lecture: AttendanceRegisterResponse["lecture"]): string {
+  const start = formatColomboDateTime(lecture.date);
+  return lecture.endDate ? `${start} – ${formatColomboDateTime(lecture.endDate)}` : start;
+}
+
+export function ScannerHeader({
+  register,
+  onBack,
+  variant = "page",
+  className,
+}: {
+  register: AttendanceRegisterResponse;
+  onBack?: () => void;
+  variant?: ScannerVariant;
+  className?: string | null;
+}) {
   const { summary } = register;
+  if (variant === "modal") {
+    // Inside the modal: its title bar names the class and holds the close button.
+    return (
+      <section className="rounded-2xl bg-[#112D5C] p-3 text-white shadow-sm sm:p-4" aria-labelledby={SCANNER_HEADING_ID}>
+        {className ? <p className="break-words text-xs font-semibold text-white/80">{className}</p> : null}
+        <h2 id={SCANNER_HEADING_ID} tabIndex={-1} className="mt-0.5 break-words text-base font-bold outline-none sm:text-lg">
+          {register.lecture.title}
+        </h2>
+        <p className="mt-1 text-xs text-white/85">{scannerLectureTime(register.lecture)} (Sri Lankan time)</p>
+        <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Attendance so far">
+          {(
+            [
+              ["Present", summary.recordStatus.PRESENT],
+              ["Late", summary.recordStatus.LATE],
+              ["Pending reviews", summary.pendingReviews],
+              ["Students", summary.students],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label} className="rounded-lg bg-white/10 px-2 py-1.5">
+              <dt className="text-[11px] text-white/75">{label}</dt>
+              <dd className="text-base font-bold tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    );
+  }
   return (
     <section className="rounded-2xl bg-[#112D5C] p-4 text-white shadow-sm" aria-labelledby={SCANNER_HEADING_ID}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">QR attendance scanner</p>
@@ -366,7 +425,7 @@ export function LeaveConfirmation({ pending, onStay, onLeave }: { pending: numbe
   );
 }
 
-export function ScannerErrorView({ error, onRetry, registerHref }: { error: AttendanceApiError; onRetry?: () => void; registerHref: string }) {
+export function ScannerErrorView({ error, onRetry, registerHref, onClose }: { error: AttendanceApiError; onRetry?: () => void; registerHref: string; onClose?: () => void }) {
   const action = attendanceErrorAction(error.code);
   const notFound = error.code === "LECTURE_NOT_FOUND";
   return (
@@ -385,9 +444,15 @@ export function ScannerErrorView({ error, onRetry, registerHref }: { error: Atte
             Try again
           </button>
         ) : null}
-        <Link href={notFound ? "/dashboard/attendance" : registerHref} className="min-h-[44px] rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          {notFound ? "Back to attendance" : "Back to the register"}
-        </Link>
+        {onClose ? (
+          <button type="button" onClick={onClose} className="min-h-[44px] rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Close scanner
+          </button>
+        ) : (
+          <Link href={notFound ? "/dashboard/attendance" : registerHref} className="min-h-[44px] rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            {notFound ? "Back to attendance" : "Back to the register"}
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -419,6 +484,10 @@ export type ScannerViewProps = {
   /** The payment snapshot's status (payment alerts); absent: nothing shown. */
   paymentStatus?: PaymentSnapshotState["status"];
   onRetryPaymentStatus?: () => void;
+  /** "modal": the Attendance page's scanner modal (no back button; two columns on wide screens). */
+  variant?: ScannerVariant;
+  /** The class name for the modal header (the register names only the class id). */
+  className?: string | null;
 };
 
 export const PAYMENT_STATUS_FAILED_MESSAGE = "Payment status could not be loaded. Payment alerts are temporarily unavailable.";
@@ -449,6 +518,36 @@ export function PaymentStatusNotice({ onRetry }: { onRetry?: () => void }) {
 export function ScannerView(props: ScannerViewProps) {
   const { availability, queue } = props;
   const inputDisabled = !availability.available || queue.signedOut;
+  if (props.variant === "modal") {
+    // The same sections; on wide screens the inputs and the results side by side.
+    return (
+      <div className="flex min-w-0 flex-col gap-3 sm:gap-4" data-scanner-variant="modal">
+        <ScannerHeader register={props.register} variant="modal" className={props.className} />
+        {props.leaveConfirm ? <LeaveConfirmation pending={queue.pending.length} onStay={props.onStay} onLeave={props.onLeave} /> : null}
+        {props.refreshFailed ? (
+          <p role="status" className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+            The register could not be refreshed. The counts above may be out of date; scanning still checks everything on the server.
+          </p>
+        ) : null}
+        {props.paymentStatus === "failed" ? <PaymentStatusNotice onRetry={props.onRetryPaymentStatus} /> : null}
+        {availability.available ? null : <ScannerUnavailableView availability={availability} onRefresh={props.onRefresh} />}
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 lg:items-start">
+          <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+            <CameraSection camera={props.camera} disabled={inputDisabled} onStart={props.onStartCamera} onStop={props.onStopCamera} videoRef={props.videoRef} hint={props.hint} />
+            <ManualEntryForm value={props.manualValue} problem={props.manualProblem} disabled={inputDisabled} onChange={props.onManualChange} onSubmit={props.onManualSubmit} inputRef={props.inputRef} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+            <QueueStatus snapshot={queue} now={props.now} />
+            <ResultsFeed entries={queue.feed} onRetry={props.onRetry} disabled={queue.signedOut} />
+          </div>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {props.announcement}
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-4">
       <ScannerHeader register={props.register} onBack={props.onBack} />
@@ -491,7 +590,23 @@ const AUDIO_UNLOCK_EVENTS = ["pointerdown", "keydown", "touchend", "click"] as c
 
 type Decoder = (data: Uint8ClampedArray, width: number, height: number, options?: { inversionAttempts?: "dontInvert" | "onlyInvert" | "attemptBoth" | "invertFirst" }) => { data: string } | null;
 
-export function QrScannerPanel({ lectureId }: { lectureId: string }) {
+export type QrScannerPanelProps = {
+  lectureId: string;
+  /** "modal": rendered inside the Attendance page's scanner modal. Default: the standalone page. */
+  variant?: ScannerVariant;
+  /** The class name shown in the modal header. */
+  className?: string | null;
+  /** Leaving the scanner: called instead of opening the register page (the modal closes). */
+  onExit?: () => void;
+  /**
+   * Set to the scanner's own close request (the pending-scan confirmation,
+   * then onExit), so the modal's close button and Escape behave like the
+   * page's back button. Cleared on unmount.
+   */
+  closeRequestRef?: MutableRefObject<(() => void) | null>;
+};
+
+export function QrScannerPanel({ lectureId, variant = "page", className = null, onExit, closeRequestRef }: QrScannerPanelProps) {
   const router = useRouter();
   const registerHref = registerPath(lectureId);
 
@@ -749,13 +864,24 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
     queueRef.current?.dispose();
     setSnapshot(EMPTY_SNAPSHOT);
     setManualValue("");
-    router.push(registerHref);
-  }, [router, registerHref]);
+    // In the modal: close it (the Attendance page stays); on the page: the register.
+    if (onExit) onExit();
+    else router.push(registerHref);
+  }, [router, registerHref, onExit]);
 
   const back = useCallback(() => {
     if ((queueRef.current?.pendingCount() ?? 0) > 0) setLeaveConfirm(true);
     else leave();
   }, [leave]);
+
+  // The modal's close button / Escape: the same request as the back button.
+  useEffect(() => {
+    if (!closeRequestRef) return;
+    closeRequestRef.current = back;
+    return () => {
+      if (closeRequestRef.current === back) closeRequestRef.current = null;
+    };
+  }, [closeRequestRef, back]);
 
   if (state.kind === "loading") {
     return (
@@ -766,7 +892,14 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
     );
   }
   if (state.kind === "error" || !register || !availability) {
-    return <ScannerErrorView error={state.kind === "error" ? state.error : { ok: false, status: 0, code: "INVALID_RESPONSE", message: "" }} onRetry={() => void load("initial")} registerHref={registerHref} />;
+    return (
+      <ScannerErrorView
+        error={state.kind === "error" ? state.error : { ok: false, status: 0, code: "INVALID_RESPONSE", message: "" }}
+        onRetry={() => void load("initial")}
+        registerHref={registerHref}
+        onClose={onExit ? leave : undefined}
+      />
+    );
   }
 
   return (
@@ -798,6 +931,8 @@ export function QrScannerPanel({ lectureId }: { lectureId: string }) {
       onRetry={retry}
       paymentStatus={payment.status}
       onRetryPaymentStatus={retryPaymentStatus}
+      variant={variant}
+      className={className}
     />
   );
 }

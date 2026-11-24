@@ -1590,6 +1590,109 @@ API's error codes, labels, error messages, the reconciliation loop).
 - **Stale responses:** each new request aborts the previous one, and only
   the newest request may update the page (nothing updates it after unmount).
 
+### Take attendance (top of `/dashboard/attendance`)
+
+`components/attendance/attendance-take-section.tsx`, above the Upcoming /
+Previous list (unchanged).
+
+- **Selection bar:** a compact accordion. The summary line shows the class,
+  the month and the lecture ("No lecture selected"); Previous / Next month
+  and Change stay visible; Change expands the Class / Lecture selectors and
+  Open QR Scanner inline (Done folds them away). Collapsed on load and when a
+  lecture is chosen; opening / closing never loads data or clears a
+  selection. The first of the teacher's classes (the class list's order) is
+  selected once the list has loaded; with no class, an empty state and no
+  requests. It is ONE control card: the title "<class> — <month>", the
+  lecture line, month navigation, Change (and Monthly overview while a lecture
+  is selected). In overview mode the matrix is inside that same card,
+  below a divider (rendered `flush`: no border of its own; internal scrolling
+  and the sticky student column unchanged); with a lecture selected, the
+  register follows the card as its own section.
+- **Month (top right):** one Sri Lankan month, the current Asia/Colombo
+  month on load (computed once by the server page and passed down, so
+  server render and hydration agree); Previous / Next month (calendar arithmetic, December ↔
+  January) clear the selected lecture first.
+- **Selectors:** class (required) and lecture (optional; only the class's
+  lectures in the selected month, from the existing `GET /api/lectures` with
+  the month's Colombo bounds as `from` / `to`, oldest first, 100 per page with
+  "Load more"; "No lectures in this month" when there are none; cancelled
+  ones are listed but cannot be chosen). Changing the class clears the
+  lecture and keeps the month.
+- **Modes:** no lecture selected: the month's matrix (overview); a lecture
+  selected: only its register (the matrix is hidden and not fetched; it is
+  reloaded when the overview returns). A lecture created for another month
+  switches the shown month to it.
+- **Open QR Scanner** (disabled without a class): with a lecture, the
+  scanner opens in a modal on the Attendance page
+  (`components/attendance/qr-scanner-modal.tsx`; the browser stays on
+  `/dashboard/attendance`); nothing is created. The modal is the existing
+  `QrScannerPanel` with `variant="modal"`, `onExit` and `closeRequestRef`
+  (one implementation: register load, QR window, queue, camera, cues,
+  cleanup). It is mounted per opening (keyed), so closing unmounts it (every
+  camera track stopped, listeners removed) and reopening starts with a new
+  camera controller; the camera starts only from Start camera; Close / Escape
+  ask first while scans are pending. Full screen with safe areas on phones,
+  most of the screen on tablets, at most 960 px x 90vh on desktops. Closing
+  keeps the class and lecture and reloads the matrix. The standalone route
+  `/dashboard/attendance/[lectureId]/scan` is unchanged. Without a lecture, the creation dialog
+  (`attendance-lecture-dialog.tsx`): today's `ClassSchedule` rows for the
+  Sri Lankan weekday (a choice when several) or an additional / manual
+  session; date, start, end and title prefilled and editable; an explicit
+  confirmation step (after it, the lecture is selected, the matrix reloads
+  and the scanner modal opens for it); notes when the start is past (scans after start + grace
+  are LATE) or more than 30 minutes ahead (scanning not open yet). The QR
+  window and grace rules are not changed. Nothing is created on page load or
+  class selection, and no hidden / default lecture exists.
+- **`POST /api/classes/[id]/attendance-lectures`**
+  (`services/attendance-lecture-create-service.ts`): same-origin (403), then
+  the teacher session (401), then `createLectureSchema` (the class from the
+  path). In one transaction: `pg_advisory_xact_lock` on
+  `attendance-lecture:{classId}:{Sri Lankan day}`, the duplicate check, then
+  the existing `createLectureForTeacher` on the transaction (the live-update
+  event after the commit). `{ maxWait: 5 s, timeout: 15 s }`; 4 statements
+  inside the lock (the lock with a transaction-local 8 s `lock_timeout` in
+  the same statement, the same-day lectures, the ownership check, one INSERT
+  ... RETURNING); a lock wait beyond 8 s is 409 `ATTENDANCE_BUSY`. Real
+  PostgreSQL: `npm run test:attendance-lecture-db`. Duplicate: a non-deleted, non-cancelled lecture
+  of the class on the same Sri Lankan day whose time overlaps (closed
+  intervals; no end = the start instant): 409 `ATTENDANCE_LECTURE_EXISTS`
+  with `details.lectures`, nothing created, unless `allowAdditionalSession:
+  true` (the teacher confirmed a separate session). Other times of the day
+  are never blocked. No schedule link is stored, so later schedule edits
+  never change the lecture.
+- **Matrix:** `GET /api/classes/[id]/attendance-matrix?month=YYYY-MM`
+  (`services/class-attendance-matrix-service.ts`, read only; default: the
+  current Asia/Colombo month; 404 `CLASS_NOT_FOUND`, 400 bad id / month,
+  no-store). Columns: the class's lectures starting in the month (never
+  schedules). Rows: students whose enrolment overlaps the month or who have
+  a record (removed / inactive ones flagged). Cell: the stored record
+  (status, earliest evidence time, pending review), else `NOT_ENROLLED`
+  (explainEnrolmentAt at the scheduled start), `LECTURE_CANCELLED`,
+  `NO_RECORD` (finalized register) or `NOT_RECORDED_YET`. ABSENT is never
+  inferred. 7 Prisma calls whatever the class size (4 for a month without
+  lectures). The table scrolls sideways with a sticky student column;
+  choosing a lecture moves to its month and highlights its column; columns
+  link to the register page for manual changes.
+- **Lecture attendance (under the matrix):** the selected lecture's register,
+  rendered by the existing `LectureAttendanceRegisterPanel` with
+  `variant="embedded"` (keyed by the lecture; nothing without a selected
+  lecture, never an arbitrary one): the same header (class, title, start /
+  end, lecture status, finalization, grace with its Change action), QR state
+  and closure ("Open QR scanner" opens the page's scanner modal), online
+  evidence reconciliation, finalization (preview, then acknowledged
+  confirmation), the server's six summary counts, search / filters, the full
+  student table with compact icon actions (pencil: Change attendance status;
+  clock: View attendance history; review answers keep their labelled
+  buttons), every existing dialog, and the collapsible register history. The
+  same controllers and APIs as the register page; the standalone route
+  `/dashboard/attendance/[lectureId]` renders the default (page) variant
+  unchanged. Refresh: closing the scanner reloads the register
+  (`refreshKey`); every register reload that was not superseded (any action,
+  or that request) reloads the matrix once (`onRefreshed`), which stays shown
+  while the same month reloads.
+- `POST /api/lectures` is now same-origin only as well (403
+  `CROSS_ORIGIN_REQUEST_REJECTED` before authentication).
+
 ### Register page (`/dashboard/attendance/[lectureId]`, Stage 5.5d-2)
 
 `components/attendance/lecture-attendance-register-panel.tsx` loads `GET
