@@ -51,6 +51,7 @@ import {
   ReversePaymentDialog,
   type HistoryPayment,
 } from "@/components/fee-payment-actions";
+import { ResourceAccessButton, ResourceAccessDialog } from "@/components/resource-access-dialog";
 
 type ClassOption = {
   id: string;
@@ -444,12 +445,13 @@ export const MAX_GRACE_DAYS = 30;
  */
 export function enableRestrictionWarning(graceDays: number) {
   return (
-    "Turn on payment-based access restriction for this class?\n\n" +
+    "Turn on \"Restrict access to resources for unpaid months\" for this class?\n\n" +
+    `Resources (recordings, notes, papers, bundle files, whiteboards) of every month whose fee is unpaid after its due date plus ${graceDays} grace day${graceDays === 1 ? "" : "s"} ` +
+    "will be locked immediately, until that month is paid and confirmed (a submitted slip does not unlock them). " +
+    "This includes earlier months that are still unpaid. Paid months stay open; months before a student joined stay locked unless you grant them.\n\n" +
     `Students with ANY unpaid fee of this class whose due date plus ${graceDays} grace day${graceDays === 1 ? "" : "s"} has passed ` +
-    "will lose access to its lectures, notes, recordings, quizzes, papers and the live classroom immediately. " +
-    "This includes earlier months that are still unpaid.\n\n" +
-    "Students who submitted a payment slip, have a Free Card or owe nothing are not affected. Payments stay available, " +
-    "and access returns as soon as a slip is submitted or the fee is settled."
+    "also lose its quizzes, assignments and the live classroom. For those, students who submitted a payment slip, have a Free Card or owe nothing are not affected, " +
+    "and access returns as soon as a slip is submitted or the fee is settled. Payments stay available."
   );
 }
 
@@ -503,8 +505,8 @@ export function PaymentAccessForm({
             {saved === null
               ? "Loading saved settings..."
               : saved.restrictUnpaidStudentAccess
-                ? `On: students with an unpaid fee lose access to this class's lectures, notes, recordings and classroom ${saved.paymentGracePeriodDays} day${saved.paymentGracePeriodDays === 1 ? "" : "s"} after the due date. Payments stay open.`
-                : "Off: unpaid fees never restrict access to this class."}
+                ? `On: students with an unpaid fee lose access to that month's resources (recordings, notes, papers, bundle files, whiteboards; paid months stay open), and to this class's quizzes, assignments and classroom, ${saved.paymentGracePeriodDays} day${saved.paymentGracePeriodDays === 1 ? "" : "s"} after the due date. Payments stay open.`
+                : "Off: unpaid fees never restrict access to this class. Months you revoke for a student (Resources, per student) stay locked."}
           </p>
         </div>
 
@@ -517,7 +519,7 @@ export function PaymentAccessForm({
               onChange={(event) => onEnabledChange(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300 accent-[#32598A]"
             />
-            Restrict unpaid students
+            Restrict access to resources for unpaid months
           </label>
           <label className="text-xs font-medium text-slate-700">
             <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
@@ -1133,6 +1135,8 @@ function ClassFeeSheetDetail({
   // also after the dialog is closed and reopened).
   const [recordFeeId, setRecordFeeId] = useState<string | null>(null);
   const [reversePayment, setReversePayment] = useState<FeePaymentDetail | null>(null);
+  // Payments page "Resource access" of one student row (selected class, year, month).
+  const [resourceAccessFor, setResourceAccessFor] = useState<{ studentId: string; studentName: string } | null>(null);
   const recordAttempts = useRef(new RecordAttemptStore()).current;
 
   useEffect(() => {
@@ -1802,6 +1806,13 @@ function ClassFeeSheetDetail({
                         </div>
                       </div>
 
+                      <div className="flex justify-end border-t border-slate-100 px-3 py-1.5" onClick={stop}>
+                        <ResourceAccessButton
+                          studentName={row.studentName}
+                          onOpen={() => setResourceAccessFor({ studentId: row.studentId, studentName: row.studentName })}
+                        />
+                      </div>
+
                       {isExpanded ? (
                         <div className="border-t border-slate-100 bg-slate-50/70 p-3" onClick={stop}>
                           <FeePaymentSection
@@ -1995,6 +2006,12 @@ function ClassFeeSheetDetail({
                               Unpaid
                             </span>
                           )}
+                          <div className="mt-1">
+                            <ResourceAccessButton
+                              studentName={row.studentName}
+                              onOpen={() => setResourceAccessFor({ studentId: row.studentId, studentName: row.studentName })}
+                            />
+                          </div>
                         </td>
                       </tr>
 
@@ -2036,6 +2053,18 @@ function ClassFeeSheetDetail({
           }}
           onRefresh={loadSheet}
           onClose={() => setRecordFeeId(null)}
+        />
+      ) : null}
+
+      {resourceAccessFor && sheet ? (
+        <ResourceAccessDialog
+          key={`${resourceAccessFor.studentId}:${year}-${month}`}
+          classId={sheet.class.id}
+          studentId={resourceAccessFor.studentId}
+          studentName={resourceAccessFor.studentName}
+          year={year}
+          month={month}
+          onClose={() => setResourceAccessFor(null)}
         />
       ) : null}
 

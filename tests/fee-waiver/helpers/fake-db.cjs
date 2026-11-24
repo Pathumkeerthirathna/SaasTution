@@ -27,6 +27,15 @@ const MODELS = {
   classFee: "ClassFee",
   studentConfirmationHistory: "StudentConfirmationHistory",
   teacher: "Teacher",
+  // Monthly resource access (services/resource-access-service.ts).
+  classStudentResourceAccess: "ClassStudentResourceAccess",
+  recordedLecture: "RecordedLecture",
+  note: "Note",
+  lectureWhiteboard: "LectureWhiteboard",
+  classPaper: "ClassPaper",
+  materialBundle: "MaterialBundle",
+  youTubeRecording: "YouTubeRecording",
+  assignment: "Assignment",
 };
 
 const RELATIONS = {
@@ -57,12 +66,26 @@ const RELATIONS = {
   },
   PaymentMessage: {},
   ClassPaymentReversal: {},
-  Lecture: { class: ["Class", "classId"] },
+  Lecture: {
+    class: ["Class", "classId"],
+    notes: ["Note", "lectureId", "many"],
+    whiteboards: ["LectureWhiteboard", "lectureId", "many"],
+    youtubeRecordings: ["YouTubeRecording", "lectureId", "many"],
+    assignments: ["Assignment", "lectureId", "many"],
+  },
   ClassFeeWaiverRule: {},
   FeeWaiverSettings: {},
   ClassFee: {},
   StudentConfirmationHistory: {},
   Teacher: {},
+  ClassStudentResourceAccess: { classStudent: ["ClassStudent", "classStudentId"] },
+  RecordedLecture: { class: ["Class", "classId"], lecture: ["Lecture", "lectureId"] },
+  Note: { lecture: ["Lecture", "lectureId"] },
+  LectureWhiteboard: { lecture: ["Lecture", "lectureId"] },
+  ClassPaper: { class: ["Class", "classId"] },
+  MaterialBundle: { class: ["Class", "classId"] },
+  YouTubeRecording: { lecture: ["Lecture", "lectureId"] },
+  Assignment: {},
 };
 
 const FEE_DEFAULTS = {
@@ -151,6 +174,11 @@ function createFakeDb() {
         continue;
       }
       if (rel === null) continue; // relation not modelled (e.g. Class.teacher)
+      // A compound unique selector (e.g. classStudentId_year_month: {...}): all its fields.
+      if (key.includes("_") && !(key in row) && isPlainObject(cond)) {
+        if (!matches(model, row, cond)) return false;
+        continue;
+      }
       if (!matchScalar(row[key], cond)) return false;
     }
     return true;
@@ -224,6 +252,11 @@ function createFakeDb() {
     if (model === "ClassPaymentReversal") {
       if (tables.ClassPaymentReversal.some((r) => r.id !== selfId && r.paymentId === row.paymentId)) {
         throw uniqueError("ClassPaymentReversal_paymentId_key");
+      }
+    }
+    if (model === "ClassStudentResourceAccess") {
+      if (tables.ClassStudentResourceAccess.some((r) => r.id !== selfId && r.classStudentId === row.classStudentId && r.year === row.year && r.month === row.month)) {
+        throw uniqueError("ClassStudentResourceAccess_classStudentId_year_month_key");
       }
     }
     if (model === "ClassFeeWaiverRule" && row.status === 0) {
@@ -331,6 +364,30 @@ function createFakeDb() {
         Object.assign(row, next);
         writes.push({ model, method: "update", id: row.id, data: args.data });
         return project(model, row, args);
+      },
+      async upsert(args) {
+        fail(model, "upsert");
+        const row = table().find((r) => matches(model, r, args.where));
+        if (row) {
+          const next = { ...row };
+          applyData(next, args.update);
+          checkUnique(model, next, row.id);
+          Object.assign(row, next);
+          writes.push({ model, method: "upsert-update", id: row.id, data: args.update });
+          return project(model, row, args);
+        }
+        const created = withDefaults(model, args.create);
+        checkUnique(model, created);
+        table().push(created);
+        writes.push({ model, method: "upsert-create", id: created.id });
+        return project(model, created, args);
+      },
+      async deleteMany(args = {}) {
+        fail(model, "deleteMany");
+        const doomed = table().filter((r) => matches(model, r, args.where));
+        for (const row of doomed) table().splice(table().indexOf(row), 1);
+        writes.push({ model, method: "deleteMany", count: doomed.length });
+        return { count: doomed.length };
       },
       async updateMany(args) {
         fail(model, "updateMany");

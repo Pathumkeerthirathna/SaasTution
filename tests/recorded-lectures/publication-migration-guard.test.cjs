@@ -41,8 +41,8 @@ const code = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/
 
 test("placement: the latest migration, directly after the Free Card eligibility one", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(all.indexOf(PREVIOUS)), [PREVIOUS, MIGRATION, "20261125120000_add_teacher_payment_accounts", "20261126120000_add_teacher_title_eng", "20261127120000_add_grade_zero"]); // Teacher payment accounts (tests/teacher-profile/role-aware-profile.test.cjs)
-  assert.equal(all[all.length - 1], "20261127120000_add_grade_zero");
+  assert.deepEqual(all.slice(all.indexOf(PREVIOUS)), [PREVIOUS, MIGRATION, "20261125120000_add_teacher_payment_accounts", "20261126120000_add_teacher_title_eng", "20261127120000_add_grade_zero", "20261128120000_add_resource_month_access"]); // Teacher payment accounts (tests/teacher-profile/role-aware-profile.test.cjs)
+  assert.equal(all[all.length - 1], "20261128120000_add_resource_month_access");
 });
 
 test("exactly two columns on RecordedLecture: PRIVATE / LOCKED defaults, NOT NULL, existing enums", () => {

@@ -70,6 +70,9 @@ export type StudentRecordedLectureRow = {
   class: { id: string; name: string };
 };
 
+/** Monthly resource access of one recording (services/resource-access-service.ts). */
+export type StudentResourceLock = { locked: boolean; year: number; month: number };
+
 export type StudentRecordedLectureDto = {
   id: string;
   title: string;
@@ -84,8 +87,13 @@ export type StudentRecordedLectureDto = {
   class: { id: string; name: string };
   /** Dashboard shortcut visibility only; it never limits access. */
   dashboard: { visible: boolean; visibleFrom: string; visibleUntil: string };
-  /** Relative playback path (RL-4.3); authorised again on every request, never a storage location. */
-  streamUrl: string;
+  /**
+   * Relative playback path (RL-4.3); authorised again on every request, never
+   * a storage location. null when the recording's billing month is locked.
+   */
+  streamUrl: string | null;
+  /** The recording's billing month and whether it is locked (lists; absent on the single-recording read, which refuses a locked month). */
+  resourceAccess?: StudentResourceLock;
 };
 
 /** The playback API path for a recording (relative; no host, no token). */
@@ -102,7 +110,7 @@ const iso = (date: Date | null): string | null => (date instanceof Date ? date.t
 
 export function buildStudentRecordedLectureDto(
   row: StudentRecordedLectureRow,
-  options: { now: Date; dashboardDays: number }
+  options: { now: Date; dashboardDays: number; lock?: StudentResourceLock }
 ): StudentRecordedLectureDto {
   const window = dashboardWindowFor(row.lecture.date, options.now, options.dashboardDays);
   const dto: StudentRecordedLectureDto = {
@@ -126,7 +134,8 @@ export function buildStudentRecordedLectureDto(
       visibleFrom: window.visibleFrom.toISOString(),
       visibleUntil: window.visibleUntil.toISOString(),
     },
-    streamUrl: studentStreamPath(row.id),
+    streamUrl: options.lock?.locked ? null : studentStreamPath(row.id),
+    ...(options.lock ? { resourceAccess: { locked: options.lock.locked, year: options.lock.year, month: options.lock.month } } : {}),
   };
   assertStudentClientSafe(dto);
   return dto;

@@ -220,7 +220,7 @@ export function RecordingPlayer(props: RecordingPlayerProps) {
     const video = videoRef.current;
     const id = currentIdRef.current;
     const part = parts.find((p) => p.id === id);
-    if (!video || !part || !video.getAttribute("src") || diagnosing) return;
+    if (!video || !part || !part.streamUrl || !video.getAttribute("src") || diagnosing) return;
     setDiagnosing(true);
     let status: number | null = null;
     try {
@@ -306,7 +306,8 @@ export function RecordingPlayer(props: RecordingPlayerProps) {
         return;
       }
       const json = (await response.json()) as { data?: { recordedLectures?: RecordedLecture[]; nextCursor?: string | null } };
-      setParts((prev) => mergeRecordings(prev, json.data?.recordedLectures ?? []));
+      // Parts of a locked billing month have no streamUrl and are never played.
+      setParts((prev) => mergeRecordings(prev, (json.data?.recordedLectures ?? []).filter((part) => !part.resourceAccess?.locked)));
       setNextCursor(json.data?.nextCursor ?? null);
     } catch {
       setLoadMoreError(listFailureMessage(0));
@@ -352,7 +353,7 @@ export function RecordingPlayer(props: RecordingPlayerProps) {
             >
               <video
                 ref={videoRef}
-                src={current.streamUrl}
+                src={current.streamUrl ?? undefined}
                 controls
                 playsInline
                 preload="metadata"

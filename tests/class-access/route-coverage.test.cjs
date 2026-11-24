@@ -6,6 +6,9 @@
  *  - enforce the class access check: call assertContentAccessForStudent /
  *    assertClassAccessForStudent itself, or go through a function / module
  *    verified below to make the check; or
+ *  - for RESOURCES (monthly resource access, services/resource-access-service.ts):
+ *    call assertResourceAccessForStudent (delivery: the resource's billing
+ *    month) or mark every listed item with resourceLockFor (listings); or
  *  - be listed in EXEMPT with the reason it is intentionally reachable while a
  *    class is restricted (account, payments, lists, presence, ...).
  * A new student route that does neither fails this test until it is
@@ -25,6 +28,9 @@ const root = path.resolve(__dirname, "..", "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 
 const CHECK = /\bassert(Content|Class)AccessForStudent\(/;
+// Monthly resource access: delivery check and per-item listing locks.
+const RESOURCE_CHECK = /\bassertResourceAccessForStudent\(/;
+const RESOURCE_LISTING = /\bresourceLockFor\(/;
 
 // Functions that make the check inside (verified in "enforcing functions").
 const ENFORCING_FUNCTIONS = {
@@ -72,17 +78,14 @@ const EXEMPT = {
   "app/api/student/calendar/route.ts": LIST,
   "app/api/student/dashboard/assignments-due/route.ts": LIST,
   "app/api/student/dashboard/counts/route.ts": LIST,
-  "app/api/student/dashboard/notes/route.ts": LIST,
   "app/api/student/dashboard/papers/route.ts": LIST,
   "app/api/student/dashboard/performance/route.ts": LIST,
   "app/api/student/dashboard/quizzes/route.ts": LIST,
   "app/api/student/dashboard/schedule/route.ts": LIST,
   "app/api/student/lectures/route.ts": LIST,
-  "app/api/student/papers/route.ts": LIST,
   "app/api/student/quizzes/route.ts": LIST,
   "app/api/student/recorded-lectures/route.ts": LIST,
   "app/api/students/me/assignments/route.ts": LIST,
-  "app/api/students/me/material-bundles/route.ts": LIST,
   "app/api/students/me/quizzes/route.ts": LIST,
 };
 
@@ -107,6 +110,8 @@ function isStudentFacing(source) {
 /** How a route's source enforces the check (null: it does not). */
 function enforcement(source) {
   if (CHECK.test(source)) return "direct";
+  if (RESOURCE_CHECK.test(source)) return "resource month";
+  if (RESOURCE_LISTING.test(source)) return "resource listing (per-item month locks)";
   const fn = Object.keys(ENFORCING_FUNCTIONS).find((name) => new RegExp(`\\b${name}\\(`).test(source));
   if (fn) return `via ${fn}`;
   const mod = ENFORCING_MODULES.find((file) => source.includes(`"@/${file.replace(/\.ts$/, "")}"`));
@@ -126,6 +131,8 @@ test("classifier: a new student content route without the check is caught; enfor
   assert.equal(isStudentFacing(unprotected), true);
   assert.equal(enforcement(unprotected), null);
   assert.equal(enforcement(`${unprotected}\nawait assertContentAccessForStudent(s.studentId, { lectureId });`), "direct");
+  assert.equal(enforcement(`${unprotected}\nawait assertResourceAccessForStudent(s.studentId, { noteId });`), "resource month");
+  assert.equal(enforcement(`${unprotected}\nconst lock = resourceLockFor(access, classId, month);`), "resource listing (per-item month locks)");
   assert.equal(enforcement('const info = await getSessionJoinInfo(id, s);'), "via getSessionJoinInfo");
   assert.equal(enforcement('import { x } from "@/services/breakout-student-quiz-service";'), "via services/breakout-student-quiz-service.ts");
   assert.equal(isStudentFacing('const t = await requireTeacherSession();'), false);
@@ -163,6 +170,7 @@ test("the exemption list is exact: every entry exists, is student-facing, does n
 test("payment and account routes are never restricted", () => {
   for (const rel of Object.keys(EXEMPT).filter((r) => /payment|profile|\/qr/.test(r))) {
     assert.doesNotMatch(read(rel), CHECK, rel);
+    assert.doesNotMatch(read(rel), RESOURCE_CHECK, rel);
   }
 });
 

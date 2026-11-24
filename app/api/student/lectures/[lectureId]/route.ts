@@ -2,13 +2,23 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { getClassAccessRestrictions } from "@/services/class-access-service";
+import { billingMonthOf, loadStudentResourceAccess, noteBillingMonth, resourceLockFor } from "@/services/resource-access-service";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/student/lectures/[lectureId]
 // Full lecture detail for an enrolled student: notes (preview/download),
 // assignments (+ this student's submission) and published recordings.
+//
+// Payment-based access:
+//  - notes, saved whiteboards and YouTube recordings are resources, locked
+//    per billing month (services/resource-access-service.ts): a locked item is
+//    listed with `resourceAccess.locked` and never carries its YouTube link (the
+//    note / whiteboard routes refuse it too);
+//  - assignments keep the class-level overdue rule
+//    (services/class-access-service.ts): while the class is restricted they
+//    are not sent (assignmentsRestricted), as before.
 export async function GET(
   _request: Request,
   context: { params: { lectureId: string } }
@@ -20,9 +30,6 @@ export async function GET(
     if (!lectureId?.trim()) {
       throw new AppError("Lecture id is required.", 400, "VALIDATION_ERROR");
     }
-    // Payment-due access control (services/class-access-service.ts).
-    await assertContentAccessForStudent(session.studentId, { lectureId });
-
     const lecture = await prisma.lecture.findFirst({
       where: {
         id: lectureId,
@@ -48,6 +55,7 @@ export async function GET(
             kind: true,
             mimeType: true,
             sizeBytes: true,
+            uploadedAt: true,
           },
         },
         assignments: {
@@ -98,6 +106,15 @@ export async function GET(
       throw new AppError("Lecture not found.", 404, "LECTURE_NOT_FOUND");
     }
 
+    // One batched resource-access load for every item of this lecture's class.
+    const classId = lecture.class.id;
+    const [access, classRestrictions] = await Promise.all([
+      loadStudentResourceAccess(session.studentId, { classIds: [classId] }),
+      getClassAccessRestrictions(session.studentId, [classId]),
+    ]);
+    const assignmentsRestricted = classRestrictions.length > 0;
+    const recordings = lecture.youtubeRecordings.map((r) => ({ r, lock: resourceLockFor(access, classId, billingMonthOf(r.createdAt)) }));
+
     return apiSuccess({
       lecture: {
         id: lecture.id,
@@ -111,8 +128,10 @@ export async function GET(
           kind: n.kind,
           mimeType: n.mimeType,
           sizeBytes: n.sizeBytes,
+          resourceAccess: resourceLockFor(access, classId, noteBillingMonth({ uploadedAt: n.uploadedAt, lecture: { date: lecture.date } })),
         })),
-        assignments: lecture.assignments.map((a) => {
+        assignmentsRestricted,
+        assignments: (assignmentsRestricted ? [] : lecture.assignments).map((a) => {
           const sub = a.submissions[0] ?? null;
           return {
             id: a.id,
@@ -135,11 +154,14 @@ export async function GET(
           id: w.id,
           title: w.title,
           createdAt: w.createdAt.toISOString(),
+          resourceAccess: resourceLockFor(access, classId, billingMonthOf(w.createdAt)),
         })),
-        recordings: lecture.youtubeRecordings.map((r) => ({
+        // A locked month's recording never carries its YouTube link.
+        recordings: recordings.map(({ r, lock }) => ({
           id: r.id,
-          videoId: r.videoId,
-          youtubeUrl: r.youtubeUrl,
+          videoId: lock.locked ? null : r.videoId,
+          youtubeUrl: lock.locked ? null : r.youtubeUrl,
+          resourceAccess: lock,
           status: r.status,
           access: r.access,
           startedAt: r.startedAt ? r.startedAt.toISOString() : null,

@@ -44,6 +44,9 @@ test("teacher form: shows the saved state, saves only real changes, validates th
   const off = form();
   assert.match(text(off), /Payment Due Access Control/);
   assert.match(text(off), /Off: unpaid fees never restrict access to this class\./);
+  // The one existing checkbox, renamed (monthly resource access); no second checkbox.
+  assert.match(text(off), /Restrict access to resources for unpaid months/);
+  assert.equal((off.match(/type="checkbox"/g) ?? []).length, 1);
   assert.match(off, /<input type="checkbox"(?![^>]*checked)/);
   assert.match(saveButton(off), / disabled=""/, "nothing changed yet");
 

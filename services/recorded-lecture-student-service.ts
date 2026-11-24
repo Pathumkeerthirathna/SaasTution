@@ -12,6 +12,7 @@ import {
   type StudentRecordedLectureRow,
 } from "@/lib/recorded-lectures/student-dto";
 import { serverNow } from "@/lib/server-clock";
+import { billingMonthOf, loadStudentResourceAccess, resourceLockFor, type StudentResourceAccess } from "@/services/resource-access-service";
 
 /*
  * Student access to recorded lectures (Recorded Lectures RL-4.2): the list
@@ -77,6 +78,8 @@ const studentSelect = {
   width: true,
   height: true,
   readyAt: true,
+  // The upload instant: the recording's billing month (resource access). Never sent.
+  createdAt: true,
   lectureId: true,
   lecture: { select: { id: true, title: true, date: true, endDate: true } },
   class: { select: { id: true, name: true } },
@@ -214,6 +217,8 @@ export type StudentRecordedLectureList = {
 export async function listStudentRecordedLectures(input: {
   studentId: string;
   query: StudentRecordedLectureListQuery;
+  /** A resolver already loaded in this request (the player's page loop reuses one). */
+  access?: StudentResourceAccess;
 }): Promise<StudentRecordedLectureList> {
   const scope = parseScope(input.query.scope);
   const limit = parseLimit(input.query.limit);
@@ -238,6 +243,11 @@ export async function listStudentRecordedLectures(input: {
 
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
+  // Monthly resource access: one batched load for the page's classes; a
+  // locked month's recording is listed without its stream path.
+  const access =
+    input.access ??
+    (await loadStudentResourceAccess(input.studentId, { classIds: [...new Set(page.map((row) => row.class.id))] }));
   const nextCursor =
     rows.length > limit && last
       ? encodeListCursor({ lectureDate: last.lecture.date, lectureId: last.lectureId, partNumber: last.partNumber, id: last.id })
@@ -246,7 +256,13 @@ export async function listStudentRecordedLectures(input: {
   const result: StudentRecordedLectureList = {
     scope,
     dashboardDays: days,
-    recordedLectures: page.map((row) => buildStudentRecordedLectureDto(toRow(row), { now, dashboardDays: days })),
+    recordedLectures: page.map((row) =>
+      buildStudentRecordedLectureDto(toRow(row), {
+        now,
+        dashboardDays: days,
+        lock: resourceLockFor(access, row.class.id, billingMonthOf(row.createdAt)),
+      })
+    ),
     nextCursor,
   };
   assertStudentClientSafe(result);

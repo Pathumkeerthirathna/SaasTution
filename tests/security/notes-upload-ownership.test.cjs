@@ -345,7 +345,10 @@ test("owner, NOTE: 201 with the same message; the file goes to FILE_STORAGE_ROOT
     assert.equal(body.data.note.storageKey, undefined);
     assert.equal(state.notesCreated.length, 1);
     const noteId = key.split("/")[5];
-    assert.deepEqual(state.notesCreated[0].data, {
+    // uploadedAt: the original upload instant (monthly resource access, migration 20261128120000).
+    const { uploadedAt, ...created } = state.notesCreated[0].data;
+    assert.ok(uploadedAt instanceof Date && Math.abs(uploadedAt.getTime() - Date.now()) < 60_000, "set explicitly at upload");
+    assert.deepEqual(created, {
       id: noteId,
       lectureId: LECTURE,
       title: "Week 1 notes",

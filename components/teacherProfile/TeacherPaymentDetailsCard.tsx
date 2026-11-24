@@ -223,6 +223,16 @@ function AccountDetails({ account, large }: { account: PublishedPaymentAccount; 
 
 /** The published accounts, read-only: the primary highlighted, the others separate. */
 export function PublishedPaymentDetails({ accounts }: { accounts: PublishedPaymentAccount[] }) {
+  // Read-only: the header button is hidden when nothing is published; this covers any other caller.
+  if (accounts.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center" data-empty-state="published-payment-accounts">
+        <Landmark className="mx-auto h-8 w-8 text-slate-300" />
+        <p className="mt-2 text-[15px] font-semibold text-slate-700">No payment details published</p>
+        <p className="mt-1 text-[14px] text-slate-500">This teacher has not shared any bank accounts on their profile yet.</p>
+      </div>
+    );
+  }
   const primary = accounts.find((account) => account.isPrimary) ?? null;
   const others = accounts.filter((account) => account !== primary);
   return (

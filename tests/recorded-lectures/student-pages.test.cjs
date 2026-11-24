@@ -12,6 +12,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
+// Monthly resource access is not modelled by this fixture: every month open
+// (the real rule: tests/class-access/resource-access.test.cjs).
+require("../helpers/no-class-access-restrictions.cjs");
 const F = require("./helpers/student-fixture.cjs");
 
 const { root, state, NOW, DAY, id, TEACHER_A, STUDENT, CLASSMATE, CLASS_A, CLASS_A_OTHER, CLASS_A_INACTIVE, CLASS_A_REMOVED, CLASS_B, LECTURE, LECTURE_DELETED, LECTURE_TEACHER_B, R, recording, lecture, seed } = F;

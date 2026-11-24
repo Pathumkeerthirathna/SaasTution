@@ -2,9 +2,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ReactNode } from "react";
 
-import { ClassAccessNotice } from "@/components/student-portal/class-access-notice";
+import { ClassAccessNotice, ResourceAccessNotice } from "@/components/student-portal/class-access-notice";
 import { StudentShell } from "@/components/student-portal/student-shell";
 import { getClassAccessRestrictions } from "@/services/class-access-service";
+import { loadStudentResourceAccess, type ResourceAccessNoticeItem } from "@/services/resource-access-service";
 import { AUTH_COOKIE_NAME, verifyAuthToken } from "@/lib/auth";
 import { logError } from "@/lib/error-logging/server-logger";
 import { prisma } from "@/lib/prisma";
@@ -58,6 +59,14 @@ export default async function StudentLayout({ children }: StudentLayoutProps) {
   } catch (error) {
     logError(error, { source: "server", kind: "class-access-notice", route: "/student", method: "GET" });
   }
+  // Monthly resource access: the locked (and in-grace) months per class, from
+  // the same resolver the resource routes enforce. Informational only.
+  let resourceMonths: ResourceAccessNoticeItem[] = [];
+  try {
+    resourceMonths = (await loadStudentResourceAccess(session.sub)).noticeItems();
+  } catch (error) {
+    logError(error, { source: "server", kind: "resource-access-notice", route: "/student", method: "GET" });
+  }
 
   return (
     <StudentShell
@@ -66,6 +75,7 @@ export default async function StudentLayout({ children }: StudentLayoutProps) {
       registrationNumber={student.registrationNumber}
     >
       <ClassAccessNotice restrictions={restrictions} />
+      <ResourceAccessNotice months={resourceMonths} />
       {children}
     </StudentShell>
   );

@@ -948,6 +948,9 @@ export async function addNoteToLectureForTeacher(params: {
           kind: params.kind,
           mimeType: params.mimeType,
           sizeBytes: params.sizeBytes,
+          // The original upload instant (real UTC): decides the note's billing
+          // month for resource access; never changed afterwards.
+          uploadedAt: new Date(),
         },
         select: noteSelect,
       });

@@ -126,6 +126,12 @@ test("existing features untouched: YouTube, Jitsi, lecture scheduling, Notes / A
     // Payment-due access control (one access check; tests/class-access): a
     // restricted student cannot record a classroom visit.
     "app/api/attendance/route.ts",
+    // Monthly resource access (tests/class-access/resource-access.test.cjs):
+    // the classroom notes panel shows a locked month's note without its links.
+    "components/Jitsi/classroom/student/StudentNotesPanel.tsx",
+    // Resource creation timestamps (tests/class-access/resource-timestamps.test.cjs):
+    // YouTubeRecording.createdAt is written explicitly from serverNow() on create.
+    "lib/youtube-lecture.ts",
   ].map((file) => `:(exclude,literal)${file}`);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...paths, ...stage2], { cwd: root, encoding: "utf8" });
   assert.equal(diff.trim(), "", diff);

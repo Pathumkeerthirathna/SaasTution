@@ -1767,13 +1767,19 @@ async function startYouTubeRecordingInternal(
 
                 // One recording row per broadcast: a recording of this
                 // broadcast that was stopped earlier is made active again.
+                // createdAt (create branch only): the original creation instant (real UTC, database clock), set explicitly:
+                // never a database default (the production session timezone would store
+                // local digits in this timestamp-without-time-zone column) and never
+                // changed by an update. Decides the billing month for resource access.
+                const sharedRecordingCreatedAt = await serverNow();
                 const sharedRecordingRow =
                     await prisma.youTubeRecording.upsert({
                     where: {
                         broadcastId: activeUnlistedLive.broadcastId,
                     },
                     create: {
-                        ...newFeatureGeneration(await serverNow()),
+                        ...newFeatureGeneration(sharedRecordingCreatedAt),
+                        createdAt: sharedRecordingCreatedAt,
                         lectureId: lecture.id,
                         broadcastId: activeUnlistedLive.broadcastId,
                         videoId: activeUnlistedLive.videoId,
@@ -1983,10 +1989,16 @@ async function startYouTubeRecordingInternal(
     //     },
     // });
 
+    // createdAt: the original creation instant (real UTC, database clock), set explicitly:
+    // never a database default (the production session timezone would store
+    // local digits in this timestamp-without-time-zone column) and never
+    // changed by an update. Decides the billing month for resource access.
+    const recordingCreatedAt = await serverNow();
     const createdRecordingRow =
         await prisma.youTubeRecording.create({
         data: {
-            ...newFeatureGeneration(await serverNow()),
+            ...newFeatureGeneration(recordingCreatedAt),
+            createdAt: recordingCreatedAt,
             lectureId: lecture.id,
             broadcastId: broadcast.id,
             videoId,

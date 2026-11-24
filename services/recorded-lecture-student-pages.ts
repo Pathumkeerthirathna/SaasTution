@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isRecordedLectureId } from "@/lib/recorded-lectures/keys";
 import type { StudentRecordedLectureDto } from "@/lib/recorded-lectures/student-dto";
 import { listStudentRecordedLectures, MAX_PAGE_SIZE } from "@/services/recorded-lecture-student-service";
+import { loadStudentResourceAccess, type StudentResourceAccess } from "@/services/resource-access-service";
 
 /*
  * Server-side loaders for the student Recorded Lectures pages (RL-5.1).
@@ -89,6 +90,8 @@ export type LecturePlayerPage =
       parts: StudentRecordedLectureDto[];
       /** Non-null when the lecture has more parts than the server loaded; the player offers "Load more parts". */
       nextCursor: string | null;
+      /** The monthly resource access the parts were marked with (one load per page view; reused for the locked-month messages). */
+      access: StudentResourceAccess;
     }
   | LoaderFailure;
 
@@ -103,10 +106,14 @@ export async function loadLecturePlayer(studentId: string, lectureId: string): P
   try {
     const parts: StudentRecordedLectureDto[] = [];
     let cursor: string | null = null;
+    // Monthly resource access: loaded once (three batched queries) for every
+    // page of parts and for the page's locked-month messages.
+    const access = await loadStudentResourceAccess(studentId);
     for (let page = 0; page < MAX_SERVER_PART_PAGES; page += 1) {
       const list = await listStudentRecordedLectures({
         studentId,
         query: { lectureId, limit: String(MAX_PAGE_SIZE), cursor },
+        access,
       });
       parts.push(...list.recordedLectures);
       cursor = list.nextCursor;
@@ -114,7 +121,7 @@ export async function loadLecturePlayer(studentId: string, lectureId: string): P
     }
     const first = parts[0];
     if (!first) return { ok: false, reason: "NOT_FOUND" };
-    return { ok: true, lecture: first.lecture, class: first.class, parts, nextCursor: cursor };
+    return { ok: true, lecture: first.lecture, class: first.class, parts, nextCursor: cursor, access };
   } catch (error) {
     return failure(error);
   }

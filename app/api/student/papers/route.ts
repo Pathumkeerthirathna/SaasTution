@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { billingMonthOf, loadStudentResourceAccess, resourceLockFor } from "@/services/resource-access-service";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,11 @@ export async function GET(request: Request) {
       },
     });
 
+    // Monthly resource access (one batched load): a paper of a locked billing
+    // month is listed locked; its file route refuses it.
+    const access = await loadStudentResourceAccess(session.studentId, {
+      classIds: [...new Set(rows.map((r) => r.classPaper.class.id))],
+    });
     const classesMap = new Map<string, string>();
     const papers = rows.map((r) => {
       const p = r.classPaper;
@@ -73,6 +79,7 @@ export async function GET(request: Request) {
         submissionFileName: r.submissionFileName,
         marks: r.marks ? r.marks.toNumber() : null,
         markedAt: r.markedAt ? r.markedAt.toISOString() : null,
+        resourceAccess: resourceLockFor(access, p.class.id, billingMonthOf(p.createdAt)),
       };
     });
 

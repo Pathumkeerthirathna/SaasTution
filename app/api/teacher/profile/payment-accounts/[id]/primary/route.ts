@@ -1,5 +1,5 @@
 import { apiError, apiSuccess } from "@/lib/api-response";
-import { requireTeacherSession } from "@/lib/auth-session";
+import { requireTeacherSessionForbiddingOtherRoles } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { checkSameOriginRequest } from "@/lib/same-origin";
 import { setPrimaryPaymentAccount } from "@/services/teacher-payment-account-service";
@@ -7,7 +7,8 @@ import { setPrimaryPaymentAccount } from "@/services/teacher-payment-account-ser
 /*
  * Makes one of the signed-in teacher's OWN payment accounts the primary
  * account (the previous primary stops being primary, in one transaction).
- * Teacher sessions only; another teacher's account id is 404.
+ * Teacher sessions only (visitors 401; students and admins 403); another
+ * teacher's account id is 404.
  */
 
 export const runtime = "nodejs";
@@ -20,7 +21,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const session = await requireTeacherSession();
+    const session = await requireTeacherSessionForbiddingOtherRoles();
     return apiSuccess(await setPrimaryPaymentAccount(session.teacherId, params.id));
   } catch (error) {
     return handleRouteError(error, { request });

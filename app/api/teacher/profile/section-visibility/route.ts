@@ -1,6 +1,7 @@
-import { apiSuccess } from "@/lib/api-response";
+import { apiError, apiSuccess } from "@/lib/api-response";
 import { AppError, handleRouteError } from "@/lib/error-handler";
-import { requireTeacherSession } from "@/lib/auth-session";
+import { requireTeacherSessionForbiddingOtherRoles } from "@/lib/auth-session";
+import { checkSameOriginRequest } from "@/lib/same-origin";
 import {
   ProfileSection,
   getSectionVisibility,
@@ -14,7 +15,7 @@ const SECTIONS: ProfileSection[] = ["qualification", "achievements", "subjects",
 
 export async function GET(request: Request) {
   try {
-    const session = await requireTeacherSession();
+    const session = await requireTeacherSessionForbiddingOtherRoles();
     const visibility = await getSectionVisibility(session.teacherId);
 
     return apiSuccess(visibility);
@@ -24,8 +25,14 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  // Same-origin only (CSRF), before authentication - like the payment account mutations.
+  const origin = checkSameOriginRequest(request);
+  if (!origin.allowed) {
+    return apiError("This request must come from the application itself.", 403, "CROSS_ORIGIN_REQUEST_REJECTED");
+  }
+
   try {
-    const session = await requireTeacherSession();
+    const session = await requireTeacherSessionForbiddingOtherRoles();
 
     const body = (await request.json()) as {
       section?: string;

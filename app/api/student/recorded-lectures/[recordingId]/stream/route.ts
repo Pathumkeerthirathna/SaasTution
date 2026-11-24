@@ -5,7 +5,7 @@ import {
   STREAM_RETRY_AFTER_SECONDS,
   streamStudentRecordedLecture,
 } from "@/services/recorded-lecture-stream-service";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { assertResourceAccessForStudent } from "@/services/resource-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +29,8 @@ export const dynamic = "force-dynamic";
 async function handle(request: Request, recordingId: string): Promise<Response> {
   try {
     const session = await requireStudentSession();
-    // Payment-due access control (services/class-access-service.ts).
-    await assertContentAccessForStudent(session.studentId, { recordingId });
+    // Monthly resource access (services/resource-access-service.ts): 403 when the recording's billing month is locked.
+    await assertResourceAccessForStudent(session.studentId, { recordingId });
     return await streamStudentRecordedLecture({ studentId: session.studentId, recordingId, request });
   } catch (error) {
     const response = handleRouteError(error, { request });

@@ -114,6 +114,27 @@ export async function requireTeacherSession(): Promise<TeacherSession> {
   };
 }
 
+/**
+ * Like requireTeacherSession, for teacher-owned management routes that other
+ * signed-in roles must be refused, not asked to sign in: 401 when there is no
+ * (valid) session, 403 FORBIDDEN for a signed-in student or admin, otherwise
+ * the teacher's session. The teacher id is always the session's.
+ */
+export async function requireTeacherSessionForbiddingOtherRoles(): Promise<TeacherSession> {
+  const payload = await readAppToken();
+
+  if (payload.role !== "TEACHER") {
+    throw new AppError("Only the teacher who owns this profile can do this.", 403, "FORBIDDEN");
+  }
+
+  return {
+    teacherId: payload.sub,
+    email: payload.email,
+    name: payload.name,
+    role: "TEACHER",
+  };
+}
+
 export async function requireAdminSession(): Promise<AdminSession> {
   const payload = await readAppToken();
 

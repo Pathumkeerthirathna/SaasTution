@@ -2,7 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { getWhiteboardForStudent } from "@/services/lecture-whiteboard-service";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { assertResourceAccessForStudent } from "@/services/resource-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +20,9 @@ export async function GET(
     if (!lectureId?.trim() || !whiteboardId?.trim()) {
       throw new AppError("Lecture id and whiteboard id are required.", 400, "VALIDATION_ERROR");
     }
-    // Payment-due access control (services/class-access-service.ts).
-    await assertContentAccessForStudent(session.studentId, { lectureId });
+    // Monthly resource access (services/resource-access-service.ts): 403 when
+    // the whiteboard's billing month (when it was saved) is locked.
+    await assertResourceAccessForStudent(session.studentId, { whiteboardId });
 
     const whiteboard = await getWhiteboardForStudent(session.studentId, lectureId, whiteboardId);
     return apiSuccess({ whiteboard });

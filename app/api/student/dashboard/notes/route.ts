@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { loadStudentResourceAccess, noteBillingMonth, resourceLockFor } from "@/services/resource-access-service";
 
 export const dynamic = "force-dynamic";
 
@@ -35,17 +36,22 @@ export async function GET(request: Request) {
         title: true,
         mimeType: true,
         sizeBytes: true,
+        uploadedAt: true,
         lecture: {
           select: {
             id: true,
             title: true,
             date: true,
+            classId: true,
             class: { select: { name: true } },
           },
         },
       },
     });
 
+    // Monthly resource access (one batched load): a locked month's note is
+    // listed locked; its file route refuses it.
+    const access = await loadStudentResourceAccess(studentId, { classIds: [...new Set(rows.map((n) => n.lecture.classId))] });
     const notes = rows.map((n) => ({
       id: n.id,
       title: n.title,
@@ -55,6 +61,7 @@ export async function GET(request: Request) {
       lectureTitle: n.lecture.title,
       className: n.lecture.class.name,
       date: n.lecture.date.toISOString(),
+      resourceAccess: resourceLockFor(access, n.lecture.classId, noteBillingMonth(n)),
     }));
 
     return apiSuccess({ notes });

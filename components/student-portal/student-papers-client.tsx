@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { dashRangeToYmd, isDashRange, type DashRange } from "@/lib/dashboard-range";
+import { LockedResourceBadge, type ResourceLock } from "@/components/student-portal/locked-resource";
 import { focusElementId, useFocusHighlight } from "@/components/student-portal/use-focus-highlight";
 import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 
@@ -44,6 +45,8 @@ type Paper = {
   submissionFileName: string | null;
   marks: number | null;
   markedAt: string | null;
+  /** Monthly resource access: a locked month's paper file cannot be opened (submitting is not a resource). */
+  resourceAccess?: ResourceLock;
 };
 
 type ClassOption = { id: string; name: string };
@@ -330,7 +333,9 @@ export function StudentPapersClient() {
                     </p>
                   </div>
 
-                  {canViewPaper ? (
+                  {paper.resourceAccess?.locked ? (
+                    <LockedResourceBadge lock={paper.resourceAccess} classId={paper.classId} compact />
+                  ) : canViewPaper ? (
                     <button
                       type="button"
                       onClick={() => void openPaper(paper)}

@@ -321,6 +321,11 @@ fake("lib/auth-session.ts", {
     if (!session || session.role !== "TEACHER") throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
     return { teacherId: session.userId, email: session.email, name: session.name, role: "TEACHER" };
   },
+  requireTeacherSessionForbiddingOtherRoles: async () => {
+    if (!session) throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
+    if (session.role !== "TEACHER") throw new AppError("Only the teacher who owns this profile can do this.", 403, "FORBIDDEN");
+    return { teacherId: session.userId, email: session.email, name: session.name, role: "TEACHER" };
+  },
   requireStudentSession: async () => {
     if (!session || session.role !== "STUDENT") throw new AppError("Session is invalid or expired.", 401, "UNAUTHORIZED");
     return { studentId: session.userId, email: session.email, name: session.name, role: "STUDENT" };
@@ -471,18 +476,30 @@ test("cross-teacher: another teacher's account id is 404 for read-by-id, update,
 
 // ==== 3. API routes: teacher-only, own accounts only, same-origin ===================================================================
 
-test("routes: visitors and students get 401 on every operation; nothing is written", async () => {
+test("routes: visitors get 401, signed-in students and admins 403, on every operation; nothing is read or written", async () => {
   const mine = await ACCOUNTS.createPaymentAccount(T_A, account());
-  for (const who of [() => as.visitor(), () => as.student("s1"), () => as.admin()]) {
+  await ACCOUNTS.createPaymentAccount(T_A, account({ accountNumber: "20000002", isPublic: false }));
+  for (const [who, status] of [[() => as.visitor(), 401], [() => as.student("s1"), 403], [() => as.student("s3"), 403], [() => as.admin(), 403]]) {
     who();
-    assert.equal((await listRoute.GET(jsonRequest("/api/teacher/profile/payment-accounts", "GET"))).status, 401);
-    assert.equal((await listRoute.POST(jsonRequest("/api/teacher/profile/payment-accounts", "POST", account()))).status, 401);
-    assert.equal((await itemRoute.PATCH(jsonRequest(`/api/x/${mine.id}`, "PATCH", { label: "hack" }), { params: { id: mine.id } })).status, 401);
-    assert.equal((await itemRoute.DELETE(jsonRequest(`/api/x/${mine.id}`, "DELETE"), { params: { id: mine.id } })).status, 401);
-    assert.equal((await primaryRoute.POST(jsonRequest(`/api/x/${mine.id}/primary`, "POST"), { params: { id: mine.id } })).status, 401);
+    const list = await listRoute.GET(jsonRequest("/api/teacher/profile/payment-accounts", "GET"));
+    assert.equal(list.status, status, "the owner list (private accounts included) is never returned");
+    const listText = await list.text();
+    assert.ok(!listText.includes("20000002") && !listText.includes(mine.accountNumber), "no account data in the refusal");
+    assert.equal((await listRoute.POST(jsonRequest("/api/teacher/profile/payment-accounts", "POST", account({ teacherId: T_A })))).status, status);
+    assert.equal((await listRoute.POST(jsonRequest("/api/teacher/profile/payment-accounts", "POST", account()))).status, status);
+    assert.equal((await itemRoute.PATCH(jsonRequest(`/api/x/${mine.id}`, "PATCH", { label: "hack" }), { params: { id: mine.id } })).status, status);
+    assert.equal((await itemRoute.PATCH(jsonRequest(`/api/x/${mine.id}`, "PATCH", { isPublic: false }), { params: { id: mine.id } })).status, status);
+    assert.equal((await itemRoute.DELETE(jsonRequest(`/api/x/${mine.id}`, "DELETE"), { params: { id: mine.id } })).status, status);
+    assert.equal((await primaryRoute.POST(jsonRequest(`/api/x/${mine.id}/primary`, "POST"), { params: { id: mine.id } })).status, status);
+    if (status === 403) {
+      const body = await (await itemRoute.DELETE(jsonRequest(`/api/x/${mine.id}`, "DELETE"), { params: { id: mine.id } })).json();
+      assert.equal(body.error.code, "FORBIDDEN");
+    }
   }
-  assert.equal(db.accounts.length, 1);
+  assert.equal(db.accounts.length, 2);
   assert.equal(db.accounts[0].label, null);
+  assert.equal(db.accounts[0].isPublic, true);
+  assert.equal(db.accounts[0].isPrimary, true);
   assert.equal(db.accounts[0].status, 0);
 });
 
@@ -514,9 +531,18 @@ test("routes: the owner manages their accounts; another teacher gets 404; cross-
 });
 
 test("routes: the 'hide all payment details' switch is the existing section-visibility API (owner only)", async () => {
-  as.student("s1");
-  assert.equal((await visibilityRoute.PATCH(jsonRequest("/api/teacher/profile/section-visibility", "PATCH", { section: "paymentDetails", visible: false }))).status, 401);
+  const toggle = (headers) => visibilityRoute.PATCH(jsonRequest("/api/teacher/profile/section-visibility", "PATCH", { section: "paymentDetails", visible: false }, headers));
+  as.visitor();
+  assert.equal((await toggle()).status, 401);
+  for (const who of [() => as.student("s1"), () => as.admin()]) {
+    who();
+    assert.equal((await toggle()).status, 403);
+    assert.equal((await visibilityRoute.GET(jsonRequest("/api/teacher/profile/section-visibility", "GET"))).status, 403);
+  }
   as.teacher(T_A);
+  const crossSite = await toggle({ "sec-fetch-site": "cross-site", origin: "https://evil.example" });
+  assert.equal(crossSite.status, 403, "cross-site requests are refused before authentication");
+  assert.equal(db.profiles.find((p) => p.teacherId === T_A).isDisplayPaymentDetails, true, "nothing changed");
   const res = await visibilityRoute.PATCH(jsonRequest("/api/teacher/profile/section-visibility", "PATCH", { section: "paymentDetails", visible: false }));
   assert.equal(res.status, 200);
   assert.equal((await res.json()).data.isDisplayPaymentDetails, false);
@@ -738,4 +764,24 @@ test("schema and migration: a dedicated model related to Teacher; one primary pe
   assert.doesNotMatch(sql, /ALTER TABLE "(ClassPayment|ClassStudentFee|ClassFee|PaymentMessage)"/, "no existing payment table is changed");
   assert.doesNotMatch(sql, /^\s*(DROP|DELETE FROM|UPDATE "|TRUNCATE)\b/im, "additive only: no statement drops, deletes or rewrites data");
   assert.doesNotMatch(sql, /DROP (TABLE|COLUMN|INDEX|CONSTRAINT|TYPE)/i);
+});
+
+test("Payment Details (read-only): no management control of any kind, and an empty state when nothing is published", () => {
+  const accounts = [
+    { label: "Fees", accountHolderName: "P Kumara", bankName: "BOC", branchName: "Maharagama", accountNumber: "10000001", accountType: "SAVINGS", isPrimary: true },
+    { label: null, accountHolderName: "P Kumara", bankName: "HNB", branchName: null, accountNumber: "50000005", accountType: "CURRENT", isPrimary: false },
+  ];
+  const list = renderToStaticMarkup(React.createElement(CARD.PublishedPaymentDetails, { accounts }));
+  for (const control of [/Add bank account/, />Edit</, />Delete</, /Make (public|private)/, /Set as primary|Make primary/, /Show Payment Details on my public profile/, /type="checkbox"/, /role="switch"/]) {
+    assert.doesNotMatch(list, control, String(control));
+  }
+  const empty = renderToStaticMarkup(React.createElement(CARD.PublishedPaymentDetails, { accounts: [] }));
+  assert.match(empty, /data-empty-state="published-payment-accounts"/);
+  assert.match(empty, /No payment details published/);
+  assert.doesNotMatch(empty, /Add bank account/);
+
+  // The management dialog (owner API calls, Add / Edit / Delete / primary / visibility) is reachable only in mode "manage".
+  const source = read("components", "teacherProfile", "TeacherPaymentDetailsCard.tsx");
+  assert.match(source, /props\.mode === "manage" \? \(\s*<ManagePaymentDetails/);
+  assert.equal((source.match(/<ManagePaymentDetails\b/g) ?? []).length, 1);
 });

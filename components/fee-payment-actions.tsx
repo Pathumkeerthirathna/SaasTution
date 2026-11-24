@@ -451,7 +451,8 @@ export function ReversalDetails({ reversal }: { reversal: PaymentReversalInfo })
 
 // ---- Dialog shell -----------------------------------------------------------------------------
 
-function DialogShell({
+/** The Payments-page dialog shell (also used by components/resource-access-dialog.tsx). */
+export function DialogShell({
   titleId,
   title,
   subtitle,

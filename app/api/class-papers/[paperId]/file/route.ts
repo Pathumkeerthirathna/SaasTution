@@ -4,7 +4,7 @@ import { requireAppSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { resolveStoredFilePath } from "@/lib/class-paper";
 import { getPaperFileForViewer } from "@/services/class-paper-service";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { assertResourceAccessForStudent } from "@/services/resource-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +20,9 @@ export async function GET(
     if (session.role !== "TEACHER" && session.role !== "STUDENT") {
       throw new AppError("Not allowed.", 403, "FORBIDDEN");
     }
-    // Payment-due access control (services/class-access-service.ts).
-    if (session.role === "STUDENT") await assertContentAccessForStudent(session.userId, { paperId: params.paperId });
+    // Monthly resource access (services/resource-access-service.ts): 403 when
+    // the paper's billing month (its upload) is locked for this student.
+    if (session.role === "STUDENT") await assertResourceAccessForStudent(session.userId, { paperId: params.paperId });
 
     const paper = await getPaperFileForViewer(
       session.role === "TEACHER"

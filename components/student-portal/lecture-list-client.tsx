@@ -25,6 +25,7 @@ import { formatWhiteboardDate } from "@/components/whiteboard/scene-utils";
 import { AssignmentSubmitButton } from "@/components/student-portal/assignment-submit-button";
 import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
 import { dashRangeToYmd } from "@/lib/dashboard-range";
+import { LockedResourceBadge, type ResourceLock } from "@/components/student-portal/locked-resource";
 
 type ClassOption = { id: string; name: string };
 
@@ -62,6 +63,8 @@ type NoteItem = {
   kind: "NOTE" | "SUPPORTING_MATERIAL";
   mimeType: string;
   sizeBytes: number;
+  /** Monthly resource access: a locked month's note cannot be previewed or downloaded. */
+  resourceAccess?: ResourceLock;
 };
 
 type AssignmentItem = {
@@ -81,10 +84,13 @@ type AssignmentItem = {
 
 type RecordingItem = {
   id: string;
-  videoId: string;
-  youtubeUrl: string;
+  /** null when the recording's billing month is locked (the link is never sent). */
+  videoId: string | null;
+  youtubeUrl: string | null;
   status: string;
   access: string;
+  /** Monthly resource access (the link is null while locked). */
+  resourceAccess?: ResourceLock;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -98,9 +104,16 @@ type LectureDetail = {
   classId: string;
   notes: NoteItem[];
   assignments: AssignmentItem[];
+  /** The class-level overdue rule pauses assignments (they are then not sent). */
+  assignmentsRestricted?: boolean;
   recordings: RecordingItem[];
-  whiteboards?: { id: string; title: string; createdAt: string }[];
+  whiteboards?: { id: string; title: string; createdAt: string; resourceAccess?: ResourceLock }[];
 };
+
+/** A recording's monthly lock, when its billing month is locked. */
+function recordingLock(rec: RecordingItem): ResourceLock | null {
+  return rec.resourceAccess?.locked ? rec.resourceAccess : null;
+}
 
 type Pagination = { page: number; limit: number; total: number; totalPages: number };
 type ListData = { items: ListItem[]; enrolledClasses: ClassOption[]; pagination: Pagination };
@@ -703,13 +716,29 @@ export function LectureListClient() {
                       </div>
                     ) : detail && detail.recordings.length > 0 ? (
                       <ul className="space-y-1.5">
-                        {detail.recordings.map((rec, index) => (
+                        {detail.recordings.map((rec, index) => {
+                          const lock = recordingLock(rec);
+                          if (lock || !rec.videoId) {
+                            return (
+                              <li
+                                key={rec.id}
+                                className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-1.5"
+                              >
+                                <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700">
+                                  Recording {detail.recordings.length - index}
+                                </span>
+                                {lock ? <LockedResourceBadge lock={lock} classId={detail.classId} compact /> : null}
+                              </li>
+                            );
+                          }
+                          const videoId = rec.videoId;
+                          return (
                           <li key={rec.id}>
                             <button
                               type="button"
                               onClick={() =>
                                 setPlaying({
-                                  videoId: rec.videoId,
+                                  videoId,
                                   title: `${detail.title} — Recording ${detail.recordings.length - index}`,
                                 })
                               }
@@ -734,7 +763,8 @@ export function LectureListClient() {
                               <span className="shrink-0 text-[10px] font-semibold text-rose-600">Play</span>
                             </button>
                           </li>
-                        ))}
+                          );
+                        })}
                       </ul>
                     ) : (
                       <p className="py-1 text-center text-[11px] text-slate-500">
@@ -879,6 +909,11 @@ export function LectureListClient() {
                           <p className="text-[10px] text-slate-500">{formatBytes(note.sizeBytes)}</p>
                         </div>
                       </div>
+                      {note.resourceAccess?.locked ? (
+                        <div className="mt-2">
+                          <LockedResourceBadge lock={note.resourceAccess} classId={panelDetail.classId} />
+                        </div>
+                      ) : (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <button
                           type="button"
@@ -898,6 +933,7 @@ export function LectureListClient() {
                           <Download size={11} /> Download
                         </a>
                       </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -937,7 +973,12 @@ export function LectureListClient() {
             </>
           ) : panelTab === "assignments" ? (
             <>
-              {panelDetail.assignments.length === 0 ? (
+              {panelDetail.assignmentsRestricted ? (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
+                  Assignments of {panelDetail.className} are paused because a class fee is unpaid after its due date and grace
+                  period. See the notice above and the Payments page.
+                </p>
+              ) : panelDetail.assignments.length === 0 ? (
                 <p className="text-xs text-slate-500">No assignments for this lecture.</p>
               ) : (
                 <div className="space-y-2.5">
@@ -995,6 +1036,9 @@ export function LectureListClient() {
                           {formatWhiteboardDate(board.createdAt)}
                         </p>
                       </div>
+                      {board.resourceAccess?.locked ? (
+                        <LockedResourceBadge lock={board.resourceAccess} compact />
+                      ) : (
                       <button
                         type="button"
                         onClick={() =>
@@ -1005,6 +1049,7 @@ export function LectureListClient() {
                         <Eye size={12} />
                         View
                       </button>
+                      )}
                     </div>
                   ))}
                 </div>

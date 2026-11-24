@@ -16,6 +16,7 @@ import {
 
 import type { PaginationMeta } from "@/lib/api-types";
 import { useStudentLiveRefetch } from "@/components/student-portal/use-student-live-events";
+import { LockedResourceBadge, type ResourceLock } from "@/components/student-portal/locked-resource";
 
 type ClassOption = { id: string; name: string };
 
@@ -49,6 +50,8 @@ type BundleRecord = {
   confirmedAt: string | null;
   classId: string;
   className: string;
+  /** Monthly resource access of the bundle's month: its files are not opened while locked. */
+  resourceAccess?: ResourceLock;
   items: BundleItem[];
 };
 
@@ -214,10 +217,11 @@ function StudentMaterialBundlesPageInner() {
 
   const hasFilter = Boolean(classId) || period !== "all";
 
-  function fileLinks(bundleId: string, item: BundleItem, previewLabel: string) {
+  function fileLinks(bundleId: string, item: BundleItem, previewLabel: string, lock?: ResourceLock) {
     if (!item.hasFile) {
       return <span className="text-[11px] text-slate-400">Not uploaded yet</span>;
     }
+    if (lock?.locked) return <LockedResourceBadge lock={lock} />;
     const base = `/api/students/me/material-bundles/${bundleId}/items/${item.id}/file`;
     return (
       <div className="flex flex-wrap gap-1.5">
@@ -416,7 +420,7 @@ function StudentMaterialBundlesPageInner() {
                               {item.description ? (
                                 <p className="mt-0.5 text-[11px] text-slate-500">{item.description}</p>
                               ) : null}
-                              <div className="mt-1.5">{fileLinks(bundle.id, item, "View")}</div>
+                              <div className="mt-1.5">{fileLinks(bundle.id, item, "View", bundle.resourceAccess)}</div>
                             </li>
                           ))}
                         </ul>
@@ -444,7 +448,7 @@ function StudentMaterialBundlesPageInner() {
                                 {" → "}
                                 {item.paperEndAt ? fmtDateTime(item.paperEndAt) : "—"}
                               </p>
-                              <div className="mt-1.5">{fileLinks(bundle.id, item, "Preview")}</div>
+                              <div className="mt-1.5">{fileLinks(bundle.id, item, "Preview", bundle.resourceAccess)}</div>
 
                               {item.latestSubmission ? (
                                 <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">

@@ -2,12 +2,14 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { loadStudentResourceAccess, noteBillingMonth, resourceLockFor } from "@/services/resource-access-service";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/student/lectures/[lectureId]/notes
 // Returns lecture details + all notes for a lecture the student is enrolled in.
+// Each note carries `access` (services/resource-access-service.ts): a note of
+// a locked billing month is listed locked and its file route refuses it.
 export async function GET(
   _request: Request,
   context: { params: { lectureId: string } }
@@ -19,9 +21,6 @@ export async function GET(
     if (!lectureId?.trim()) {
       throw new AppError("Lecture id is required.", 400, "VALIDATION_ERROR");
     }
-    // Payment-due access control (services/class-access-service.ts).
-    await assertContentAccessForStudent(session.studentId, { lectureId });
-
     const lecture = await prisma.lecture.findFirst({
       where: {
         id: lectureId,
@@ -51,6 +50,7 @@ export async function GET(
             kind: true,
             mimeType: true,
             sizeBytes: true,
+            uploadedAt: true,
           },
         },
       },
@@ -59,6 +59,8 @@ export async function GET(
     if (!lecture) {
       throw new AppError("Lecture not found.", 404, "LECTURE_NOT_FOUND");
     }
+
+    const access = await loadStudentResourceAccess(session.studentId, { classIds: [lecture.class.id] });
 
     return apiSuccess({
       lecture: {
@@ -73,6 +75,7 @@ export async function GET(
           kind: n.kind,
           mimeType: n.mimeType,
           sizeBytes: n.sizeBytes,
+          resourceAccess: resourceLockFor(access, lecture.class.id, noteBillingMonth({ uploadedAt: n.uploadedAt, lecture: { date: lecture.date } })),
         })),
       },
     });

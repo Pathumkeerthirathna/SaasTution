@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, Loader2, Play, Video } from "lucide-react";
 
+import { LockedResourceBadge } from "@/components/student-portal/locked-resource";
 import { listFailureMessage } from "./player-errors";
 import {
   formatDuration,
@@ -90,6 +91,18 @@ export function ClassRecordingsClient({ classInfo, initialRecordings, initialNex
               <ol className="flex-1 divide-y divide-slate-100">
                 {group.parts.map((part) => (
                   <li key={part.id}>
+                    {part.resourceAccess?.locked ? (
+                      <div className="flex min-h-[44px] items-start gap-2.5 bg-amber-50/50 px-3 py-2">
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-xs font-semibold text-slate-800">
+                            {partLabel(part)} · {part.title}
+                          </span>
+                          <span className="mt-1 block">
+                            <LockedResourceBadge lock={part.resourceAccess} classId={classInfo.id} />
+                          </span>
+                        </span>
+                      </div>
+                    ) : (
                     <Link
                       href={playerHref(group.lecture.id, part.id)}
                       prefetch={false}
@@ -105,6 +118,7 @@ export function ClassRecordingsClient({ classInfo, initialRecordings, initialNex
                         <span className="block text-[11px] text-slate-500">{formatDuration(part.durationSeconds)}</span>
                       </span>
                     </Link>
+                    )}
                   </li>
                 ))}
               </ol>

@@ -6,6 +6,7 @@ import { ArrowRight, Play, Video } from "lucide-react";
 
 import { listFailureMessage } from "./player-errors";
 import { formatLectureDateTime, listApiUrl, partLabel, playerHref, type RecordedLecture } from "./recording-helpers";
+import { LockedResourceBadge } from "@/components/student-portal/locked-resource";
 
 /*
  * Dashboard widget (RL-5.1): recordings of lectures that started within the
@@ -79,6 +80,21 @@ export function DashboardRecordedLectures() {
           <ul className="grid gap-2 sm:grid-cols-2">
             {items.map((item) => (
               <li key={item.id}>
+                {item.resourceAccess?.locked ? (
+                  <div className="flex min-h-[44px] items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-xs font-semibold text-slate-800">
+                        {item.lecture.title} · {partLabel(item)}
+                      </span>
+                      <span className="block break-words text-[11px] text-slate-500">
+                        {item.class.name} · {formatLectureDateTime(item.lecture.date)}
+                      </span>
+                      <span className="mt-1 block">
+                        <LockedResourceBadge lock={item.resourceAccess} compact />
+                      </span>
+                    </span>
+                  </div>
+                ) : (
                 <Link
                   href={playerHref(item.lecture.id, item.id)}
                   prefetch={false}
@@ -96,6 +112,7 @@ export function DashboardRecordedLectures() {
                     </span>
                   </span>
                 </Link>
+                )}
               </li>
             ))}
           </ul>

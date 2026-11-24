@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { serverNow } from "@/lib/server-clock";
 import { emitStudentDataChange } from "@/lib/session-events";
 import type { StoredFile } from "@/lib/class-paper";
 
@@ -53,6 +54,11 @@ export async function createClassPaper(teacherId: string, input: CreateClassPape
   const paper = await prisma.classPaper.create({
     data: {
       ...(input.id ? { id: input.id } : {}),
+      // createdAt: the original creation instant (real UTC, database clock), set explicitly:
+      // never a database default (the production session timezone would store
+      // local digits in this timestamp-without-time-zone column) and never
+      // changed by an update. Decides the billing month for resource access.
+      createdAt: await serverNow(),
       classId: input.classId,
       name: input.name,
       description: input.description,

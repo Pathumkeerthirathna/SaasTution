@@ -39,7 +39,8 @@ const NEW_FILES = {
 test("player: exactly one <video>, streaming the part's RL-4.3 streamUrl; no other media or preloading", () => {
   const code = stripComments(player);
   assert.equal((code.match(/<video\b/g) ?? []).length, 1);
-  assert.match(code, /src=\{current\.streamUrl\}/);
+  // streamUrl is null for a locked billing month (such parts are never given to the player).
+  assert.match(code, /src=\{current\.streamUrl \?\? undefined\}/);
   assert.match(code, /preload="metadata"/);
   assert.match(code, /playsInline/);
   assert.match(code, /controlsList="nodownload"/);

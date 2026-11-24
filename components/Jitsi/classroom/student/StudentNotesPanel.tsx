@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, ExternalLink, FileText, Loader2 } from "lucide-react";
 
+import { LockedResourceBadge, type ResourceLock } from "@/components/student-portal/locked-resource";
+
 type Note = {
   id: string;
   title: string;
   kind: string;
   mimeType: string;
   sizeBytes: number;
+  /** Monthly resource access: a locked month's note has no preview / download. */
+  resourceAccess?: ResourceLock;
 };
 
 function formatBytes(bytes: number) {
@@ -108,6 +112,11 @@ export default function StudentNotesPanel({ lectureId }: { lectureId: string }) 
                         {note.kind === "NOTE" ? "Note" : "Material"} ·{" "}
                         {formatBytes(note.sizeBytes)}
                       </p>
+                      {note.resourceAccess?.locked ? (
+                        <div className="mt-2">
+                          <LockedResourceBadge lock={note.resourceAccess} />
+                        </div>
+                      ) : (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <a
                           href={base}
@@ -125,6 +134,7 @@ export default function StudentNotesPanel({ lectureId }: { lectureId: string }) 
                           <Download size={11} /> Download
                         </a>
                       </div>
+                      )}
                     </div>
                   </div>
                 </div>

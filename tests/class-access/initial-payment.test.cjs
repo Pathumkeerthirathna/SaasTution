@@ -425,12 +425,18 @@ test("direct API requests: protected content is 403 with the initial-payment rea
   await studentService.confirmStudent(T, "p1");
   sessionStudentId = "p1";
 
+  // Activities: the class-level initial-payment restriction, unchanged.
+  await assert.rejects(access.assertContentAccessForStudent("p1", { lectureId: "lec-a" }), (error) => {
+    assert.equal(error.code, "CLASS_ACCESS_RESTRICTED");
+    assert.equal(error.details.restrictions[0].reason, "INITIAL_PAYMENT");
+    assert.match(error.message, /first class fee payment is confirmed/);
+    return true;
+  });
+  // The lecture page opens with its assignments held back; its resources of
+  // the unpaid initial month are locked per month (tests/class-access/resource-access.test.cjs).
   const res = await lectureRoute.GET(new Request("http://localhost/api/student/lectures/lec-a"), { params: { lectureId: "lec-a" } });
-  assert.equal(res.status, 403);
-  const body = await res.json();
-  assert.equal(body.error.code, "CLASS_ACCESS_RESTRICTED");
-  assert.equal(body.error.details.restrictions[0].reason, "INITIAL_PAYMENT");
-  assert.match(body.error.message, /first class fee payment is confirmed/);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).data.lecture.assignmentsRestricted, true);
 
   const list = await studentPaymentsRoute.GET(new Request("http://localhost/api/student/payments"));
   assert.equal(list.status, 200);

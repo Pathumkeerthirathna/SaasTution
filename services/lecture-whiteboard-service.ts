@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { serverNow } from "@/lib/server-clock";
 import { sanitizeWhiteboardScene } from "@/lib/whiteboard-data";
 import { assertClassAccessForStudent } from "@/services/class-access-service";
 import type { WhiteboardDetail, WhiteboardListItem, WhiteboardScene } from "@/types/whiteboard";
@@ -118,6 +119,11 @@ export async function createWhiteboardForTeacher(
 
   const row = await prisma.lectureWhiteboard.create({
     data: {
+      // createdAt: the original creation instant (real UTC, database clock), set explicitly:
+      // never a database default (the production session timezone would store
+      // local digits in this timestamp-without-time-zone column) and never
+      // changed by an update. Decides the billing month for resource access.
+      createdAt: await serverNow(),
       lectureId,
       title: input.title,
       data: scene as unknown as Prisma.InputJsonValue,

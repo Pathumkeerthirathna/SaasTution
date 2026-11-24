@@ -26,14 +26,18 @@ const { createFakeDb } = require("../fee-waiver/helpers/fake-db.cjs");
 const db = createFakeDb();
 
 // Content models the fake database does not model: id → class (by lecture).
+// Resources carry their billing month too (uploaded in November 2026, the
+// month of the overdue fee below): resources are gated per month
+// (services/resource-access-service.ts; tests/class-access/resource-access.test.cjs).
+const UPLOADED_NOV = new Date("2026-11-05T04:30:00.000Z");
 const content = { quiz: new Map(), assignment: new Map(), recordedLecture: new Map(), classPaper: new Map(), materialBundle: new Map(), classSession: new Map() };
 const byLecture = (lectureId) => ({ lecture: { classId: db.row("Lecture", lectureId)?.classId } });
 const contentDelegates = {
   quiz: { findUnique: async ({ where }) => (content.quiz.has(where.id) ? byLecture(content.quiz.get(where.id)) : null) },
   assignment: { findUnique: async ({ where }) => (content.assignment.has(where.id) ? byLecture(content.assignment.get(where.id)) : null) },
-  recordedLecture: { findUnique: async ({ where }) => (content.recordedLecture.has(where.id) ? { classId: content.recordedLecture.get(where.id) } : null) },
-  classPaper: { findUnique: async ({ where }) => (content.classPaper.has(where.id) ? { classId: content.classPaper.get(where.id) } : null) },
-  materialBundle: { findUnique: async ({ where }) => (content.materialBundle.has(where.id) ? { classId: content.materialBundle.get(where.id) } : null) },
+  recordedLecture: { findUnique: async ({ where }) => (content.recordedLecture.has(where.id) ? { classId: content.recordedLecture.get(where.id), createdAt: UPLOADED_NOV } : null) },
+  classPaper: { findUnique: async ({ where }) => (content.classPaper.has(where.id) ? { classId: content.classPaper.get(where.id), createdAt: UPLOADED_NOV } : null) },
+  materialBundle: { findUnique: async ({ where }) => (content.materialBundle.has(where.id) ? { classId: content.materialBundle.get(where.id), year: 2026, month: 11 } : null) },
   classSession: { findUnique: async ({ where }) => (content.classSession.has(where.id) ? { classId: content.classSession.get(where.id) } : null) },
 };
 const client = new Proxy(db.client, {
@@ -302,7 +306,7 @@ test("settings API: defaults, validation, ownership and saving", async () => {
 
 // ---- Direct API requests ----------------------------------------------------------------------
 
-test("direct API requests to protected content of a restricted class get 403 with the explanation", async (t) => {
+test("direct API requests to protected content of a restricted class get 403 with the explanation (activities: class-level; resources: their unpaid month)", async (t) => {
   seed();
   at(t, "2026-11-20T10:00");
   sessionStudentId = "s1";
@@ -313,6 +317,7 @@ test("direct API requests to protected content of a restricted class get 403 wit
   content.classPaper.set("paper-a", A);
   content.materialBundle.set("bundle-a", A);
 
+  // Activities (quizzes, assignments): the class-level rule, unchanged.
   const expect403 = async (promise, label) => {
     const res = await promise;
     assert.equal(res.status, 403, label);
@@ -321,14 +326,30 @@ test("direct API requests to protected content of a restricted class get 403 wit
     assert.equal(body.error.details.restrictions[0].classId, A, label);
     assert.match(body.error.message, /Combined Maths/, label);
   };
+  // Resources (recordings, papers, bundle files): locked for their unpaid month.
+  const expectMonthLocked = async (promise, label) => {
+    const res = await promise;
+    assert.equal(res.status, 403, label);
+    const body = await res.json();
+    assert.equal(body.error.code, "RESOURCE_MONTH_LOCKED", label);
+    assert.equal(body.error.details.classId, A, label);
+    assert.deepEqual([body.error.details.year, body.error.details.month], [2026, 11], label);
+    assert.match(body.error.message, /Combined Maths resources from November 2026/, label);
+  };
   const get = (url) => new Request(`http://localhost${url}`);
 
-  await expect403(lectureRoute.GET(get("/api/student/lectures/lec-a"), { params: { lectureId: "lec-a" } }), "lecture");
+  // The lecture page itself opens (its resources carry their month's lock);
+  // its assignments stay behind the class-level rule.
+  const lecture = await lectureRoute.GET(get("/api/student/lectures/lec-a"), { params: { lectureId: "lec-a" } });
+  assert.equal(lecture.status, 200);
+  const lectureBody = await lecture.json();
+  assert.equal(lectureBody.data.lecture.assignmentsRestricted, true);
+  assert.deepEqual(lectureBody.data.lecture.assignments, []);
   await expect403(quizRoute.GET(get("/api/student/quizzes/quiz-a"), { params: { quizId: "quiz-a" } }), "quiz");
-  await expect403(recordingStreamRoute.GET(get("/api/student/recorded-lectures/rec-a/stream"), { params: { recordingId: "rec-a" } }), "recording stream");
+  await expectMonthLocked(recordingStreamRoute.GET(get("/api/student/recorded-lectures/rec-a/stream"), { params: { recordingId: "rec-a" } }), "recording stream");
   await expect403(assignmentSubmitRoute.GET(get("/api/assignments/asg-a/submit"), { params: { assignmentId: "asg-a" } }), "assignment");
-  await expect403(paperFileRoute.GET(get("/api/class-papers/paper-a/file"), { params: { paperId: "paper-a" } }), "paper file");
-  await expect403(
+  await expectMonthLocked(paperFileRoute.GET(get("/api/class-papers/paper-a/file"), { params: { paperId: "paper-a" } }), "paper file");
+  await expectMonthLocked(
     bundleFileRoute.GET(get("/api/students/me/material-bundles/bundle-a/items/i1/file"), { params: { bundleId: "bundle-a", itemId: "i1" } }),
     "material file"
   );
@@ -391,29 +412,37 @@ test("classroom, breakout and whiteboard entry points check access after their e
   assert.match(breakout, /if \(!\(await isEnrolled\(db, studentId, session\.classId\)\)\) throw notFound\(\);\s*(\/\/[^\n]*\n\s*)+await assertClassAccessForStudent\(studentId, session\.classId\);\s*return \{ sessionId/);
   const whiteboard = read("services/lecture-whiteboard-service.ts");
   assert.match(whiteboard, /Active lecture session not found[\s\S]{0,200}await assertClassAccessForStudent\(studentId, session\.classId\);/);
-  // Every protected student content / action route makes the check.
+  // Every protected student ACTIVITY route makes the class-level check.
   const routes = [
-    "app/api/student/lectures/[lectureId]/route.ts",
-    "app/api/student/lectures/[lectureId]/notes/route.ts",
-    "app/api/student/lectures/[lectureId]/notes/[noteId]/file/route.ts",
-    "app/api/student/lectures/[lectureId]/whiteboards/route.ts",
-    "app/api/student/lectures/[lectureId]/whiteboards/[whiteboardId]/route.ts",
-    "app/api/student/recorded-lectures/[recordingId]/route.ts",
-    "app/api/student/recorded-lectures/[recordingId]/stream/route.ts",
     "app/api/student/quizzes/[quizId]/route.ts",
     "app/api/student/quizzes/[quizId]/review/route.ts",
     "app/api/student/quizzes/[quizId]/submit/route.ts",
     "app/api/student/papers/[paperId]/submit/route.ts",
-    "app/api/class-papers/[paperId]/file/route.ts",
     "app/api/assignments/[assignmentId]/submit/route.ts",
     "app/api/assignments/[assignmentId]/submit/file/route.ts",
     "app/api/material-bundles/[bundleId]/items/[itemId]/submit/route.ts",
     "app/api/students/me/material-bundles/[bundleId]/confirm/route.ts",
     "app/api/attendance/route.ts",
-    "app/api/students/me/material-bundles/[bundleId]/items/[itemId]/file/route.ts",
     "app/api/students/me/material-bundles/[bundleId]/items/[itemId]/late-message/route.ts",
   ];
   for (const rel of routes) assert.match(read(rel), /await assertContentAccessForStudent\(/, rel);
+  // Every RESOURCE delivery route makes the monthly check; resource listings mark each item.
+  const resourceRoutes = [
+    "app/api/student/lectures/[lectureId]/notes/[noteId]/file/route.ts",
+    "app/api/student/lectures/[lectureId]/whiteboards/[whiteboardId]/route.ts",
+    "app/api/student/recorded-lectures/[recordingId]/route.ts",
+    "app/api/student/recorded-lectures/[recordingId]/stream/route.ts",
+    "app/api/class-papers/[paperId]/file/route.ts",
+    "app/api/students/me/material-bundles/[bundleId]/items/[itemId]/file/route.ts",
+  ];
+  for (const rel of resourceRoutes) assert.match(read(rel), /await assertResourceAccessForStudent\(/, rel);
+  for (const rel of [
+    "app/api/student/lectures/[lectureId]/route.ts",
+    "app/api/student/lectures/[lectureId]/notes/route.ts",
+    "app/api/student/lectures/[lectureId]/whiteboards/route.ts",
+  ]) {
+    assert.match(read(rel), /resourceLockFor\(/, rel);
+  }
   assert.equal((read("app/api/assignments/[assignmentId]/submit/route.ts").match(/await assertContentAccessForStudent\(/g) ?? []).length, 2, "GET and POST");
   // Payment routes are never restricted.
   for (const rel of ["app/api/student/payments/route.ts", "app/api/payments/[paymentId]/slip/route.ts", "app/api/student/dashboard/payments/route.ts"]) {

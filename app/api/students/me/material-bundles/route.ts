@@ -5,6 +5,7 @@ import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
+import { loadStudentResourceAccess, resourceLockFor } from "@/services/resource-access-service";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,12 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    // Monthly resource access (one batched load): a bundle of a locked month
+    // (the year / month the teacher chose) is listed locked; its file route
+    // refuses its files.
+    const access = await loadStudentResourceAccess(session.studentId, {
+      classIds: [...new Set(bundles.map((bundle) => bundle.class.id))],
+    });
     const records = bundles.map((bundle) => ({
       countdownLeadMinutes: bundle.class.teacher.paperConfig?.countdownLeadMinutes ?? DEFAULT_COUNTDOWN_MINUTES,
       submissionGraceMinutes: bundle.class.teacher.paperConfig?.submissionGraceMinutes ?? DEFAULT_GRACE_MINUTES,
@@ -129,6 +136,7 @@ export async function GET(req: NextRequest) {
       confirmedAt: bundle.recipients[0]?.receivedAt ? bundle.recipients[0].receivedAt.toISOString() : null,
       classId: bundle.class.id,
       className: bundle.class.name,
+      resourceAccess: resourceLockFor(access, bundle.class.id, { year: bundle.year, month: bundle.month }),
       items: bundle.items.map((item) => ({
         submissionDeadline:
           item.type === "PAPER" && item.paperEndAt

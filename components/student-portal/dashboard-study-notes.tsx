@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BookMarked, FileText, ArrowUpRight, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { useStudentLiveEvent } from "@/components/student-portal/use-student-live-events";
+import { LockedResourceBadge, type ResourceLock } from "@/components/student-portal/locked-resource";
 
 type Note = {
   id: string;
@@ -15,6 +16,8 @@ type Note = {
   lectureTitle: string;
   className: string;
   date: string;
+  /** Monthly resource access: a locked month's note is shown without its file link. */
+  resourceAccess?: ResourceLock;
 };
 
 function fmtDate(value: string) {
@@ -88,6 +91,22 @@ export function DashboardStudyNotes() {
           <ul className="space-y-2">
             {notes.map((note) => (
               <li key={note.id}>
+                {note.resourceAccess?.locked ? (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                      <FileText size={15} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{note.title}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">
+                        {note.className} · {note.lectureTitle}
+                      </p>
+                      <div className="mt-1">
+                        <LockedResourceBadge lock={note.resourceAccess} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                 <a
                   href={`/api/student/lectures/${note.lectureId}/notes/${note.id}/file`}
                   target="_blank"
@@ -106,6 +125,7 @@ export function DashboardStudyNotes() {
                   </div>
                   <ArrowUpRight size={13} className="mt-1 shrink-0 text-slate-300" />
                 </a>
+                )}
               </li>
             ))}
           </ul>

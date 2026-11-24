@@ -967,12 +967,16 @@ model Class {
   /// register. 0–240 (CHECK Class_attendanceGraceMinutes_check, hand-written
   /// in migration 20261110140000_add_lecture_attendance).
   attendanceGraceMinutes Int                 @default(10)
-  /// Payment-due LMS access control (services/class-access-service.ts): when
-  /// true, a student with an unpaid fee of this class whose due date plus
-  /// paymentGracePeriodDays has passed cannot open the class's learning
-  /// content. Default false: no change for existing classes. 0–30 days (CHECK
+  /// "Restrict access to resources for unpaid months" (payment-due access
+  /// control). Resources (recordings, notes, papers, bundle files,
+  /// whiteboards, YouTube recording links) are locked per billing month by
+  /// services/resource-access-service.ts; quizzes, assignments, attendance and
+  /// the live classroom keep the class-level overdue rule of
+  /// services/class-access-service.ts. 0–30 grace days (CHECK
   /// Class_paymentGracePeriodDays_check, migration 20261121120000).
-  restrictUnpaidStudentAccess Boolean      @default(false)
+  /// Default true for NEW classes only (migration 20261128120000 changes the
+  /// column default; existing classes keep their stored value).
+  restrictUnpaidStudentAccess Boolean      @default(true)
   paymentGracePeriodDays      Int          @default(5)
   teacher              Teacher               @relation(fields: [teacherId], references: [id])
   payments             ClassPayment[]
@@ -1399,9 +1403,40 @@ model ClassStudent {
   student      Student   @relation(fields: [studentId], references: [id])
 
   fees ClassStudentFee[]
+  /// Teacher overrides of resource access per billing month (this enrolment only).
+  resourceAccessOverrides ClassStudentResourceAccess[]
 
   @@index([studentId])
   @@index([classId, isActive])
+}
+
+/// A teacher's override of one student's resource access for one Sri Lankan
+/// billing month (services/resource-access-service.ts). No row = DEFAULT
+/// (the class setting, payment, grace period and enrolment rules decide).
+/// GRANTED unlocks, REVOKED locks that month's resources, whatever the
+/// payment. Per enrolment: a re-enrolment starts with no overrides (like
+/// ClassStudentFee and the Free Card eligibility flag). Months before the enrolment are
+/// allowed (to grant earlier resources). CHECK
+/// ClassStudentResourceAccess_month_check (hand-written in migration
+/// 20261128120000_add_resource_month_access). setByTeacherId is text without
+/// a foreign key (audit only, like ClassPaymentReversal.reversedById).
+model ClassStudentResourceAccess {
+  id             String                 @id @default(uuid())
+  classStudentId String
+  year           Int
+  month          Int
+  access         ResourceAccessOverride
+  setByTeacherId String
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  classStudent   ClassStudent           @relation(fields: [classStudentId], references: [id], onDelete: Cascade)
+
+  @@unique([classStudentId, year, month])
+}
+
+enum ResourceAccessOverride {
+  GRANTED
+  REVOKED
 }
 
 model ClassStudentFee {
@@ -1755,6 +1790,12 @@ model Note {
 
   // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
   status Int @default(0)
+
+  /// Real UTC instant the file was uploaded, set explicitly by the upload
+  /// (never a database default, never changed by edits). Decides the note's
+  /// Sri Lankan billing month for resource access. NULL for notes uploaded
+  /// before migration 20261128120000: those use their lecture's date.
+  uploadedAt DateTime?
 
   /// Unified storage (Stage 2): the file's RELATIVE key below FILE_STORAGE_ROOT
   /// (Teachers/{teacherId}/Lectures/{lectureId}/Notes/{noteId}/{32 hex}.{ext}),

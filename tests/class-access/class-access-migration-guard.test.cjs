@@ -23,7 +23,7 @@ const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
 
 test("placement: right after the Free Card one; only the approved partial payment and Free Card eligibility migrations follow; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261120120000_add_class_student_fee_free_card", MIGRATION, "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible", "20261124120000_add_recorded_lecture_publication", "20261125120000_add_teacher_payment_accounts", "20261126120000_add_teacher_title_eng", "20261127120000_add_grade_zero"]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261120120000_add_class_student_fee_free_card", MIGRATION, "20261122120000_add_class_payment_source_and_reversal", "20261123120000_add_class_student_free_card_eligible", "20261124120000_add_recorded_lecture_publication", "20261125120000_add_teacher_payment_accounts", "20261126120000_add_teacher_title_eng", "20261127120000_add_grade_zero", "20261128120000_add_resource_month_access"]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });
@@ -38,8 +38,8 @@ test("exactly: lock timeout, the two columns with safe defaults (restriction OFF
   assert.doesNotMatch(sql, /\b(DROP|DELETE|UPDATE|INSERT|TRUNCATE|RENAME)\b|ALTER COLUMN|SET LOCAL/i);
 });
 
-test("schema.prisma declares both settings with the same defaults", () => {
+test("schema.prisma declares both settings (the restriction's default is true for NEW classes since 20261128120000; this migration's DEFAULT false kept every existing class off)", () => {
   const schema = fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
-  assert.match(schema, /restrictUnpaidStudentAccess\s+Boolean\s+@default\(false\)/);
+  assert.match(schema, /restrictUnpaidStudentAccess\s+Boolean\s+@default\(true\)/);
   assert.match(schema, /paymentGracePeriodDays\s+Int\s+@default\(5\)/);
 });

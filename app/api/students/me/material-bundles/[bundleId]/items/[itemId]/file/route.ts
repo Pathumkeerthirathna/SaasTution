@@ -4,7 +4,7 @@ import path from "node:path";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
-import { assertContentAccessForStudent } from "@/services/class-access-service";
+import { assertResourceAccessForStudent } from "@/services/resource-access-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,8 +40,9 @@ export async function GET(
     if (!bundleId?.trim() || !itemId?.trim()) {
       throw new AppError("Bundle id and item id are required.", 400, "VALIDATION_ERROR");
     }
-    // Payment-due access control (services/class-access-service.ts).
-    await assertContentAccessForStudent(session.studentId, { bundleId });
+    // Monthly resource access (services/resource-access-service.ts): 403 when
+    // the bundle's month (the year / month the teacher chose) is locked.
+    await assertResourceAccessForStudent(session.studentId, { bundleId });
 
     const item = await prisma.materialBundleItem.findFirst({
       where: {
