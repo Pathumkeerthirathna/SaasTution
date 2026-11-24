@@ -429,7 +429,8 @@ test("static guard: the service imports no write, lock, transaction, reconciliat
     assert.doesNotMatch(code, forbidden, String(forbidden));
   }
   const imports = [...code.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(imports, ["@/lib/attendance/config", "@/lib/attendance/service-errors", "@/lib/prisma", "@/lib/student-confirmation-history", "@/services/lecture-attendance-service"]);
+  // (@/lib/default-lecture: a constant filter only, NORMAL_LECTURE_WHERE.)
+  assert.deepEqual(imports, ["@/lib/attendance/config", "@/lib/attendance/service-errors", "@/lib/default-lecture", "@/lib/prisma", "@/lib/student-confirmation-history", "@/services/lecture-attendance-service"]);
   const fromService = code.match(/import\s*\{([^}]*)\}\s*from\s+"@\/services\/lecture-attendance-service"/)[1].split(",").map((s) => s.trim()).filter(Boolean).sort();
   assert.deepEqual(fromService, ["evidenceRepresentation", "type RepresentationStudent"]);
   const prismaCalls = [...code.matchAll(/prisma\.(\w+)\.(\w+)\(/g)].map((m) => m[2]);

@@ -81,9 +81,25 @@ const studentSelect = {
   // The upload instant: the recording's billing month (resource access). Never sent.
   createdAt: true,
   lectureId: true,
-  lecture: { select: { id: true, title: true, date: true, endDate: true } },
+  // isDefault: a General Recording (the class's default lecture); never sent as such (the DTO's isGeneral).
+  lecture: { select: { id: true, title: true, date: true, endDate: true, isDefault: true } },
   class: { select: { id: true, name: true } },
 } satisfies Prisma.RecordedLectureSelect;
+
+/**
+ * General Recordings on the DASHBOARD (section "general", scope "dashboard"):
+ * newest available first (readyAt; a row without it, which a READY recording
+ * never is, last by its upload start), then id, so the widget's merge keeps
+ * the most recent ones within its limit. The default lecture's date is the
+ * class's creation and never orders them. The full General list (scope "all")
+ * uses listOrder instead: within a class that is part number ascending, the
+ * same order as the General player (one lecture: the class's default lecture).
+ */
+const generalOrder: Prisma.RecordedLectureOrderByWithRelationInput[] = [
+  { readyAt: { sort: "desc", nulls: "last" } },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
 
 /** Newest lecture first; then lecture id, part number and recording id, so the order is total and stable. */
 const listOrder: Prisma.RecordedLectureOrderByWithRelationInput[] = [
@@ -110,8 +126,17 @@ export const MAX_PAGE_SIZE = 50;
 const MAX_CURSOR_LENGTH = 512;
 const MAX_PART_NUMBER = 2_147_483_647; // the INTEGER column's maximum (the database only requires >= 1)
 
+/**
+ * Which recordings of the student's classes: "general" = General Recordings
+ * only (the class's default lecture, newest available first); "lecture" =
+ * recordings of normal lectures only; "all" (absent, the default) = both, in
+ * the existing order (unchanged for existing callers).
+ */
+export type StudentRecordedLectureSection = "all" | "general" | "lecture";
+
 export type StudentRecordedLectureListQuery = {
   scope?: string | null;
+  section?: string | null;
   lectureId?: string | null;
   /** RL-5.1: only this class's recordings (still AND-ed with the full access filter). */
   classId?: string | null;
@@ -123,6 +148,12 @@ function parseScope(value: string | null | undefined): StudentRecordedLectureSco
   if (value === null || value === undefined || value === "" || value === "all") return "all";
   if (value === "dashboard") return "dashboard";
   throw badRequest("scope must be \"all\" or \"dashboard\".", "INVALID_SCOPE");
+}
+
+function parseSection(value: string | null | undefined): StudentRecordedLectureSection {
+  if (value === null || value === undefined || value === "" || value === "all") return "all";
+  if (value === "general" || value === "lecture") return value;
+  throw badRequest('section must be "all", "general" or "lecture".', "INVALID_SECTION");
 }
 
 function parseLimit(value: string | null | undefined): number {
@@ -180,6 +211,78 @@ function parseCursor(value: string | null | undefined): ListCursor | null {
   return cursor;
 }
 
+/**
+ * The position after the last row of a General Recordings page (section
+ * "general"): its sort keys (readyAt, createdAt, id). Opaque to clients;
+ * tagged "g", so it is never mistaken for a lecture cursor (or the reverse).
+ */
+export type GeneralListCursor = { readyAt: Date | null; createdAt: Date; id: string };
+
+export function encodeGeneralListCursor(cursor: GeneralListCursor): string {
+  const json = JSON.stringify(["g", cursor.readyAt ? cursor.readyAt.getTime() : null, cursor.createdAt.getTime(), cursor.id]);
+  return Buffer.from(json, "utf8").toString("base64url");
+}
+
+export function decodeGeneralListCursor(value: string): GeneralListCursor | null {
+  if (value.length === 0 || value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 4 || parsed[0] !== "g") return null;
+  const [, readyMs, createdMs, id] = parsed as unknown[];
+  const validMs = (ms: unknown): ms is number => typeof ms === "number" && Number.isSafeInteger(ms) && !Number.isNaN(new Date(ms).getTime());
+  if (readyMs !== null && !validMs(readyMs)) return null;
+  if (!validMs(createdMs) || !isRecordedLectureId(id)) return null;
+  return { readyAt: readyMs === null ? null : new Date(readyMs), createdAt: new Date(createdMs), id };
+}
+
+function parseGeneralCursor(value: string | null | undefined): GeneralListCursor | null {
+  if (value === null || value === undefined || value === "") return null;
+  const cursor = decodeGeneralListCursor(value);
+  if (!cursor) throw badRequest("The page cursor is not valid.", "INVALID_CURSOR");
+  return cursor;
+}
+
+/** Rows strictly after `cursor` in generalOrder (readyAt desc nulls last, createdAt desc, id desc). */
+function afterGeneralCursorWhere(cursor: GeneralListCursor): Prisma.RecordedLectureWhereInput {
+  if (cursor.readyAt === null) {
+    return {
+      OR: [
+        { readyAt: null, createdAt: { lt: cursor.createdAt } },
+        { readyAt: null, createdAt: cursor.createdAt, id: { lt: cursor.id } },
+      ],
+    };
+  }
+  return {
+    OR: [
+      { readyAt: { lt: cursor.readyAt } },
+      { readyAt: null },
+      { readyAt: cursor.readyAt, createdAt: { lt: cursor.createdAt } },
+      { readyAt: cursor.readyAt, createdAt: cursor.createdAt, id: { lt: cursor.id } },
+    ],
+  };
+}
+
+/**
+ * The dashboard window (scope "dashboard"): a normal lecture's recordings from
+ * the lecture start, exactly as before; a General Recording from when it
+ * became available (readyAt, else its upload start), never from the default
+ * lecture's date (the class's creation).
+ */
+function dashboardWindowWhere(now: Date, days: number): Prisma.RecordedLectureWhereInput {
+  const range = dashboardLectureStartRange(now, days);
+  return {
+    OR: [
+      { lecture: { isDefault: false, date: range } },
+      { lecture: { isDefault: true }, readyAt: range },
+      { lecture: { isDefault: true }, readyAt: null, createdAt: range },
+    ],
+  };
+}
+
 /** Rows strictly after `cursor` in listOrder (date desc, lectureId asc, partNumber asc, id asc). */
 function afterCursorWhere(cursor: ListCursor): Prisma.RecordedLectureWhereInput {
   const sameDate: Prisma.RecordedLectureWhereInput = { lecture: { date: cursor.lectureDate } };
@@ -221,22 +324,30 @@ export async function listStudentRecordedLectures(input: {
   access?: StudentResourceAccess;
 }): Promise<StudentRecordedLectureList> {
   const scope = parseScope(input.query.scope);
+  const section = parseSection(input.query.section);
   const limit = parseLimit(input.query.limit);
   const lectureId = parseLectureId(input.query.lectureId);
   const classId = parseClassId(input.query.classId);
-  const cursor = parseCursor(input.query.cursor);
+  // Newest-first General order and its own cursor: the dashboard only. Every other list (the class
+  // page's General section included) uses listOrder and the lecture cursor, as before.
+  const newestGeneral = section === "general" && scope === "dashboard";
+  const cursor = newestGeneral ? null : parseCursor(input.query.cursor);
+  const generalCursor = newestGeneral ? parseGeneralCursor(input.query.cursor) : null;
   const days = dashboardDays();
   const now = await serverNow();
 
   const filters: Prisma.RecordedLectureWhereInput[] = [studentRecordedLectureAccessWhere(input.studentId)];
-  if (scope === "dashboard") filters.push({ lecture: { date: dashboardLectureStartRange(now, days) } });
+  if (section === "general") filters.push({ lecture: { isDefault: true } });
+  if (section === "lecture") filters.push({ lecture: { isDefault: false } });
+  if (scope === "dashboard") filters.push(dashboardWindowWhere(now, days));
   if (lectureId) filters.push({ lectureId });
   if (classId) filters.push({ classId });
   if (cursor) filters.push(afterCursorWhere(cursor));
+  if (generalCursor) filters.push(afterGeneralCursorWhere(generalCursor));
 
   const rows = await prisma.recordedLecture.findMany({
     where: { AND: filters },
-    orderBy: listOrder,
+    orderBy: newestGeneral ? generalOrder : listOrder,
     take: limit + 1,
     select: studentSelect,
   });
@@ -250,7 +361,9 @@ export async function listStudentRecordedLectures(input: {
     (await loadStudentResourceAccess(input.studentId, { classIds: [...new Set(page.map((row) => row.class.id))] }));
   const nextCursor =
     rows.length > limit && last
-      ? encodeListCursor({ lectureDate: last.lecture.date, lectureId: last.lectureId, partNumber: last.partNumber, id: last.id })
+      ? newestGeneral
+        ? encodeGeneralListCursor({ readyAt: last.readyAt, createdAt: last.createdAt, id: last.id })
+        : encodeListCursor({ lectureDate: last.lecture.date, lectureId: last.lectureId, partNumber: last.partNumber, id: last.id })
       : null;
 
   const result: StudentRecordedLectureList = {
@@ -298,6 +411,7 @@ function toRow(row: SelectedRow): StudentRecordedLectureRow {
     width: row.width,
     height: row.height,
     readyAt: row.readyAt,
+    createdAt: row.createdAt,
     lecture: row.lecture,
     class: row.class,
   };

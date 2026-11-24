@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { serverNow } from "@/lib/server-clock";
 import { sanitizeWhiteboardScene } from "@/lib/whiteboard-data";
@@ -51,7 +52,7 @@ function toDetail(row: {
 
 async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
   const lecture = await prisma.lecture.findFirst({
-    where: { id: lectureId, status: 0, class: { teacherId } },
+    where: { id: lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId } },
     select: { id: true },
   });
 

@@ -134,8 +134,11 @@ test("requests: pages load on the server through the loaders; links to the playe
     assert.ok(toPlayer.length > 0, name);
     for (const link of toPlayer) assert.match(link, /prefetch=\{false\}/, `${name}: ${link.slice(0, 60)}`);
   }
-  assert.match(widget, /listApiUrl\(\{ scope: "dashboard" \}, null, WIDGET_LIMIT\)/);
-  assert.match(classClient, /listApiUrl\(\{ classId: classInfo\.id \}, nextCursor, PAGE_SIZE\)/);
+  // Recorded Lectures redesign Stage 3: General and lecture recordings are requested per section
+  // (each with its own cursor), and the widget merges both (tests/ui/student-general-recordings.test.tsx).
+  assert.match(widget, /listApiUrl\(\{ scope: "dashboard", section: "general" \}, null, WIDGET_LIMIT\)/);
+  assert.match(widget, /listApiUrl\(\{ scope: "dashboard", section: "lecture" \}, null, WIDGET_LIMIT\)/);
+  assert.match(classClient, /listApiUrl\(\{ classId, section \}, cursor, PAGE_SIZE\)/);
 });
 
 test("client components never import server code", () => {
@@ -178,6 +181,9 @@ test("separation: lecture-list-client.tsx and the YouTube / lecture APIs are unc
     "app/api/student/lectures/[lectureId]/notes/route.ts",
     "app/api/student/lectures/[lectureId]/whiteboards/route.ts",
     "app/api/student/lectures/[lectureId]/whiteboards/[whiteboardId]/route.ts",
+    // Changed on purpose by the default lecture (lib/default-lecture.ts: the
+    // class's internal lecture is excluded; tests/lectures/default-lecture.test.cjs).
+    "app/api/student/lectures/route.ts",
   ].map((file) => `:(exclude,literal)${file}`);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", ...files, ...stage2], { cwd: root, encoding: "utf8" });
   assert.equal(diff.trim(), "", diff);

@@ -1,6 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
 
     const enrolled = {
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       class: { status: 0, students: { some: { studentId, isActive: true } } },
     } as const;
 

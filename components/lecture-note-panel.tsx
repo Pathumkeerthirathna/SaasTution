@@ -26,6 +26,8 @@ type NoteAccess = "FREE" | "LOCKED";
 
 type LectureNote = {
   id: string;
+  /** The note's own lecture: edits and deletions go to /api/lectures/{lectureId}/notes/{id}. */
+  lectureId?: string;
   title: string;
   kind: "NOTE" | "SUPPORTING_MATERIAL";
   mimeType: string;
@@ -34,7 +36,56 @@ type LectureNote = {
   lastDownloadedAt: string | null;
   visibility: NoteVisibility;
   access: NoteAccess;
+  /** Class-scoped listings only (the Notes page): the original upload instant; null for older notes. */
+  uploadedAt?: string | null;
 };
+
+/**
+ * Where the panel's notes come from.
+ *  - { lectureId } (no classId): one lecture through its own API, exactly as
+ *    before (the lecture management page, the classroom sidebar).
+ *  - { classId } (no lectureId): the class's General Notes (its default
+ *    lecture, resolved by the server): GET / POST /api/classes/{classId}/notes.
+ *  - { classId, lectureId }: one normal lecture of that class, listed through
+ *    GET /api/classes/{classId}/notes?lectureId= (newest upload first);
+ *    uploads go to the lecture's own API.
+ * Edits, deletions, previews and downloads always use the existing per-note routes.
+ */
+export type LectureNotePanelSource =
+  | { lectureId: string; classId?: undefined }
+  | { classId: string; lectureId?: string };
+
+/** The list and upload endpoints for a source. */
+export function noteEndpoints(source: LectureNotePanelSource): { list: string; upload: string; classScoped: boolean } {
+  if (source.classId === undefined) {
+    const base = `/api/lectures/${source.lectureId}/notes`;
+    return { list: base, upload: base, classScoped: false };
+  }
+  const classBase = `/api/classes/${encodeURIComponent(source.classId)}/notes`;
+  if (!source.lectureId) return { list: classBase, upload: classBase, classScoped: true };
+  return {
+    list: `${classBase}?lectureId=${encodeURIComponent(source.lectureId)}`,
+    upload: `/api/lectures/${encodeURIComponent(source.lectureId)}/notes`,
+    classScoped: true,
+  };
+}
+
+const UPLOADED_AT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Colombo",
+});
+
+/** "24 Nov 2026, 14:05" in Sri Lankan time; null when absent or invalid. */
+export function formatUploadedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : UPLOADED_AT.format(new Date(ms));
+}
 
 type ApiError = {
   error?: {
@@ -57,10 +108,16 @@ function formatBytes(bytes: number) {
   return `${mb.toFixed(2)} MB`;
 }
 
-export function LectureNotePanel(props: {
-  lectureId: string;
-  onChanged?: () => Promise<void> | void;
-}) {
+export function LectureNotePanel(
+  props: LectureNotePanelSource & {
+    onChanged?: () => Promise<void> | void;
+    /** The list card's heading, subtitle and empty text (defaults: the lecture wording). */
+    heading?: string;
+    description?: string;
+    emptyText?: string;
+  }
+) {
+  const endpoints = noteEndpoints(props);
   const [notes, setNotes] = useState<LectureNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -76,6 +133,10 @@ export function LectureNotePanel(props: {
   // Stage 3.6: a deletion that is hidden but whose file is still being deleted (not a success).
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const deletingRef = useRef(false);
+  // One upload / save at a time, even before the disabled button re-renders (double clicks).
+  const savingRef = useRef(false);
+  // Only the newest list request may update the panel (the class or lecture can change meanwhile).
+  const loadSeqRef = useRef(0);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const selectedNote = useMemo(() => notes.find((note) => note.id === selectedNoteId) ?? null, [notes, selectedNoteId]);
@@ -87,22 +148,26 @@ export function LectureNotePanel(props: {
   }
 
   async function loadNotes(preferredId?: string | null) {
+    const seq = ++loadSeqRef.current;
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/notes`, {
+      const response = await fetch(endpoints.list, {
         cache: "no-store",
       });
       const payload = (await response.json()) as {
         success: boolean;
-        data?: LectureNote[];
+        // The lecture API answers the list itself; the class API { class, section, lecture, notes }.
+        data?: LectureNote[] | { notes?: LectureNote[] };
       };
+      if (seq !== loadSeqRef.current) return;
 
       if (!response.ok || !payload.success) {
+        setNotes([]);
         throw new Error(readApiError(payload, "Failed to load notes."));
       }
 
-      const list = payload.data ?? [];
+      const list = (Array.isArray(payload.data) ? payload.data : payload.data?.notes) ?? [];
       setNotes(list);
 
       const nextSelectedId =
@@ -127,16 +192,29 @@ export function LectureNotePanel(props: {
         setAccess("LOCKED");
       }
     } catch (error) {
+      if (seq !== loadSeqRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : "Failed to load notes.");
     } finally {
-      setIsLoading(false);
+      if (seq === loadSeqRef.current) setIsLoading(false);
     }
   }
 
   useEffect(() => {
+    // A different lecture / class: nothing of the previous one stays on screen.
+    setNotes([]);
+    setIsFormOpen(false);
+    setPreviewNote(null);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setPendingMessage(null);
     void loadNotes(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.lectureId]);
+  }, [endpoints.list]);
+
+  /** The note's own lecture (class-scoped listings return it; the lecture API's notes belong to props.lectureId). */
+  function lectureIdOf(note: LectureNote | null): string {
+    return note?.lectureId ?? props.lectureId ?? "";
+  }
 
   function resetForNew() {
     setSelectedNoteId(null);
@@ -180,18 +258,26 @@ export function LectureNotePanel(props: {
   }
 
   async function saveNote() {
+    if (savingRef.current) {
+      return;
+    }
     if (!title.trim()) {
       setErrorMessage("Title is required.");
       return;
     }
+    if (!selectedNoteId && !file) {
+      setErrorMessage("File is required for a new note.");
+      return;
+    }
 
+    savingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
       if (selectedNoteId) {
-        const response = await fetch(`/api/lectures/${props.lectureId}/notes/${selectedNoteId}`, {
+        const response = await fetch(`/api/lectures/${lectureIdOf(selectedNote)}/notes/${selectedNoteId}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -227,7 +313,7 @@ export function LectureNotePanel(props: {
         formData.set("kind", kind);
         formData.set("file", file);
 
-        const response = await fetch(`/api/lectures/${props.lectureId}/notes`, {
+        const response = await fetch(endpoints.upload, {
           method: "POST",
           body: formData,
         });
@@ -252,6 +338,7 @@ export function LectureNotePanel(props: {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to save note.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -277,7 +364,7 @@ export function LectureNotePanel(props: {
     setPendingMessage(null);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/notes/${selectedNote.id}`, {
+      const response = await fetch(`/api/lectures/${lectureIdOf(selectedNote)}/notes/${selectedNote.id}`, {
         method: "DELETE",
       });
 
@@ -328,8 +415,8 @@ export function LectureNotePanel(props: {
               <FileText size={15} />
             </span>
             <div>
-              <h4 className="text-sm font-semibold text-slate-900">Existing notes</h4>
-              <p className="text-[11px] text-muted">Browse lecture uploads and manage downloads.</p>
+              <h4 className="text-sm font-semibold text-slate-900">{props.heading ?? "Existing notes"}</h4>
+              <p className="text-[11px] text-muted">{props.description ?? "Browse lecture uploads and manage downloads."}</p>
             </div>
           </div>
 
@@ -341,7 +428,8 @@ export function LectureNotePanel(props: {
           <button
             type="button"
             onClick={openCreateForm}
-            className="inline-flex h-7 items-center gap-1 rounded-lg bg-brand-700 px-2.5 text-[11px] font-semibold text-white transition hover:bg-brand-600"
+            disabled={isSaving}
+            className="inline-flex h-7 items-center gap-1 rounded-lg bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60 px-2.5 text-[11px] font-semibold text-white transition hover:bg-brand-600"
           >
             <Plus size={11} />
             Add new note
@@ -349,7 +437,7 @@ export function LectureNotePanel(props: {
         </div>
 
         {isLoading ? <p className="mt-3 text-xs text-muted">Loading notes...</p> : null}
-        {!isLoading && notes.length === 0 ? <p className="mt-3 text-xs text-muted">No notes uploaded yet.</p> : null}
+        {!isLoading && notes.length === 0 && !errorMessage ? <p className="mt-3 text-xs text-muted">{props.emptyText ?? "No notes uploaded yet."}</p> : null}
 
         <div className="mt-3 space-y-2">
           {notes.map((note) => (
@@ -401,6 +489,11 @@ export function LectureNotePanel(props: {
                       <span>•</span>
                       <span>Downloads: {note.downloadCount}</span>
                     </p>
+                    {endpoints.classScoped ? (
+                      <p className="mt-1 block text-[10px] text-slate-500">
+                        {formatUploadedAt(note.uploadedAt) ? `Uploaded ${formatUploadedAt(note.uploadedAt)}` : "Upload date not recorded"}
+                      </p>
+                    ) : null}
                     <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
                       <Calendar size={10} />
                       {note.lastDownloadedAt ? `Last downloaded ${new Date(note.lastDownloadedAt).toLocaleString()}` : "Added to lecture"}

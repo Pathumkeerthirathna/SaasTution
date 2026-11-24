@@ -77,6 +77,11 @@ function matches(row, where = {}) {
       if (!condition.some((alternative) => matches(row, alternative))) return false;
       continue;
     }
+    // Lecture.isDefault (migration 20261129120000): lecture rows seeded without it are normal lectures (the column default).
+    if (key === "isDefault" && !(key in row)) {
+      if (!matchValue(false, condition)) return false;
+      continue;
+    }
     if (!(key in row)) throw new Error(`fake: unknown column ${key}`);
     if (!matchValue(row[key], condition)) return false;
   }
@@ -321,6 +326,15 @@ function createFakeUploadDb() {
           return row ? pick(row, select) : null;
         },
       },
+      // The class-scoped routes' class check (services/class-notes-service.ts): { id, teacherId, status }.
+      class: {
+        async findFirst({ where, select }) {
+          await gate();
+          record({ kind: "class.findFirst", where });
+          const row = db.classes.find((c) => matches(c, where));
+          return row ? pick(row, select) : null;
+        },
+      },
       lecture: {
         async findFirst({ where, select }) {
           await gate();
@@ -335,7 +349,9 @@ function createFakeUploadDb() {
           });
           if (!row) return null;
           const cls = db.classes.find((c) => c.id === row.classId);
-          const out = select ? pick(row, select) : { ...row };
+          // isDefault: the column default (false) for lecture rows seeded without it.
+          const full = { isDefault: false, ...row };
+          const out = select ? pick(full, select) : full;
           if (select && select.class) out.class = { id: cls.id, name: cls.name, schedule: "TBD" };
           return out;
         },
@@ -369,7 +385,15 @@ function createFakeUploadDb() {
           await gate();
           record({ kind: "recordedLecture.findFirst", where });
           const row = db.recordings.find((r) => matches(r, where));
-          return row ? pick(row, select) : null;
+          if (!row) return null;
+          const out = pick(row, select);
+          // The recording's lecture (to-one relation), e.g. { lecture: { select: { isDefault: true } } };
+          // a lecture seeded without isDefault is a normal lecture (the column default).
+          if (select && select.lecture && typeof select.lecture === "object") {
+            const lecture = db.lectures.find((l) => l.id === row.lectureId);
+            out.lecture = lecture ? pick({ isDefault: false, ...lecture }, select.lecture.select) : null;
+          }
+          return out;
         },
         async aggregate({ where, _sum }) {
           await gate();

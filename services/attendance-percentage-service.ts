@@ -41,6 +41,7 @@ import {
 } from "@/lib/attendance/percentage";
 import { attendanceError } from "@/lib/attendance/service-errors";
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type { ApprovalHistoryContext, ApprovalHistoryEntry } from "@/lib/student-confirmation-history";
 
@@ -280,7 +281,7 @@ export async function getStudentAttendancePercentages(
     return { studentId: student.id, classes: [], overall: summarizeAttendance([]), ...(input.includeLectures ? { lectures: [] } : {}) };
   }
 
-  const lectures: LectureRow[] = await prisma.lecture.findMany({ where: { classId: { in: classIds }, status: 0 }, select: LECTURE_SELECT });
+  const lectures: LectureRow[] = await prisma.lecture.findMany({ where: { classId: { in: classIds }, status: 0, ...NORMAL_LECTURE_WHERE }, select: LECTURE_SELECT });
   const lectureIds = lectures.map((l) => l.id);
   const [registerRows, recordRows] = await Promise.all([
     prisma.lectureAttendanceRegister.findMany({ where: { lectureId: { in: lectureIds } }, select: REGISTER_SELECT }),
@@ -355,7 +356,7 @@ export async function getClassAttendancePercentagesForTeacher(
 
   const [enrolmentRows, lectures] = await Promise.all([
     prisma.classStudent.findMany({ where: { classId: cls.id }, select: { ...ENROLMENT_SELECT, student: { select: { ...STUDENT_SELECT, name: true } } } }),
-    prisma.lecture.findMany({ where: { classId: cls.id, status: 0 }, select: LECTURE_SELECT }) as Promise<LectureRow[]>,
+    prisma.lecture.findMany({ where: { classId: cls.id, status: 0, ...NORMAL_LECTURE_WHERE }, select: LECTURE_SELECT }) as Promise<LectureRow[]>,
   ]);
 
   const rosterById = new Map<string, StudentRow & { name: string }>();

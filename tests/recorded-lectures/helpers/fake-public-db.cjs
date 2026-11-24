@@ -151,6 +151,11 @@ function createFakePublicDb() {
         }
         continue;
       }
+      // Lecture.isDefault (migration 20261129120000): lecture rows seeded without it are normal lectures (the column default).
+      if (key === "isDefault" && !Object.hasOwn(row, key)) {
+        if (!matchScalar(false, condition, `${modelName}.${key}`)) return false;
+        continue;
+      }
       if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown field ${modelName}.${key}`);
       if (!matchScalar(row[key], condition, `${modelName}.${key}`)) return false;
     }
@@ -197,6 +202,11 @@ function createFakePublicDb() {
           const target = related(modelName, row, key);
           out[key] = target ? pick(rel.model, target, value.select) : null;
         }
+        continue;
+      }
+      // Lecture.isDefault (migration 20261129120000): lecture rows seeded without it are normal lectures (the column default).
+      if (key === "isDefault" && !Object.hasOwn(row, key)) {
+        out[key] = false;
         continue;
       }
       if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown select field ${modelName}.${key}`);

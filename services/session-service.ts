@@ -5,6 +5,7 @@ import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { dispatchOnlineEvidence } from "@/services/attendance-evidence-dispatcher";
 import { buildLiveSessionInviteLoginLink, sendLiveSessionInviteEmail } from "@/lib/mailer";
 import { emitLiveChange, emitStudentDataChange } from "@/lib/session-events";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { signSessionInviteToken } from "@/lib/session-invite";
 import { recalculateAfterLectureChange } from "@/services/fee-waiver-events";
@@ -82,6 +83,7 @@ async function assertTeacherOwnsLectureInClass(teacherId: string, classId: strin
       id: lectureId,
       classId,
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       class: {
         teacherId,
       },
@@ -367,6 +369,7 @@ export async function startSessionForLectureForTeacher(teacherId: string, lectur
     where: {
       id: lectureId,
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       class: {
         teacherId,
       },

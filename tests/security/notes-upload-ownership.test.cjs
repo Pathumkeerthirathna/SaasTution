@@ -425,7 +425,7 @@ test("source order: in POST, validation, then assertTeacherOwnsLecture, then the
   };
 
   const lastValidation = at('"FILE_TOO_LARGE"');
-  const ownership = at("await assertTeacherOwnsLecture(session.teacherId, lectureId);");
+  const ownership = at("await assertTeacherOwnsLecture(session.teacherId, lectureId, { includeDefault: true });");
   const key = at("noteFileKey(");
   const writeCall = at("await storeUpload(");
   const addNote = at("await addNoteToLectureForTeacher(");
@@ -444,10 +444,11 @@ test("source order: in POST, validation, then assertTeacherOwnsLecture, then the
 
 test("lecture-service: assertTeacherOwnsLecture is exported with its original query and error", () => {
   const src = read("services", "lecture-service.ts");
-  const start = src.indexOf("export async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {");
+  const start = src.indexOf("export async function assertTeacherOwnsLecture(teacherId: string, lectureId: string, options: { includeDefault?: boolean } = {}) {");
   assert.ok(start >= 0, "exported");
   const body = src.slice(start, src.indexOf("\n}\n", start) + 3);
-  assert.match(body, /where: \{\s*id: lectureId,\s*status: 0,\s*class: \{\s*teacherId,\s*\},\s*\}/);
+  // The original query; a class's default lecture is excluded unless the caller (the note workflow) includes it.
+  assert.match(body, /where: \{\s*id: lectureId,\s*status: 0,\s*\.\.\.\(options\.includeDefault \? \{\} : NORMAL_LECTURE_WHERE\),\s*class: \{\s*teacherId,\s*\},\s*\}/);
   assert.match(body, /throw new AppError\("Lecture not found\.", 404, "LECTURE_NOT_FOUND"\);/);
   assert.equal((src.match(/function assertTeacherOwnsLecture\(/g) ?? []).length, 1, "one definition, not a copy");
 });

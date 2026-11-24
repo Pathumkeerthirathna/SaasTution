@@ -24,7 +24,7 @@ import { formatDuration, formatLectureDateTime } from "@/components/student-port
 import { RECORDING_DELETION_LABELS, RECORDING_DELETION_WARNING } from "@/lib/permanent-deletion/client";
 
 import { fingerprintFile, openRecordingStore, sameFingerprint, type RecordingStore } from "./recording-store";
-import { formatBytes, progressPercent, RecordingUploader, uploadMessage, type UploadSnapshot } from "./upload-engine";
+import { classRecordingUploadStartUrl, formatBytes, progressPercent, RecordingUploader, uploadMessage, type UploadSnapshot } from "./upload-engine";
 import { UploadFormatGuide } from "./upload-format-guide";
 
 /*
@@ -53,6 +53,35 @@ type ActiveUpload = {
 };
 
 type Notice = { tone: "error" | "success" | "pending"; text: string; signIn?: boolean } | null;
+
+/**
+ * The Recorded Lectures page (/dashboard/recorded-lectures): one class
+ * section. GENERAL = the class's General Recordings: listed and started
+ * through the class-scoped API (the server resolves the class's default
+ * lecture; this client never sends its id), no publication controls (the
+ * server refuses them), no lecture date, no studio. LECTURE = one normal
+ * lecture of the class: listed through the class-scoped API, uploads through
+ * the lecture's own start route, exactly as on the lecture page. Without a
+ * scope (the lecture page): everything exactly as before.
+ */
+export type TeacherRecordingsScope = { classId: string; section: "GENERAL" | "LECTURE" };
+
+/** The list endpoint for a client: the lecture's own (no scope) or the class-scoped one. */
+export function teacherRecordingsListUrl(lectureId: string, scope?: TeacherRecordingsScope): string {
+  if (!scope) return `/api/lectures/${encodeURIComponent(lectureId)}/recorded-lectures`;
+  const base = `/api/classes/${encodeURIComponent(scope.classId)}/recorded-lectures`;
+  return scope.section === "GENERAL" ? base : `${base}?lectureId=${encodeURIComponent(lectureId)}`;
+}
+
+/** The upload-start endpoint: the class-scoped start for General Recordings; otherwise the engine's default (the lecture's own). */
+export function teacherRecordingsStartUrl(scope?: TeacherRecordingsScope): string | undefined {
+  return scope?.section === "GENERAL" ? classRecordingUploadStartUrl(scope.classId) : undefined;
+}
+
+/** The key resumable uploads are remembered under in this browser (IndexedDB): the lecture, or the class's General section. */
+export function teacherRecordingsStoreKey(lectureId: string, scope?: TeacherRecordingsScope): string {
+  return scope?.section === "GENERAL" ? `general:${scope.classId}` : lectureId;
+}
 
 const STATE_LABEL: Record<TeacherRecordingDto["state"], string> = {
   UPLOADING: "Uploading",
@@ -107,8 +136,25 @@ function titleFromFileName(name: string): string {
   return name.replace(/\.mp4$/i, "").replace(/[_]+/g, " ").trim().slice(0, 200);
 }
 
-export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: string; initial: TeacherRecordingsInitial }) {
+export function TeacherRecordingsClient({
+  teacherId,
+  initial,
+  scope,
+  onSendingChange,
+}: {
+  teacherId: string;
+  initial: TeacherRecordingsInitial;
+  scope?: TeacherRecordingsScope;
+  /** The Recorded Lectures page: told while an upload is sending bytes (to confirm before switching away). */
+  onSendingChange?: (sending: boolean) => void;
+}) {
   const lectureId = initial.lecture.id;
+  const general = scope?.section === "GENERAL";
+  const listUrl = teacherRecordingsListUrl(lectureId, scope);
+  const startUrl = teacherRecordingsStartUrl(scope);
+  const storeKey = teacherRecordingsStoreKey(lectureId, scope);
+  // One submission at a time (the MP4 check runs before the button re-renders as disabled).
+  const submittingRef = useRef(false);
   const [recordings, setRecordings] = useState<TeacherRecordingDto[]>(initial.recordings);
   const [nextPart, setNextPart] = useState(initial.nextPartNumber);
   const [uploads, setUploads] = useState<ActiveUpload[]>([]);
@@ -140,7 +186,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`/api/lectures/${encodeURIComponent(lectureId)}/recorded-lectures`, { cache: "no-store" });
+      const response = await fetch(listUrl, { cache: "no-store" });
       const json = await readJson(response);
       if (response.status === 401) {
         setNotice({ tone: "error", text: "Your session has ended. Please sign in again.", signIn: true });
@@ -153,7 +199,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
     } catch {
       // Keep the last list; the next refresh tries again.
     }
-  }, [lectureId]);
+  }, [listUrl]);
 
   // While a part is being verified (by this tab or another), refresh until it settles.
   const anyVerifying = recordings.some((r) => r.state === "VERIFYING");
@@ -174,6 +220,26 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [sending]);
+
+  useEffect(() => {
+    onSendingChange?.(sending);
+    // Unmount (another class / lecture on the Recorded Lectures page): this section no longer sends
+    // anything (its uploads are paused below, still resumable), so the page must not keep asking.
+    // Also runs just before a re-run, which reports the new value at once; it never touches an upload.
+    return () => onSendingChange?.(false);
+  }, [sending, onSendingChange]);
+
+  // The Recorded Lectures page: switching class / lecture unmounts this section; its uploads are
+  // paused (resumable later from the recording's "Resume upload"), never left running unseen.
+  const uploadsRef = useRef<ActiveUpload[]>([]);
+  uploadsRef.current = uploads;
+  useEffect(() => {
+    if (!scope) return;
+    return () => {
+      for (const entry of uploadsRef.current) entry.uploader.pause();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeByUploadId = useMemo(() => new Map(uploads.filter((u) => u.snapshot.uploadId).map((u) => [u.snapshot.uploadId as string, u])), [uploads]);
 
@@ -203,6 +269,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
       { title: declaration.title, partNumber: declaration.partNumber, fileName: selected.name, sizeBytes: selected.size },
       {
         fetch: (input, init) => fetch(input, init),
+        startUrl,
         onUpdate: (snapshot) => {
           updateUpload(key, snapshot);
           if (!remembered && snapshot.uploadId && storeRef.current) {
@@ -211,7 +278,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
             // Remember which file this upload is, so it can be resumed after a refresh.
             void fingerprintFile(selected)
               .then((fingerprint) =>
-                storeRef.current?.putFileUpload({ uploadId, teacherId, lectureId, recordingId: snapshot.recordingId, fingerprint, createdAt: Date.now() })
+                storeRef.current?.putFileUpload({ uploadId, teacherId, lectureId: storeKey, recordingId: snapshot.recordingId, fingerprint, createdAt: Date.now() })
               )
               .catch(() => undefined);
           }
@@ -223,6 +290,16 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await submitUpload();
+    } finally {
+      submittingRef.current = false;
+    }
+  }
+
+  async function submitUpload() {
     setFormError(null);
     setNotice(null);
     if (!file) return setFormError("Choose an MP4 video file.");
@@ -300,7 +377,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
       setNotice({ tone: "error", text: "That is not the file this upload was started with (its size is different)." });
       return;
     }
-    const pending = (await storeRef.current?.listFileUploads(teacherId, lectureId))?.find((p) => p.uploadId === target.upload?.uploadId);
+    const pending = (await storeRef.current?.listFileUploads(teacherId, storeKey))?.find((p) => p.uploadId === target.upload?.uploadId);
     if (pending) {
       const fingerprint = await fingerprintFile(selected);
       if (!sameFingerprint(pending.fingerprint, fingerprint)) {
@@ -431,7 +508,26 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-recordings-scope={scope ? scope.section.toLowerCase() : undefined}>
+      {scope ? (
+        <div className="flex flex-wrap items-start justify-between gap-3" data-recordings-header="section">
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold text-slate-900">{general ? "General recordings" : initial.lecture.title}</p>
+            <p className="break-words text-xs text-slate-600">
+              {general ? `${initial.lecture.className} · recordings for the whole class, not tied to a lecture` : `${initial.lecture.className} · ${formatLectureDateTime(initial.lecture.date)}`}
+            </p>
+          </div>
+          {general ? null : (
+            <Link
+              href={`/dashboard/lectures/${encodeURIComponent(lectureId)}/recordings/studio`}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-700 px-4 text-sm font-semibold text-white hover:opacity-90"
+            >
+              <Clapperboard size={16} aria-hidden />
+              Record class
+            </Link>
+          )}
+        </div>
+      ) : (
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <Link href="/dashboard/lectures" className="inline-flex min-h-[40px] items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
@@ -451,6 +547,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
           Record class
         </Link>
       </div>
+      )}
 
       {notice ? (
         <div
@@ -493,7 +590,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
                 const chosen = event.target.files?.[0] ?? null;
                 setFile(chosen);
                 setFormError(null);
-                if (chosen && !title.trim()) setTitle(titleFromFileName(chosen.name) || initial.lecture.title);
+                if (chosen && !title.trim()) setTitle(titleFromFileName(chosen.name) || (general ? "General recording" : initial.lecture.title));
               }}
               className="mt-1 block w-full text-xs file:mr-3 file:min-h-[40px] file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:text-xs file:font-semibold file:text-brand-700"
             />
@@ -601,7 +698,9 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
           Parts ({recordings.length})
         </h2>
         {recordings.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-slate-500">No recordings yet. Upload a video or record the class.</p>
+          <p className="px-4 py-6 text-center text-sm text-slate-500">
+            {general ? "No general recordings yet. Upload a video for the whole class." : "No recordings yet. Upload a video or record the class."}
+          </p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {recordings.map((r) => {
@@ -631,7 +730,7 @@ export function TeacherRecordingsClient({ teacherId, initial }: { teacherId: str
                     </p>
                   ) : null}
 
-                  {r.state !== "FAILED" ? (
+                  {r.state !== "FAILED" && !general ? (
                     <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
                       <label className="block text-xs font-semibold text-slate-700">
                         Privacy

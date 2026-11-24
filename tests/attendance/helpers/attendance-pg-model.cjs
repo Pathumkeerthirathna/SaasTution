@@ -33,6 +33,13 @@ const fkError = (name) => dbError(`foreign key ${name} violated`, { code: "P2003
 
 const isNull = (v) => v === null || v === undefined;
 
+/**
+ * Lecture.isDefault (migration 20261129120000, NOT NULL DEFAULT false): a
+ * lecture row seeded without it is a normal lecture; a `where.isDefault`
+ * filter (NORMAL_LECTURE_WHERE) is applied like the database would.
+ */
+const isDefaultOk = (lecture, where) => where.isDefault === undefined || (lecture.isDefault ?? false) === where.isDefault;
+
 // ---- CHECK constraints ------------------------------------------------------------------
 
 function checkRecord(r) {
@@ -414,7 +421,7 @@ function createPgModel() {
           statement("read:lecture", async () => {
             const l = local.lectures[where.id] ?? pg.committed.lectures[where.id];
             const cls = l && pg.committed.classes[l.classId];
-            return l && cls && l.status === where.status && cls.teacherId === where.class.teacherId ? { id: l.id, classId: l.classId } : null;
+            return l && cls && l.status === where.status && isDefaultOk(l, where) && cls.teacherId === where.class.teacherId ? { id: l.id, classId: l.classId } : null;
           }),
         update: ({ where, data }) =>
           statement("update:lecture", async () => {
@@ -669,7 +676,7 @@ function createPgModel() {
       findFirst: async ({ where }) => {
         const l = pg.committed.lectures[where.id];
         const cls = l && pg.committed.classes[l.classId];
-        const ok = l && cls && cls.teacherId === where.class.teacherId && (where.status === undefined || l.status === where.status);
+        const ok = l && cls && cls.teacherId === where.class.teacherId && (where.status === undefined || l.status === where.status) && isDefaultOk(l, where);
         const result = ok
           ? { ...l, title: l.title ?? "Lecture", class: { id: cls.id, name: cls.name ?? null, schedule: null, teacherId: cls.teacherId, attendanceGraceMinutes: cls.attendanceGraceMinutes } }
           : null;
@@ -681,7 +688,7 @@ function createPgModel() {
         pg.log.push("read:lecture");
         const l = pg.committed.lectures[where.id];
         const cls = l && pg.committed.classes[l.classId];
-        if (!l || !cls) return null;
+        if (!l || !cls || !isDefaultOk(l, where)) return null;
         return { id: l.id, classId: l.classId, status: l.status, classStatus: l.classStatus, date: l.date,
           class: { teacherId: cls.teacherId, attendanceGraceMinutes: cls.attendanceGraceMinutes } };
       },
@@ -707,7 +714,7 @@ function createPgModel() {
         const branchOk = (l, b) => dateOk(l, b.date) && (b.attendanceRegister === undefined || registerOk(l, b.attendanceRegister));
         const keys = (Array.isArray(orderBy) ? orderBy : [orderBy]).map((o) => Object.keys(o)[0]);
         let rows = Object.values(pg.committed.lectures)
-          .filter((l) => l.status === where.status && l.classStatus !== where.classStatus.not)
+          .filter((l) => l.status === where.status && l.classStatus !== where.classStatus.not && isDefaultOk(l, where))
           .filter((l) => (where.classId !== undefined ? l.classId === where.classId : true))
           .filter((l) => (where.class ? pg.committed.classes[l.classId]?.teacherId === where.class.teacherId : true))
           .filter((l) => (where.id ? l.id > where.id.gt : true))

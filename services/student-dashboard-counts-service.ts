@@ -1,4 +1,5 @@
 import { feePaymentState, PAYMENT_STATE_SELECT, type FeePaymentRecord } from "@/lib/fee-payment-state";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaCalendarParts, sriLankaDigitsToInstant } from "@/lib/time";
 
@@ -71,15 +72,29 @@ export async function getStudentDashboardCounts(
     class: { status: 0 },
     ...(dateFilter ? { startTime: dateFilter } : {}),
   };
-  const lectureNoteWhere = {
-    status: 0,
-    lecture: {
-      status: 0,
-      class: { status: 0 },
-      ...(dateFilter ? { date: dateFilter } : {}),
-    },
-  };
   const dueDateBounds = sriLankaRangeBounds(range);
+  /*
+   * Notes (General Notes included): counted per NOTE of the student's active
+   * classes with an active enrolment, the same eligibility as the unviewed
+   * notes widget (app/api/student/dashboard/notes). "Unviewed" = no viewed
+   * NoteStudent row for the student, so a note uploaded before the student
+   * joined counts (it has no row until it is opened) and is never counted
+   * twice. The range is the Sri Lankan month / quarter / year of the note's
+   * upload instant; a note uploaded before uploadedAt existed (NULL) falls
+   * back to its lecture's date (the resource-access month rule).
+   */
+  const noteWhere = {
+    status: 0,
+    lecture: { status: 0, class: enrolled },
+    ...(dueDateBounds
+      ? {
+          OR: [
+            { uploadedAt: { gte: dueDateBounds.gte, lte: dueDateBounds.lte } },
+            { uploadedAt: { equals: null }, lecture: { date: { gte: dueDateBounds.gte, lte: dueDateBounds.lte } } },
+          ],
+        }
+      : {}),
+  };
   const assignmentWhere = {
     status: 0,
     lecture: { status: 0, class: enrolled },
@@ -92,6 +107,7 @@ export async function getStudentDashboardCounts(
   };
   const lectureWhere = {
     status: 0,
+    ...NORMAL_LECTURE_WHERE,
     class: enrolled,
     ...(dateFilter ? { date: dateFilter } : {}),
   };
@@ -152,8 +168,8 @@ export async function getStudentDashboardCounts(
       where: { ...assignmentWhere, submissions: { none: { studentId } } },
     }),
 
-    prisma.noteStudent.count({ where: { studentId, note: lectureNoteWhere } }),
-    prisma.noteStudent.count({ where: { studentId, viewed: false, note: lectureNoteWhere } }),
+    prisma.note.count({ where: noteWhere }),
+    prisma.note.count({ where: { ...noteWhere, noteStudents: { none: { studentId, viewed: true } } } }),
 
     prisma.quiz.count({ where: quizWhere }),
     prisma.quiz.count({ where: { ...quizWhere, submissions: { none: { studentId } } } }),

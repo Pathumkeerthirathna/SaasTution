@@ -19,6 +19,7 @@ import {
   Video,
   Wallet,
   Presentation,
+  NotebookPen,
   X,
   ChevronRight,
   LucideIcon,
@@ -57,6 +58,7 @@ const iconMap: Record<string, LucideIcon> = {
   profile:     UserRound,
   payments:    Wallet,
   teacherProfile: Presentation,
+  notes:       NotebookPen,
 };
 
 export function StudentSidebar({ items, activePath, open, onClose, onToggle }: StudentSidebarProps) {

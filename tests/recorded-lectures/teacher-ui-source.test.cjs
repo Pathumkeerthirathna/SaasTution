@@ -137,14 +137,20 @@ test("existing features untouched: YouTube, Jitsi, lecture scheduling, Notes / A
   assert.equal(diff.trim(), "", diff);
 });
 
-test("the lecture panel only gains the 'Recorded lectures' link (no line removed)", () => {
-  // Against 9610568 (the commit before Recorded Lectures touched the panel), so it holds before and after committing.
-  const numstat = execFileSync("git", ["diff", "--numstat", "9610568", "--", "components/lecture-management-panel.tsx"], { cwd: root, encoding: "utf8" }).trim();
-  const [added, removed] = numstat.split(/\s+/).map(Number);
-  assert.equal(removed, 0);
-  assert.ok(added > 0 && added <= 12, numstat);
+test("the lecture panel keeps the 'Recorded lectures' link; its YouTube sections are the shared components (one implementation)", () => {
+  // Recordings navigation consolidation: the panel's inline YouTube recordings / live streams (their
+  // loading, privacy / visibility / access controls and the player modal) moved, unchanged, into
+  // components/youtube (tests/ui/recordings-navigation.test.tsx), which the Recordings > Live Recordings
+  // and YouTube Live Sessions pages reuse. That removed lines from the panel, so the former "no line
+  // removed" (git numstat against 9610568) no longer applies; what it protected is pinned here instead.
   const panel = read("components", "lecture-management-panel.tsx");
   assert.match(panel, /href=\{`\/dashboard\/lectures\/\$\{encodeURIComponent\(lecture\.id\)\}\/recordings`\}/);
+  assert.match(panel, /<LectureYouTubeRecordingsPanel lectureId=\{lecture\.id\} onError=\{setErrorMessage\} \/>/);
+  assert.match(panel, /<LectureLiveBroadcastsPanel lectureId=\{lecture\.id\} onError=\{setErrorMessage\} onSuccess=\{setSuccessMessage\} \/>/);
+  assert.doesNotMatch(panel, /\/api\/lectures\/\$\{lectureId\}\/(recordings|lives)/, "no second implementation in the panel");
+  assert.doesNotMatch(panel, /youtube\.com\/embed/, "the player modal is the shared one");
+  // Nothing else of the Recorded Lectures integration changed: still exactly one link to the recordings page.
+  assert.equal((panel.match(/\/recordings`\}/g) ?? []).length, 1);
 });
 
 // ---- Video format & conversion guide ------------------------------------------------------------------

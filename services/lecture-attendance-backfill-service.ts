@@ -62,6 +62,7 @@ import {
 import { attendanceError } from "@/lib/attendance/service-errors";
 import { evidenceStatusAt, type EvidenceStatus, type LatenessSchedule } from "@/lib/attendance/status";
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type { ApprovalHistoryContext, ApprovalHistoryEntry } from "@/lib/student-confirmation-history";
 import { later, readEligibilityInputs } from "@/services/lecture-attendance-evidence-service";
@@ -146,7 +147,8 @@ export function chooseBackfillVisit(input: {
 /** The lecture as the backfill sees it before any student is touched (refusals). */
 async function requireHistoricalLecture(lectureId: string, evidenceStartedAt: Date) {
   const lecture = await prisma.lecture.findUnique({
-    where: { id: lectureId },
+    // (A class's default lecture is not a teaching session: not found.)
+    where: { id: lectureId, ...NORMAL_LECTURE_WHERE },
     select: {
       id: true,
       classId: true,
@@ -465,6 +467,7 @@ export async function listBackfillLectures(scope: BackfillScope): Promise<string
   const rows = await prisma.lecture.findMany({
     where: {
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       classStatus: { not: "CANCELLED" },
       ...(scope.kind === "class" ? { classId: scope.classId } : { date: { lt: scope.before } }),
     },

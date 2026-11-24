@@ -6,6 +6,7 @@ import {
   LECTURE_END_DATE_MESSAGES,
   lectureEndDateProblem,
 } from "@/lib/lecture-schedule";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { readLectureWaiverState, recalculateAfterLectureChange } from "@/services/fee-waiver-events";
@@ -50,11 +51,19 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string, db: Pr
   return classroom;
 }
 
-export async function assertTeacherOwnsLecture(teacherId: string, lectureId: string) {
+/**
+ * The teacher's active lecture, or 404 LECTURE_NOT_FOUND. A class's default
+ * lecture (lib/default-lecture.ts) is not found unless `includeDefault`: only
+ * the note workflow (notes belong to it) passes that; every teaching-session
+ * workflow (detail, update, status, delete, recordings, sessions, live
+ * broadcasts, quizzes, assignments) treats it as not found.
+ */
+export async function assertTeacherOwnsLecture(teacherId: string, lectureId: string, options: { includeDefault?: boolean } = {}) {
   const lecture = await prisma.lecture.findFirst({
     where: {
       id: lectureId,
       status: 0,
+      ...(options.includeDefault ? {} : NORMAL_LECTURE_WHERE),
       class: {
         teacherId,
       },
@@ -352,7 +361,7 @@ async function updateLectureScheduleInTransaction(
   const owned =
     locked && locked.status === 0
       ? await locks.db.lecture.findFirst({
-          where: { id: input.lectureId, status: 0, class: { teacherId: input.teacherId } },
+          where: { id: input.lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId: input.teacherId } },
           select: { id: true },
         })
       : null;
@@ -394,7 +403,7 @@ async function guardedLectureWriteInTransaction(
   const owned =
     locked && locked.status === 0
       ? await locks.db.lecture.findFirst({
-          where: { id: input.lectureId, status: 0, class: { teacherId: input.teacherId } },
+          where: { id: input.lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId: input.teacherId } },
           select: { id: true },
         })
       : null;
@@ -430,6 +439,7 @@ export async function updateLectureForTeacher(teacherId: string, lectureId: stri
         await prisma.lecture.update({
           where: {
             id: lectureId,
+            ...NORMAL_LECTURE_WHERE,
           },
           data: {
             ...(input.title !== undefined ? { title: input.title } : {}),
@@ -465,6 +475,7 @@ export async function updateLectureClassStatusForTeacher(
       : await prisma.lecture.update({
           where: {
             id: lectureId,
+            ...NORMAL_LECTURE_WHERE,
           },
           data: {
             classStatus,
@@ -517,6 +528,7 @@ export async function listLecturesForTeacher(params: {
 
   const where = {
     status: 0,
+    ...NORMAL_LECTURE_WHERE,
     class: {
       teacherId: params.teacherId,
       status: 0,
@@ -593,7 +605,8 @@ export async function listLecturesForTeacher(params: {
 }
 
 export async function listNotesForLectureForTeacher(teacherId: string, lectureId: string) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+  // Notes also belong to the class's default lecture (the note workflow is unchanged).
+  await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: true });
 
   return prisma.note.findMany({
     where: {
@@ -968,7 +981,8 @@ export async function addNoteToLectureForTeacher(params: {
   let lecture: Awaited<ReturnType<typeof assertTeacherOwnsLecture>>;
   let note;
   try {
-    lecture = await assertTeacherOwnsLecture(params.teacherId, params.lectureId);
+    // Notes also belong to the class's default lecture (the note workflow is unchanged).
+    lecture = await assertTeacherOwnsLecture(params.teacherId, params.lectureId, { includeDefault: true });
     const createNote = (client: Pick<Prisma.TransactionClient, "note">) =>
       client.note.create({
         data: {

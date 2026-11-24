@@ -15,17 +15,47 @@ type Note = {
   lectureId: string;
   lectureTitle: string;
   className: string;
+  classId?: string;
+  /** A General Note (the class's default lecture). */
+  isGeneral?: boolean;
+  /** The real upload instant; null for notes uploaded before it was recorded. */
+  uploadedAt?: string | null;
+  /** The lecture's date. */
   date: string;
   /** Monthly resource access: a locked month's note is shown without its file link. */
   resourceAccess?: ResourceLock;
 };
 
-function fmtDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+const SRI_LANKA_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Colombo" });
+
+function fmtDate(value: string): string | null {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : SRI_LANKA_DATE.format(new Date(ms));
+}
+
+/**
+ * The note's date line (Sri Lankan date): its upload date; for a note uploaded
+ * before upload dates were recorded, its lecture's date, never for a General
+ * Note (a default lecture's date is the class's creation, not the note's).
+ */
+export function studyNoteDateLabel(note: Pick<Note, "uploadedAt" | "isGeneral" | "date">): string | null {
+  const uploaded = note.uploadedAt ? fmtDate(note.uploadedAt) : null;
+  if (uploaded) return `Uploaded ${uploaded}`;
+  if (note.isGeneral) return null;
+  const lecture = fmtDate(note.date);
+  return lecture ? `Lecture ${lecture}` : null;
+}
+
+/** "Physics · General Notes" or "Physics · Kinematics". */
+export function studyNoteContext(note: Pick<Note, "className" | "lectureTitle" | "isGeneral">): string {
+  return `${note.className} · ${note.isGeneral ? "General Notes" : note.lectureTitle}`;
+}
+
+/** The Notes page, opened on the notes' class when every listed note belongs to one class. */
+export function studyNotesPageHref(notes: Pick<Note, "classId">[]): string {
+  const classIds = new Set(notes.map((n) => n.classId).filter(Boolean));
+  const [only] = [...classIds];
+  return classIds.size === 1 && only ? `/student/notes?classId=${encodeURIComponent(only)}` : "/student/notes";
 }
 
 export function DashboardStudyNotes() {
@@ -67,7 +97,7 @@ export function DashboardStudyNotes() {
             </span>
           ) : null}
           <Link
-            href="/student/lectures?notes=unviewed"
+            href={studyNotesPageHref(notes)}
             className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline"
           >
             View all <ArrowRight size={12} />
@@ -99,7 +129,7 @@ export function DashboardStudyNotes() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{note.title}</p>
                       <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">
-                        {note.className} · {note.lectureTitle}
+                        {studyNoteContext(note)}
                       </p>
                       <div className="mt-1">
                         <LockedResourceBadge lock={note.resourceAccess} />
@@ -119,9 +149,9 @@ export function DashboardStudyNotes() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-900 break-words sm:truncate">{note.title}</p>
                     <p className="mt-0.5 text-[11px] text-slate-500 break-words sm:truncate">
-                      {note.className} · {note.lectureTitle}
+                      {studyNoteContext(note)}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">{fmtDate(note.date)}</p>
+                    {studyNoteDateLabel(note) ? <p className="mt-0.5 text-[11px] text-slate-400">{studyNoteDateLabel(note)}</p> : null}
                   </div>
                   <ArrowUpRight size={13} className="mt-1 shrink-0 text-slate-300" />
                 </a>

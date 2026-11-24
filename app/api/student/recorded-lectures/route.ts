@@ -24,6 +24,7 @@ export async function GET(request: Request) {
       studentId: session.studentId,
       query: {
         scope: params.get("scope"),
+        section: params.get("section"),
         lectureId: params.get("lectureId"),
         classId: params.get("classId"),
         cursor: params.get("cursor"),

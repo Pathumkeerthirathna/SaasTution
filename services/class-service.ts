@@ -6,6 +6,7 @@ import { emitStudentDataChange } from "@/lib/session-events";
 import { DEFAULT_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
 import { classStartDateToDate } from "@/lib/class-start-date";
 import { nowInSriLanka } from "@/lib/time";
+import { NORMAL_LECTURE_WHERE, defaultLectureData } from "@/lib/default-lecture";
 import { TeacherClass } from "@/types/teacherProfileTypes/ClassTeacher";
 import { ClassLectureRecording, ClassLectureSession } from "@/types/teacherProfileTypes/ClassLectureSession";
 import { ClassPublicNote } from "@/types/teacherProfileTypes/ClassPublicNote";
@@ -252,6 +253,7 @@ export async function getPublicClassSessions(
     where: {
       classId,
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       class: { status: 0 },
       youtubeRecordings: {
         some: {
@@ -444,11 +446,26 @@ export async function getPublicFreeNote(noteId: string) {
   return note;
 }
 
+/**
+ * Creates the class and its default lecture (lib/default-lecture.ts) in ONE
+ * transaction: if the default lecture cannot be created, the class (with its
+ * schedules and first fee period) is rolled back too. Editing a class never
+ * creates one (updateClassForTeacher).
+ */
 export async function createClassForTeacher(teacherId: string, input: ClassWriteInput) {
 
   const scheduleSummary = input.schedule?.trim() || buildScheduleSummary(input.schedules);
+  const now = new Date();
 
-  return prisma.class.create({
+  return prisma.$transaction(async (tx) => {
+    const created = await createClassRow(tx, teacherId, input, scheduleSummary);
+    await tx.lecture.create({ data: defaultLectureData(created.id, now), select: { id: true } });
+    return created;
+  });
+}
+
+function createClassRow(tx: Prisma.TransactionClient, teacherId: string, input: ClassWriteInput, scheduleSummary: string) {
+  return tx.class.create({
     data: {
       teacherId,
       name: input.name,

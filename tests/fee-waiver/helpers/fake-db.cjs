@@ -179,7 +179,9 @@ function createFakeDb() {
         if (!matches(model, row, cond)) return false;
         continue;
       }
-      if (!matchScalar(row[key], cond)) return false;
+      // Lecture.isDefault (migration 20261129120000): rows seeded without it are normal lectures (the column default).
+      const value = model === "Lecture" && key === "isDefault" && row[key] === undefined ? false : row[key];
+      if (!matchScalar(value, cond)) return false;
     }
     return true;
   }
@@ -272,6 +274,8 @@ function createFakeDb() {
     if (model === "ClassFeeWaiverRule") return { ...base, status: 0, ...data };
     // Class-level Free Card eligibility (migration 20261123120000): database default.
     if (model === "ClassStudent") return { ...base, freeCardEligible: false, ...data };
+    // Lecture.isDefault (migration 20261129120000): database default.
+    if (model === "Lecture") return { ...base, isDefault: false, ...data };
     if (model === "ClassPayment") return { ...base, status: "PENDING", source: "STUDENT_SLIP", paymentMethod: null, receivedAt: null, recordedByTeacherId: null, requestKey: null, submittedAt: new Date(), ...data }; // schema defaults
     return { ...base, ...data };
   }

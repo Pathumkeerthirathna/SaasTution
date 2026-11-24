@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { INVALID_GRADE_MESSAGE } from "@/lib/grade";
 import { assertEmailAvailable } from "@/lib/email-uniqueness";
@@ -1265,6 +1266,7 @@ export async function getStudentClassAttendance(
     where: {
       classId,
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       class: { status: 0 },
     },
     orderBy: {
@@ -1472,6 +1474,7 @@ export async function getStudentAttendanceSummary(
         where: {
           classId: studentClass.classId,
           status: 0,
+          ...NORMAL_LECTURE_WHERE,
         },
       });
 
@@ -1479,6 +1482,7 @@ export async function getStudentAttendanceSummary(
         where: {
           classId: studentClass.classId,
           status: 0,
+          ...NORMAL_LECTURE_WHERE,
           sessions: {
             some: {
               attendance: {
@@ -1540,7 +1544,7 @@ export async function getClassAttendanceSummaryForTeacher(params: {
       select: { student: { select: { id: true, name: true } } },
     }),
     prisma.lecture.findMany({
-      where: { classId: params.classId, status: 0 },
+      where: { classId: params.classId, status: 0, ...NORMAL_LECTURE_WHERE },
       select: {
         id: true,
         sessions: {
@@ -2679,7 +2683,7 @@ export async function getStudentAttendanceAnalytics(
   if (classIds.length === 0) return emptyResult;
 
   const lectures = await prisma.lecture.findMany({
-    where: { classId: { in: classIds }, status: 0 },
+    where: { classId: { in: classIds }, status: 0, ...NORMAL_LECTURE_WHERE },
     select: {
       id: true,
       date: true,

@@ -62,6 +62,7 @@ import {
   requireEvidenceStartedAt,
 } from "@/lib/attendance/config";
 import { finalizationReadiness, planFinalizationAbsences } from "@/lib/attendance/finalization";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import {
   createFinalizationAbsences,
   FINALIZATION_MAX_STUDENTS,
@@ -172,7 +173,7 @@ const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.l
 async function finalizeInTransaction(locks: AttendanceLocks, ctx: Ctx): Promise<FinalizationResult> {
   // 0. Plain reads (no lock yet).
   const owned = await locks.db.lecture.findFirst({
-    where: { id: ctx.lectureId, status: 0, class: { teacherId: ctx.teacherId } },
+    where: { id: ctx.lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId: ctx.teacherId } },
     select: { id: true, classId: true },
   });
   if (!owned) throw attendanceError("LECTURE_NOT_FOUND");

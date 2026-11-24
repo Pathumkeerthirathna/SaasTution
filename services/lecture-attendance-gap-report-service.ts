@@ -35,6 +35,7 @@ import {
   requireEvidenceStartedAt,
 } from "@/lib/attendance/config";
 import { attendanceError } from "@/lib/attendance/service-errors";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type { ApprovalHistoryContext } from "@/lib/student-confirmation-history";
 import { evidenceRepresentation, type RepresentationStudent } from "@/services/lecture-attendance-service";
@@ -105,6 +106,7 @@ export async function getOnlineAttendanceGapReport(input: GapReportInput, option
     where: {
       class: { teacherId },
       status: 0,
+      ...NORMAL_LECTURE_WHERE,
       classStatus: { not: "CANCELLED" },
       ...(cursor !== null ? { id: { gt: cursor } } : {}),
       OR: [

@@ -11,6 +11,7 @@ import {
   parseFeeWaiverStart,
   sriLankaMonthWindow,
 } from "@/lib/fee-waiver";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -84,7 +85,7 @@ export async function loadClassMonthWaiverContext(
       select: { id: true, sequence: true, type: true, value: true },
     }),
     db.lecture.findMany({
-      where: { classId, status: 0, classStatus: "COMPLETED", date: { gte: start, lt: end } },
+      where: { classId, status: 0, ...NORMAL_LECTURE_WHERE, classStatus: "COMPLETED", date: { gte: start, lt: end } },
       select: { date: true },
     }),
     db.classStudent.findMany({

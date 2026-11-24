@@ -188,7 +188,7 @@ test("dto: metadata returns only the allow-listed fields; sizeBytes is a string"
   assert.equal(res.status, 200);
   const r = res.body.data.recordedLecture;
   assert.deepEqual(Object.keys(r).sort(), [
-    "class", "dashboard", "durationSeconds", "height", "id", "lecture", "partNumber", "readyAt", "sizeBytes", "streamUrl", "title", "width",
+    "class", "dashboard", "durationSeconds", "height", "id", "isGeneral", "lecture", "partNumber", "readyAt", "sizeBytes", "streamUrl", "title", "width",
   ]);
   assert.equal(r.sizeBytes, "5000000000");
   assert.equal(r.streamUrl, `/api/student/recorded-lectures/${R.ok}/stream`);

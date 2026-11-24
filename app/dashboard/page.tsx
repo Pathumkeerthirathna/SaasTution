@@ -26,6 +26,7 @@ import {
   sriLankaDateKey,
   startOfTodaySriLankaUtc,
 } from "@/lib/time";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { formatTeacherFullName } from "@/lib/teacher-title";
 import { getActiveYouTubeLives } from "@/lib/youtube-live-status";
@@ -402,6 +403,7 @@ export default async function DashboardPage() {
             prisma.lecture.findMany({
               where: {
                 status: 0,
+                ...NORMAL_LECTURE_WHERE,
                 class: { teacherId: teacher.id, status: 0 },
                 date: { gt: now, lte: countdownWindowEnd },
               },
@@ -444,6 +446,7 @@ export default async function DashboardPage() {
             prisma.lecture.findMany({
               where: {
                 status: 0,
+                ...NORMAL_LECTURE_WHERE,
                 class: { teacherId: teacher.id, status: 0 },
                 date: {
                   gte: todayStart,

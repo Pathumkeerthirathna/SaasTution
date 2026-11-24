@@ -69,6 +69,7 @@ export default async function StudentRecordedLecturePlayerPage({ params, searchP
           key={page.lecture.id}
           studentId={session.studentId}
           lecture={page.lecture}
+          isGeneral={page.isGeneral}
           classInfo={page.class}
           initialParts={playable}
           initialNextCursor={page.nextCursor}

@@ -22,7 +22,6 @@ import {
   Filter,
   GraduationCap,
   MonitorPlay,
-  Play,
   Plus,
   Radio,
   Save,
@@ -37,6 +36,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { showYoutubeCleanupWarning } from "@/components/youtube-cleanup-warning";
+import { LectureLiveBroadcastsPanel } from "@/components/youtube/lecture-live-broadcasts-panel";
+import { LectureYouTubeRecordingsPanel } from "@/components/youtube/lecture-youtube-recordings-panel";
 import { endSessionWithGroupDecision, showGroupCleanupWarning, useGroupEndDecision } from "@/components/session-end/group-end-decision";
 import { LectureQuizPanel } from "@/components/lecture-quiz-panel";
 import { LectureAssignmentPanel } from "@/components/lecture-assignment-panel";
@@ -74,38 +75,6 @@ type LectureItem = {
   };
 };
 
-type RecordingVisibility = "PUBLIC" | "PRIVATE";
-type RecordingAccess = "FREE" | "LOCKED";
-
-type RecordingItem = {
-  id: string;
-  videoId: string;
-  youtubeUrl: string;
-  privacy: string;
-  status: string;
-  visibility: RecordingVisibility;
-  access: RecordingAccess;
-  startedAt: string | null;
-  endedAt: string | null;
-  createdAt: string;
-};
-
-type LiveBroadcastItem = {
-  id: string;
-  videoId: string;
-  youtubeUrl: string;
-  privacy: string;
-  status: string;
-  startedAt: string | null;
-  endedAt: string | null;
-  createdAt: string;
-};
-
-type PlayableVideo = {
-  id: string;
-  videoId: string;
-};
-
 type LectureSessionItem = {
   id: string;
   roomName: string;
@@ -137,22 +106,6 @@ type SessionAttendanceData = {
   }[];
   absent: SessionAttendanceStudent[];
 };
-
-const PRIVACY_OPTIONS: { value: "public" | "unlisted" | "private"; label: string }[] = [
-  { value: "public", label: "Public" },
-  { value: "unlisted", label: "Unlisted" },
-  { value: "private", label: "Private" },
-];
-
-const VISIBILITY_OPTIONS: { value: RecordingVisibility; label: string }[] = [
-  { value: "PUBLIC", label: "Public" },
-  { value: "PRIVATE", label: "Private" },
-];
-
-const ACCESS_OPTIONS: { value: RecordingAccess; label: string }[] = [
-  { value: "FREE", label: "Free" },
-  { value: "LOCKED", label: "Locked" },
-];
 
 type LectureTab = "notes" | "assignments" | "quizzes" | "whiteboards";
 
@@ -455,16 +408,10 @@ export function LectureManagementPanel() {
   const [statusMenuLectureId, setStatusMenuLectureId] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // The lecture cards' "Recordings" / "Live Streams" toggles; their content is the shared
+  // components/youtube panels (the same as the Recordings > Live Recordings / YouTube Live Sessions pages).
   const [expandedRecordingIds, setExpandedRecordingIds] = useState<Set<string>>(new Set());
-  const [recordingsByLecture, setRecordingsByLecture] = useState<Record<string, RecordingItem[]>>({});
-  const [loadingRecordingsFor, setLoadingRecordingsFor] = useState<Set<string>>(new Set());
-  const [playingRecording, setPlayingRecording] = useState<PlayableVideo | null>(null);
-
   const [expandedLiveIds, setExpandedLiveIds] = useState<Set<string>>(new Set());
-  const [livesByLecture, setLivesByLecture] = useState<Record<string, LiveBroadcastItem[]>>({});
-  const [loadingLivesFor, setLoadingLivesFor] = useState<Set<string>>(new Set());
-  const [updatingPrivacyFor, setUpdatingPrivacyFor] = useState<Set<string>>(new Set());
-  const [updatingRecordingFor, setUpdatingRecordingFor] = useState<Set<string>>(new Set());
 
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
   const [sessionsByLecture, setSessionsByLecture] = useState<Record<string, LectureSessionItem[]>>({});
@@ -971,169 +918,22 @@ export function LectureManagementPanel() {
     }
   }
 
-  async function loadRecordingsForLecture(lectureId: string) {
-    setLoadingRecordingsFor((prev) => new Set(prev).add(lectureId));
-
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/recordings`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as { success: boolean; data?: RecordingItem[] };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to load recordings."));
-      }
-
-      setRecordingsByLecture((prev) => ({ ...prev, [lectureId]: payload.data ?? [] }));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load recordings.");
-    } finally {
-      setLoadingRecordingsFor((prev) => {
-        const next = new Set(prev);
-        next.delete(lectureId);
-        return next;
-      });
-    }
-  }
-
   function toggleRecordings(lectureId: string) {
     setExpandedRecordingIds((prev) => {
       const next = new Set(prev);
-
-      if (next.has(lectureId)) {
-        next.delete(lectureId);
-      } else {
-        next.add(lectureId);
-
-        if (!recordingsByLecture[lectureId]) {
-          void loadRecordingsForLecture(lectureId);
-        }
-      }
-
+      if (next.has(lectureId)) next.delete(lectureId);
+      else next.add(lectureId);
       return next;
     });
-  }
-
-  async function loadLivesForLecture(lectureId: string) {
-    setLoadingLivesFor((prev) => new Set(prev).add(lectureId));
-
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/lives`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as { success: boolean; data?: LiveBroadcastItem[] };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to load live streams."));
-      }
-
-      setLivesByLecture((prev) => ({ ...prev, [lectureId]: payload.data ?? [] }));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load live streams.");
-    } finally {
-      setLoadingLivesFor((prev) => {
-        const next = new Set(prev);
-        next.delete(lectureId);
-        return next;
-      });
-    }
   }
 
   function toggleLives(lectureId: string) {
     setExpandedLiveIds((prev) => {
       const next = new Set(prev);
-
-      if (next.has(lectureId)) {
-        next.delete(lectureId);
-      } else {
-        next.add(lectureId);
-
-        if (!livesByLecture[lectureId]) {
-          void loadLivesForLecture(lectureId);
-        }
-      }
-
+      if (next.has(lectureId)) next.delete(lectureId);
+      else next.add(lectureId);
       return next;
     });
-  }
-
-  async function handleChangeLivePrivacy(
-    lectureId: string,
-    liveId: string,
-    privacy: "public" | "unlisted" | "private"
-  ) {
-    setUpdatingPrivacyFor((prev) => new Set(prev).add(liveId));
-    setErrorMessage(null);
-
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/lives/${liveId}/privacy`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ privacy }),
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to update live stream privacy."));
-      }
-
-      setLivesByLecture((prev) => ({
-        ...prev,
-        [lectureId]: (prev[lectureId] ?? []).map((live) =>
-          live.id === liveId ? { ...live, privacy: privacy.toUpperCase() } : live
-        ),
-      }));
-      setSuccessMessage("Live stream privacy updated successfully.");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update live stream privacy.");
-    } finally {
-      setUpdatingPrivacyFor((prev) => {
-        const next = new Set(prev);
-        next.delete(liveId);
-        return next;
-      });
-    }
-  }
-
-  async function handleChangeRecordingAccess(
-    lectureId: string,
-    recordingId: string,
-    updates: { visibility?: RecordingVisibility; access?: RecordingAccess }
-  ) {
-    setUpdatingRecordingFor((prev) => new Set(prev).add(recordingId));
-
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/recordings/${recordingId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updates),
-      });
-      const payload = (await response.json()) as { success: boolean };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(readApiError(payload, "Failed to update recording."));
-      }
-
-      setRecordingsByLecture((prev) => ({
-        ...prev,
-        [lectureId]: (prev[lectureId] ?? []).map((recording) =>
-          recording.id === recordingId ? { ...recording, ...updates } : recording
-        ),
-      }));
-      toast.success("Recording updated successfully.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update recording.");
-    } finally {
-      setUpdatingRecordingFor((prev) => {
-        const next = new Set(prev);
-        next.delete(recordingId);
-        return next;
-      });
-    }
   }
 
   async function loadSessionsForLecture(lectureId: string) {
@@ -1783,163 +1583,13 @@ export function LectureManagementPanel() {
 
                 {expandedRecordingIds.has(lecture.id) ? (
                   <div className="mt-3 border-t border-slate-100 pt-3">
-                    <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <Video size={12} />
-                      Recordings
-                    </p>
-
-                    {loadingRecordingsFor.has(lecture.id) ? (
-                      <p className="mt-2 text-xs text-muted">Loading recordings...</p>
-                    ) : (recordingsByLecture[lecture.id]?.length ?? 0) === 0 ? (
-                      <p className="mt-2 text-xs text-muted">No recordings available for this lecture yet.</p>
-                    ) : (
-                      <div className="mt-2 space-y-1.5">
-                        {(recordingsByLecture[lecture.id] ?? []).map((recording) => (
-                          <div
-                            key={recording.id}
-                            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setPlayingRecording(recording)}
-                              className="flex min-w-0 items-center gap-2 text-left"
-                            >
-                              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-700 text-white">
-                                <Play size={12} />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="flex items-center gap-1 text-[11px] font-medium text-slate-700">
-                                  <Calendar size={10} />
-                                  Started {recording.startedAt ? new Date(recording.startedAt).toLocaleString() : "—"}
-                                </p>
-                                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
-                                  <Clock3 size={10} />
-                                  Ended {recording.endedAt ? new Date(recording.endedAt).toLocaleString() : "In progress"}
-                                </p>
-                              </div>
-                            </button>
-
-                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                              <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500 shadow-sm">
-                                {recording.status}
-                              </span>
-                              <div className="relative shrink-0">
-                                <select
-                                  value={recording.visibility}
-                                  disabled={updatingRecordingFor.has(recording.id)}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onChange={(event) =>
-                                    void handleChangeRecordingAccess(lecture.id, recording.id, {
-                                      visibility: event.target.value as RecordingVisibility,
-                                    })
-                                  }
-                                  className="w-[92px] appearance-none rounded-md border border-slate-200 bg-white py-1.5 pl-2 pr-6 text-[11px] leading-none font-medium text-slate-700 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {VISIBILITY_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                              </div>
-                              <div className="relative shrink-0">
-                                <select
-                                  value={recording.access}
-                                  disabled={updatingRecordingFor.has(recording.id)}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onChange={(event) =>
-                                    void handleChangeRecordingAccess(lecture.id, recording.id, {
-                                      access: event.target.value as RecordingAccess,
-                                    })
-                                  }
-                                  className="w-[84px] appearance-none rounded-md border border-slate-200 bg-white py-1.5 pl-2 pr-6 text-[11px] leading-none font-medium text-slate-700 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {ACCESS_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <LectureYouTubeRecordingsPanel lectureId={lecture.id} onError={setErrorMessage} />
                   </div>
                 ) : null}
 
                 {expandedLiveIds.has(lecture.id) ? (
                   <div className="mt-3 border-t border-slate-100 pt-3">
-                    <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <Radio size={12} />
-                      Live Streams
-                    </p>
-
-                    {loadingLivesFor.has(lecture.id) ? (
-                      <p className="mt-2 text-xs text-muted">Loading live streams...</p>
-                    ) : (livesByLecture[lecture.id]?.length ?? 0) === 0 ? (
-                      <p className="mt-2 text-xs text-muted">No YouTube live streams for this lecture yet.</p>
-                    ) : (
-                      <div className="mt-2 space-y-1.5">
-                        {(livesByLecture[lecture.id] ?? []).map((live) => (
-                          <div
-                            key={live.id}
-                            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setPlayingRecording(live)}
-                              className="flex min-w-0 items-center gap-2 text-left"
-                            >
-                              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-white">
-                                <Play size={12} />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="flex items-center gap-1 text-[11px] font-medium text-slate-700">
-                                  <Calendar size={10} />
-                                  Started {live.startedAt ? new Date(live.startedAt).toLocaleString() : "—"}
-                                </p>
-                                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
-                                  <Clock3 size={10} />
-                                  Ended {live.endedAt ? new Date(live.endedAt).toLocaleString() : "In progress"}
-                                </p>
-                              </div>
-                            </button>
-
-                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                              <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500 shadow-sm">
-                                {live.status}
-                              </span>
-                              <div className="relative shrink-0">
-                                <select
-                                  value={live.privacy.toLowerCase()}
-                                  disabled={updatingPrivacyFor.has(live.id)}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onChange={(event) =>
-                                    void handleChangeLivePrivacy(
-                                      lecture.id,
-                                      live.id,
-                                      event.target.value as "public" | "unlisted" | "private"
-                                    )
-                                  }
-                                  className="w-[92px] appearance-none rounded-md border border-slate-200 bg-white py-1.5 pl-2 pr-6 text-[11px] leading-none font-medium text-slate-700 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {PRIVACY_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <LectureLiveBroadcastsPanel lectureId={lecture.id} onError={setErrorMessage} onSuccess={setSuccessMessage} />
                   </div>
                 ) : null}
 
@@ -2413,43 +2063,6 @@ export function LectureManagementPanel() {
           </button>
         </div>
       </aside>
-
-      {playingRecording ? (
-        <>
-          <div className="fixed inset-0 z-[70] bg-black/70" onClick={() => setPlayingRecording(null)} aria-hidden />
-          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
-            <div
-              className="w-full max-w-3xl rounded-xl border border-slate-200 bg-black shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-white">
-                  <Video size={13} />
-                  Lecture recording
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setPlayingRecording(null)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/80 transition hover:bg-white/10 hover:text-white"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              <div className="aspect-video w-full">
-                <iframe
-                  key={playingRecording.id}
-                  title="Lecture recording"
-                  src={`https://www.youtube.com/embed/${playingRecording.videoId}?autoplay=1`}
-                  className="h-full w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-            </div>
-          </div>
-        </>
-      ) : null}
 
       {isHelpOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">

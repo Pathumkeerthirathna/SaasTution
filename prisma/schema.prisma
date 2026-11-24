@@ -1566,6 +1566,17 @@ model Lecture {
   // 0 = active, 1 = removed (soft-deleted). Only status 0 is shown anywhere.
   status Int @default(0)
 
+  /// The class's internal "default lecture" (a container for class-level
+  /// notes; created with the class, services/class-service.ts), not a
+  /// teaching session: excluded from lecture lists, selectors, attendance, QR,
+  /// sessions, recordings, calendar and counts, and refused by the normal
+  /// lecture update / delete / attendance workflows (lib/default-lecture.ts).
+  /// At most one per class: the partial unique index
+  /// "Lecture_one_default_per_class" (hand-written in migration
+  /// 20261129120000_add_lecture_is_default; Prisma 5.22 cannot declare
+  /// partial indexes). Always identify it by this flag, never by title/date.
+  isDefault Boolean @default(false)
+
   assignments Assignment[]
   sessions    ClassSession[]
   class       Class               @relation(fields: [classId], references: [id])

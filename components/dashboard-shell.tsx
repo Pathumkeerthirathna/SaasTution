@@ -27,6 +27,8 @@ import {
   Package,
   Lock,
   ClipboardCheck,
+  NotebookPen,
+  Video,
 } from "lucide-react";
 
 import { SidebarGraduate } from "@/components/sidebar-graduate";
@@ -143,6 +145,19 @@ export function DashboardShell({
       { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/attendance",                    label: "Attendance",         icon: <ClipboardCheck size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/notes",                         label: "Notes",              icon: <NotebookPen size={18} strokeWidth={1.75} /> },
+      {
+        // Recorded lectures (uploads), YouTube live streams and classroom recordings saved to YouTube.
+        // "Live Sessions" (the Jitsi live-class tool) stays its own item below.
+        href: "/dashboard/recordings",
+        label: "Recordings",
+        icon: <Video size={18} strokeWidth={1.75} />,
+        children: [
+          { href: "/dashboard/recordings/recorded-lectures", label: "Recorded Lectures" },
+          { href: "/dashboard/recordings/youtube-live-sessions", label: "YouTube Live Sessions" },
+          { href: "/dashboard/recordings/live-recordings", label: "Live Recordings" },
+        ],
+      },
       { href: "/dashboard/material-bundles",              label: "Tutes & Papers",     icon: <FolderOpen size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/papers",                        label: "Papers",             icon: <ScrollText size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles/configuration",label: "Paper Config",       icon: <Settings size={18} strokeWidth={1.75} /> },

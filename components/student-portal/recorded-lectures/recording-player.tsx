@@ -71,6 +71,8 @@ type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void }
 export type RecordingPlayerProps = {
   studentId: string;
   lecture: RecordedLecture["lecture"];
+  /** The class's General Recordings: titled "General Recordings", without a lecture date. */
+  isGeneral?: boolean;
   classInfo: RecordedLecture["class"];
   initialParts: RecordedLecture[];
   initialNextCursor: string | null;
@@ -79,6 +81,7 @@ export type RecordingPlayerProps = {
 
 export function RecordingPlayer(props: RecordingPlayerProps) {
   const { studentId, lecture, classInfo, requestedRecordingId } = props;
+  const isGeneral = props.isGeneral === true;
 
   const [parts, setParts] = useState<RecordedLecture[]>(props.initialParts);
   const [nextCursor, setNextCursor] = useState<string | null>(props.initialNextCursor);
@@ -331,9 +334,10 @@ export function RecordingPlayer(props: RecordingPlayerProps) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-3">
           <header className="space-y-0.5">
-            <h1 className="break-words text-base font-bold text-foreground sm:text-lg">{lecture.title}</h1>
+            <h1 className="break-words text-base font-bold text-foreground sm:text-lg">{isGeneral ? "General Recordings" : lecture.title}</h1>
             <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-              <span>{formatLectureDateTime(lecture.date)}</span>
+              {/* A General Recording has no lecture date (each part's own availability is in the list). */}
+              {isGeneral ? null : <span>{formatLectureDateTime(lecture.date)}</span>}
               {current ? (
                 <span className="font-semibold text-emerald-700">
                   {partLabel(current)} of {parts.length}
@@ -536,7 +540,7 @@ export function RecordingPlayer(props: RecordingPlayerProps) {
           </ol>
           {nextCursor ? (
             <div className="space-y-2 border-t border-slate-100 p-3">
-              <p className="text-xs text-slate-600">This lecture has more parts than are shown.</p>
+              <p className="text-xs text-slate-600">{isGeneral ? "There are more general recordings than are shown." : "This lecture has more parts than are shown."}</p>
               <button
                 type="button"
                 onClick={() => void loadMoreParts()}

@@ -58,7 +58,14 @@ export default async function StudentRecordedLecturesPage({ searchParams }: Page
     }
     return (
       <Shell subtitle={page.class.name}>
-        <ClassRecordingsClient classInfo={page.class} initialRecordings={page.recordedLectures} initialNextCursor={page.nextCursor} />
+        <ClassRecordingsClient
+          // Another class is a fresh client: nothing of the previous class's lists or requests is kept.
+          key={page.class.id}
+          classInfo={page.class}
+          initialGeneral={page.general}
+          initialRecordings={page.recordedLectures}
+          initialNextCursor={page.nextCursor}
+        />
       </Shell>
     );
   }

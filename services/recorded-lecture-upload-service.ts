@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Prisma } from "@prisma/client";
 
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { byteCountToBigint, byteCountToNumber } from "@/lib/recorded-lectures/bigint";
 import { computeReservations, decideCapacity, type ReservationRow } from "@/lib/recorded-lectures/chunk-lease";
@@ -69,6 +70,13 @@ export type StartUploadInput = {
   lectureId: string;
   /** The parsed JSON body (any shape; validated here). */
   body: unknown;
+  /**
+   * General Recordings only (services/class-recordings-service.ts): the
+   * lecture is the class's default lecture, resolved on the server from the
+   * class. Never set from a request: the lecture-scoped route keeps refusing
+   * a default lecture (404 LECTURE_NOT_FOUND).
+   */
+  includeDefault?: boolean;
 };
 
 export function loadConfig(): RecordedLectureConfig {
@@ -164,7 +172,11 @@ export async function expireStaleUploads(tx: Tx, filter: { teacherId: string; up
 
 /**
  * D4: the recording's lecture is still active, in an active class owned by
- * this teacher (re-checked inside each upload transaction).
+ * this teacher (re-checked inside each upload transaction). The lecture is the
+ * one of an upload that already exists, so a class's default lecture is
+ * accepted here: a recording can only be on it when it was started as a
+ * General Recording (startRecordingUpload with includeDefault, decided on the
+ * server from the class). Starting an upload keeps its own check.
  */
 export async function assertLectureActiveForUpload(tx: Pick<Tx, "lecture">, lectureId: string, teacherId: string): Promise<void> {
   const lecture = await tx.lecture.findFirst({
@@ -222,8 +234,10 @@ export async function startRecordingUpload(input: StartUploadInput): Promise<Upl
   const declaration = declared.value;
 
   await assertTeacherCanUpload(prisma, teacherId);
-  // 404 LECTURE_NOT_FOUND unless this teacher owns the (active) lecture.
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+  // 404 LECTURE_NOT_FOUND unless this teacher owns the (active) lecture; a
+  // default lecture only for a General Recording (includeDefault, server-decided).
+  const includeDefault = input.includeDefault === true;
+  await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault });
 
   const opened = await openRecordedLectureStorage(process.env);
   if (!opened.ok) throw uploadError("RECORDED_LECTURES_NOT_CONFIGURED");
@@ -236,7 +250,7 @@ export async function startRecordingUpload(input: StartUploadInput): Promise<Upl
 
     await assertTeacherCanUpload(tx, teacherId);
     const lecture = await tx.lecture.findFirst({
-      where: { id: lectureId, status: 0, class: { teacherId, status: 0 } },
+      where: { id: lectureId, status: 0, ...(includeDefault ? {} : NORMAL_LECTURE_WHERE), class: { teacherId, status: 0 } },
       select: { id: true, classId: true },
     });
     if (!lecture) throw uploadError("LECTURE_NOT_ACTIVE");

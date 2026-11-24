@@ -30,6 +30,7 @@
 
 import { explainEnrolmentAt, type EnrolmentRow } from "@/lib/attendance/enrolment";
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaCalendarParts, sriLankaDigitsToInstant } from "@/lib/time";
 
@@ -159,7 +160,7 @@ export async function getClassAttendanceMatrixForTeacher(input: {
 
   const [lectures, enrolments] = await Promise.all([
     prisma.lecture.findMany({
-      where: { classId: cls.id, status: 0, date: { gte: range.start, lt: range.end } },
+      where: { classId: cls.id, status: 0, ...NORMAL_LECTURE_WHERE, date: { gte: range.start, lt: range.end } },
       orderBy: [{ date: "asc" }, { id: "asc" }],
       select: { id: true, title: true, date: true, endDate: true, classStatus: true },
     }),

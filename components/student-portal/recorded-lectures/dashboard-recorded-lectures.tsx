@@ -5,15 +5,19 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, Play, Video } from "lucide-react";
 
 import { listFailureMessage } from "./player-errors";
-import { formatLectureDateTime, listApiUrl, partLabel, playerHref, type RecordedLecture } from "./recording-helpers";
+import { isGeneralRecording, listApiUrl, mergeDashboardRecordings, partLabel, playerHref, recordingDateLabel, type RecordedLecture } from "./recording-helpers";
 import { LockedResourceBadge } from "@/components/student-portal/locked-resource";
 
 /*
  * Dashboard widget (RL-5.1): recordings of lectures that started within the
- * dashboard window (RECORDED_LECTURE_DASHBOARD_DAYS, scope=dashboard). One
- * request when the dashboard opens; the last loaded list is kept if a later
- * load fails. The full library is always reachable through "All recorded
- * lectures": the window only decides what this shortcut shows.
+ * dashboard window (RECORDED_LECTURE_DASHBOARD_DAYS, scope=dashboard), and
+ * (Recorded Lectures redesign Stage 3) General Recordings that became
+ * available within it. The two sections are requested separately (each up to
+ * the widget's limit, in its own order) and merged newest first by their own
+ * dates, so recent General Recordings are never pushed out by older lectures
+ * and the lecture recordings keep their order. The last loaded list is kept
+ * if a later load fails. The full library is always reachable through "All
+ * recorded lectures": the window only decides what this shortcut shows.
  */
 
 const WIDGET_LIMIT = 6;
@@ -24,27 +28,37 @@ export function DashboardRecordedLectures() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const response = await fetch(listApiUrl({ scope: "dashboard" }, null, WIDGET_LIMIT), { cache: "no-store" });
-      if (!response.ok) {
-        setError(listFailureMessage(response.status).message);
+      const [generalResponse, lectureResponse] = await Promise.all([
+        fetch(listApiUrl({ scope: "dashboard", section: "general" }, null, WIDGET_LIMIT), { cache: "no-store", signal }),
+        fetch(listApiUrl({ scope: "dashboard", section: "lecture" }, null, WIDGET_LIMIT), { cache: "no-store", signal }),
+      ]);
+      if (signal?.aborted) return;
+      const failed = [generalResponse, lectureResponse].find((response) => !response.ok);
+      if (failed) {
+        setError(listFailureMessage(failed.status).message);
         return;
       }
-      const json = (await response.json()) as { data?: { recordedLectures?: RecordedLecture[]; dashboardDays?: number } };
-      setItems(json.data?.recordedLectures ?? []);
-      setDays(typeof json.data?.dashboardDays === "number" ? json.data.dashboardDays : null);
+      type ListJson = { data?: { recordedLectures?: RecordedLecture[]; dashboardDays?: number } };
+      const [general, lectures] = (await Promise.all([generalResponse.json(), lectureResponse.json()])) as [ListJson, ListJson];
+      if (signal?.aborted) return;
+      setItems(mergeDashboardRecordings(general.data?.recordedLectures ?? [], lectures.data?.recordedLectures ?? [], WIDGET_LIMIT));
+      const dashboardDays = lectures.data?.dashboardDays ?? general.data?.dashboardDays;
+      setDays(typeof dashboardDays === "number" ? dashboardDays : null);
       setError(null);
     } catch {
-      setError("Could not load recorded lectures.");
+      if (!signal?.aborted) setError("Could not load recorded lectures.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   return (
@@ -84,10 +98,10 @@ export function DashboardRecordedLectures() {
                   <div className="flex min-h-[44px] items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2">
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-xs font-semibold text-slate-800">
-                        {item.lecture.title} · {partLabel(item)}
+                        {isGeneralRecording(item) ? "General Recordings" : item.lecture.title} · {partLabel(item)}
                       </span>
                       <span className="block break-words text-[11px] text-slate-500">
-                        {item.class.name} · {formatLectureDateTime(item.lecture.date)}
+                        {item.class.name} · {recordingDateLabel(item)}
                       </span>
                       <span className="mt-1 block">
                         <LockedResourceBadge lock={item.resourceAccess} compact />
@@ -105,10 +119,10 @@ export function DashboardRecordedLectures() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block break-words text-xs font-semibold text-slate-800">
-                      {item.lecture.title} · {partLabel(item)}
+                      {isGeneralRecording(item) ? "General Recordings" : item.lecture.title} · {partLabel(item)}
                     </span>
                     <span className="block break-words text-[11px] text-slate-500">
-                      {item.class.name} · {formatLectureDateTime(item.lecture.date)}
+                      {item.class.name} · {recordingDateLabel(item)}
                     </span>
                   </span>
                 </Link>

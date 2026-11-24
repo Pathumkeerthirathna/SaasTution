@@ -86,10 +86,24 @@ export function classRecordingsHref(classId: string): string {
   return `/student/recorded-lectures?classId=${encodeURIComponent(classId)}`;
 }
 
+/**
+ * Which recordings a list request asks for (the API's `section`): "general" =
+ * the class's General Recordings (part number ascending; on the dashboard
+ * newest available first, with its own cursor), "lecture" = the recordings of
+ * normal lectures (the lecture order and cursor). Absent: both, as before. A
+ * section's cursor is only ever sent back with that section.
+ */
+export type RecordingSection = "general" | "lecture";
+
 /** List API URL for the next page (class or lecture), with an explicit page size. */
-export function listApiUrl(filter: { classId?: string; lectureId?: string; scope?: "all" | "dashboard" }, cursor: string | null, limit: number): string {
+export function listApiUrl(
+  filter: { classId?: string; lectureId?: string; scope?: "all" | "dashboard"; section?: RecordingSection },
+  cursor: string | null,
+  limit: number
+): string {
   const params = new URLSearchParams();
   if (filter.scope) params.set("scope", filter.scope);
+  if (filter.section) params.set("section", filter.section);
   if (filter.classId) params.set("classId", filter.classId);
   if (filter.lectureId) params.set("lectureId", filter.lectureId);
   if (cursor) params.set("cursor", cursor);
@@ -141,6 +155,52 @@ export function formatSize(sizeBytes: string | null | undefined): string {
     unit += 1;
   }
   return `${unit === 0 ? value : value.toFixed(value >= 100 ? 0 : 1)} ${units[unit]}`;
+}
+
+/** A General Recording (the class's General Recordings, not a lecture). */
+export function isGeneralRecording(recording: Pick<RecordedLecture, "isGeneral"> | null | undefined): boolean {
+  return recording?.isGeneral === true;
+}
+
+/**
+ * The date line of a recording: a lecture's own date and time, or, for a
+ * General Recording, when it became available (the date the API supplies in
+ * its `lecture.date`: readyAt, else the upload start). Never a lecture date
+ * for a General Recording.
+ */
+export function recordingDateLabel(recording: Pick<RecordedLecture, "isGeneral" | "lecture">): string {
+  return isGeneralRecording(recording) ? `Available ${formatLectureDateTime(recording.lecture.date)}` : formatLectureDateTime(recording.lecture.date);
+}
+
+/**
+ * The dashboard shortcut: General Recordings and lecture recordings merged
+ * newest first by their own dates (a General Recording's availability, a
+ * lecture's start), then cut to `limit`. Each list arrives already ordered
+ * and limited by the API, so a recent General Recording is never pushed out
+ * by older lectures (and the reverse). Equal dates keep lectures first; no id
+ * appears twice.
+ */
+export function mergeDashboardRecordings(
+  general: readonly RecordedLecture[],
+  lectures: readonly RecordedLecture[],
+  limit: number
+): RecordedLecture[] {
+  const time = (r: RecordedLecture) => {
+    const ms = Date.parse(r.lecture.date);
+    return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+  };
+  const out: RecordedLecture[] = [];
+  const seen = new Set<string>();
+  let g = 0;
+  let l = 0;
+  while (out.length < limit && (g < general.length || l < lectures.length)) {
+    const takeGeneral = l >= lectures.length || (g < general.length && time(general[g]) > time(lectures[l]));
+    const next = takeGeneral ? general[g++] : lectures[l++];
+    if (seen.has(next.id)) continue;
+    seen.add(next.id);
+    out.push(next);
+  }
+  return out;
 }
 
 /** "Part 3" (from the stored part number, gaps kept). */

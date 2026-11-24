@@ -1,6 +1,7 @@
 import { Weekday } from "@prisma/client";
 
 import { feePaymentState, PAYMENT_STATE_SELECT } from "@/lib/fee-payment-state";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { nextSriLankaWeeklyOccurrence, sriLankaDateKey } from "@/lib/time";
 
@@ -69,6 +70,7 @@ export async function getStudentUpcomingCountdowns(studentId: string): Promise<S
     prisma.lecture.findMany({
       where: {
         status: 0,
+        ...NORMAL_LECTURE_WHERE,
         class: enrolled,
         date: { gt: now, lte: windowEnd },
       },

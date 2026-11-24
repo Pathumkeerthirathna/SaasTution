@@ -22,9 +22,13 @@ const sql = normalize(fs.readFileSync(path.join(migrationsDir, MIGRATION, "migra
 const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
 const schema = fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
 
-test("placement: the newest migration, right after Grade 0; no committed migration changed (git)", () => {
+test("placement: right after Grade 0; only the approved default lecture migration follows; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(-2), ["20261127120000_add_grade_zero", MIGRATION]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), [
+    "20261127120000_add_grade_zero",
+    MIGRATION,
+    "20261129120000_add_lecture_is_default", // Default lecture (tests/lectures/default-lecture-migration-guard.test.cjs)
+  ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });
@@ -71,9 +75,11 @@ test("new uploads set Note.uploadedAt explicitly; nothing ever updates it", () =
     }
   };
   for (const dir of ["app", "services", "lib"]) walk(dir);
-  // Readers select it (uploadedAt: true), pass it on or type it; only the upload writes a value.
+  // Readers select it (uploadedAt: true), order by it (uploadedAt: { sort: ... }), filter on it
+  // (uploadedAt: { gte: ... } / { equals: ... }: not a write's syntax), pass it on or type it;
+  // only the upload writes a value.
   const writers = offenders.filter((rel) =>
-    /uploadedAt:\s*(?!true\b|Date\b|n\.uploadedAt\b)[^,}\s]/.test(fs.readFileSync(path.join(root, rel), "utf8"))
+    /uploadedAt:\s*(?!true\b|Date\b|n\.uploadedAt\b|\{ sort: |\{ gte: |\{ equals: )[^,}\s]/.test(fs.readFileSync(path.join(root, rel), "utf8"))
   );
   assert.deepEqual(writers, ["services/lecture-service.ts"]);
 });

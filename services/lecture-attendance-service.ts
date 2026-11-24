@@ -58,6 +58,7 @@ import {
   type LockedRegister,
 } from "@/lib/attendance/locks";
 import { attendanceError } from "@/lib/attendance/service-errors";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type {
   ApprovalHistoryContext,
@@ -85,7 +86,8 @@ export type LectureForAttendance =
  */
 export async function inspectLectureForAttendance(locks: AttendanceLocks, lectureId: string): Promise<LectureForAttendance> {
   const lecture = await lockLectureShared(locks, lectureId);
-  if (!lecture) return { state: "NOT_FOUND", lecture: null, cls: null };
+  // A class's default lecture is not a teaching session: no register, record or scan, ever (lib/default-lecture.ts).
+  if (!lecture || lecture.isDefault === true) return { state: "NOT_FOUND", lecture: null, cls: null };
 
   const cls = await lockClassKeyShared(locks, lecture.classId);
   if (!cls) return { state: "NOT_FOUND", lecture: null, cls: null };
@@ -342,7 +344,7 @@ export async function getRegister(
   const env = options.env ?? process.env;
 
   const lecture = await prisma.lecture.findFirst({
-    where: { id: lectureId, status: 0, class: { teacherId } },
+    where: { id: lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId } },
     select: {
       id: true,
       title: true,

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { AppError } from "@/lib/error-handler";
 import { emitLiveChange } from "@/lib/session-events";
 import {
@@ -469,7 +470,8 @@ async function endOwnBroadcast(
 
 async function loadOwnedLecture(teacherId: string, lectureId: string, feature: YouTubeFeature) {
   const lecture = await prisma.lecture.findUnique({
-    where: { id: lectureId },
+    // (A class's default lecture is not a teaching session: not found.)
+    where: { id: lectureId, ...NORMAL_LECTURE_WHERE },
     include: { class: { select: { teacherId: true } } },
   });
 

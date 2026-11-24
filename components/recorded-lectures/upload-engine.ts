@@ -62,6 +62,15 @@ export type UploadSource = { size: number; slice(start: number, end: number): Bl
 
 export type UploadDeps = {
   fetch: typeof fetch;
+  /**
+   * The upload-start endpoint (POST). Default: the lecture's own
+   * /api/lectures/{lectureId}/recorded-lectures/uploads (unchanged for every
+   * existing caller). The Recorded Lectures page passes the class-scoped
+   * classRecordingUploadStartUrl(...) instead, so a General Recording never
+   * names a lecture. Only the start differs: chunks, completion, status and
+   * cancel are the same /api/recorded-lectures/uploads/{uploadId} routes.
+   */
+  startUrl?: string;
   sleep?: (ms: number) => Promise<void>;
   /** Called on every change. */
   onUpdate?: (snapshot: UploadSnapshot) => void;
@@ -101,6 +110,10 @@ const MESSAGES: Record<string, string> = {
   STORAGE_QUOTA_BUSY: "Storage is busy right now. Please try again in a moment.",
   RECORDED_LECTURES_NOT_CONFIGURED: "Recorded lecture uploads are not available right now.",
   UPLOAD_EXPIRED: "This upload expired before it was finished. Start the upload again.",
+  // The class-scoped start (POST /api/classes/{id}/recorded-lectures/uploads).
+  CLASS_NOT_FOUND: "This class is no longer available.",
+  DEFAULT_LECTURE_MISSING: "General recordings are not set up for this class yet.",
+  CROSS_ORIGIN_REQUEST_REJECTED: "The upload could not be started from this page. Reload the page and try again.",
   UPLOAD_NOT_FOUND: "This upload no longer exists. Start the upload again.",
   UPLOAD_CANCELLED: "The upload was cancelled.",
   NETWORK: "The connection was lost. The upload is paused; resume it when you are back online.",
@@ -108,6 +121,16 @@ const MESSAGES: Record<string, string> = {
   VERIFYING_CANNOT_CANCEL: "The video is already being verified and can no longer be cancelled.",
   UNKNOWN: "The upload failed. Please try again.",
 };
+
+/**
+ * The class-scoped upload start: the class's General Recordings (no lectureId:
+ * the server resolves the class's default lecture) or one normal lecture of
+ * the class. The client never names the default lecture.
+ */
+export function classRecordingUploadStartUrl(classId: string, lectureId?: string | null): string {
+  const base = `/api/classes/${encodeURIComponent(classId)}/recorded-lectures/uploads`;
+  return lectureId ? `${base}?lectureId=${encodeURIComponent(lectureId)}` : base;
+}
 
 export function uploadMessage(code: string | null | undefined): string {
   return (code && MESSAGES[code]) || MESSAGES.UNKNOWN;
@@ -285,7 +308,7 @@ export class RecordingUploader {
     this.set({ phase: "starting", message: null, code: null, signIn: false });
     let res;
     try {
-      res = await this.call(`/api/lectures/${encodeURIComponent(this.lectureId)}/recorded-lectures/uploads`, {
+      res = await this.call(this.deps.startUrl ?? `/api/lectures/${encodeURIComponent(this.lectureId)}/recorded-lectures/uploads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

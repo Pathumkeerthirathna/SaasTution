@@ -44,7 +44,9 @@ export function publicRecordedLectureWhere(): Prisma.RecordedLectureWhereInput {
     state: "READY",
     storedFileName: { not: null },
     visibility: "PUBLIC",
-    lecture: { status: 0 },
+    // General Recordings (the class's default lecture) are never public: not
+    // listed, not playable, not in the restricted-student fallback.
+    lecture: { status: 0, isDefault: false },
     class: { status: 0 },
     teacher: { profile: { is: { isPublic: true } } },
   };

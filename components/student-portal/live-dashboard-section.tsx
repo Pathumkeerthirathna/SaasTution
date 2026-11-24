@@ -227,7 +227,7 @@ export function LiveDashboardSection({
             big={String(counts.notes.unviewed)}
             sub={`/ ${counts.notes.total} notes`}
             tone="amber"
-            href={`/student/lectures?range=${range}&notes=unviewed`}
+            href="/student/notes"
           />
           <CountTile
             icon={HelpCircle}

@@ -142,7 +142,7 @@ function row(overrides = {}) {
 test("dto: exactly the allow-listed keys, at every level", () => {
   const dto = D.buildStudentRecordedLectureDto(row(), { now: at(DAY), dashboardDays: 7 });
   assert.deepEqual(Object.keys(dto).sort(), [
-    "class", "dashboard", "durationSeconds", "height", "id", "lecture", "partNumber", "readyAt", "sizeBytes", "streamUrl", "title", "width",
+    "class", "dashboard", "durationSeconds", "height", "id", "isGeneral", "lecture", "partNumber", "readyAt", "sizeBytes", "streamUrl", "title", "width",
   ]);
   assert.equal(dto.streamUrl, "/api/student/recorded-lectures/00000000-0000-4000-8000-000000000501/stream");
   assert.deepEqual(Object.keys(dto.lecture).sort(), ["date", "endDate", "id", "title"]);

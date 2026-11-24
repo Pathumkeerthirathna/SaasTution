@@ -118,7 +118,8 @@ export async function POST(
     // RL-0: the teacher must own this (active) lecture before anything is
     // written to disk; otherwise 404 LECTURE_NOT_FOUND and no folder or file.
     // (Also: the lecture id below is then a real lecture id, not URL input.)
-    await assertTeacherOwnsLecture(session.teacherId, lectureId);
+    // (The class's default lecture included: notes belong to it too; lib/default-lecture.ts.)
+    await assertTeacherOwnsLecture(session.teacherId, lectureId, { includeDefault: true });
 
     // Unified storage (Stage 2): the file goes to FILE_STORAGE_ROOT under a
     // server-generated key (Teachers/{teacher}/Lectures/{lecture}/Notes/{noteId}/

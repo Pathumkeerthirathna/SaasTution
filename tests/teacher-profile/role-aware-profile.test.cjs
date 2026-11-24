@@ -681,7 +681,7 @@ test("sidebar: 'Teacher Profile' added after 'My Classes'; every existing item k
   const { studentNavItems } = require(path.join(root, "components", "student-portal", "student-data.ts"));
   const labels = studentNavItems.map((i) => i.label);
   assert.deepEqual(labels, [
-    "Dashboard", "Calendar", "My Classes", "Teacher Profile", "Lecture / Schedules", "Recorded Lectures", "Assignments", "Quizzes", "Papers",
+    "Dashboard", "Calendar", "My Classes", "Teacher Profile", "Lecture / Schedules", "Notes", "Recorded Lectures", "Assignments", "Quizzes", "Papers",
     "Payments", "Tutes / Papers", "Attendance / History", "Messages", "My Profile", "Settings",
   ]);
   assert.deepEqual(studentNavItems.find((i) => i.label === "Teacher Profile"), { href: "/student/teacher-profile", label: "Teacher Profile", icon: "teacherProfile" });

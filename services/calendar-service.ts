@@ -1,5 +1,6 @@
 import { Weekday } from "@prisma/client";
 
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaDateKey, sriLankaDigitsToInstant, sriLankaTimeKey } from "@/lib/time";
 
@@ -88,7 +89,7 @@ export async function getTeacherCalendar(
         orderBy: { startTime: "asc" },
       },
       lectures: {
-        where: { status: 0, date: lectureWindow(from, to) },
+        where: { status: 0, ...NORMAL_LECTURE_WHERE, date: lectureWindow(from, to) },
         select: { id: true, title: true, classStatus: true, date: true },
         orderBy: { date: "asc" },
       },
@@ -325,7 +326,7 @@ export async function getStudentCalendar(
         orderBy: { startTime: "asc" },
       },
       lectures: {
-        where: { status: 0, date: lectureWindow(from, to) },
+        where: { status: 0, ...NORMAL_LECTURE_WHERE, date: lectureWindow(from, to) },
         select: { id: true, title: true, classStatus: true, date: true },
         orderBy: { date: "asc" },
       },

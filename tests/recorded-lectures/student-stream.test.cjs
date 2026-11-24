@@ -477,3 +477,23 @@ test("no response (body or header) on any path leaks storage, teacher or upload 
     else if (res.body) await bytes(res);
   }
 });
+
+// ---- Recorded Lectures redesign Stage 3: General Recordings (the class's default lecture) ------------------
+
+test("a General Recording streams through the same route: Range 206, the same security headers; a left class is 404", async () => {
+  const DEFAULT_LECTURE = id(290);
+  const GENERAL = id(601);
+  state.fake.db.lectures.push({ id: DEFAULT_LECTURE, classId: F.CLASS_A, title: "General Notes", date: new Date("2026-01-05T00:00:00.000Z"), endDate: null, status: 0, isDefault: true });
+  state.fake.db.recordings.push(F.recording(GENERAL, DEFAULT_LECTURE, F.CLASS_A, TEACHER_A, { partNumber: 1 }));
+  await writeRecordingFile(GENERAL);
+  await signIn();
+  const res = await get(GENERAL, { range: "bytes=100-199" });
+  assert.equal(res.status, 206);
+  assert.equal(res.headers.get("content-range"), `bytes 100-199/${SIZE}`);
+  assertPlaybackHeaders(res);
+  assert.ok((await bytes(res)).equals(DATA.subarray(100, 200)));
+
+  // The student leaves the class: the same 404 as any recording they may not see.
+  state.fake.db.classStudents.find((c) => c.classId === F.CLASS_A && c.studentId === STUDENT).isActive = false;
+  assert.equal((await get(GENERAL)).status, 404);
+});

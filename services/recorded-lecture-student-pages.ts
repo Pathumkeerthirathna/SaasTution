@@ -48,10 +48,15 @@ function failure(error: unknown): LoaderFailure {
   throw error;
 }
 
+export type RecordingSectionPage = { recordedLectures: StudentRecordedLectureDto[]; nextCursor: string | null };
+
 export type ClassRecordingsPage =
   | {
       ok: true;
       class: StudentClassSummary;
+      /** The class's General Recordings (section "general": newest available first; its own cursor). */
+      general: RecordingSectionPage;
+      /** The normal lectures' recordings (section "lecture": the lecture order and cursor, unchanged). */
       recordedLectures: StudentRecordedLectureDto[];
       nextCursor: string | null;
     }
@@ -70,12 +75,18 @@ export async function loadClassRecordings(studentId: string, classId: string): P
       select: { class: { select: { id: true, name: true } } },
     });
     if (!enrollment) return { ok: false, reason: "NOT_FOUND" };
-    const list = await listStudentRecordedLectures({ studentId, query: { classId, limit: String(MAX_PAGE_SIZE) } });
+    // One monthly-access load for both sections (three batched queries).
+    const access = await loadStudentResourceAccess(studentId, { classIds: [classId] });
+    const [general, lectures] = await Promise.all([
+      listStudentRecordedLectures({ studentId, query: { classId, section: "general", limit: String(MAX_PAGE_SIZE) }, access }),
+      listStudentRecordedLectures({ studentId, query: { classId, section: "lecture", limit: String(MAX_PAGE_SIZE) }, access }),
+    ]);
     return {
       ok: true,
       class: { id: enrollment.class.id, name: enrollment.class.name },
-      recordedLectures: list.recordedLectures,
-      nextCursor: list.nextCursor,
+      general: { recordedLectures: general.recordedLectures, nextCursor: general.nextCursor },
+      recordedLectures: lectures.recordedLectures,
+      nextCursor: lectures.nextCursor,
     };
   } catch (error) {
     return failure(error);
@@ -87,6 +98,8 @@ export type LecturePlayerPage =
       ok: true;
       lecture: StudentRecordedLectureDto["lecture"];
       class: StudentRecordedLectureDto["class"];
+      /** The class's General Recordings (its parts carry isGeneral): no lecture date is shown. */
+      isGeneral: boolean;
       parts: StudentRecordedLectureDto[];
       /** Non-null when the lecture has more parts than the server loaded; the player offers "Load more parts". */
       nextCursor: string | null;
@@ -121,7 +134,7 @@ export async function loadLecturePlayer(studentId: string, lectureId: string): P
     }
     const first = parts[0];
     if (!first) return { ok: false, reason: "NOT_FOUND" };
-    return { ok: true, lecture: first.lecture, class: first.class, parts, nextCursor: cursor, access };
+    return { ok: true, lecture: first.lecture, class: first.class, isGeneral: first.isGeneral === true, parts, nextCursor: cursor, access };
   } catch (error) {
     return failure(error);
   }

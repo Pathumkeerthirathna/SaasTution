@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { AppError } from "@/lib/error-handler";
 import { emitLiveChange } from "@/lib/session-events";
 import {
@@ -654,6 +655,7 @@ async function assertTeacherCanStartYouTube(
         where: {
             id: lectureId,
             status: 0,
+            ...NORMAL_LECTURE_WHERE,
         },
         select: {
             classStatus: true,
@@ -750,6 +752,7 @@ async function startYouTubeLectureInternal(
         where: {
             id: lectureId,
             status: 0,
+            ...NORMAL_LECTURE_WHERE,
         },
         include: {
             class: {
@@ -1585,6 +1588,7 @@ async function startYouTubeRecordingInternal(
         where: {
             id: lectureId,
             status: 0,
+            ...NORMAL_LECTURE_WHERE,
         },
         include: {
             class: {
@@ -2072,6 +2076,7 @@ export async function checkYouTubeRecordingStatus(
             where: {
                 id: lectureId,
                 status: 0,
+                ...NORMAL_LECTURE_WHERE,
             },
             select: {
                 id: true,

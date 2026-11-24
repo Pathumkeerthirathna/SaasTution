@@ -61,6 +61,7 @@ export const studentNavItems: StudentNavItem[] = [
   { href: "/student/classes",          label: "My Classes",            icon: "classes" },
   { href: "/student/teacher-profile",  label: "Teacher Profile",       icon: "teacherProfile" },
   { href: "/student/lectures",         label: "Lecture / Schedules",   icon: "lectures" },
+  { href: "/student/notes",            label: "Notes",                 icon: "notes" },
   { href: "/student/recorded-lectures", label: "Recorded Lectures",    icon: "recordedLectures" },
   { href: "/student/assignments",      label: "Assignments",           icon: "assignments" },
   { href: "/student/quizzes",          label: "Quizzes",               icon: "quizzes" },

@@ -130,6 +130,11 @@ function createFakeStudentDb() {
         }
         continue;
       }
+      // Lecture.isDefault (migration 20261129120000): lecture rows seeded without it are normal lectures (the column default).
+      if (key === "isDefault" && !Object.hasOwn(row, key)) {
+        if (!matchScalar(false, condition, `${modelName}.${key}`)) return false;
+        continue;
+      }
       if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown field ${modelName}.${key}`);
       if (!matchScalar(row[key], condition, `${modelName}.${key}`)) return false;
     }
@@ -144,8 +149,11 @@ function createFakeStudentDb() {
       return sortValue(rel.model, related(modelName, row, key), dir);
     }
     if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown order field ${modelName}.${key}`);
-    if (dir !== "asc" && dir !== "desc") throw new Error(`fake db: bad direction ${dir}`);
-    return { value: row[key], dir };
+    // { sort, nulls } (Prisma's SortOrderInput); without nulls PostgreSQL puts NULLs first for desc, last for asc.
+    const direction = dir !== null && typeof dir === "object" ? dir.sort : dir;
+    const nulls = dir !== null && typeof dir === "object" && dir.nulls ? dir.nulls : direction === "desc" ? "first" : "last";
+    if (direction !== "asc" && direction !== "desc") throw new Error(`fake db: bad direction ${direction}`);
+    return { value: row[key], dir: direction, nulls };
   }
 
   function order(modelName, rows, orderBy) {
@@ -155,6 +163,12 @@ function createFakeStudentDb() {
       for (const spec of specs) {
         const x = sortValue(modelName, a, spec);
         const y = sortValue(modelName, b, spec);
+        const xNull = x.value === null || x.value === undefined;
+        const yNull = y.value === null || y.value === undefined;
+        if (xNull || yNull) {
+          if (xNull && yNull) continue;
+          return xNull === (x.nulls === "first") ? -1 : 1;
+        }
         const c = compare(x.value, y.value);
         if (c !== 0) return x.dir === "asc" ? c : -c;
       }
@@ -172,6 +186,11 @@ function createFakeStudentDb() {
         if (rel.kind !== "one") throw new Error("fake db: selecting a list relation");
         const target = related(modelName, row, key);
         out[key] = target ? pick(rel.model, target, value.select) : null;
+        continue;
+      }
+      // Lecture.isDefault (migration 20261129120000): lecture rows seeded without it are normal lectures (the column default).
+      if (key === "isDefault" && !Object.hasOwn(row, key)) {
+        out[key] = false;
         continue;
       }
       if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown select field ${modelName}.${key}`);

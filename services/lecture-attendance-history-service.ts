@@ -26,6 +26,7 @@
  */
 
 import { attendanceError } from "@/lib/attendance/service-errors";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 
 export const HISTORY_DEFAULT_LIMIT = 50;
@@ -72,7 +73,7 @@ function actorOf(row: { actorRole: string; actorId: string | null }): HistoryAct
 /** The teacher's lecture (status 0), else 404: another teacher's lecture looks the same as a missing one. */
 async function requireOwnedLecture(teacherId: string, lectureId: string) {
   const lecture = await prisma.lecture.findFirst({
-    where: { id: lectureId, status: 0, class: { teacherId } },
+    where: { id: lectureId, status: 0, ...NORMAL_LECTURE_WHERE, class: { teacherId } },
     select: { id: true },
   });
   if (!lecture) throw attendanceError("LECTURE_NOT_FOUND");

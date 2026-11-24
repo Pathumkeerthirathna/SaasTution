@@ -44,6 +44,13 @@ function invalid(message: string): AppError {
   return new AppError(message, 400, "VALIDATION_ERROR");
 }
 
+export const GENERAL_RECORDING_NOT_PUBLISHABLE = "GENERAL_RECORDING_NOT_PUBLISHABLE";
+
+/** A General Recording (the class's default lecture): never shown on public class pages, so not publishable. */
+function generalRecordingNotPublishable(): AppError {
+  return new AppError("General recordings are not shown on public class pages.", 409, GENERAL_RECORDING_NOT_PUBLISHABLE);
+}
+
 /** { visibility?, access? }: at least one, only these keys, only the allowed values. */
 export function parseRecordingPublicationUpdate(body: unknown): RecordingPublicationUpdate {
   if (body === null || typeof body !== "object" || Array.isArray(body)) throw invalid("The request body must be an object.");
@@ -84,15 +91,20 @@ export async function updateRecordingPublicationForTeacher(input: {
 
   const row = await prisma.recordedLecture.findFirst({
     where: { id: recordingId, teacherId, status: 0 },
-    select: { id: true, lectureId: true },
+    select: { id: true, lectureId: true, lecture: { select: { isDefault: true } } },
   });
   if (!row) throw recordingNotFound();
   try {
-    await assertTeacherOwnsLecture(teacherId, row.lectureId);
+    // The teacher's own recording on any of their lectures, the class's default lecture included.
+    await assertTeacherOwnsLecture(teacherId, row.lectureId, { includeDefault: true });
   } catch (error) {
     if (error instanceof AppError && error.statusCode === 404) throw recordingNotFound();
     throw error;
   }
+  // General Recordings (the class's default lecture) are never on public class
+  // pages (services/recorded-lecture-public-service.ts): their publication
+  // cannot be changed, so a setting can never look public while it is not.
+  if (row.lecture.isDefault) throw generalRecordingNotPublishable();
 
   const updated = await prisma.recordedLecture.updateMany({
     where: { id: row.id, teacherId, status: 0 },

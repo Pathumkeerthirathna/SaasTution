@@ -168,6 +168,13 @@ const APPROVED_IMPORTERS = [
   // Teacher profile photos on unified storage: the key module only (joinStorageKey / parseStorageKey);
   // files are written, read and deleted through lib/stored-files/stored-file.ts.
   "lib/profile-images/storage-keys.ts",
+  // Recorded Lectures redesign Stage 1: the class-scoped teacher routes (General Recordings on the
+  // class's default lecture; tests/recorded-lectures/class-recordings.test.cjs). Their service
+  // (services/class-recordings-service.ts) only calls the existing teacher and upload services.
+  "app/api/classes/[id]/recorded-lectures/route.ts",
+  "app/api/classes/[id]/recorded-lectures/uploads/route.ts",
+  // Stage 2: the teacher Recorded Lectures page (the teacher DTO type only; tests/ui/teacher-recordings-page.test.tsx).
+  "components/recorded-lectures/teacher-recordings-workspace.tsx",
 ];
 
 test("isolation: only the approved RL-3 upload service and routes import the recorded-lecture modules", () => {

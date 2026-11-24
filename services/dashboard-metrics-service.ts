@@ -1,3 +1,4 @@
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaDateKey, sriLankaDigitsToInstant, startOfTodaySriLankaUtc } from "@/lib/time";
 
@@ -72,6 +73,7 @@ export async function getTeacherDashboardMetrics(
     prisma.lecture.findMany({
       where: {
         status: 0,
+        ...NORMAL_LECTURE_WHERE,
         class: { teacherId, status: 0 },
         // `from` / `to` are Sri Lankan day boundaries written as UTC digits;
         // Lecture.date is a real instant (same window as the calendar).

@@ -66,7 +66,15 @@ const prismaFake = {
     fn({
       classSchedule: { deleteMany: async () => ({ count: 0 }) },
       classFee: { count: async () => 1, updateMany: async () => ({ count: 1 }), create: async () => ({}) },
+      // Class creation runs in a transaction with its default lecture (lib/default-lecture.ts).
+      lecture: {
+        create: async ({ data }) => {
+          state.calls.push(["lecture.create", data]);
+          return { id: `lecture-of-${data.classId}` };
+        },
+      },
       class: {
+        create: (args) => prismaFake.class.create(args),
         update: async ({ where, data }) => {
           state.calls.push(["class.update", data]);
           Object.assign(state.classes[where.id], data);

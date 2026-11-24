@@ -29,6 +29,7 @@ import {
   type AttendanceLocks,
 } from "@/lib/attendance/locks";
 import { attendanceError } from "@/lib/attendance/service-errors";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type { ApprovalHistoryContext } from "@/lib/student-confirmation-history";
 import {
@@ -168,7 +169,7 @@ export async function recordQrScan(input: QrScanInput, options: { env?: Env } = 
   const evidenceStartedAt = requireEvidenceStartedAt(env);
   const secret = loadQrSecret(env);
 
-  const owned = await prisma.lecture.findFirst({ where: { id: lectureId, class: { teacherId } }, select: { id: true } });
+  const owned = await prisma.lecture.findFirst({ where: { id: lectureId, ...NORMAL_LECTURE_WHERE, class: { teacherId } }, select: { id: true } });
   if (!owned) throw attendanceError("LECTURE_NOT_FOUND");
 
   const identity = await resolveScanIdentity(input.payload, teacherId, secret);

@@ -39,6 +39,7 @@ import type { Prisma } from "@prisma/client";
 import { mapAttendanceLockError } from "@/lib/attendance/service-errors";
 import { AppError } from "@/lib/error-handler";
 import type { CreateLectureInput } from "@/lib/lecture-validation";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { sriLankaDateKey, sriLankaDigitsToInstant } from "@/lib/time";
@@ -106,6 +107,7 @@ export async function createAttendanceLectureForTeacher(
         where: {
           classId: lectureInput.classId,
           status: 0,
+          ...NORMAL_LECTURE_WHERE,
           classStatus: { not: "CANCELLED" },
           class: { teacherId, status: 0 },
           date: { gte: range.start, lt: range.end },

@@ -1,6 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { getClassAccessRestrictions } from "@/services/class-access-service";
 import { billingMonthOf, loadStudentResourceAccess, noteBillingMonth, resourceLockFor } from "@/services/resource-access-service";
@@ -34,6 +35,7 @@ export async function GET(
       where: {
         id: lectureId,
         status: 0,
+        ...NORMAL_LECTURE_WHERE,
         class: {
           status: 0,
           students: {

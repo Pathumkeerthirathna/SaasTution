@@ -28,6 +28,7 @@
 
 import { classifyLecture, loadEvidenceConfig } from "@/lib/attendance/config";
 import { summarizeAttendance, type AttendanceSummary, type LectureOutcome } from "@/lib/attendance/percentage";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import {
   getClassAttendancePercentagesForTeacher,
@@ -352,7 +353,7 @@ async function readEnrolmentScope(studentId: string) {
 /** The lectures a legacy scope counts (lecture status 0 in those classes): one query. */
 async function readLegacyLectures(classIds: readonly string[]): Promise<LegacyLecture[]> {
   if (classIds.length === 0) return [];
-  return prisma.lecture.findMany({ where: { classId: { in: [...classIds] }, status: 0 }, select: { id: true, classId: true, date: true } });
+  return prisma.lecture.findMany({ where: { classId: { in: [...classIds] }, status: 0, ...NORMAL_LECTURE_WHERE }, select: { id: true, classId: true, date: true } });
 }
 
 /** Per-lecture new outcomes and reasons for a set of legacy lectures (see lectureDifferenceReason). */
@@ -544,7 +545,7 @@ export async function compareGuardianOverviewAttendanceForTeacher(
  */
 export async function legacyDashboardAttendanceReplica(studentId: string): Promise<{ percent: number; attended: number; total: number }> {
   const lectures = await prisma.lecture.findMany({
-    where: { status: 0, class: { status: 0, students: { some: { studentId, isActive: true } } } },
+    where: { status: 0, ...NORMAL_LECTURE_WHERE, class: { status: 0, students: { some: { studentId, isActive: true } } } },
     select: { id: true, sessions: { select: { attendance: { where: { studentId }, select: { id: true }, take: 1 } } } },
   });
   const totalLectures = lectures.length;

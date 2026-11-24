@@ -369,6 +369,8 @@ export type LockedLecture = {
   classStatus: "SCHEDULED" | "LIVE" | "COMPLETED" | "CANCELLED";
   date: Date;
   endDate: Date | null;
+  /** A class's default lecture (lib/default-lecture.ts): never a teaching session; attendance treats it as not found. */
+  isDefault?: boolean;
 };
 
 export type LockedClass = {
@@ -451,7 +453,7 @@ export async function lockStudentSetForFinalization(locks: AttendanceLocks, stud
 export async function lockLectureShared(locks: AttendanceLocks, lectureId: string): Promise<LockedLecture | null> {
   locks.check("LECTURE", lectureId, "SHARE");
   const rows = await rawOf(locks).$queryRaw<LockedLecture[]>`
-    SELECT "id", "classId", "status", "classStatus"::text AS "classStatus", "date", "endDate"
+    SELECT "id", "classId", "status", "classStatus"::text AS "classStatus", "date", "endDate", "isDefault"
     FROM "Lecture" WHERE "id" = ${lectureId} FOR SHARE`;
   if (rows[0]) locks.granted("LECTURE", lectureId, "SHARE");
   return rows[0] ?? null;
@@ -461,7 +463,7 @@ export async function lockLectureShared(locks: AttendanceLocks, lectureId: strin
 export async function lockLectureForUpdate(locks: AttendanceLocks, lectureId: string): Promise<LockedLecture | null> {
   locks.check("LECTURE", lectureId, "NO_KEY_UPDATE");
   const rows = await rawOf(locks).$queryRaw<LockedLecture[]>`
-    SELECT "id", "classId", "status", "classStatus"::text AS "classStatus", "date", "endDate"
+    SELECT "id", "classId", "status", "classStatus"::text AS "classStatus", "date", "endDate", "isDefault"
     FROM "Lecture" WHERE "id" = ${lectureId} FOR NO KEY UPDATE`;
   if (rows[0]) locks.granted("LECTURE", lectureId, "NO_KEY_UPDATE");
   return rows[0] ?? null;

@@ -48,6 +48,7 @@ import {
 } from "@/lib/attendance/locks";
 import { attendanceError } from "@/lib/attendance/service-errors";
 import { AppError } from "@/lib/error-handler";
+import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import type { ApprovalHistoryContext } from "@/lib/student-confirmation-history";
 import {
@@ -142,7 +143,7 @@ export async function reconcileLectureOnlineEvidence(
 
   // Request-level checks (each student's transaction re-checks under the lock).
   const lecture = await prisma.lecture.findFirst({
-    where: { id: lectureId, class: { teacherId: input.teacherId } },
+    where: { id: lectureId, ...NORMAL_LECTURE_WHERE, class: { teacherId: input.teacherId } },
     select: { id: true, status: true, classStatus: true, date: true },
   });
   if (!lecture || lecture.status !== 0) throw attendanceError("LECTURE_NOT_FOUND");

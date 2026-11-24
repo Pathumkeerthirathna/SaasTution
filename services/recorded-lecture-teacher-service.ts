@@ -54,10 +54,15 @@ const recordingSelect = {
 
 const sessionSelect = { id: true, recordedLectureId: true, state: true, receivedBytes: true, expectedBytes: true, expiresAt: true, lastActivityAt: true } as const;
 
-/** The lecture must be an active lecture of one of the teacher's classes (else the same 404 as a missing recording). */
+/**
+ * The lecture must be an active lecture of one of the teacher's classes (else
+ * the same 404 as a missing recording). A class's default lecture is accepted:
+ * the recording already exists and is the teacher's own (General Recordings,
+ * started only through the class-scoped upload; services/class-recordings-service.ts).
+ */
 async function assertOwnedLectureForRecording(teacherId: string, lectureId: string) {
   try {
-    await assertTeacherOwnsLecture(teacherId, lectureId);
+    await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: true });
   } catch (error) {
     if (error instanceof AppError && error.statusCode === 404) throw recordingNotFound();
     throw error;
@@ -72,11 +77,16 @@ export type TeacherLectureRecordings = {
   limits: { maxPartBytes: number; chunkBytes: number; maxPartsPerLecture: number | null; maxMoovBytes: number };
 };
 
-/** A lecture's active (status 0) recordings, every state, by part number. */
-export async function listTeacherLectureRecordings(input: { teacherId: string; lectureId: string }): Promise<TeacherLectureRecordings> {
+/**
+ * A lecture's active (status 0) recordings, every state, by part number.
+ * `includeDefault`: the class's default lecture (General Recordings), only
+ * when the caller resolved it on the server from the class
+ * (services/class-recordings-service.ts); the lecture-scoped route never sets it.
+ */
+export async function listTeacherLectureRecordings(input: { teacherId: string; lectureId: string; includeDefault?: boolean }): Promise<TeacherLectureRecordings> {
   if (!isRecordedLectureId(input.lectureId)) throw uploadError("LECTURE_NOT_FOUND");
   const config = loadConfig();
-  const lecture = await assertTeacherOwnsLecture(input.teacherId, input.lectureId);
+  const lecture = await assertTeacherOwnsLecture(input.teacherId, input.lectureId, { includeDefault: input.includeDefault === true });
   const found = await prisma.recordedLecture.findMany({
     where: { lectureId: input.lectureId, teacherId: input.teacherId, status: 0 },
     orderBy: { partNumber: "asc" },
