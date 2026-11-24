@@ -156,6 +156,11 @@ function createFakePublicDb() {
         if (!matchScalar(false, condition, `${modelName}.${key}`)) return false;
         continue;
       }
+      // YouTube privacy: YouTube recordings seeded without it are UNLISTED (the column default).
+      if (key === "privacy" && modelName === "youTubeRecording" && !Object.hasOwn(row, key)) {
+        if (!matchScalar("UNLISTED", condition, `${modelName}.${key}`)) return false;
+        continue;
+      }
       if (!Object.hasOwn(row, key)) throw new Error(`fake db: unknown field ${modelName}.${key}`);
       if (!matchScalar(row[key], condition, `${modelName}.${key}`)) return false;
     }

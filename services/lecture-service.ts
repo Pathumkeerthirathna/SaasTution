@@ -9,6 +9,7 @@ import {
 import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { emitStudentDataChange } from "@/lib/session-events";
+import { lockQuizForEdit, runQuizTransaction } from "@/lib/quiz-locks";
 import { readLectureWaiverState, recalculateAfterLectureChange } from "@/services/fee-waiver-events";
 import {
   lockLectureForUpdate,
@@ -636,8 +637,13 @@ const noteSelect = {
   access: true,
 } as const;
 
-export async function listAssignmentsForLectureForTeacher(teacherId: string, lectureId: string) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+/**
+ * `includeDefault`: only the class-scoped Assignments API
+ * (services/class-assignments-service.ts) passes it, for a class's default
+ * lecture it resolved itself (General Assignments). The lecture route never does.
+ */
+export async function listAssignmentsForLectureForTeacher(teacherId: string, lectureId: string, options: { includeDefault?: boolean } = {}) {
+  await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: options.includeDefault === true });
 
   return prisma.assignment.findMany({
     where: {
@@ -656,8 +662,13 @@ export async function listAssignmentsForLectureForTeacher(teacherId: string, lec
   });
 }
 
-export async function listQuizzesForLectureForTeacher(teacherId: string, lectureId: string) {
-  await assertTeacherOwnsLecture(teacherId, lectureId);
+/**
+ * `includeDefault`: only the class-scoped Quizzes API
+ * (services/class-quizzes-service.ts) passes it, for a class's default
+ * lecture it resolved itself (General Quizzes). The lecture route never does.
+ */
+export async function listQuizzesForLectureForTeacher(teacherId: string, lectureId: string, options: { includeDefault?: boolean } = {}) {
+  await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: options.includeDefault === true });
 
   return prisma.quiz.findMany({
     where: {
@@ -797,12 +808,14 @@ export async function listLiveBroadcastsForLectureForTeacher(teacherId: string, 
   });
 }
 
+/** `includeDefault`: as listAssignmentsForLectureForTeacher (the class-scoped Assignments API only). */
 export async function addAssignmentToLectureForTeacher(
   teacherId: string,
   lectureId: string,
-  input: CreateAssignmentInput
+  input: CreateAssignmentInput,
+  options: { includeDefault?: boolean } = {}
 ) {
-  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
+  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: options.includeDefault === true });
 
   const created = await prisma.assignment.create({
     data: {
@@ -863,12 +876,14 @@ export async function deleteAssignmentForTeacher(teacherId: string, lectureId: s
   return result.state;
 }
 
+/** `includeDefault`: as listQuizzesForLectureForTeacher (the class-scoped Quizzes API only). */
 export async function addQuizToLectureForTeacher(
   teacherId: string,
   lectureId: string,
-  input: CreateQuizInput
+  input: CreateQuizInput,
+  options: { includeDefault?: boolean } = {}
 ) {
-  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId);
+  const lecture = await assertTeacherOwnsLecture(teacherId, lectureId, { includeDefault: options.includeDefault === true });
 
   const created = await prisma.quiz.create({
     data: {
@@ -905,9 +920,23 @@ export async function updateQuizForTeacher(
   quizId: string,
   input: UpdateQuizInput
 ) {
-  await assertTeacherOwnsQuiz(teacherId, lectureId, quizId);
+  const owned = await assertTeacherOwnsQuiz(teacherId, lectureId, quizId);
 
-  return prisma.quiz.update({
+  // The quiz's questions and options are replaced as a whole. Students'
+  // submitted answers are NOT affected: each answer row carries its own
+  // snapshot of the question (lib/quiz-answer-snapshot.ts) and its questionId
+  // becomes NULL (ON DELETE SET NULL), so historical scores, attempts and
+  // reviews stay exactly as they were. The Quiz row lock (lib/quiz-locks.ts)
+  // makes the replacement atomic for submissions: a submission grades either
+  // the old or the new questions, never a mix, and never references a
+  // question being deleted.
+  const updated = await runQuizTransaction(async (tx) => {
+    await lockQuizForEdit(tx, quizId);
+    const current = await tx.quiz.findFirst({ where: { id: quizId, status: 0 }, select: { id: true } });
+    if (!current) {
+      throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
+    }
+    return tx.quiz.update({
     where: {
       id: quizId,
     },
@@ -934,6 +963,11 @@ export async function updateQuizForTeacher(
     },
     select: quizWithQuestionsSelect,
   });
+  });
+
+  // Students' open quiz pages reload the new questions (an answer to a replaced question is refused).
+  emitStudentDataChange({ classId: owned.lecture.classId });
+  return updated;
 }
 
 export async function deleteQuizForTeacher(teacherId: string, lectureId: string, quizId: string) {

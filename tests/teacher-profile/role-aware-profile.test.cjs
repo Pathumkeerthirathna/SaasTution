@@ -677,14 +677,14 @@ test("student portal page: lists the signed-in student's teachers with links to 
   await assert.rejects(() => studentTeachersPage.default(), (e) => e.statusCode === 401);
 });
 
-test("sidebar: 'Teacher Profile' added after 'My Classes'; every existing item kept in order", () => {
-  const { studentNavItems } = require(path.join(root, "components", "student-portal", "student-data.ts"));
+test("student navigation: 'Teacher Profile' is in the header profile menu (student portal navigation reorganization), first", () => {
+  const { studentNavItems, studentProfileMenuLinks } = require(path.join(root, "components", "student-portal", "student-data.ts"));
   const labels = studentNavItems.map((i) => i.label);
   assert.deepEqual(labels, [
-    "Dashboard", "Calendar", "My Classes", "Teacher Profile", "Lecture / Schedules", "Notes", "Recorded Lectures", "Assignments", "Quizzes", "Papers",
-    "Payments", "Tutes / Papers", "Attendance / History", "Messages", "My Profile", "Settings",
+    "Dashboard", "Calendar", "My Classes", "Notes", "Recordings", "Assignments", "Papers",
+    "Payments", "Tutes / Papers", "Lecture / Schedules", "Attendance / History", "Settings",
   ]);
-  assert.deepEqual(studentNavItems.find((i) => i.label === "Teacher Profile"), { href: "/student/teacher-profile", label: "Teacher Profile", icon: "teacherProfile" });
+  assert.deepEqual(studentProfileMenuLinks[0], { href: "/student/teacher-profile", label: "Teacher Profile", icon: "teacherProfile" });
   assert.match(read("components", "student-portal", "student-sidebar.tsx"), /teacherProfile: Presentation/);
 });
 
@@ -720,7 +720,10 @@ test("profile page component: Payment Details is a header button (manage for the
   const header = read("components", "teacherProfile", "TeacherProfileHeader.tsx");
   assert.match(header, /extraActions\?: React\.ReactNode;/);
   assert.match(header, /<div className="flex flex-wrap items-center justify-end gap-2">\s*\{extraActions\}\s*<button\s+type="button"\s+onClick=\{handleShare\}/, "in the header's right-aligned action row, before Share");
-  assert.match(read("components", "dashboard-shell.tsx"), /href: "\/dashboard\/teacher\/profile"/);
+  // The teacher's way in: the profile menu (name / avatar), since the navigation reorganization.
+  const shell = read("components", "dashboard-shell.tsx");
+  assert.match(shell, /export const TEACHER_PROFILE_HREF = "\/dashboard\/teacher\/profile";/);
+  assert.match(shell, /href=\{TEACHER_PROFILE_HREF\}/);
   for (const page of [["app", "dashboard", "teacher", "profile", "page.tsx"], ["app", "teacher", "profile", "page.tsx"]]) {
     const pageSrc = read(...page);
     assert.match(pageSrc, /requireTeacherSession\(\)/, `${page.join("/")}: teacher session`);

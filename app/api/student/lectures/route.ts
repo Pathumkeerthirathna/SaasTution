@@ -3,6 +3,7 @@ import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
+import { STUDENT_VISIBLE_PRIVACY_WHERE } from "@/lib/youtube-student-privacy";
 
 export const dynamic = "force-dynamic";
 
@@ -138,7 +139,8 @@ export async function GET(request: Request) {
           _count: {
             select: {
               assignments: { where: { status: 0 } },
-              youtubeRecordings: { where: { visibility: "PUBLIC" } },
+              // Never a YouTube-PRIVATE recording (lib/youtube-student-privacy.ts).
+              youtubeRecordings: { where: { visibility: "PUBLIC", ...STUDENT_VISIBLE_PRIVACY_WHERE } },
             },
           },
         },

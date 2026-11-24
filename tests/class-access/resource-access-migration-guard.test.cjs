@@ -28,6 +28,7 @@ test("placement: right after Grade 0; only the approved default lecture migratio
     "20261127120000_add_grade_zero",
     MIGRATION,
     "20261129120000_add_lecture_is_default", // Default lecture (tests/lectures/default-lecture-migration-guard.test.cjs)
+    "20261130120000_add_quiz_answer_snapshots", // Quiz answer snapshots (tests/quizzes/quiz-answer-snapshots.test.cjs)
   ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");

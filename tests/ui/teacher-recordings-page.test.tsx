@@ -246,7 +246,7 @@ test("workspace: responsive, sections visually distinct, nothing truncated", () 
 
 // ---- Page and navigation ---------------------------------------------------------------------------------
 
-test("page and sidebar: Recordings > Recorded Lectures needs a teacher session; the Recordings group right after Notes", () => {
+test("page and sidebar: Recordings > Recorded Lectures needs a teacher session; the Recordings group after Notes and Assignments (sidebar reorganization)", () => {
   // Recordings navigation consolidation: the page moved to /dashboard/recordings/recorded-lectures
   // (the former /dashboard/recorded-lectures redirects there; tests/ui/recordings-navigation.test.tsx).
   const page = code(source("app", "dashboard", "recordings", "recorded-lectures", "page.tsx"));
@@ -255,7 +255,7 @@ test("page and sidebar: Recordings > Recorded Lectures needs a teacher session; 
   const shell = source("components", "dashboard-shell.tsx");
   const notes = shell.indexOf('href: "/dashboard/notes"');
   const recordings = shell.indexOf('href: "/dashboard/recordings"');
-  assert.ok(notes > shell.indexOf('href: "/dashboard/attendance"') && recordings > notes, "Attendance, Notes, Recordings");
+  assert.ok(recordings > notes && recordings > shell.indexOf('href: "/dashboard/assignments"'), "Notes, Assignments, Recordings");
   assert.ok(recordings < shell.indexOf('href: "/dashboard/material-bundles"'));
   assert.match(shell, /\{ href: "\/dashboard\/recordings\/recorded-lectures", label: "Recorded Lectures" \}/);
   assert.doesNotMatch(shell, /href: "\/dashboard\/recorded-lectures"/, "no flat Recorded Lectures item any more");

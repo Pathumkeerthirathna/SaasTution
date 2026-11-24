@@ -2,20 +2,17 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
-import { prisma } from "@/lib/prisma";
+import { snapshotQuizQuestion, type GradableQuizQuestion } from "@/lib/quiz-answer-snapshot";
+import { lockQuizAttempt, lockQuizForSubmission, runQuizTransaction } from "@/lib/quiz-locks";
 import { submitQuizSchema } from "@/lib/quiz-submission-validation";
 import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const dynamic = "force-dynamic";
 
-type QuestionShape = {
-  id: string;
-  answerType: "SINGLE" | "MULTIPLE";
-  options: {
-    id: string;
-    isCorrect: boolean;
-  }[];
-};
+type QuestionShape = Pick<GradableQuizQuestion, "id" | "answerType" | "options">;
+
+/** Quiz ids are UUIDs; anything else cannot exist (and is never used as a lock key). */
+const QUIZ_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 function normalizeIds(ids: string[]) {
   return [...new Set(ids)].sort();
@@ -66,6 +63,9 @@ export async function POST(
     if (!quizId?.trim()) {
       throw new AppError("Quiz id is required.", 400, "VALIDATION_ERROR");
     }
+    if (!QUIZ_ID.test(quizId)) {
+      throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
+    }
     // Payment-due access control (services/class-access-service.ts).
     await assertContentAccessForStudent(studentSession.studentId, { quizId });
 
@@ -83,125 +83,173 @@ export async function POST(
       return apiError(firstIssue, 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
-    const quiz = await prisma.quiz.findFirst({
-      where: {
-        id: quizId,
-        status: 0,
-        lecture: {
-          status: 0,
-          class: {
-            students: {
-              some: {
-                studentId: studentSession.studentId,
-                isActive: true,
-              },
-            },
-          },
-        },
-      },
-      select: {
-        id: true,
-        maxAttempts: true,
-        startDateTime: true,
-        endDateTime: true,
-        lecture: { select: { classId: true } },
-        questions: {
-          orderBy: {
-            orderIndex: "asc",
-          },
-          select: {
-            id: true,
-            answerType: true,
-            options: {
-              select: {
-                id: true,
-                isCorrect: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    // Everything below runs under the quiz's row lock (lib/quiz-locks.ts): a
+    // concurrent edit either committed before (these are its new questions)
+    // or waits until this attempt is saved with the questions it was graded
+    // on. The (quiz, student) lock serializes one student's submissions, so
+    // the attempt limit and the single submission row are never raced.
+    const result = await runQuizTransaction(async (tx) => {
+      await lockQuizForSubmission(tx, quizId);
+      await lockQuizAttempt(tx, quizId, studentSession.studentId);
 
-    if (!quiz) {
-      throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
-    }
-
-    const submitAt = new Date();
-    if (submitAt < quiz.startDateTime) {
-      throw new AppError("This quiz has not started yet.", 403, "QUIZ_NOT_STARTED");
-    }
-    if (submitAt > quiz.endDateTime) {
-      throw new AppError("This quiz is closed and no longer accepting submissions.", 403, "QUIZ_CLOSED");
-    }
-
-    if (quiz.questions.length === 0) {
-      throw new AppError("Quiz has no questions.", 400, "QUIZ_HAS_NO_QUESTIONS");
-    }
-
-    const answerByQuestion = new Map(
-      parsed.data.answers.map((answer) => [answer.questionId, answer.selectedOptionIds])
-    );
-
-    if (answerByQuestion.size !== parsed.data.answers.length) {
-      throw new AppError("Duplicate question answers are not allowed.", 400, "VALIDATION_ERROR");
-    }
-
-    const evaluatedAnswers = quiz.questions.map((question) => {
-      const selectedOptionIds = answerByQuestion.get(question.id);
-
-      if (!selectedOptionIds) {
-        throw new AppError("All questions must be answered.", 400, "VALIDATION_ERROR");
-      }
-
-      const evaluated = evaluateQuestion(question, selectedOptionIds);
-
-      return {
-        questionId: question.id,
-        selectedOptionIds: evaluated.selectedOptionIds,
-        isCorrect: evaluated.isCorrect,
-      };
-    });
-
-    for (const answer of parsed.data.answers) {
-      if (!quiz.questions.some((question) => question.id === answer.questionId)) {
-        throw new AppError("Submitted answer contains an invalid question.", 400, "VALIDATION_ERROR");
-      }
-    }
-
-    const score = evaluatedAnswers.filter((answer) => answer.isCorrect).length;
-    const totalQuestions = quiz.questions.length;
-
-    const submission = await prisma.$transaction(async (tx) => {
-      const existing = await tx.quizSubmission.findUnique({
+      const quiz = await tx.quiz.findFirst({
         where: {
-          quizId_studentId: {
-            quizId,
-            studentId: studentSession.studentId,
+          id: quizId,
+          status: 0,
+          lecture: {
+            status: 0,
+            class: {
+              students: {
+                some: {
+                  studentId: studentSession.studentId,
+                  isActive: true,
+                },
+              },
+            },
           },
         },
         select: {
           id: true,
-          attemptCount: true,
+          maxAttempts: true,
+          startDateTime: true,
+          endDateTime: true,
+          lecture: { select: { classId: true } },
+          questions: {
+            orderBy: {
+              orderIndex: "asc",
+            },
+            select: {
+              id: true,
+              text: true,
+              orderIndex: true,
+              answerType: true,
+              options: {
+                orderBy: { orderIndex: "asc" },
+                select: {
+                  id: true,
+                  text: true,
+                  isCorrect: true,
+                  orderIndex: true,
+                },
+              },
+            },
+          },
         },
       });
 
-      if (quiz.maxAttempts !== null && existing && existing.attemptCount >= quiz.maxAttempts) {
-        throw new AppError(
-          `You have used all ${quiz.maxAttempts} attempt(s) for this quiz.`,
-          403,
-          "MAX_ATTEMPTS_REACHED"
-        );
+      if (!quiz) {
+        throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
       }
 
-      if (!existing) {
-        return tx.quizSubmission.create({
+      const submitAt = new Date();
+      if (submitAt < quiz.startDateTime) {
+        throw new AppError("This quiz has not started yet.", 403, "QUIZ_NOT_STARTED");
+      }
+      if (submitAt > quiz.endDateTime) {
+        throw new AppError("This quiz is closed and no longer accepting submissions.", 403, "QUIZ_CLOSED");
+      }
+
+      if (quiz.questions.length === 0) {
+        throw new AppError("Quiz has no questions.", 400, "QUIZ_HAS_NO_QUESTIONS");
+      }
+
+      const answerByQuestion = new Map(
+        parsed.data.answers.map((answer) => [answer.questionId, answer.selectedOptionIds])
+      );
+
+      if (answerByQuestion.size !== parsed.data.answers.length) {
+        throw new AppError("Duplicate question answers are not allowed.", 400, "VALIDATION_ERROR");
+      }
+
+      const evaluatedAnswers = quiz.questions.map((question) => {
+        const selectedOptionIds = answerByQuestion.get(question.id);
+
+        if (!selectedOptionIds) {
+          throw new AppError("All questions must be answered.", 400, "VALIDATION_ERROR");
+        }
+
+        const evaluated = evaluateQuestion(question, selectedOptionIds);
+
+        return {
+          // The question as answered (text, type, options): the answer's immutable record.
+          ...snapshotQuizQuestion(question),
+          selectedOptionIds: evaluated.selectedOptionIds,
+          isCorrect: evaluated.isCorrect,
+        };
+      });
+
+      for (const answer of parsed.data.answers) {
+        if (!quiz.questions.some((question) => question.id === answer.questionId)) {
+          throw new AppError("Submitted answer contains an invalid question.", 400, "VALIDATION_ERROR");
+        }
+      }
+
+      const score = evaluatedAnswers.filter((answer) => answer.isCorrect).length;
+      const totalQuestions = quiz.questions.length;
+
+      // The existing attempt bookkeeping, unchanged (one submission row per
+      // student: a new attempt replaces the previous attempt's answers).
+      const saveAttempt = async () => {
+        const existing = await tx.quizSubmission.findUnique({
+          where: {
+            quizId_studentId: {
+              quizId,
+              studentId: studentSession.studentId,
+            },
+          },
+          select: {
+            id: true,
+            attemptCount: true,
+          },
+        });
+
+        if (quiz.maxAttempts !== null && existing && existing.attemptCount >= quiz.maxAttempts) {
+          throw new AppError(
+            `You have used all ${quiz.maxAttempts} attempt(s) for this quiz.`,
+            403,
+            "MAX_ATTEMPTS_REACHED"
+          );
+        }
+
+        if (!existing) {
+          return tx.quizSubmission.create({
+            data: {
+              quizId,
+              studentId: studentSession.studentId,
+              score,
+              totalQuestions,
+              attemptCount: 1,
+              submittedAt: new Date(),
+              answers: {
+                createMany: {
+                  data: evaluatedAnswers,
+                },
+              },
+            },
+            select: {
+              id: true,
+              score: true,
+              totalQuestions: true,
+              attemptCount: true,
+              submittedAt: true,
+            },
+          });
+        }
+
+        await tx.quizSubmissionAnswer.deleteMany({
+          where: {
+            submissionId: existing.id,
+          },
+        });
+
+        return tx.quizSubmission.update({
+          where: {
+            id: existing.id,
+          },
           data: {
-            quizId,
-            studentId: studentSession.studentId,
             score,
             totalQuestions,
-            attemptCount: 1,
+            attemptCount: { increment: 1 },
             submittedAt: new Date(),
             answers: {
               createMany: {
@@ -217,42 +265,16 @@ export async function POST(
             submittedAt: true,
           },
         });
-      }
+      };
 
-      await tx.quizSubmissionAnswer.deleteMany({
-        where: {
-          submissionId: existing.id,
-        },
-      });
-
-      return tx.quizSubmission.update({
-        where: {
-          id: existing.id,
-        },
-        data: {
-          score,
-          totalQuestions,
-          attemptCount: { increment: 1 },
-          submittedAt: new Date(),
-          answers: {
-            createMany: {
-              data: evaluatedAnswers,
-            },
-          },
-        },
-        select: {
-          id: true,
-          score: true,
-          totalQuestions: true,
-          attemptCount: true,
-          submittedAt: true,
-        },
-      });
+      return { saved: await saveAttempt(), classId: quiz.lecture.classId };
     });
+
+    const submission = result.saved;
 
     emitStudentDataChange({
       studentId: studentSession.studentId,
-      classId: quiz.lecture.classId,
+      classId: result.classId,
     });
 
     return apiSuccess(

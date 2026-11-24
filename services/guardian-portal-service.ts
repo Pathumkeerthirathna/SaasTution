@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/error-handler";
 import { displayGradeForStudent } from "@/lib/grade";
+import { courseworkLectureJson } from "@/lib/coursework-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaDigitsToInstant } from "@/lib/time";
 import {
@@ -242,6 +243,7 @@ export async function getGuardianStudentAssignments(
           id: true,
           title: true,
           date: true,
+          isDefault: true,
           class: { select: { id: true, name: true } },
         },
       },
@@ -272,8 +274,8 @@ export async function getGuardianStudentAssignments(
       dueDate: a.dueDate.toISOString(),
       classId: a.lecture.class.id,
       className: a.lecture.class.name,
-      lectureTitle: a.lecture.title,
-      lectureDate: a.lecture.date.toISOString(),
+      // General Assignments: isGeneral, the General label, no lecture date (lib/coursework-lecture.ts).
+      ...courseworkLectureJson("assignment", a.lecture),
       status,
       submittedAt: submission?.submittedAt.toISOString() ?? null,
       marks: submission?.marks ?? null,

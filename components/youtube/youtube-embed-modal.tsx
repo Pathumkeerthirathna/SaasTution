@@ -19,7 +19,8 @@ export function youtubeEmbedUrl(videoId: string): string {
   return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
 }
 
-export function YouTubeEmbedModal({ video, onClose }: { video: PlayableVideo | null; onClose: () => void }) {
+/** `title`: the heading and the player's accessible name (default "Lecture recording", as before). */
+export function YouTubeEmbedModal({ video, onClose, title = "Lecture recording" }: { video: PlayableVideo | null; onClose: () => void; title?: string }) {
   if (!video) return null;
   return (
     <>
@@ -29,7 +30,7 @@ export function YouTubeEmbedModal({ video, onClose }: { video: PlayableVideo | n
           <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
             <p className="flex items-center gap-1.5 text-xs font-medium text-white">
               <Video size={13} />
-              Lecture recording
+              {title}
             </p>
             <button
               type="button"
@@ -44,7 +45,7 @@ export function YouTubeEmbedModal({ video, onClose }: { video: PlayableVideo | n
           <div className="aspect-video w-full">
             <iframe
               key={video.id}
-              title="Lecture recording"
+              title={title}
               src={youtubeEmbedUrl(video.videoId)}
               className="h-full w-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

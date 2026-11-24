@@ -96,8 +96,10 @@ function project(row, select) {
     return out;
 }
 
+// Equality, or { in: [...] } (the student privacy filter, lib/youtube-student-privacy.ts).
 const matchesRecordingWhere = (rec, where = {}) =>
-    Object.entries(where).every(([key, value]) => rec[key] === value);
+    Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && Array.isArray(value.in) ? value.in.includes(rec[key]) : rec[key] === value);
 
 function lectureView(select) {
     const view = project(lectureRow, select);

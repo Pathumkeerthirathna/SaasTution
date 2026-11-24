@@ -31,8 +31,11 @@ interface QuizRow {
   quizId: string;
   quizTitle: string;
   lectureId: string;
+  /** The lecture's title, or "General Quizzes" for General content (isGeneral). */
   lectureTitle: string;
-  lectureDate: string;
+  /** Null for General content: the class's default lecture has no lecture date to show. */
+  lectureDate: string | null;
+  isGeneral?: boolean;
   startDateTime: string;
   endDateTime: string;
   attempted: boolean;
@@ -254,7 +257,8 @@ export function StudentQuizzes({ studentId, data }: StudentQuizzesProps) {
                 {rows.map((quiz) => (
                   <li key={quiz.quizId}>
                     <Link
-                      href={`/dashboard/lectures?focusLectureId=${quiz.lectureId}`}
+                      // A General Quiz has no lecture to open: its class's General Quizzes instead.
+                      href={quiz.isGeneral ? `/dashboard/quizzes?classId=${encodeURIComponent(cls.classId)}` : `/dashboard/lectures?focusLectureId=${quiz.lectureId}`}
                       className="flex items-start gap-3 px-3.5 py-2 transition-colors hover:bg-slate-50"
                     >
                       <div className="min-w-0 flex-1">

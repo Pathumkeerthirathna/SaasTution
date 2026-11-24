@@ -2,6 +2,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { prisma } from "@/lib/prisma";
+import { reviewQuestionsFromAnswers, STORED_QUIZ_ANSWER_SELECT } from "@/lib/quiz-answer-snapshot";
 import { assertContentAccessForStudent } from "@/services/class-access-service";
 
 export const dynamic = "force-dynamic";
@@ -33,12 +34,11 @@ export async function GET(
         totalQuestions: true,
         attemptCount: true,
         submittedAt: true,
+        // The submitted answers with their snapshots: the review is built from
+        // these only (lib/quiz-answer-snapshot.ts), never from the quiz's
+        // current questions, which a later edit may have replaced.
         answers: {
-          select: {
-            questionId: true,
-            selectedOptionIds: true,
-            isCorrect: true,
-          },
+          select: STORED_QUIZ_ANSWER_SELECT,
         },
         quiz: {
           select: {
@@ -62,24 +62,6 @@ export async function GET(
                 },
               },
             },
-            questions: {
-              orderBy: { orderIndex: "asc" },
-              select: {
-                id: true,
-                text: true,
-                orderIndex: true,
-                answerType: true,
-                options: {
-                  orderBy: { orderIndex: "asc" },
-                  select: {
-                    id: true,
-                    text: true,
-                    isCorrect: true,
-                    orderIndex: true,
-                  },
-                },
-              },
-            },
           },
         },
       },
@@ -98,32 +80,12 @@ export async function GET(
       throw new AppError("Quiz not found.", 404, "QUIZ_NOT_FOUND");
     }
 
-    const answerByQuestionId = new Map(
-      submission.answers.map((answer) => [
-        answer.questionId,
-        { selectedOptionIds: answer.selectedOptionIds, isCorrect: answer.isCorrect },
-      ])
-    );
-
     return apiSuccess({
       quiz: {
         id: submission.quiz.id,
         title: submission.quiz.title,
-        questions: submission.quiz.questions.map((question) => {
-          const studentAnswer = answerByQuestionId.get(question.id);
-          return {
-            id: question.id,
-            text: question.text,
-            answerType: question.answerType,
-            isCorrect: studentAnswer?.isCorrect ?? false,
-            selectedOptionIds: studentAnswer?.selectedOptionIds ?? [],
-            options: question.options.map((option) => ({
-              id: option.id,
-              text: option.text,
-              isCorrect: option.isCorrect,
-            })),
-          };
-        }),
+        // Exactly the questions of the submitted attempt, as they were answered.
+        questions: reviewQuestionsFromAnswers(submission.answers),
       },
       submission: {
         id: submission.id,

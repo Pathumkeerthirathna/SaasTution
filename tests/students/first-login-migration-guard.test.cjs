@@ -34,6 +34,7 @@ test("placement: after the profile-image migrations; only the approved email out
     "20261127120000_add_grade_zero", // Grade 0 (tests/students/grade-zero-migration-guard.test.cjs)
     "20261128120000_add_resource_month_access", // Monthly resource access (tests/class-access/resource-access-migration-guard.test.cjs)
     "20261129120000_add_lecture_is_default", // Default lecture (tests/lectures/default-lecture-migration-guard.test.cjs)
+    "20261130120000_add_quiz_answer_snapshots", // Quiz answer snapshots (tests/quizzes/quiz-answer-snapshots.test.cjs)
   ]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");

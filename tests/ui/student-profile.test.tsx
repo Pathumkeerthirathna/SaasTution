@@ -32,7 +32,7 @@ import {
   type PhoneSaveResult,
   type StudentProfileData,
 } from "../../components/student-portal/student-profile";
-import { studentNavItems } from "../../components/student-portal/student-data";
+import { studentNavItems, studentProfileMenuLinks } from "../../components/student-portal/student-data";
 
 const ROOT = path.join(__dirname, "..", "..");
 const source = (...parts: string[]) => readFileSync(path.join(ROOT, ...parts), "utf8").replace(/\r\n/g, "\n");
@@ -159,34 +159,31 @@ test("page: /student/profile renders the profile panel (no redirect any more)", 
   assert.doesNotMatch(panel, /localStorage|sessionStorage|console\./);
 });
 
-test("navigation: one 'My Profile' entry linking to /student/profile with its own icon; the other entries unchanged", () => {
-  const profileItems = studentNavItems.filter((item) => item.href === "/student/profile");
-  assert.deepEqual(profileItems, [{ href: "/student/profile", label: "My Profile", icon: "profile" }]);
+test("navigation: one 'My Profile' link to /student/profile with its own icon, in the header profile menu (student portal navigation reorganization)", () => {
+  assert.deepEqual(studentProfileMenuLinks.filter((item) => item.href === "/student/profile"), [{ href: "/student/profile", label: "My Profile", icon: "profile" }]);
+  assert.ok(!studentNavItems.some((item) => item.href === "/student/profile"), "no longer a sidebar item");
   assert.deepEqual(
-    studentNavItems.filter((item) => item.href !== "/student/profile").map((item) => item.href),
+    studentNavItems.map((item) => item.href),
     [
       "/student/dashboard",
       "/student/calendar",
       "/student/classes",
-      "/student/teacher-profile", // Role-aware teacher profile (tests/teacher-profile/role-aware-profile.test.cjs)
-      "/student/lectures",
-      "/student/notes", // Notes redesign Stage 3 (tests/ui/student-notes-page.test.tsx)
-      "/student/recorded-lectures", // Recorded Lectures RL-5.1 (approved entry point D-2)
-      "/student/assignments",
-      "/student/quizzes",
+      "/student/notes",
+      "/student/recorded-lectures", // the Recordings group (tests/ui/student-navigation.test.tsx)
+      "/student/assignments", // the Assignments group
       "/student/papers",
       "/student/payments",
       "/student/material-bundles",
+      "/student/lectures",
       "/student/attendance",
-      "/student/messages",
       "/student/settings",
     ]
   );
   const sidebar = source("components", "student-portal", "student-sidebar.tsx");
   assert.match(sidebar, /profile:\s+UserRound,/);
-  // Active highlighting: the shell picks the exact nav entry for /student/profile.
+  // Active highlighting: the shared helper (a header-menu page highlights nothing in the sidebar).
   const shell = source("components", "student-portal", "student-shell.tsx");
-  assert.match(shell, /const exact = studentNavItems\.find\(\(item\) => item\.href === pathname\);/);
+  assert.match(shell, /const activePath = useMemo\(\(\) => studentActiveNavHref\(pathname\), \[pathname\]\);/);
   // Teacher navigation untouched.
   assert.doesNotMatch(source("components", "dashboard-shell.tsx"), /student\/profile/);
 });

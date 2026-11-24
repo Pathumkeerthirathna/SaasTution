@@ -3,6 +3,7 @@ import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
 import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
+import { STUDENT_VISIBLE_PRIVACY_WHERE } from "@/lib/youtube-student-privacy";
 import { getClassAccessRestrictions } from "@/services/class-access-service";
 import { billingMonthOf, loadStudentResourceAccess, noteBillingMonth, resourceLockFor } from "@/services/resource-access-service";
 
@@ -88,7 +89,8 @@ export async function GET(
           select: { id: true, title: true, createdAt: true },
         },
         youtubeRecordings: {
-          where: { visibility: "PUBLIC" },
+          // Never a YouTube-PRIVATE recording: no id, link or playback (lib/youtube-student-privacy.ts).
+          where: { visibility: "PUBLIC", ...STUDENT_VISIBLE_PRIVACY_WHERE },
           orderBy: { createdAt: "desc" },
           select: {
             id: true,

@@ -33,7 +33,7 @@ test("exactly one statement: ALTER TYPE \"TeacherTitle\" ADD VALUE 'ENG' (additi
 
 test("placement: right after the teacher payment accounts one; only the approved Grade 0 migration follows; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(all.indexOf(PREVIOUS)), [PREVIOUS, MIGRATION, "20261127120000_add_grade_zero", "20261128120000_add_resource_month_access", "20261129120000_add_lecture_is_default"]);
+  assert.deepEqual(all.slice(all.indexOf(PREVIOUS)), [PREVIOUS, MIGRATION, "20261127120000_add_grade_zero", "20261128120000_add_resource_month_access", "20261129120000_add_lecture_is_default", "20261130120000_add_quiz_answer_snapshots"]);
   const changed = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(changed, "", "committed migrations are untouched");
 });

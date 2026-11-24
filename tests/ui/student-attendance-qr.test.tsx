@@ -26,7 +26,7 @@ import {
   qrDialogKeyAction,
 } from "../../components/qr/qr-enlarge-dialog";
 import { STUDENT_QR_ENDPOINTS, StudentQrPanel } from "../../components/student-portal/student-qr-panel";
-import { STUDENT_QR_PANEL_ID, studentNavItems } from "../../components/student-portal/student-data";
+import { STUDENT_QR_PANEL_ID, studentNavHrefs, studentProfileMenuLinks } from "../../components/student-portal/student-data";
 
 const ROOT = path.join(__dirname, "..", "..");
 const source = (...parts: string[]) => readFileSync(path.join(ROOT, ...parts), "utf8").replace(/\r\n/g, "\n");
@@ -146,8 +146,8 @@ test("settings: password management unchanged; the QR is a link to My Profile (o
   );
   assert.deepEqual(uses, ["components/student-portal/student-profile.tsx"]);
 
-  const hrefs = studentNavItems.map((item) => item.href);
-  assert.ok(hrefs.includes("/student/profile") && hrefs.includes("/student/settings"));
+  // My Profile is in the header profile menu; Settings in the sidebar (student portal navigation reorganization).
+  assert.ok(studentProfileMenuLinks.some((link) => link.href === "/student/profile") && studentNavHrefs().includes("/student/settings"));
   assert.match(source("components", "student-portal", "student-profile.tsx"), /href="\/student\/settings"/);
 });
 

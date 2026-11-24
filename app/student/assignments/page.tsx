@@ -27,8 +27,11 @@ type AssignmentRecord = {
   classId: string;
   className: string;
   lectureId: string;
+  /** The lecture's title, or "General Assignments" for General content (isGeneral). */
   lectureTitle: string;
-  lectureDate: string;
+  /** Null for General content: the class's default lecture has no lecture date to show. */
+  lectureDate: string | null;
+  isGeneral?: boolean;
   submission: {
     id: string;
     notes: string | null;
@@ -383,10 +386,13 @@ function StudentAssignmentsPageInner() {
                           <BookOpenText size={11} />
                           {item.lectureTitle}
                         </span>
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarDays size={11} />
-                          {fmtSriLankaDate(item.lectureDate)}
-                        </span>
+                        {/* General content has no lecture date (lib/coursework-lecture.ts). */}
+                        {!item.isGeneral && item.lectureDate ? (
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarDays size={11} />
+                            {fmtSriLankaDate(item.lectureDate)}
+                          </span>
+                        ) : null}
                         <span className="text-slate-400">· {item.className}</span>
                       </p>
 

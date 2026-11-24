@@ -24,9 +24,9 @@ const sql = normalize(raw);
 const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
 const schema = fs.readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8");
 
-test("placement: the newest migration, right after monthly resource access; no committed migration changed (git)", () => {
+test("placement: right after monthly resource access; only the approved quiz answer snapshot migration follows; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.deepEqual(all.slice(-2), ["20261128120000_add_resource_month_access", MIGRATION]);
+  assert.deepEqual(all.slice(all.indexOf(MIGRATION) - 1), ["20261128120000_add_resource_month_access", MIGRATION, "20261130120000_add_quiz_answer_snapshots"]);
   const diff = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(diff, "", "committed migrations are untouched");
 });

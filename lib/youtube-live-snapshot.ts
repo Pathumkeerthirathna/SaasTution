@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { clearCompleteRequested, findDepartureSendState, youTubeEndedCloseData } from "@/lib/youtube-feature-state";
 import { getPolledYouTubeBroadcast } from "@/lib/youtube-status-cache";
-import { YouTubeBroadcastStatus, YouTubePrivacy } from "@prisma/client";
+import { YouTubeBroadcastStatus } from "@prisma/client";
+import { STUDENT_VISIBLE_YOUTUBE_PRIVACIES } from "@/lib/youtube-student-privacy";
 
 /**
  * The classroom's "is this lecture live on YouTube" snapshot, sent as the
@@ -23,10 +24,8 @@ const NOT_LIVE: LiveStatusPayload = { isLive: false, youtubeUrl: null };
 
 // Privacies a student may be shown. A PRIVATE broadcast is only viewable by
 // the channel owner (the teacher), so its status and URL never reach students.
-const STUDENT_VISIBLE_PRIVACIES: YouTubePrivacy[] = [
-  YouTubePrivacy.PUBLIC,
-  YouTubePrivacy.UNLISTED,
-];
+// The shared student list (lib/youtube-student-privacy.ts): PUBLIC and UNLISTED.
+const STUDENT_VISIBLE_PRIVACIES = STUDENT_VISIBLE_YOUTUBE_PRIVACIES;
 
 // Only these two lifeCycleStatus values mean YouTube considers the
 // broadcast definitively over. Everything else — including transitional

@@ -276,6 +276,8 @@ function createFakeDb() {
     if (model === "ClassStudent") return { ...base, freeCardEligible: false, ...data };
     // Lecture.isDefault (migration 20261129120000): database default.
     if (model === "Lecture") return { ...base, isDefault: false, ...data };
+    // YouTube privacy: the schema default (UNLISTED), filtered for students (lib/youtube-student-privacy.ts).
+    if (model === "YouTubeRecording" || model === "YouTubeLiveBroadcast") return { ...base, privacy: "UNLISTED", ...data };
     if (model === "ClassPayment") return { ...base, status: "PENDING", source: "STUDENT_SLIP", paymentMethod: null, receivedAt: null, recordedByTeacherId: null, requestKey: null, submittedAt: new Date(), ...data }; // schema defaults
     return { ...base, ...data };
   }

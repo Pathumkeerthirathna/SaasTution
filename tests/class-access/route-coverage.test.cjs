@@ -192,5 +192,6 @@ test("enforcing functions and modules really make the check", () => {
     );
   }
   // Live YouTube watch links are filtered for restricted classes.
-  assert.match(read("lib/youtube-live-status.ts"), /getClassAccessRestrictions\(options\.studentId\)[\s\S]{0,600}id: \{ notIn: restrictedClassIds \}/);
+  // (The student privacy filter, lib/youtube-student-privacy.ts, sits in the same query.)
+  assert.match(read("lib/youtube-live-status.ts"), /getClassAccessRestrictions\(options\.studentId\)[\s\S]{0,900}id: \{ notIn: restrictedClassIds \}/);
 });

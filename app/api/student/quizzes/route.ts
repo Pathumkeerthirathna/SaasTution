@@ -1,6 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
+import { courseworkLectureView } from "@/lib/coursework-lecture";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
             id: true,
             title: true,
             date: true,
+            isDefault: true,
             class: {
               select: {
                 name: true,
@@ -69,8 +71,8 @@ export async function GET(request: Request) {
         id: quiz.id,
         title: quiz.title,
         className: quiz.lecture.class.name,
-        lectureTitle: quiz.lecture.title,
-        lectureDate: quiz.lecture.date,
+        // General Quizzes: isGeneral, the General label, no lecture date (lib/coursework-lecture.ts).
+        ...courseworkLectureView("quiz", quiz.lecture),
         totalQuestions: quiz.questions.length,
         maxAttempts: quiz.maxAttempts,
         startDateTime: quiz.startDateTime,

@@ -1,7 +1,11 @@
+export type StudentNavChild = { href: string; label: string };
+
 export type StudentNavItem = {
   href: string;
   label: string;
   icon: string;
+  /** When present, an expandable group; its own href is its first page (the collapsed rail's link). */
+  children?: StudentNavChild[];
 };
 
 export type LiveClassItem = {
@@ -55,24 +59,68 @@ export type AnnouncementItem = {
 /** Anchor of "My Attendance QR" on /student/profile (a plain module, so server pages can link to it). */
 export const STUDENT_QR_PANEL_ID = "my-attendance-qr";
 
+// Sidebar: Dashboard, Calendar and My Classes first, then the fixed order below. Teacher Profile and
+// My Profile live in the profile menu (studentProfileMenuLinks); Messages in the header's message bell.
 export const studentNavItems: StudentNavItem[] = [
   { href: "/student/dashboard",        label: "Dashboard",             icon: "dashboard" },
   { href: "/student/calendar",         label: "Calendar",              icon: "calendar" },
   { href: "/student/classes",          label: "My Classes",            icon: "classes" },
-  { href: "/student/teacher-profile",  label: "Teacher Profile",       icon: "teacherProfile" },
-  { href: "/student/lectures",         label: "Lecture / Schedules",   icon: "lectures" },
   { href: "/student/notes",            label: "Notes",                 icon: "notes" },
-  { href: "/student/recorded-lectures", label: "Recorded Lectures",    icon: "recordedLectures" },
-  { href: "/student/assignments",      label: "Assignments",           icon: "assignments" },
-  { href: "/student/quizzes",          label: "Quizzes",               icon: "quizzes" },
+  {
+    href: "/student/recorded-lectures",
+    label: "Recordings",
+    icon: "recordedLectures",
+    children: [
+      { href: "/student/recorded-lectures", label: "Recorded Lectures" },
+      { href: "/student/recordings/live-recordings", label: "Live Recordings" },
+      { href: "/student/recordings/youtube-live-sessions", label: "YouTube Live Sessions" },
+    ],
+  },
+  {
+    href: "/student/assignments",
+    label: "Assignments",
+    icon: "assignments",
+    children: [
+      { href: "/student/assignments", label: "Assignments" },
+      { href: "/student/quizzes", label: "Quizzes" },
+    ],
+  },
   { href: "/student/papers",           label: "Papers",                icon: "papers" },
   { href: "/student/payments",         label: "Payments",              icon: "payments" },
   { href: "/student/material-bundles", label: "Tutes / Papers",        icon: "folder" },
+  { href: "/student/lectures",         label: "Lecture / Schedules",   icon: "lectures" },
   { href: "/student/attendance",       label: "Attendance / History",  icon: "attendance" },
-  { href: "/student/messages",         label: "Messages",              icon: "messages" },
-  { href: "/student/profile",          label: "My Profile",            icon: "profile" },
   { href: "/student/settings",         label: "Settings",              icon: "settings" },
 ];
+
+/** The header profile menu's page links (name / avatar), in this order. */
+export const studentProfileMenuLinks: StudentNavItem[] = [
+  { href: "/student/teacher-profile",  label: "Teacher Profile",       icon: "teacherProfile" },
+  { href: "/student/profile",          label: "My Profile",            icon: "profile" },
+];
+
+/** Every page the sidebar links to (groups' pages included), for active highlighting. */
+export function studentNavHrefs(items: StudentNavItem[] = studentNavItems): string[] {
+  return [...new Set(items.flatMap((item) => (item.children ? item.children.map((c) => c.href) : [item.href])))];
+}
+
+/**
+ * The sidebar page to highlight for a path: the exact page, else the longest
+ * page the path is under (/student/recorded-lectures/{id}: Recorded Lectures).
+ * Settings also covers /account/security. Pages reached from the header
+ * (profile menu, messages) highlight nothing; any other path: Dashboard.
+ */
+export function studentActiveNavHref(pathname: string | null): string | null {
+  if (!pathname) return "/student/dashboard";
+  const hrefs = studentNavHrefs();
+  if (hrefs.includes(pathname)) return pathname;
+  if (pathname.startsWith("/student/settings") || pathname.startsWith("/account/security")) return "/student/settings";
+  const under = hrefs.filter((href) => href !== "/student/dashboard" && pathname.startsWith(`${href}/`)).sort((a, b) => b.length - a.length)[0];
+  if (under) return under;
+  const headerPages = [...studentProfileMenuLinks.map((l) => l.href), "/student/messages"];
+  if (headerPages.some((href) => pathname === href || pathname.startsWith(`${href}/`))) return null;
+  return "/student/dashboard";
+}
 
 export const ongoingClassesSeed: LiveClassItem[] = [
   {

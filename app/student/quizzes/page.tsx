@@ -30,8 +30,11 @@ type QuizRecord = {
   classId: string;
   className: string;
   lectureId: string;
+  /** The lecture's title, or "General Quizzes" for General content (isGeneral). */
   lectureTitle: string;
-  lectureDate: string;
+  /** Null for General content: the class's default lecture has no lecture date to show. */
+  lectureDate: string | null;
+  isGeneral?: boolean;
   submission: {
     id: string;
     score: number;
@@ -397,10 +400,13 @@ function StudentQuizzesPageInner() {
                           <BookOpenText size={11} />
                           {quiz.lectureTitle}
                         </span>
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarDays size={11} />
-                          {fmtSriLankaDate(quiz.lectureDate)}
-                        </span>
+                        {/* General content has no lecture date (lib/coursework-lecture.ts). */}
+                        {!quiz.isGeneral && quiz.lectureDate ? (
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarDays size={11} />
+                            {fmtSriLankaDate(quiz.lectureDate)}
+                          </span>
+                        ) : null}
                         <span className="text-slate-400">· {quiz.className}</span>
                       </p>
 

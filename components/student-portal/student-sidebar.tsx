@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import {
   LayoutDashboard,
   BookOpen,
@@ -22,6 +23,7 @@ import {
   NotebookPen,
   X,
   ChevronRight,
+  ChevronDown,
   LucideIcon,
 } from "lucide-react";
 
@@ -31,11 +33,13 @@ type SidebarItem = {
   href: string;
   label: string;
   icon: string;
+  children?: { href: string; label: string }[];
 };
 
 type StudentSidebarProps = {
   items: SidebarItem[];
-  activePath: string;
+  /** The highlighted page (student-data.ts studentActiveNavHref); null: none (a header page). */
+  activePath: string | null;
   open: boolean;
   onClose: () => void;
   onToggle: () => void;
@@ -62,6 +66,8 @@ const iconMap: Record<string, LucideIcon> = {
 };
 
 export function StudentSidebar({ items, activePath, open, onClose, onToggle }: StudentSidebarProps) {
+  // Expanded groups (by the group's href); a group holding the active page starts open.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   return (
     <>
       <aside
@@ -109,19 +115,73 @@ export function StudentSidebar({ items, activePath, open, onClose, onToggle }: S
         {/* Nav items */}
         <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
           {items.map((item) => {
-            const isActive = activePath === item.href;
             const Icon = iconMap[item.icon] ?? LayoutDashboard;
+            const itemClass = (isActive: boolean) =>
+              `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-all duration-150 ${
+                isActive
+                  ? "bg-white/15 font-medium text-white shadow-sm ring-1 ring-white/10"
+                  : "font-normal text-white/75 hover:bg-white/[0.08] hover:text-white"
+              } ${open ? "" : "lg:justify-center lg:px-0"}`;
+
+            if (item.children) {
+              const groupActive = item.children.some((child) => child.href === activePath);
+              const expanded = openGroups[item.href] ?? groupActive;
+              // On the collapsed desktop rail there is no room for a submenu: the group icon opens its first page.
+              if (!open) {
+                return (
+                  <Link key={item.href} href={item.href} title={item.label} aria-label={item.label} className={itemClass(groupActive)} data-student-nav-group={item.label}>
+                    <span className="flex-shrink-0">
+                      <Icon size={18} strokeWidth={1.75} />
+                    </span>
+                    <span className="tracking-[0.005em] hidden lg:hidden">{item.label}</span>
+                  </Link>
+                );
+              }
+              return (
+                <div key={item.href} data-student-nav-group={item.label}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenGroups((prev) => ({ ...prev, [item.href]: !expanded }))}
+                    aria-expanded={expanded}
+                    className={itemClass(groupActive)}
+                  >
+                    <span className="flex-shrink-0">
+                      <Icon size={18} strokeWidth={1.75} />
+                    </span>
+                    <span className="flex-1 text-left tracking-[0.005em]">{item.label}</span>
+                    <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden />
+                  </button>
+                  {expanded ? (
+                    <div className="mt-0.5 space-y-0.5 pl-9">
+                      {item.children.map((child) => {
+                        const childActive = child.href === activePath;
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            aria-current={childActive ? "page" : undefined}
+                            className={`block rounded-lg px-3 py-2 text-[12.5px] transition-all duration-150 ${
+                              childActive ? "bg-white/15 font-medium text-white" : "text-white/70 hover:bg-white/[0.08] hover:text-white"
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+
+            const isActive = activePath === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 title={!open ? item.label : undefined}
                 aria-label={item.label}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-all duration-150 ${
-                  isActive
-                    ? "bg-white/15 font-medium text-white shadow-sm ring-1 ring-white/10"
-                    : "font-normal text-white/75 hover:bg-white/[0.08] hover:text-white"
-                } ${open ? "" : "lg:justify-center lg:px-0"}`}
+                className={itemClass(isActive)}
               >
                 <span className="flex-shrink-0">
                   <Icon size={18} strokeWidth={1.75} />

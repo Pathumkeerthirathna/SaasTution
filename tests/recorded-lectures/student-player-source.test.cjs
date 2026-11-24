@@ -226,7 +226,9 @@ test("accessible: every button is a 44 px touch target; icons are hidden from sc
 // ---- Entry points (D-2) ------------------------------------------------------------------------------
 
 test("entry points: sidebar item, My Classes link (active classes only) and the dashboard widget", () => {
-  assert.match(read("components", "student-portal", "student-data.ts"), /href: "\/student\/recorded-lectures",\s+label: "Recorded Lectures",\s+icon: "recordedLectures"/);
+  // The sidebar's Recordings group (student portal navigation reorganization): its first page, with the same icon.
+  const data = read("components", "student-portal", "student-data.ts");
+  assert.match(data, /href: "\/student\/recorded-lectures",\s+label: "Recordings",\s+icon: "recordedLectures",\s+children: \[\s+\{ href: "\/student\/recorded-lectures", label: "Recorded Lectures" \},/);
   assert.match(read("components", "student-portal", "student-sidebar.tsx"), /recordedLectures: Video/);
   const classes = read("app", "student", "classes", "page.tsx");
   const at = classes.indexOf("/student/recorded-lectures?classId=");

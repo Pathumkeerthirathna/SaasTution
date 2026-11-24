@@ -18,7 +18,9 @@ type Assignment = {
   title: string;
   dueDate: string;
   className: string;
+  /** The lecture's title, or "General Assignments" for a General Assignment (isGeneral). */
   lectureTitle: string;
+  isGeneral?: boolean;
   submissions: (Submission & { hasFile: boolean })[];
 };
 

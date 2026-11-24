@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Eye,
@@ -12,6 +12,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+import { classContentUrl, type ClassContentPayload, type ClassContentScope } from "@/lib/class-content-scope";
 
 type QuizAnswerType = "SINGLE" | "MULTIPLE";
 
@@ -156,10 +158,34 @@ function toDraft(quiz: LectureQuiz): QuizDraft {
   };
 }
 
-export function LectureQuizPanel(props: {
-  lectureId: string;
-  onChanged?: () => Promise<void> | void;
-}) {
+/**
+ * Where the panel lists and creates quizzes: its lecture's own route, or
+ * (with a `scope`, the standalone Quizzes page) the class route, which
+ * resolves General Quizzes / the selected normal lecture on the server.
+ */
+export function quizListUrl(props: { lectureId?: string; scope?: ClassContentScope }): string {
+  return props.scope ? classContentUrl("quizzes", props.scope) : `/api/lectures/${props.lectureId}/quizzes`;
+}
+
+/**
+ * The quiz management panel. Either `lectureId` (the lecture modal and the
+ * live classroom: unchanged) or `scope` (the standalone Quizzes page): then
+ * listing and creation use the class route, and every per-quiz route (edit,
+ * delete, results) uses the lecture id that route returned (for General
+ * Quizzes, the class's default lecture).
+ */
+export function LectureQuizPanel(
+  props: (
+    | { lectureId: string; scope?: undefined }
+    | { scope: ClassContentScope; lectureId?: undefined }
+  ) & {
+    onChanged?: () => Promise<void> | void;
+  }
+) {
+  // The lecture the per-quiz routes address: the prop, or (scope) the one the class route resolved.
+  const [scopeLectureId, setScopeLectureId] = useState<string | null>(null);
+  const itemLectureId = props.scope ? scopeLectureId : props.lectureId;
+  const loadSequence = useRef(0);
   const [quizzes, setQuizzes] = useState<LectureQuiz[]>([]);
   const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
   const [draft, setDraft] = useState<QuizDraft>(createEmptyDraft);
@@ -185,22 +211,32 @@ export function LectureQuizPanel(props: {
   }
 
   async function loadQuizzes(preferredQuizId?: string | null) {
+    // Only the latest load may update the panel (an older, slower response is dropped).
+    const sequence = ++loadSequence.current;
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/quizzes`, {
+      const response = await fetch(quizListUrl(props), {
         cache: "no-store",
       });
       const payload = (await response.json()) as {
         success: boolean;
-        data?: LectureQuiz[];
+        data?: LectureQuiz[] | ClassContentPayload<"quizzes", LectureQuiz>;
       };
+      if (sequence !== loadSequence.current) return;
 
       if (!response.ok || !payload.success) {
         throw new Error(readApiError(payload, "Failed to load quizzes."));
       }
 
-      const list = payload.data ?? [];
+      let list: LectureQuiz[];
+      if (props.scope) {
+        const scoped = payload.data as ClassContentPayload<"quizzes", LectureQuiz> | undefined;
+        list = scoped?.quizzes ?? [];
+        setScopeLectureId(scoped?.lecture.id ?? null);
+      } else {
+        list = (payload.data as LectureQuiz[] | undefined) ?? [];
+      }
       setQuizzes(list);
 
       const nextSelectedId =
@@ -219,16 +255,17 @@ export function LectureQuizPanel(props: {
         setDraft(createEmptyDraft());
       }
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setErrorMessage(error instanceof Error ? error.message : "Failed to load quizzes.");
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) setIsLoading(false);
     }
   }
 
   useEffect(() => {
     void loadQuizzes(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.lectureId]);
+  }, [props.lectureId, props.scope?.classId, props.scope?.lectureId]);
 
   function selectExistingQuiz(quizId: string) {
     const quiz = quizzes.find((item) => item.id === quizId);
@@ -271,7 +308,7 @@ export function LectureQuizPanel(props: {
     setIsLoadingResults(true);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/quizzes/${quizId}/results`, {
+      const response = await fetch(`/api/lectures/${itemLectureId}/quizzes/${quizId}/results`, {
         cache: "no-store",
       });
       const payload = (await response.json()) as {
@@ -457,8 +494,8 @@ export function LectureQuizPanel(props: {
 
       const response = await fetch(
         selectedQuizId
-          ? `/api/lectures/${props.lectureId}/quizzes/${selectedQuizId}`
-          : `/api/lectures/${props.lectureId}/quizzes`,
+          ? `/api/lectures/${itemLectureId}/quizzes/${selectedQuizId}`
+          : quizListUrl(props),
         {
           method: selectedQuizId ? "PUT" : "POST",
           headers: {
@@ -506,7 +543,7 @@ export function LectureQuizPanel(props: {
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/quizzes/${quizId}`, {
+      const response = await fetch(`/api/lectures/${itemLectureId}/quizzes/${quizId}`, {
         method: "DELETE",
       });
       const result = (await response.json()) as { success: boolean };

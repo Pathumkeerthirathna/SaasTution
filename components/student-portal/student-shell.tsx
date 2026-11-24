@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Menu, LogOut, ChevronDown, Hash } from "lucide-react";
+import { Menu, LogOut, ChevronDown, Hash, Presentation, UserRound } from "lucide-react";
 
 import { StudentSidebar } from "@/components/student-portal/student-sidebar";
 import { StudentMessageBell } from "@/components/student-portal/student-message-bell";
-import { studentNavItems } from "@/components/student-portal/student-data";
+import { studentActiveNavHref, studentNavItems, studentProfileMenuLinks } from "@/components/student-portal/student-data";
 
 type StudentShellProps = {
   studentName: string;
@@ -61,13 +62,8 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
     }
   }, [pathname]);
 
-  const activePath = useMemo(() => {
-    if (!pathname) return "/student/dashboard";
-    const exact = studentNavItems.find((item) => item.href === pathname);
-    if (exact) return exact.href;
-    if (pathname.startsWith("/student/settings") || pathname.startsWith("/account/security")) return "/student/settings";
-    return "/student/dashboard";
-  }, [pathname]);
+  // The highlighted sidebar page (groups' pages included); none for the pages reached from the header.
+  const activePath = useMemo(() => studentActiveNavHref(pathname), [pathname]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -175,7 +171,25 @@ export function StudentShell({ studentName, studentEmail, registrationNumber, ch
                     )}
                   </div>
                 </div>
-                <div className="mt-3">
+                <div className="mt-3 space-y-2">
+                  {/* The student's pages reached from here (moved from the sidebar). */}
+                  {studentProfileMenuLinks.map((link) => {
+                    const Icon = link.icon === "teacherProfile" ? Presentation : UserRound;
+                    const current = pathname === link.href || Boolean(pathname?.startsWith(`${link.href}/`));
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setIsProfileOpen(false)}
+                        aria-current={current ? "page" : undefined}
+                        className="btn-secondary w-full"
+                        data-profile-menu-link={link.href}
+                      >
+                        <Icon size={14} />
+                        {link.label}
+                      </Link>
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={handleSignOut}

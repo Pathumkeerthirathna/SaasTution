@@ -30,7 +30,7 @@ const code = sql.replace(/--.*$/gm, "");
 test("placement: the latest migration, right after the ENG one; no committed migration changed (git)", () => {
   const all = fs.readdirSync(migrationsDir).filter((n) => /^\d{14}_/.test(n)).sort();
   // Followed only by the approved monthly resource access migration (tests/class-access/resource-access-migration-guard.test.cjs).
-  assert.deepEqual(all.slice(-4), [PREVIOUS, MIGRATION, "20261128120000_add_resource_month_access", "20261129120000_add_lecture_is_default"]);
+  assert.deepEqual(all.slice(-5), [PREVIOUS, MIGRATION, "20261128120000_add_resource_month_access", "20261129120000_add_lecture_is_default", "20261130120000_add_quiz_answer_snapshots"]);
   const changed = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "prisma/migrations"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(changed, "", "committed migrations are untouched");
 });

@@ -146,13 +146,14 @@ test("workspace: responsive and nothing truncated (sections stack, side by side 
 
 // ---- The page and navigation -----------------------------------------------------------------------
 
-test("page and sidebar: /dashboard/notes renders the workspace; Notes is in the teacher sidebar right after Attendance", () => {
+test("page and sidebar: /dashboard/notes renders the workspace; Notes is in the teacher sidebar right after Classes (sidebar reorganization)", () => {
   const page = source("app", "dashboard", "notes", "page.tsx");
   assert.match(page, /import\("@\/components\/notes\/teacher-notes-workspace"\)\.then\(\(mod\) => mod\.TeacherNotesWorkspace\)/);
   const shell = source("components", "dashboard-shell.tsx");
-  const attendance = shell.indexOf('href: "/dashboard/attendance"');
+  const classes = shell.indexOf('href: "/dashboard/classes"');
   const notes = shell.indexOf('href: "/dashboard/notes"');
-  assert.ok(attendance > 0 && notes > attendance, "after Attendance");
+  assert.ok(classes > 0 && notes > classes, "after Classes");
+  assert.ok(notes < shell.indexOf('href: "/dashboard/assignments"'), "before the Assignments group");
   assert.ok(notes < shell.indexOf('href: "/dashboard/material-bundles"'), "before Tutes & Papers");
   assert.match(shell, /\{ href: "\/dashboard\/notes",\s+label: "Notes",\s+icon: <NotebookPen size=\{18\} strokeWidth=\{1\.75\} \/> \}/);
 });

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { isRetryableLockError } from "@/lib/breakout-activities/errors";
 import { AppError } from "@/lib/error-handler";
+import { courseworkLectureView } from "@/lib/coursework-lecture";
 import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 import { INVALID_GRADE_MESSAGE } from "@/lib/grade";
@@ -1372,6 +1373,7 @@ export async function getStudentQuizResults(
           id: true,
           title: true,
           date: true,
+          isDefault: true,
         },
       },
 
@@ -1397,8 +1399,8 @@ export async function getStudentQuizResults(
       quizId: quiz.id,
       quizTitle: quiz.title,
       lectureId: quiz.lecture.id,
-      lectureTitle: quiz.lecture.title,
-      lectureDate: quiz.lecture.date,
+      // General Quizzes: isGeneral, the General label, no lecture date (lib/coursework-lecture.ts).
+      ...courseworkLectureView("quiz", quiz.lecture),
       startDateTime: quiz.startDateTime,
       endDateTime: quiz.endDateTime,
 
@@ -1914,6 +1916,7 @@ export async function getStudentClassQuizResults(
         select: {
           title: true,
           date: true,
+          isDefault: true,
         },
       },
 
@@ -1941,11 +1944,8 @@ export async function getStudentClassQuizResults(
       startDateTime: quiz.startDateTime,
       endDateTime: quiz.endDateTime,
 
-      lectureTitle:
-        quiz.lecture.title,
-
-      lectureDate:
-        quiz.lecture.date,
+      // General Quizzes: isGeneral, the General label, no lecture date (lib/coursework-lecture.ts).
+      ...courseworkLectureView("quiz", quiz.lecture),
 
       attempted: !!submission,
 

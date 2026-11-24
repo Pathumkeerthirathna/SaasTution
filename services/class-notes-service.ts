@@ -154,6 +154,22 @@ export async function resolveClassLectureForTeacher(
   return { class: cls, lecture: await notesLectureOf(cls.id, lectureId) };
 }
 
+/**
+ * Student: an active class the student is actively enrolled in (404
+ * CLASS_NOT_FOUND) and, when given, one NORMAL active lecture of it (404
+ * LECTURE_NOT_FOUND; never a default lecture). No lecture: the whole class
+ * (null). Used by the student YouTube recordings / live sessions pages
+ * (services/student-class-youtube-service.ts).
+ */
+export async function resolveStudentClassScope(
+  studentId: string,
+  classId: string,
+  lectureId: string | null | undefined
+): Promise<{ class: NotesClass; lecture: NotesLecture | null }> {
+  const cls = await studentClass(studentId, classId);
+  return { class: cls, lecture: lectureId ? await normalLectureOf(cls.id, lectureId) : null };
+}
+
 function lectureView(lecture: NotesLecture) {
   return { id: lecture.id, title: lecture.title, date: lecture.date, isDefault: lecture.isDefault };
 }

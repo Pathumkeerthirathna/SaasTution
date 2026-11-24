@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { classContentUrl, type ClassContentPayload, type ClassContentScope } from "@/lib/class-content-scope";
 import { ASSIGNMENT_DELETION_LABELS, assignmentDeletionConfirmText, readDeletionOutcome } from "@/lib/permanent-deletion/client";
 
 import { toSriLankaDateTimeLocal } from "@/lib/time";
@@ -92,10 +93,34 @@ function createEmptyDraft(): AssignmentDraft {
   };
 }
 
-export function LectureAssignmentPanel(props: {
-  lectureId: string;
-  onChanged?: () => Promise<void> | void;
-}) {
+/**
+ * Where the panel lists and creates assignments: its lecture's own route, or
+ * (with a `scope`, the standalone Assignments page) the class route, which
+ * resolves General Assignments / the selected normal lecture on the server.
+ */
+export function assignmentListUrl(props: { lectureId?: string; scope?: ClassContentScope }): string {
+  return props.scope ? classContentUrl("assignments", props.scope) : `/api/lectures/${props.lectureId}/assignments`;
+}
+
+/**
+ * The assignment management panel. Either `lectureId` (the lecture modal and
+ * the live classroom: unchanged) or `scope` (the standalone Assignments page):
+ * then listing and creation use the class route, and every per-assignment
+ * route (edit, delete, submissions, files, marks) uses the lecture id that
+ * route returned (for General Assignments, the class's default lecture).
+ */
+export function LectureAssignmentPanel(
+  props: (
+    | { lectureId: string; scope?: undefined }
+    | { scope: ClassContentScope; lectureId?: undefined }
+  ) & {
+    onChanged?: () => Promise<void> | void;
+  }
+) {
+  // The lecture the per-assignment routes address: the prop, or (scope) the one the class route resolved.
+  const [scopeLectureId, setScopeLectureId] = useState<string | null>(null);
+  const itemLectureId = props.scope ? scopeLectureId : props.lectureId;
+  const loadSequence = useRef(0);
   const [assignments, setAssignments] = useState<LectureAssignment[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AssignmentDraft>(createEmptyDraft);
@@ -124,22 +149,32 @@ export function LectureAssignmentPanel(props: {
   }
 
   async function loadAssignments(preferredId?: string | null) {
+    // Only the latest load may update the panel (an older, slower response is dropped).
+    const sequence = ++loadSequence.current;
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/assignments`, {
+      const response = await fetch(assignmentListUrl(props), {
         cache: "no-store",
       });
       const payload = (await response.json()) as {
         success: boolean;
-        data?: LectureAssignment[];
+        data?: LectureAssignment[] | ClassContentPayload<"assignments", LectureAssignment>;
       };
+      if (sequence !== loadSequence.current) return;
 
       if (!response.ok || !payload.success) {
         throw new Error(readApiError(payload, "Failed to load assignments."));
       }
 
-      const list = payload.data ?? [];
+      let list: LectureAssignment[];
+      if (props.scope) {
+        const scoped = payload.data as ClassContentPayload<"assignments", LectureAssignment> | undefined;
+        list = scoped?.assignments ?? [];
+        setScopeLectureId(scoped?.lecture.id ?? null);
+      } else {
+        list = (payload.data as LectureAssignment[] | undefined) ?? [];
+      }
       setAssignments(list);
 
       const nextSelectedId =
@@ -164,16 +199,17 @@ export function LectureAssignmentPanel(props: {
         setDraft(createEmptyDraft());
       }
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setErrorMessage(error instanceof Error ? error.message : "Failed to load assignments.");
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) setIsLoading(false);
     }
   }
 
   useEffect(() => {
     void loadAssignments(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.lectureId]);
+  }, [props.lectureId, props.scope?.classId, props.scope?.lectureId]);
 
   function handleAddNewAssignment() {
     setSelectedAssignmentId(null);
@@ -249,8 +285,8 @@ export function LectureAssignmentPanel(props: {
 
       const response = await fetch(
         selectedAssignmentId
-          ? `/api/lectures/${props.lectureId}/assignments/${selectedAssignmentId}`
-          : `/api/lectures/${props.lectureId}/assignments`,
+          ? `/api/lectures/${itemLectureId}/assignments/${selectedAssignmentId}`
+          : assignmentListUrl(props),
         {
           method: selectedAssignmentId ? "PUT" : "POST",
           headers: {
@@ -289,7 +325,7 @@ export function LectureAssignmentPanel(props: {
 
     try {
       const response = await fetch(
-        `/api/lectures/${props.lectureId}/assignments/${assignmentId}/submissions`,
+        `/api/lectures/${itemLectureId}/assignments/${assignmentId}/submissions`,
         { cache: "no-store" }
       );
       const payload = (await response.json()) as {
@@ -314,7 +350,7 @@ export function LectureAssignmentPanel(props: {
     if (!submissionsAssignmentId) return;
 
     const response = await fetch(
-      `/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${submissionId}`,
+      `/api/lectures/${itemLectureId}/assignments/${submissionsAssignmentId}/submissions/${submissionId}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -372,7 +408,7 @@ export function LectureAssignmentPanel(props: {
     setPendingMessage(null);
 
     try {
-      const response = await fetch(`/api/lectures/${props.lectureId}/assignments/${assignmentId}`, {
+      const response = await fetch(`/api/lectures/${itemLectureId}/assignments/${assignmentId}`, {
         method: "DELETE",
       });
       let result: unknown = null;
@@ -675,7 +711,7 @@ export function LectureAssignmentPanel(props: {
                               ) : null}
                             </div>
                             <a
-                              href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
+                              href={`/api/lectures/${itemLectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
                               download
                               className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
                             >
@@ -757,7 +793,7 @@ export function LectureAssignmentPanel(props: {
                             </td>
                             <td className="px-3 py-2.5">
                               <a
-                                href={`/api/lectures/${props.lectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
+                                href={`/api/lectures/${itemLectureId}/assignments/${submissionsAssignmentId}/submissions/${sub.submissionId}/file`}
                                 download
                                 className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
                               >

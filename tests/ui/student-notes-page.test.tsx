@@ -225,9 +225,9 @@ test("responsive and distinct: stacked on phones, a row from sm; General (emeral
   assert.doesNotMatch(client, /\btruncate\b|line-clamp|text-ellipsis|\bhidden sm:|\bhidden md:|\bhidden lg:/);
 });
 
-test("navigation: Notes after Lecture / Schedules, with its own icon; the existing student note surfaces are unchanged", () => {
+test("navigation: Notes right after My Classes (student portal navigation reorganization), with its own icon; the existing student note surfaces are unchanged", () => {
   const hrefs = studentNavItems.map((item) => item.href);
-  assert.equal(hrefs.indexOf("/student/notes"), hrefs.indexOf("/student/lectures") + 1);
+  assert.equal(hrefs.indexOf("/student/notes"), hrefs.indexOf("/student/classes") + 1);
   assert.deepEqual(studentNavItems.find((item) => item.href === "/student/notes"), { href: "/student/notes", label: "Notes", icon: "notes" });
   assert.match(source("components", "student-portal", "student-sidebar.tsx"), /notes:\s+NotebookPen,/);
   // Still the lecture-scoped routes, untouched by this stage.

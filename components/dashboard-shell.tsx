@@ -29,6 +29,7 @@ import {
   ClipboardCheck,
   NotebookPen,
   Video,
+  ClipboardList,
 } from "lucide-react";
 
 import { SidebarGraduate } from "@/components/sidebar-graduate";
@@ -65,6 +66,10 @@ type NavItem = {
  */
 const NESTED_ACTIVE_NAV_ITEMS: ReadonlySet<string> = new Set(["/dashboard/attendance"]);
 
+/** Teacher pages reached from the header instead of the sidebar. */
+export const MESSAGES_HREF = "/dashboard/messages";
+export const TEACHER_PROFILE_HREF = "/dashboard/teacher/profile";
+
 /** Whether a top-level sidebar link is active for the current path. */
 export function isNavItemActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
@@ -93,6 +98,7 @@ export function DashboardShell({
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const messagesActive = isNavItemActive(pathname, MESSAGES_HREF) || Boolean(pathname?.startsWith(`${MESSAGES_HREF}/`));
 
   function navChildActive(href: string) {
     if (href === "/dashboard/students") return pathname === "/dashboard/students";
@@ -128,9 +134,10 @@ export function DashboardShell({
       ];
     }
     const items: NavItem[] = [
+      // Main order: Overview, Calendar, Students, Classes, Notes, Assignments, Recordings; then the rest.
+      // Teacher Profile and Messages live in the header (the profile menu and the Messages icon).
       { href: "/dashboard",                               label: "Overview",           icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/calendar",                      label: "Calendar",           icon: <CalendarDays size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/teacher/profile",               label: "Teacher Profile",    icon: <BadgeInfo size={18} strokeWidth={1.75} /> },
       {
         href: "/dashboard/students",
         label: "Students",
@@ -141,11 +148,18 @@ export function DashboardShell({
         ],
       },
       { href: "/dashboard/classes",                       label: "Classes",            icon: <BookOpen size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/payments",                      label: "Payments",           icon: <CircleDollarSign size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/messages",                      label: "Messages",           icon: <MessageSquare size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
-      { href: "/dashboard/attendance",                    label: "Attendance",         icon: <ClipboardCheck size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/notes",                         label: "Notes",              icon: <NotebookPen size={18} strokeWidth={1.75} /> },
+      {
+        // A class's General (no lecture) or one lecture's assignments / quizzes, one page each.
+        // The group's own address is its first page (as Students), for the collapsed rail.
+        href: "/dashboard/assignments",
+        label: "Assignments",
+        icon: <ClipboardList size={18} strokeWidth={1.75} />,
+        children: [
+          { href: "/dashboard/assignments", label: "Assignments" },
+          { href: "/dashboard/quizzes", label: "Quizzes" },
+        ],
+      },
       {
         // Recorded lectures (uploads), YouTube live streams and classroom recordings saved to YouTube.
         // "Live Sessions" (the Jitsi live-class tool) stays its own item below.
@@ -158,6 +172,9 @@ export function DashboardShell({
           { href: "/dashboard/recordings/live-recordings", label: "Live Recordings" },
         ],
       },
+      { href: "/dashboard/payments",                      label: "Payments",           icon: <CircleDollarSign size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/lectures",                      label: "Lectures",           icon: <GraduationCap size={18} strokeWidth={1.75} /> },
+      { href: "/dashboard/attendance",                    label: "Attendance",         icon: <ClipboardCheck size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles",              label: "Tutes & Papers",     icon: <FolderOpen size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/papers",                        label: "Papers",             icon: <ScrollText size={18} strokeWidth={1.75} /> },
       { href: "/dashboard/material-bundles/configuration",label: "Paper Config",       icon: <Settings size={18} strokeWidth={1.75} /> },
@@ -407,6 +424,36 @@ export function DashboardShell({
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
             </button>
 
+            {/* Messages (teachers): the existing Messages page. Teachers' messages are outgoing class
+                announcements, so there is no unread count to show. Locked for a pending teacher, as in the sidebar. */}
+            {role === "TEACHER" ? (
+              isPending ? (
+                <span
+                  role="link"
+                  aria-disabled="true"
+                  aria-label="Messages (available after your account is approved)"
+                  title="Available after your account is approved"
+                  className="relative inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full text-slate-300"
+                  data-header-messages="locked"
+                >
+                  <MessageSquare size={18} />
+                </span>
+              ) : (
+                <Link
+                  href={MESSAGES_HREF}
+                  aria-label="Messages"
+                  title="Messages"
+                  aria-current={messagesActive ? "page" : undefined}
+                  className={`relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                    messagesActive ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-brand-50 hover:text-brand-700"
+                  }`}
+                  data-header-messages
+                >
+                  <MessageSquare size={18} />
+                </Link>
+              )
+            ) : null}
+
             {/* Profile button */}
             <div className="relative" ref={profileMenuRef}>
             <button
@@ -436,6 +483,26 @@ export function DashboardShell({
                   </div>
                 </div>
                 <div className="mt-3 space-y-2">
+                  {/* The teacher's own profile page (public profile, photo, sections, payment details):
+                      moved here from the sidebar. Locked for a pending teacher, as before. */}
+                  {role === "TEACHER" ? (
+                    isPending ? (
+                      <span aria-disabled="true" className="btn-secondary w-full cursor-not-allowed opacity-60" data-profile-menu-teacher-profile="locked">
+                        <BadgeInfo size={14} />
+                        Teacher profile
+                      </span>
+                    ) : (
+                      <Link
+                        href={TEACHER_PROFILE_HREF}
+                        onClick={() => setIsProfileOpen(false)}
+                        className="btn-secondary w-full"
+                        data-profile-menu-teacher-profile
+                      >
+                        <BadgeInfo size={14} />
+                        Teacher profile
+                      </Link>
+                    )
+                  ) : null}
                   <Link
                     href="/account/security"
                     onClick={() => setIsProfileOpen(false)}

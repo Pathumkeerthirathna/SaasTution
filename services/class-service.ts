@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { STUDENT_VISIBLE_PRIVACY_WHERE } from "@/lib/youtube-student-privacy";
 import { AppError } from "@/lib/error-handler";
 import { emitStudentDataChange } from "@/lib/session-events";
 import { DEFAULT_ATTENDANCE_GRACE_MINUTES } from "@/lib/attendance/status";
@@ -255,9 +256,11 @@ export async function getPublicClassSessions(
       status: 0,
       ...NORMAL_LECTURE_WHERE,
       class: { status: 0 },
+      // Never a YouTube-PRIVATE recording (lib/youtube-student-privacy.ts).
       youtubeRecordings: {
         some: {
           visibility: "PUBLIC",
+          ...STUDENT_VISIBLE_PRIVACY_WHERE,
         },
       },
     },
@@ -272,6 +275,7 @@ export async function getPublicClassSessions(
       youtubeRecordings: {
         where: {
           visibility: "PUBLIC",
+          ...STUDENT_VISIBLE_PRIVACY_WHERE,
         },
         orderBy: {
           startedAt: "asc",

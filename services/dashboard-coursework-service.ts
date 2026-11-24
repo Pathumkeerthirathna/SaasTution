@@ -1,3 +1,4 @@
+import { courseworkLectureLabel } from "@/lib/coursework-lecture";
 import { prisma } from "@/lib/prisma";
 
 export type CourseworkSubmission = {
@@ -12,7 +13,9 @@ export type CourseworkAssignment = {
   title: string;
   dueDate: string;
   className: string;
+  /** The lecture's title, or "General Assignments" for a General Assignment (isGeneral). */
   lectureTitle: string;
+  isGeneral: boolean;
   submissions: (CourseworkSubmission & { hasFile: boolean })[];
 };
 
@@ -64,7 +67,7 @@ export async function getTeacherCourseworkForRange(
         title: true,
         dueDate: true,
         lecture: {
-          select: { title: true, class: { select: { name: true } } },
+          select: { title: true, isDefault: true, class: { select: { name: true } } },
         },
         submissions: {
           where: { student: { status: 0 } },
@@ -115,7 +118,7 @@ export async function getTeacherCourseworkForRange(
       title: a.title,
       dueDate: a.dueDate.toISOString(),
       className: a.lecture.class.name,
-      lectureTitle: a.lecture.title,
+      ...courseworkLectureLabel("assignment", a.lecture),
       submissions: a.submissions.map((s) => ({
         id: s.id,
         studentName: s.student.name,

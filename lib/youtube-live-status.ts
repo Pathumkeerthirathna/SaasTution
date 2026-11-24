@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { STUDENT_VISIBLE_PRIVACY_WHERE } from "@/lib/youtube-student-privacy";
 import { type YouTubeLiveBroadcast } from "@/lib/youtube-live";
 import { getClassAccessRestrictions } from "@/services/class-access-service";
 import { clearCompleteRequested, findDepartureSendState, youTubeEndedCloseData } from "@/lib/youtube-feature-state";
@@ -66,6 +67,8 @@ export async function getActiveYouTubeLives(
                 endedAt: null,
                 status: { in: CANDIDATE_STATUSES },
                 createdAt: { gte: cutoff },
+                // Students: never a YouTube-PRIVATE broadcast (lib/youtube-student-privacy.ts).
+                ...(options.studentId !== undefined ? STUDENT_VISIBLE_PRIVACY_WHERE : {}),
                 lecture:
                     options.teacherId !== undefined
                         ? { class: { teacherId: options.teacherId } }

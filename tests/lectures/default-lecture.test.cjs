@@ -289,6 +289,20 @@ test("which lecture-service functions keep the default lecture: the note workflo
   assert.equal((src.match(/\{ includeDefault: true \}/g) ?? []).length, 2, "listNotesForLectureForTeacher and addNoteToLectureForTeacher");
   const route = fs.readFileSync(path.join(root, "app", "api", "lectures", "[id]", "notes", "route.ts"), "utf8");
   assert.match(route, /assertTeacherOwnsLecture\(session\.teacherId, lectureId, \{ includeDefault: true \}\)/, "the note upload route");
+  // Assignments: listing and creation take an explicit option that only the class-scoped
+  // Assignments API passes (for the default lecture it resolved itself); the lecture route never does.
+  // Quizzes: the same, for the class-scoped Quizzes API (services/class-quizzes-service.ts).
+  assert.equal((src.match(/\{ includeDefault: options\.includeDefault === true \}/g) ?? []).length, 4, "the assignment and quiz passthroughs");
+  const lectureQuizzes = fs.readFileSync(path.join(root, "app", "api", "lectures", "[id]", "quizzes", "route.ts"), "utf8");
+  assert.match(lectureQuizzes, /listQuizzesForLectureForTeacher\(session\.teacherId, lectureId\)/);
+  assert.match(lectureQuizzes, /addQuizToLectureForTeacher\(session\.teacherId, lectureId, parsed\.data\)/);
+  const classQuizzes = fs.readFileSync(path.join(root, "services", "class-quizzes-service.ts"), "utf8");
+  assert.equal((classQuizzes.match(/includeDefault: lecture\.isDefault/g) ?? []).length, 2, "quizzes: decided from the resolved lecture only");
+  const lectureAssignments = fs.readFileSync(path.join(root, "app", "api", "lectures", "[id]", "assignments", "route.ts"), "utf8");
+  assert.match(lectureAssignments, /listAssignmentsForLectureForTeacher\(session\.teacherId, lectureId\)/);
+  assert.match(lectureAssignments, /addAssignmentToLectureForTeacher\(session\.teacherId, lectureId, parsed\.data\)/);
+  const classAssignments = fs.readFileSync(path.join(root, "services", "class-assignments-service.ts"), "utf8");
+  assert.equal((classAssignments.match(/includeDefault: lecture\.isDefault/g) ?? []).length, 2, "decided from the resolved lecture only");
 });
 
 // ======================================================================================

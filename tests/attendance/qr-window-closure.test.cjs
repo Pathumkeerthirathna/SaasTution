@@ -427,6 +427,7 @@ test("migration: additive, exact, after the attendance migration; only approved 
     "20261127120000_add_grade_zero", // Grade 0 (tests/students/grade-zero-migration-guard.test.cjs)
     "20261128120000_add_resource_month_access", // Monthly resource access (tests/class-access/resource-access-migration-guard.test.cjs)
     "20261129120000_add_lecture_is_default", // Default lecture (tests/lectures/default-lecture-migration-guard.test.cjs)
+    "20261130120000_add_quiz_answer_snapshots", // Quiz answer snapshots (tests/quizzes/quiz-answer-snapshots.test.cjs)
   ]);
 
   const raw = fs.readFileSync(path.join(MIGRATIONS, NEW_MIGRATION, "migration.sql"), "utf8");

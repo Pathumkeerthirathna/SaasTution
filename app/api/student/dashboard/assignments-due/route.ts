@@ -1,6 +1,7 @@
 import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { AppError, handleRouteError } from "@/lib/error-handler";
+import { courseworkLectureLabel } from "@/lib/coursework-lecture";
 import { prisma } from "@/lib/prisma";
 import { sriLankaDigitsToInstant } from "@/lib/time";
 
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
         dueDate: true,
         lectureId: true,
         lecture: {
-          select: { title: true, class: { select: { id: true, name: true } } },
+          select: { title: true, isDefault: true, class: { select: { id: true, name: true } } },
         },
         submissions: {
           where: { studentId: session.studentId },
@@ -56,7 +57,8 @@ export async function GET(request: Request) {
       title: a.title,
       dueDate: a.dueDate.toISOString(),
       lectureId: a.lectureId,
-      lectureTitle: a.lecture.title,
+      // The General label for General Assignments (lib/coursework-lecture.ts); this list never sent a lecture date.
+      ...courseworkLectureLabel("assignment", a.lecture),
       classId: a.lecture.class.id,
       className: a.lecture.class.name,
       submitted: a.submissions.length > 0,

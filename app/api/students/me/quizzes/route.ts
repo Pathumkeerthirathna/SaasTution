@@ -4,6 +4,7 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireStudentSession } from "@/lib/auth-session";
 import { handleRouteError } from "@/lib/error-handler";
 import { buildPaginationMeta, parsePaginationParams } from "@/lib/pagination";
+import { courseworkLectureJson } from "@/lib/coursework-lecture";
 import { NORMAL_LECTURE_WHERE } from "@/lib/default-lecture";
 import { prisma } from "@/lib/prisma";
 
@@ -61,6 +62,7 @@ export async function GET(req: NextRequest) {
               id: true,
               title: true,
               date: true,
+              isDefault: true,
               class: { select: { id: true, name: true } },
             },
           },
@@ -113,8 +115,8 @@ export async function GET(req: NextRequest) {
         classId: q.lecture.class.id,
         className: q.lecture.class.name,
         lectureId: q.lecture.id,
-        lectureTitle: q.lecture.title,
-        lectureDate: q.lecture.date.toISOString(),
+        // General Quizzes: isGeneral, the General label, no lecture date (lib/coursework-lecture.ts).
+        ...courseworkLectureJson("quiz", q.lecture),
         submission: sub
           ? {
               id: sub.id,

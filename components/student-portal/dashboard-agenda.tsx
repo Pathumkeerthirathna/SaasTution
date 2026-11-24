@@ -33,7 +33,9 @@ type DueAssignment = {
   title: string;
   dueDate: string;
   lectureId: string;
+  /** The lecture's title, or "General Assignments" for a General Assignment (isGeneral). */
   lectureTitle: string;
+  isGeneral?: boolean;
   classId: string;
   className: string;
   submitted: boolean;
